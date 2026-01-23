@@ -390,6 +390,9 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         posthogAnalyticsClient.updateSuperProperties(AnalyticsEvent.SuperProperties(appPlatform: .EXI, cryptoSDK: .Rust, cryptoSDKVersion: sdkGitSha()))
         ServiceLocator.shared.register(analytics: AnalyticsService(client: posthogAnalyticsClient,
                                                                    appSettings: appSettings))
+
+        // Setup Recording Service for call recording
+        ServiceLocator.shared.setupRecordingService()
     }
     
     /// Perform any required migrations for the app to function correctly.

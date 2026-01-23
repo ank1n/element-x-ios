@@ -54,7 +54,8 @@ final class AppSettings {
         case sharePresence
         
         case elementCallBaseURLOverride
-        
+        case recordingAPIBaseURL
+
         // Feature flags
         case publicSearchEnabled
         case fuzzyRoomListSearchEnabled
@@ -359,7 +360,13 @@ final class AppSettings {
     
     @UserPreference(key: UserDefaultsKeys.elementCallBaseURLOverride, defaultValue: nil, storageType: .userDefaults(store))
     var elementCallBaseURLOverride: URL?
-    
+
+    // MARK: - Recording API
+
+    /// The base URL for the call recording API service
+    @UserPreference(key: UserDefaultsKeys.recordingAPIBaseURL, defaultValue: URL(string: "https://api.market.implica.ru")!, storageType: .userDefaults(store))
+    var recordingAPIBaseURL: URL
+
     // MARK: - Users
     
     /// Whether to hide the display name and avatar of ignored users as these may contain objectionable content.

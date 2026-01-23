@@ -78,6 +78,8 @@ class RoomFlowCoordinator: FlowCoordinatorProtocol {
     // periphery:ignore - used to avoid deallocation
     private var rolesAndPermissionsFlowCoordinator: RoomRolesAndPermissionsFlowCoordinator?
     // periphery:ignore - used to avoid deallocation
+    private var widgetsCoordinator: WidgetsCoordinator?
+    // periphery:ignore - used to avoid deallocation
     private var pinnedEventsTimelineFlowCoordinator: PinnedEventsTimelineFlowCoordinator?
     // periphery:ignore - used to avoid deallocation
     private var mediaEventsTimelineFlowCoordinator: MediaEventsTimelineFlowCoordinator?
@@ -465,6 +467,11 @@ class RoomFlowCoordinator: FlowCoordinatorProtocol {
                 presentRolesAndPermissionsScreen()
             case (.rolesAndPermissions, .dismissRolesAndPermissionsScreen, .roomDetails):
                 rolesAndPermissionsFlowCoordinator = nil
+
+            case (.roomDetails, .presentWidgets, .widgets):
+                presentWidgets()
+            case (.widgets, .dismissWidgets, .roomDetails):
+                widgetsCoordinator = nil
                                             
             case (.roomDetails, .presentMediaEventsTimeline, .mediaEventsTimeline):
                 Task { await self.startMediaEventsTimelineFlow() }
@@ -918,6 +925,8 @@ class RoomFlowCoordinator: FlowCoordinatorProtocol {
                 stateMachine.tryEvent(.presentInviteUsersScreen)
             case .presentPollsHistory:
                 stateMachine.tryEvent(.presentPollsHistory)
+            case .presentWidgets:
+                stateMachine.tryEvent(.presentWidgets)
             case .presentRolesAndPermissionsScreen:
                 stateMachine.tryEvent(.presentRolesAndPermissionsScreen)
             case .presentCall:
@@ -1328,7 +1337,24 @@ class RoomFlowCoordinator: FlowCoordinatorProtocol {
         rolesAndPermissionsFlowCoordinator = coordinator
         coordinator.start()
     }
-    
+
+    private func presentWidgets() {
+        let parameters = WidgetsCoordinatorParameters(roomProxy: roomProxy,
+                                                       userSession: userSession)
+        let coordinator = WidgetsCoordinator(parameters: parameters)
+        coordinator.actions.sink { [weak self] action in
+            switch action {
+            case .dismiss:
+                self?.navigationStackCoordinator.setSheetCoordinator(nil)
+                self?.stateMachine.tryEvent(.dismissWidgets)
+            }
+        }
+        .store(in: &cancellables)
+
+        widgetsCoordinator = coordinator
+        navigationStackCoordinator.setSheetCoordinator(coordinator)
+    }
+
     private func presentResolveSendFailure(failure: TimelineItemSendFailure.VerifiedUser, sendHandle: SendHandleProxy) {
         let coordinator = ResolveVerifiedUserSendFailureScreenCoordinator(parameters: .init(failure: failure,
                                                                                             sendHandle: sendHandle,

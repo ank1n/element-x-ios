@@ -14,15 +14,20 @@ enum CallScreenViewModelAction {
     case pictureInPictureStarted
     case pictureInPictureStopped
     case dismiss
+    case showRecordingConsent
 }
 
 struct CallScreenViewState: BindableState {
     let script: String?
     var url: URL?
     let isGenericCallLink: Bool
-    
+
     let certificateValidator: CertificateValidatorHookProtocol
-    
+
+    // Recording state
+    var recordingState: RecordingState = .idle
+    var isRecordingEnabled: Bool = true
+
     var bindings = Bindings()
 }
 
@@ -42,6 +47,9 @@ enum CallScreenViewAction {
     case mediaCapturePermissionGranted
     case outputDeviceSelected(deviceID: String)
     case widgetAction(message: String)
+    // Recording actions
+    case toggleRecording
+    case confirmStartRecording
 }
 
 enum CallScreenError: Error {

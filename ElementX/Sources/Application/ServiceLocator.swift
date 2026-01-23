@@ -26,8 +26,21 @@ class ServiceLocator {
     }
     
     private(set) var analytics: AnalyticsService!
-    
+
     func register(analytics: AnalyticsService) {
         self.analytics = analytics
+    }
+
+    private(set) var recordingService: RecordingServiceProtocol?
+
+    func register(recordingService: RecordingServiceProtocol) {
+        self.recordingService = recordingService
+    }
+
+    /// Creates and registers the recording service using the current app settings
+    func setupRecordingService() {
+        guard let settings else { return }
+        let service = RecordingService(baseURL: settings.recordingAPIBaseURL)
+        register(recordingService: service)
     }
 }

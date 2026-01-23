@@ -75,6 +75,7 @@ extension RoomFlowCoordinator {
         case pollsHistory
         case pollsHistoryForm
         case rolesAndPermissions
+        case widgets
         case pinnedEventsTimeline(previousState: State)
         case resolveSendFailure(previousState: State)
         case knockRequestsList(previousState: State)
@@ -154,9 +155,12 @@ extension RoomFlowCoordinator {
         
         case presentPollsHistory
         case dismissPollsHistory
-        
+
         case presentRolesAndPermissionsScreen
         case dismissRolesAndPermissionsScreen
+
+        case presentWidgets
+        case dismissWidgets
         
         case presentPinnedEventsTimeline
         case dismissPinnedEventsTimeline
@@ -313,6 +317,11 @@ extension RoomFlowCoordinator {
                 
             case (.roomDetails, .presentRolesAndPermissionsScreen):
                 return .rolesAndPermissions
+
+            case (.roomDetails, .presentWidgets):
+                return .widgets
+            case (.widgets, .dismissWidgets):
+                return .roomDetails(isRoot: false)
             case (.rolesAndPermissions, .dismissRolesAndPermissionsScreen):
                 return .roomDetails(isRoot: false)
                 

@@ -225,7 +225,7 @@ final class SpaceSettingsFlowCoordinator: FlowCoordinatorProtocol {
             case .presentRecipientDetails, .presentNotificationSettingsScreen, .transferOwnership,
                  .presentInviteUsersScreen, .presentPollsHistory, .presentCall,
                  .presentPinnedEventsTimeline, .presentMediaEventsTimeline, .presentKnockingRequestsListScreen,
-                 .presentReportRoomScreen:
+                 .presentReportRoomScreen, .presentWidgets:
                 fatalError("Not handled in the space context")
             }
         }

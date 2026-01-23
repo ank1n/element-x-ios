@@ -19,7 +19,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     private let isPictureInPictureAllowed: Bool
     private let appSettings: AppSettings
     private let analyticsService: AnalyticsService
-    
+    private let recordingService: RecordingServiceProtocol?
+
     private let widgetDriver: ElementCallWidgetDriverProtocol
     
     private let actionsSubject: PassthroughSubject<CallScreenViewModelAction, Never> = .init()
@@ -36,16 +37,19 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     ///   - roomProxy: The room in which the call should be created
     ///   - callBaseURL: Which Element Call instance should be used
     ///   - clientID: Something to identify the current client on the Element Call side
+    ///   - recordingService: Optional service for call recording
     init(elementCallService: ElementCallServiceProtocol,
          configuration: ElementCallConfiguration,
          allowPictureInPicture: Bool,
          appHooks: AppHooks,
          appSettings: AppSettings,
-         analyticsService: AnalyticsService) {
+         analyticsService: AnalyticsService,
+         recordingService: RecordingServiceProtocol? = nil) {
         self.elementCallService = elementCallService
         self.configuration = configuration
         self.appSettings = appSettings
         self.analyticsService = analyticsService
+        self.recordingService = recordingService
         isPictureInPictureAllowed = allowPictureInPicture
         
         var isGenericCallLink = false
@@ -114,7 +118,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 Task { await self?.updateOutputsListOnWeb() }
             }
             .store(in: &cancellables)
-        
+
+        setupRecordingObserver()
         setupCall()
     }
     
@@ -137,6 +142,10 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             handleOutputDeviceSelected(deviceID: deviceID)
         case .widgetAction(let message):
             Task { await handleWidgetAction(message: message) }
+        case .toggleRecording:
+            handleToggleRecording()
+        case .confirmStartRecording:
+            Task { await startRecording() }
         }
     }
     
@@ -316,6 +325,72 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             MXLog.debug("Evaluated  with result: \(String(describing: result))")
         } catch {
             MXLog.error("Received javascript evaluation error: \(error)")
+        }
+    }
+
+    // MARK: - Recording
+
+    private func setupRecordingObserver() {
+        guard let recordingService else {
+            state.isRecordingEnabled = false
+            return
+        }
+
+        recordingService.statePublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] recordingState in
+                self?.state.recordingState = recordingState
+            }
+            .store(in: &cancellables)
+    }
+
+    private func handleToggleRecording() {
+        guard let recordingService else { return }
+
+        if recordingService.state.isRecording {
+            Task { await stopRecording() }
+        } else {
+            // Show consent dialog before starting
+            actionsSubject.send(.showRecordingConsent)
+        }
+    }
+
+    private func startRecording() async {
+        guard let recordingService else { return }
+
+        // Get room name from configuration
+        let roomName: String
+        switch configuration.kind {
+        case .genericCallLink(let url):
+            roomName = url.lastPathComponent
+        case .roomCall(let roomProxy, _, _, _, _, _):
+            roomName = roomProxy.id
+        }
+
+        do {
+            let egressId = try await recordingService.startRecording(roomName: roomName)
+            MXLog.info("Recording started with egress ID: \(egressId)")
+        } catch {
+            MXLog.error("Failed to start recording: \(error)")
+            state.bindings.alertInfo = .init(id: UUID(),
+                                             title: L10n.commonError,
+                                             message: error.localizedDescription,
+                                             primaryButton: .init(title: L10n.actionOk, action: nil))
+        }
+    }
+
+    private func stopRecording() async {
+        guard let recordingService else { return }
+
+        do {
+            try await recordingService.stopRecording()
+            MXLog.info("Recording stopped")
+        } catch {
+            MXLog.error("Failed to stop recording: \(error)")
+            state.bindings.alertInfo = .init(id: UUID(),
+                                             title: L10n.commonError,
+                                             message: error.localizedDescription,
+                                             primaryButton: .init(title: L10n.actionOk, action: nil))
         }
     }
 }

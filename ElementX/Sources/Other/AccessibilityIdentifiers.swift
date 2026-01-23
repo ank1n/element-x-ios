@@ -183,6 +183,7 @@ enum A11yIdentifiers {
         let notifications = "room_details-notifications"
         let pollsHistory = "room_details-polls_history"
         let favourite = "room_details-favourite"
+        let widgets = "room_details-widgets"
     }
     
     struct RoomMemberDetailsScreen {

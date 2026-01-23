@@ -64,6 +64,9 @@ final class CallScreenCoordinator: CoordinatorProtocol {
                 actionsSubject.send(.pictureInPictureStopped)
             case .dismiss:
                 actionsSubject.send(.dismiss)
+            case .showRecordingConsent:
+                // Handled in the view via sheet
+                break
             }
         }
         .store(in: &cancellables)

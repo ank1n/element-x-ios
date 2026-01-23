@@ -15,18 +15,55 @@ import WebKit
 
 struct CallScreen: View {
     @ObservedObject var context: CallScreenViewModel.Context
-    
+    @State private var showRecordingConsent = false
+
     var body: some View {
         NavigationStack {
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.compound.bgCanvasDefault.ignoresSafeArea())
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar(context.viewState.isGenericCallLink ? .visible : .hidden, for: .navigationBar)
-                .toolbar { toolbar }
+            ZStack(alignment: .topTrailing) {
+                content
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                // Recording controls overlay
+                VStack(alignment: .trailing, spacing: 8) {
+                    // Recording indicator when recording
+                    if context.viewState.recordingState.isRecording {
+                        RecordingIndicator()
+                    }
+
+                    // Recording button - always visible
+                    RecordingButton(recordingState: context.viewState.recordingState) {
+                        if context.viewState.recordingState.isRecording {
+                            context.send(viewAction: .toggleRecording)
+                        } else {
+                            showRecordingConsent = true
+                        }
+                    }
+                }
+                .padding(.top, 60)
+                .padding(.trailing, 16)
+            }
+            .background(Color.compound.bgCanvasDefault.ignoresSafeArea())
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(context.viewState.isGenericCallLink || context.viewState.isRecordingEnabled ? .visible : .hidden, for: .navigationBar)
+            .toolbar { toolbar }
         }
         .alert(item: $context.alertInfo)
         .preferredColorScheme(context.viewState.isGenericCallLink ? .dark : nil)
+        .sheet(isPresented: $showRecordingConsent) {
+            RecordingConsentView(
+                onConfirm: {
+                    showRecordingConsent = false
+                    context.send(viewAction: .confirmStartRecording)
+                },
+                onCancel: {
+                    showRecordingConsent = false
+                }
+            )
+            .presentationDetents([.medium])
+        }
+        .onReceive(context.$viewState) { _ in
+            // This will be triggered by coordinator for showing consent
+        }
     }
     
     @ViewBuilder
@@ -41,11 +78,24 @@ struct CallScreen: View {
         }
     }
     
+    @ToolbarContentBuilder
     var toolbar: some ToolbarContent {
         ToolbarItem(placement: .cancellationAction) {
             Button { context.send(viewAction: .navigateBack) } label: {
                 Image(systemSymbol: .chevronBackward)
                     .fontWeight(.semibold)
+            }
+        }
+
+        if context.viewState.isRecordingEnabled {
+            ToolbarItem(placement: .primaryAction) {
+                RecordingButton(recordingState: context.viewState.recordingState) {
+                    if context.viewState.recordingState.isRecording {
+                        context.send(viewAction: .toggleRecording)
+                    } else {
+                        showRecordingConsent = true
+                    }
+                }
             }
         }
     }
