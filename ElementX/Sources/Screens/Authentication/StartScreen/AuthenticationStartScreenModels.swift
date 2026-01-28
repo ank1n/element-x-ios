@@ -45,10 +45,8 @@ struct AuthenticationStartScreenViewState: BindableState {
     var loginButtonTitle: String {
         if let serverName {
             L10n.screenOnboardingSignInTo(serverName)
-        } else if showQRCodeLoginButton {
-            L10n.screenOnboardingSignInManually
         } else {
-            L10n.actionContinue
+            L10n.tr("Localizable", "action_sign_in")
         }
     }
 }

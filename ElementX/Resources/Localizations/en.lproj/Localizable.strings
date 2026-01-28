@@ -1522,3 +1522,10 @@
 "troubleshoot_notifications_test_blocked_users_title" = "Blocked users";
 "troubleshoot_notifications_entry_point_push_history_title" = "Push history";
 "troubleshoot_notifications_entry_point_title" = "Troubleshoot notifications";
+
+"action_sign_in" = "Sign in";
+"saved_accounts_title" = "Sign In";
+"saved_accounts_empty_title" = "No saved accounts";
+"saved_accounts_empty_subtitle" = "Add a server to sign in";
+"saved_accounts_section_header" = "Saved accounts";
+"saved_accounts_add_server" = "Add new server";

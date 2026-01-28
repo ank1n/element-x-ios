@@ -1522,3 +1522,10 @@
 "troubleshoot_notifications_test_blocked_users_title" = "Заблокированные пользователи";
 "troubleshoot_notifications_entry_point_push_history_title" = "История уведомлений";
 "troubleshoot_notifications_entry_point_title" = "Уведомления об устранении неполадок";
+
+"action_sign_in" = "Войти";
+"saved_accounts_title" = "Вход";
+"saved_accounts_empty_title" = "Нет сохраненных аккаунтов";
+"saved_accounts_empty_subtitle" = "Добавьте сервер для входа";
+"saved_accounts_section_header" = "Сохраненные аккаунты";
+"saved_accounts_add_server" = "Добавить сервер";

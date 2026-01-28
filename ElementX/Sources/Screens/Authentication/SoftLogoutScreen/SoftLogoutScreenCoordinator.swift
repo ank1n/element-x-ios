@@ -136,7 +136,7 @@ final class SoftLogoutScreenCoordinator: CoordinatorProtocol {
         startLoading()
         
         Task {
-            switch await authenticationService.urlForOIDCLogin(loginHint: nil) {
+            switch await authenticationService.urlForOIDCLogin(loginHint: nil, forceLogin: false) {
             case .failure(let error):
                 stopLoading()
                 handleError(error)

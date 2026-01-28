@@ -32,8 +32,9 @@ class ServerSelectionScreenViewModel: ServerSelectionScreenViewModelType, Server
         self.appSettings = appSettings
         self.userIndicatorController = userIndicatorController
         
-        let bindings = ServerSelectionScreenBindings(homeserverAddress: authenticationService.homeserver.value.address)
-        super.init(initialViewState: ServerSelectionScreenViewState(bindings: bindings))
+        let bindings = ServerSelectionScreenBindings(homeserverAddress: "")
+        let placeholder = authenticationFlow == .register ? "matrix.org" : L10n.commonServerUrl
+        super.init(initialViewState: ServerSelectionScreenViewState(placeholder: placeholder, bindings: bindings))
     }
     
     override func process(viewAction: ServerSelectionScreenViewAction) {

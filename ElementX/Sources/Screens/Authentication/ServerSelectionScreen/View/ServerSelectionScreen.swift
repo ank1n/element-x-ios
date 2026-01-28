@@ -52,7 +52,7 @@ struct ServerSelectionScreen: View {
     /// The text field and confirm button where the user enters a server URL.
     var serverForm: some View {
         VStack(alignment: .leading, spacing: 24) {
-            TextField(L10n.commonServerUrl, text: $context.homeserverAddress)
+            TextField(context.viewState.placeholder, text: $context.homeserverAddress)
                 .textFieldStyle(.element(labelText: Text(L10n.screenChangeServerFormHeader),
                                          footerText: Text(context.viewState.footerMessage),
                                          state: context.viewState.isShowingFooterError ? .error : .default,

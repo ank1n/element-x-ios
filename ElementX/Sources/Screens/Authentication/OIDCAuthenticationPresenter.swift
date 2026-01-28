@@ -15,17 +15,20 @@ class OIDCAuthenticationPresenter: NSObject {
     private let oidcRedirectURL: URL
     private let presentationAnchor: UIWindow
     private let userIndicatorController: UserIndicatorControllerProtocol
-    
+    private let useEphemeralSession: Bool
+
     private var activeSession: ASWebAuthenticationSession?
-    
+
     init(authenticationService: AuthenticationServiceProtocol,
          oidcRedirectURL: URL,
          presentationAnchor: UIWindow,
-         userIndicatorController: UserIndicatorControllerProtocol) {
+         userIndicatorController: UserIndicatorControllerProtocol,
+         useEphemeralSession: Bool = false) {
         self.authenticationService = authenticationService
         self.oidcRedirectURL = oidcRedirectURL
         self.presentationAnchor = presentationAnchor
         self.userIndicatorController = userIndicatorController
+        self.useEphemeralSession = useEphemeralSession
         super.init()
     }
     
@@ -35,13 +38,13 @@ class OIDCAuthenticationPresenter: NSObject {
             let session = ASWebAuthenticationSession(url: oidcData.url, callback: .oidcRedirectURL(oidcRedirectURL)) { url, error in
                 continuation.resume(returning: (url, error))
             }
-            
-            session.prefersEphemeralWebBrowserSession = false
+
+            session.prefersEphemeralWebBrowserSession = useEphemeralSession
             session.presentationContextProvider = self
             session.additionalHeaderFields = [
                 "X-Element-User-Agent": UserAgentBuilder.makeASCIIUserAgent()
             ]
-            
+
             activeSession = session
             session.start()
         }

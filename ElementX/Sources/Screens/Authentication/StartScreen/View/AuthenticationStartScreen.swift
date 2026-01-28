@@ -41,9 +41,6 @@ struct AuthenticationStartScreen: View {
                     .foregroundColor(.compound.textSecondary)
                     .frame(maxWidth: .infinity)
                     .padding(.bottom)
-                    .onTapGesture(count: 7) {
-                        context.send(viewAction: .reportProblem)
-                    }
                     .accessibilityIdentifier(A11yIdentifiers.authenticationStartScreen.appVersion)
             }
         }

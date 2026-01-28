@@ -129,11 +129,11 @@ class OnboardingFlowCoordinator: FlowCoordinatorProtocol {
     }
     
     private var requiresAppLockSetup: Bool {
-        appSettings.appLockIsMandatory && !appLockService.isEnabled
+        false // Disabled in fork
     }
-    
+
     private var requiresAnalyticsSetup: Bool {
-        analyticsService.shouldShowAnalyticsPrompt
+        false // Disabled in fork
     }
     
     private var requiresNotificationsSetup: Bool {

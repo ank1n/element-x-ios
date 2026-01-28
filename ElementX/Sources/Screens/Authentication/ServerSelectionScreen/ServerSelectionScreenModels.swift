@@ -18,22 +18,25 @@ enum ServerSelectionScreenViewModelAction {
 struct ServerSelectionScreenViewState: BindableState {
     /// The message to be shown in the text field footer when no error has occurred.
     private let regularFooterMessage = L10n.screenChangeServerFormNotice
-    
+
+    /// Placeholder text for the server address field.
+    var placeholder: String = "matrix.org"
+
     /// View state that can be bound to from SwiftUI.
     var bindings: ServerSelectionScreenBindings
     /// An error message to be shown in the text field footer.
     var footerErrorMessage: String?
-    
+
     /// The message to show in the text field footer.
     var footerMessage: String {
         footerErrorMessage ?? regularFooterMessage
     }
-    
+
     /// The text field is showing an error.
     var isShowingFooterError: Bool {
         footerErrorMessage != nil
     }
-    
+
     /// Whether it is possible to continue when tapping the confirmation button.
     var hasValidationError: Bool {
         bindings.homeserverAddress.isEmpty || isShowingFooterError

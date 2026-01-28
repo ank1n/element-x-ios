@@ -110,7 +110,7 @@ class AuthenticationStartScreenViewModel: AuthenticationStartScreenViewModelType
             return
         }
         
-        switch await authenticationService.urlForOIDCLogin(loginHint: loginHint) {
+        switch await authenticationService.urlForOIDCLogin(loginHint: loginHint, forceLogin: false) {
         case .success(let oidcData):
             actionsSubject.send(.loginDirectlyWithOIDC(data: oidcData, window: window))
         case .failure:

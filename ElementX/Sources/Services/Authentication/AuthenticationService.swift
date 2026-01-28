@@ -83,13 +83,15 @@ class AuthenticationService: AuthenticationServiceProtocol {
         }
     }
     
-    func urlForOIDCLogin(loginHint: String?) async -> Result<OIDCAuthorizationDataProxy, AuthenticationServiceError> {
+    func urlForOIDCLogin(loginHint: String?, forceLogin: Bool = false) async -> Result<OIDCAuthorizationDataProxy, AuthenticationServiceError> {
         guard let client else { return .failure(.oidcError(.urlFailure)) }
         do {
             // The create prompt is broken: https://github.com/element-hq/matrix-authentication-service/issues/3429
             // let prompt: OidcPrompt = flow == .register ? .create : .consent
+            // Use .login prompt to force re-authentication when forceLogin is true
+            let prompt: OidcPrompt = forceLogin ? .login : .consent
             let oidcData = try await client.urlForOidc(oidcConfiguration: appSettings.oidcConfiguration.rustValue,
-                                                       prompt: .consent,
+                                                       prompt: prompt,
                                                        loginHint: loginHint,
                                                        deviceId: nil,
                                                        additionalScopes: nil)

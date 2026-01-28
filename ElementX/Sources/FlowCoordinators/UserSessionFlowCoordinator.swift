@@ -96,6 +96,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         widgetsTabFlowCoordinator = WidgetsTabFlowCoordinator(navigationStackCoordinator: widgetsStackCoordinator,
                                                               flowParameters: flowParameters)
         widgetsTabDetails = .init(tag: HomeTab.widgets, title: "Виджеты", icon: \.extensions, selectedIcon: \.extensionsSolid)
+        widgetsTabDetails.barVisibilityOverride = .visible
 
         onboardingStackCoordinator = NavigationStackCoordinator()
         onboardingFlowCoordinator = OnboardingFlowCoordinator(isNewLogin: isNewLogin,
