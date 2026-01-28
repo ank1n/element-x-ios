@@ -20,7 +20,7 @@ enum UserSessionFlowCoordinatorAction {
 }
 
 class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
-    enum HomeTab: Hashable { case chats, spaces }
+    enum HomeTab: Hashable { case chats, spaces, widgets }
     
     private let navigationRootCoordinator: NavigationRootCoordinator
     private let navigationTabCoordinator: NavigationTabCoordinator<HomeTab>
@@ -35,7 +35,9 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
     private let chatsTabDetails: NavigationTabCoordinator<HomeTab>.TabDetails
     private let spacesTabFlowCoordinator: SpacesTabFlowCoordinator
     private let spacesTabDetails: NavigationTabCoordinator<HomeTab>.TabDetails
-    
+    private let widgetsTabFlowCoordinator: WidgetsTabFlowCoordinator
+    private let widgetsTabDetails: NavigationTabCoordinator<HomeTab>.TabDetails
+
     // periphery:ignore - retaining purpose
     private var settingsFlowCoordinator: SettingsFlowCoordinator?
     
@@ -89,7 +91,12 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                                                             flowParameters: flowParameters)
         spacesTabDetails = .init(tag: HomeTab.spaces, title: L10n.screenHomeTabSpaces, icon: \.space, selectedIcon: \.spaceSolid)
         spacesTabDetails.navigationSplitCoordinator = spacesSplitCoordinator
-        
+
+        let widgetsStackCoordinator = NavigationStackCoordinator()
+        widgetsTabFlowCoordinator = WidgetsTabFlowCoordinator(navigationStackCoordinator: widgetsStackCoordinator,
+                                                              flowParameters: flowParameters)
+        widgetsTabDetails = .init(tag: HomeTab.widgets, title: "Виджеты", icon: \.extensions, selectedIcon: \.extensionsSolid)
+
         onboardingStackCoordinator = NavigationStackCoordinator()
         onboardingFlowCoordinator = OnboardingFlowCoordinator(isNewLogin: isNewLogin,
                                                               appLockService: appLockService,
@@ -98,7 +105,8 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         
         navigationTabCoordinator.setTabs([
             .init(coordinator: chatsSplitCoordinator, details: chatsTabDetails),
-            .init(coordinator: spacesSplitCoordinator, details: spacesTabDetails)
+            .init(coordinator: spacesSplitCoordinator, details: spacesTabDetails),
+            .init(coordinator: widgetsStackCoordinator, details: widgetsTabDetails)
         ])
         
         stateMachine = flowParameters.stateMachineFactory.makeUserSessionFlowStateMachine(state: .initial)
@@ -113,6 +121,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
     
     func stop() {
         chatsTabFlowCoordinator.stop()
+        widgetsTabFlowCoordinator.stop()
     }
     
     func handleAppRoute(_ appRoute: AppRoute, animated: Bool) {
