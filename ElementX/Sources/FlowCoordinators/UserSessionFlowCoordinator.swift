@@ -85,12 +85,14 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                                                           flowParameters: flowParameters)
         chatsTabDetails = .init(tag: HomeTab.chats, title: L10n.screenHomeTabChats, icon: \.chat, selectedIcon: \.chatSolid)
         chatsTabDetails.navigationSplitCoordinator = chatsSplitCoordinator
-        
+        chatsTabDetails.barVisibilityOverride = .visible
+
         let spacesSplitCoordinator = NavigationSplitCoordinator(placeholderCoordinator: PlaceholderScreenCoordinator(hideBrandChrome: flowParameters.appSettings.hideBrandChrome))
         spacesTabFlowCoordinator = SpacesTabFlowCoordinator(navigationSplitCoordinator: spacesSplitCoordinator,
                                                             flowParameters: flowParameters)
         spacesTabDetails = .init(tag: HomeTab.spaces, title: L10n.screenHomeTabSpaces, icon: \.space, selectedIcon: \.spaceSolid)
         spacesTabDetails.navigationSplitCoordinator = spacesSplitCoordinator
+        spacesTabDetails.barVisibilityOverride = .visible
 
         let widgetsStackCoordinator = NavigationStackCoordinator()
         widgetsTabFlowCoordinator = WidgetsTabFlowCoordinator(navigationStackCoordinator: widgetsStackCoordinator,
