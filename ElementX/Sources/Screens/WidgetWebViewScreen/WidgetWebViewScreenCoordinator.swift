@@ -8,8 +8,7 @@ import Combine
 import SwiftUI
 
 struct WidgetWebViewScreenCoordinatorParameters {
-    let widget: MatrixWidget
-    let roomProxy: JoinedRoomProxyProtocol
+    let widget: WidgetItem
 }
 
 final class WidgetWebViewScreenCoordinator: CoordinatorProtocol {
@@ -19,7 +18,7 @@ final class WidgetWebViewScreenCoordinator: CoordinatorProtocol {
     init(parameters: WidgetWebViewScreenCoordinatorParameters) {
         self.parameters = parameters
 
-        viewModel = WidgetWebViewScreenViewModel(widget: parameters.widget, roomProxy: parameters.roomProxy)
+        viewModel = WidgetWebViewScreenViewModel(widget: parameters.widget)
     }
 
     func start() {

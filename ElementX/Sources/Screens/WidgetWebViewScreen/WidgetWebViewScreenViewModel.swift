@@ -14,22 +14,8 @@ protocol WidgetWebViewScreenViewModelProtocol {
 }
 
 class WidgetWebViewScreenViewModel: WidgetWebViewScreenViewModelType, WidgetWebViewScreenViewModelProtocol {
-    private let widget: MatrixWidget
-    private let roomProxy: JoinedRoomProxyProtocol
-
-    init(widget: MatrixWidget, roomProxy: JoinedRoomProxyProtocol) {
-        self.widget = widget
-        self.roomProxy = roomProxy
-
-        let webViewModel = WidgetWebViewModel()
-
-        let initialState = WidgetWebViewScreenViewState(
-            widget: widget,
-            roomId: roomProxy.id,
-            userId: roomProxy.ownUserID,
-            displayName: nil,  // TODO: Get user display name
-            webViewModel: webViewModel
-        )
+    init(widget: WidgetItem) {
+        let initialState = WidgetWebViewScreenViewState(widget: widget)
         super.init(initialViewState: initialState)
     }
 

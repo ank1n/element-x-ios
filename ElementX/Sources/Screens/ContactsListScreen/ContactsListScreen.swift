@@ -7,20 +7,12 @@
 import Compound
 import SwiftUI
 
-struct WidgetsListScreen: View {
-    @ObservedObject var context: WidgetsListScreenViewModelType.Context
-    @State private var selectedCategory: AppCategory = .all
-
-    enum AppCategory: String, CaseIterable {
-        case all = "Все"
-        case productivity = "Продуктивность"
-        case communication = "Связь"
-        case tools = "Инструменты"
-    }
+struct ContactsListScreen: View {
+    @ObservedObject var context: ContactsListScreenViewModelType.Context
 
     var body: some View {
         content
-            .navigationTitle("Приложения")
+            .navigationTitle("Контакты")
             .toolbar { toolbar }
             .background(Color.compound.bgCanvasDefault.ignoresSafeArea())
             .toolbarBloom(hasSearchBar: true)
@@ -35,7 +27,7 @@ struct WidgetsListScreen: View {
 
         ToolbarItem(placement: .primaryAction) {
             Button {
-                // Add app action
+                context.send(viewAction: .addContact)
             } label: {
                 CompoundIcon(\.plus)
             }
@@ -65,15 +57,15 @@ struct WidgetsListScreen: View {
                     Section {
                         if context.viewState.isLoading {
                             loadingCells
-                        } else if filteredWidgets.isEmpty {
+                        } else if filteredContacts.isEmpty {
                             emptyStateView(minHeight: geometry.size.height)
                         } else {
-                            ForEach(filteredWidgets) { widget in
-                                widgetCell(widget)
+                            ForEach(filteredContacts) { contact in
+                                contactCell(contact)
                             }
                         }
                     } header: {
-                        categoriesSection
+                        filtersSection
                     }
                 }
                 .searchable(text: $context.searchQuery, placement: .navigationBarDrawer(displayMode: .always))
@@ -81,20 +73,17 @@ struct WidgetsListScreen: View {
                 .disableAutocorrection(true)
             }
             .scrollDismissesKeyboard(.immediately)
-            .scrollBounceBehavior(context.viewState.widgets.isEmpty ? .basedOnSize : .automatic)
+            .scrollBounceBehavior(context.viewState.contacts.isEmpty ? .basedOnSize : .automatic)
         }
     }
 
     @ViewBuilder
-    private var categoriesSection: some View {
+    private var filtersSection: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(AppCategory.allCases, id: \.self) { category in
-                    FilterChipView(title: category.rawValue,
-                                   isSelected: selectedCategory == category) {
-                        selectedCategory = category
-                    }
-                }
+                FilterChipView(title: "Все", isSelected: true) { }
+                FilterChipView(title: "В сети", isSelected: false) { }
+                FilterChipView(title: "Избранные", isSelected: false) { }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -112,7 +101,7 @@ struct WidgetsListScreen: View {
 
     private var skeletonCell: some View {
         HStack(spacing: 16) {
-            RoundedRectangle(cornerRadius: 12)
+            Circle()
                 .fill(Color.compound.bgSubtleSecondary)
                 .frame(width: 52, height: 52)
 
@@ -123,7 +112,7 @@ struct WidgetsListScreen: View {
 
                 RoundedRectangle(cornerRadius: 4)
                     .fill(Color.compound.bgSubtleSecondary)
-                    .frame(width: 180, height: 14)
+                    .frame(width: 100, height: 14)
             }
 
             Spacer()
@@ -136,15 +125,15 @@ struct WidgetsListScreen: View {
         VStack(spacing: 16) {
             Spacer()
 
-            Image(systemName: "square.grid.2x2")
+            Image(systemName: "person.2")
                 .font(.system(size: 64))
                 .foregroundColor(.compound.textSecondary)
 
-            Text("Нет приложений")
+            Text("Нет контактов")
                 .font(.compound.headingLG)
                 .foregroundColor(.compound.textPrimary)
 
-            Text("Приложения будут отображаться здесь")
+            Text("Начните чат с кем-нибудь, чтобы добавить контакт")
                 .font(.compound.bodyMD)
                 .foregroundColor(.compound.textSecondary)
                 .multilineTextAlignment(.center)
@@ -155,45 +144,43 @@ struct WidgetsListScreen: View {
         .frame(minHeight: minHeight - 100)
     }
 
-    private var filteredWidgets: [WidgetItem] {
-        var widgets = context.viewState.widgets
-
-        if !context.searchQuery.isEmpty {
-            widgets = widgets.filter {
-                $0.name.localizedCaseInsensitiveContains(context.searchQuery) ||
-                $0.description.localizedCaseInsensitiveContains(context.searchQuery)
-            }
+    private var filteredContacts: [ContactItem] {
+        if context.searchQuery.isEmpty {
+            return context.viewState.contacts
         }
-
-        return widgets
+        return context.viewState.contacts.filter {
+            $0.displayName.localizedCaseInsensitiveContains(context.searchQuery)
+        }
     }
 
-    private func widgetCell(_ widget: WidgetItem) -> some View {
+    private func contactCell(_ contact: ContactItem) -> some View {
         Button {
-            context.send(viewAction: .selectWidget(widget))
+            context.send(viewAction: .selectContact(contact))
         } label: {
             HStack(spacing: 16) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(iconColor(for: widget.name))
-                        .frame(width: 52, height: 52)
-
-                    Image(systemName: widget.icon)
-                        .font(.system(size: 24))
-                        .foregroundColor(.white)
-                }
+                LoadableAvatarImage(url: contact.avatarURL,
+                                    name: contact.displayName,
+                                    contentID: contact.id,
+                                    avatarSize: .room(on: .chats),
+                                    mediaProvider: context.mediaProvider)
+                    .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(widget.name)
+                    Text(contact.displayName)
                         .font(.compound.bodyLGSemibold)
                         .foregroundColor(.compound.textPrimary)
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                    Text(widget.description)
-                        .font(.compound.bodySM)
-                        .foregroundColor(.compound.textSecondary)
-                        .lineLimit(2)
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(contact.isOnline ? Color.green : Color.compound.iconTertiary)
+                            .frame(width: 8, height: 8)
+
+                        Text(contact.isOnline ? "В сети" : "Не в сети")
+                            .font(.compound.bodySM)
+                            .foregroundColor(.compound.textSecondary)
+                    }
                 }
                 .padding(.vertical, 12)
                 .overlay(alignment: .bottom) {
@@ -206,28 +193,36 @@ struct WidgetsListScreen: View {
         }
         .buttonStyle(.plain)
     }
+}
 
-    private func iconColor(for name: String) -> Color {
-        let colors: [Color] = [
-            Color(red: 0.2, green: 0.6, blue: 0.9),
-            Color(red: 0.3, green: 0.7, blue: 0.4),
-            Color(red: 0.9, green: 0.5, blue: 0.2),
-            Color(red: 0.6, green: 0.3, blue: 0.8),
-            Color(red: 0.9, green: 0.3, blue: 0.4),
-            Color(red: 0.2, green: 0.7, blue: 0.7),
-        ]
-        let index = abs(name.hashValue) % colors.count
-        return colors[index]
+// MARK: - Filter Chip View
+
+struct FilterChipView: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.compound.bodySM)
+                .foregroundColor(isSelected ? .white : .compound.textPrimary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(isSelected ? Color.compound.bgActionPrimaryRest : Color.compound.bgSubtleSecondary)
+                .cornerRadius(16)
+        }
+        .buttonStyle(.plain)
     }
 }
 
 // MARK: - Previews
 
-struct WidgetsListScreen_Previews: PreviewProvider {
+struct ContactsListScreen_Previews: PreviewProvider {
     static var previews: some View {
-        let viewModel = WidgetsListScreenViewModel(userSession: UserSessionMock(.init()))
+        let viewModel = ContactsListScreenViewModel(userSession: UserSessionMock(.init()))
         NavigationStack {
-            WidgetsListScreen(context: viewModel.context)
+            ContactsListScreen(context: viewModel.context)
         }
     }
 }

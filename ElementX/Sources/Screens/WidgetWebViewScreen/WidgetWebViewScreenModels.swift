@@ -11,9 +11,6 @@ enum WidgetWebViewScreenViewAction {
 }
 
 struct WidgetWebViewScreenViewState: BindableState {
-    let widget: MatrixWidget
-    let roomId: String
-    let userId: String
-    let displayName: String?
-    let webViewModel: WidgetWebViewModel
+    let widget: WidgetItem
+    var isLoading: Bool = true
 }

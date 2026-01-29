@@ -39,14 +39,22 @@ import SwiftUI
         }
         
         func barVisibility(in horizontalSizeClass: UserInterfaceSizeClass?) -> Visibility {
+            print("🔍 TabBar barVisibility для \(tag)")
+            print("   barVisibilityOverride: \(String(describing: barVisibilityOverride))")
+            print("   horizontalSizeClass: \(String(describing: horizontalSizeClass))")
+            print("   detailCoordinator: \(String(describing: navigationSplitCoordinator?.detailCoordinator))")
+
             if let barVisibilityOverride {
-                barVisibilityOverride
+                print("   → returning barVisibilityOverride: \(barVisibilityOverride)")
+                return barVisibilityOverride
             } else if horizontalSizeClass == .compact, navigationSplitCoordinator?.detailCoordinator != nil {
                 // Whilst we support pushing screens on the stack in the sidebarCoordinator, in practice
                 // we never do that, so simply checking that the detailCoordinator exists is enough.
-                .hidden
+                print("   → returning .hidden (compact + detailCoordinator)")
+                return .hidden
             } else {
-                .automatic
+                print("   → returning .automatic")
+                return .automatic
             }
         }
     }
@@ -84,14 +92,20 @@ import SwiftUI
     
     /// Updates the displayed tabs with the provided array.
     func setTabs(_ tabs: [Tab], animated: Bool = true) {
+        print("🔍 NavigationTabCoordinator.setTabs called with \(tabs.count) tabs")
+        tabs.forEach { tab in
+            print("   - Tab: \(tab.details.title), barVisibilityOverride: \(String(describing: tab.details.barVisibilityOverride))")
+        }
+
         var transaction = Transaction()
         transaction.disablesAnimations = !animated
-        
+
         withTransaction(transaction) {
             tabModules = tabs.map { TabModule(module: .init($0.coordinator, dismissalCallback: $0.dismissalCallback), details: $0.details) }
         }
-        
+
         selectedTab = tabModules.first?.details.tag
+        print("   selectedTab set to: \(String(describing: selectedTab))")
     }
     
     /// The currently selected tab's tag.

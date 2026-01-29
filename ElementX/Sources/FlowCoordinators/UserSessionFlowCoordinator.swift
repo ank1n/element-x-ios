@@ -20,23 +20,27 @@ enum UserSessionFlowCoordinatorAction {
 }
 
 class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
-    enum HomeTab: Hashable { case chats, spaces, widgets }
-    
+    enum HomeTab: Hashable { case contacts, calls, chats, apps }
+
     private let navigationRootCoordinator: NavigationRootCoordinator
     private let navigationTabCoordinator: NavigationTabCoordinator<HomeTab>
     private let appLockService: AppLockServiceProtocol
     private let flowParameters: CommonFlowParameters
-    
+
     private var userSession: UserSessionProtocol { flowParameters.userSession }
-    
+
     private let onboardingFlowCoordinator: OnboardingFlowCoordinator
     private let onboardingStackCoordinator: NavigationStackCoordinator
+
+    // Tab coordinators
+    private let contactsTabFlowCoordinator: ContactsTabFlowCoordinator
+    private let contactsTabDetails: NavigationTabCoordinator<HomeTab>.TabDetails
+    private let callsTabFlowCoordinator: CallsTabFlowCoordinator
+    private let callsTabDetails: NavigationTabCoordinator<HomeTab>.TabDetails
     private let chatsTabFlowCoordinator: ChatsTabFlowCoordinator
     private let chatsTabDetails: NavigationTabCoordinator<HomeTab>.TabDetails
-    private let spacesTabFlowCoordinator: SpacesTabFlowCoordinator
-    private let spacesTabDetails: NavigationTabCoordinator<HomeTab>.TabDetails
-    private let widgetsTabFlowCoordinator: WidgetsTabFlowCoordinator
-    private let widgetsTabDetails: NavigationTabCoordinator<HomeTab>.TabDetails
+    private let appsTabFlowCoordinator: WidgetsTabFlowCoordinator
+    private let appsTabDetails: NavigationTabCoordinator<HomeTab>.TabDetails
 
     // periphery:ignore - retaining purpose
     private var settingsFlowCoordinator: SettingsFlowCoordinator?
@@ -78,38 +82,48 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         
         navigationTabCoordinator = NavigationTabCoordinator()
         navigationRootCoordinator.setRootCoordinator(navigationTabCoordinator)
-        
+
+        // 1. Contacts tab
+        let contactsStackCoordinator = NavigationStackCoordinator()
+        contactsTabFlowCoordinator = ContactsTabFlowCoordinator(navigationStackCoordinator: contactsStackCoordinator,
+                                                                 flowParameters: flowParameters)
+        contactsTabDetails = .init(tag: HomeTab.contacts, title: "Контакты", icon: \.userProfile, selectedIcon: \.userProfileSolid)
+        contactsTabDetails.barVisibilityOverride = .visible
+
+        // 2. Calls tab
+        let callsStackCoordinator = NavigationStackCoordinator()
+        callsTabFlowCoordinator = CallsTabFlowCoordinator(navigationStackCoordinator: callsStackCoordinator,
+                                                          flowParameters: flowParameters)
+        callsTabDetails = .init(tag: HomeTab.calls, title: "Звонки", icon: \.voiceCall, selectedIcon: \.voiceCallSolid)
+        callsTabDetails.barVisibilityOverride = .visible
+
+        // 3. Chats tab
         let chatsSplitCoordinator = NavigationSplitCoordinator(placeholderCoordinator: PlaceholderScreenCoordinator(hideBrandChrome: flowParameters.appSettings.hideBrandChrome))
         chatsTabFlowCoordinator = ChatsTabFlowCoordinator(isNewLogin: isNewLogin,
                                                           navigationSplitCoordinator: chatsSplitCoordinator,
                                                           flowParameters: flowParameters)
-        chatsTabDetails = .init(tag: HomeTab.chats, title: L10n.screenHomeTabChats, icon: \.chat, selectedIcon: \.chatSolid)
+        chatsTabDetails = .init(tag: HomeTab.chats, title: "Чаты", icon: \.chat, selectedIcon: \.chatSolid)
         chatsTabDetails.navigationSplitCoordinator = chatsSplitCoordinator
         chatsTabDetails.barVisibilityOverride = .visible
 
-        let spacesSplitCoordinator = NavigationSplitCoordinator(placeholderCoordinator: PlaceholderScreenCoordinator(hideBrandChrome: flowParameters.appSettings.hideBrandChrome))
-        spacesTabFlowCoordinator = SpacesTabFlowCoordinator(navigationSplitCoordinator: spacesSplitCoordinator,
-                                                            flowParameters: flowParameters)
-        spacesTabDetails = .init(tag: HomeTab.spaces, title: L10n.screenHomeTabSpaces, icon: \.space, selectedIcon: \.spaceSolid)
-        spacesTabDetails.navigationSplitCoordinator = spacesSplitCoordinator
-        spacesTabDetails.barVisibilityOverride = .visible
-
-        let widgetsStackCoordinator = NavigationStackCoordinator()
-        widgetsTabFlowCoordinator = WidgetsTabFlowCoordinator(navigationStackCoordinator: widgetsStackCoordinator,
-                                                              flowParameters: flowParameters)
-        widgetsTabDetails = .init(tag: HomeTab.widgets, title: "Виджеты", icon: \.extensions, selectedIcon: \.extensionsSolid)
-        widgetsTabDetails.barVisibilityOverride = .visible
+        // 4. Apps tab
+        let appsStackCoordinator = NavigationStackCoordinator()
+        appsTabFlowCoordinator = WidgetsTabFlowCoordinator(navigationStackCoordinator: appsStackCoordinator,
+                                                           flowParameters: flowParameters)
+        appsTabDetails = .init(tag: HomeTab.apps, title: "Приложения", icon: \.extensions, selectedIcon: \.extensionsSolid)
+        appsTabDetails.barVisibilityOverride = .visible
 
         onboardingStackCoordinator = NavigationStackCoordinator()
         onboardingFlowCoordinator = OnboardingFlowCoordinator(isNewLogin: isNewLogin,
                                                               appLockService: appLockService,
                                                               navigationStackCoordinator: onboardingStackCoordinator,
                                                               flowParameters: flowParameters)
-        
+
         navigationTabCoordinator.setTabs([
+            .init(coordinator: contactsStackCoordinator, details: contactsTabDetails),
+            .init(coordinator: callsStackCoordinator, details: callsTabDetails),
             .init(coordinator: chatsSplitCoordinator, details: chatsTabDetails),
-            .init(coordinator: spacesSplitCoordinator, details: spacesTabDetails),
-            .init(coordinator: widgetsStackCoordinator, details: widgetsTabDetails)
+            .init(coordinator: appsStackCoordinator, details: appsTabDetails)
         ])
         
         stateMachine = flowParameters.stateMachineFactory.makeUserSessionFlowStateMachine(state: .initial)
@@ -123,8 +137,10 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
     }
     
     func stop() {
+        contactsTabFlowCoordinator.stop()
+        callsTabFlowCoordinator.stop()
         chatsTabFlowCoordinator.stop()
-        widgetsTabFlowCoordinator.stop()
+        appsTabFlowCoordinator.stop()
     }
     
     func handleAppRoute(_ appRoute: AppRoute, animated: Bool) {
@@ -183,8 +199,10 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         stateMachine.addRoutes(event: .start, transitions: [.initial => .tabBar]) { [weak self] _ in
             guard let self else { return }
             
+            contactsTabFlowCoordinator.start()
+            callsTabFlowCoordinator.start()
             chatsTabFlowCoordinator.start()
-            spacesTabFlowCoordinator.start()
+            appsTabFlowCoordinator.start()
             attemptStartingOnboarding()
         }
         
@@ -223,20 +241,39 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
             }
             .store(in: &cancellables)
         
-        spacesTabFlowCoordinator.actionsPublisher
+        // Contacts tab actions
+        contactsTabFlowCoordinator.actionsPublisher
             .sink { [weak self] action in
                 guard let self else { return }
                 switch action {
-                case .presentCallScreen(let roomProxy):
-                    presentCallScreen(roomProxy: roomProxy)
-                case .verifyUser(let userID):
-                    presentSessionVerificationScreen(flow: .userInitiator(userID: userID))
                 case .showSettings:
                     stateMachine.tryEvent(.showSettingsScreen)
                 }
             }
             .store(in: &cancellables)
-        
+
+        // Calls tab actions
+        callsTabFlowCoordinator.actionsPublisher
+            .sink { [weak self] action in
+                guard let self else { return }
+                switch action {
+                case .showSettings:
+                    stateMachine.tryEvent(.showSettingsScreen)
+                }
+            }
+            .store(in: &cancellables)
+
+        // Apps tab actions
+        appsTabFlowCoordinator.actionsPublisher
+            .sink { [weak self] action in
+                guard let self else { return }
+                switch action {
+                case .showSettings:
+                    stateMachine.tryEvent(.showSettingsScreen)
+                }
+            }
+            .store(in: &cancellables)
+
         userSession.sessionSecurityStatePublisher
             .map(\.verificationState)
             .filter { $0 != .unknown }
@@ -299,13 +336,14 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
             }
             .store(in: &cancellables)
         
-        userSession.clientProxy.spaceService.topLevelSpacesPublisher
-            .combineLatest(flowParameters.appSettings.$createSpaceEnabled)
-            .map { topLevelSpaces, isCreateSpaceEnabled in
-                !isCreateSpaceEnabled && topLevelSpaces.isEmpty ? .hidden : nil
-            }
-            .weakAssign(to: \.chatsTabDetails.barVisibilityOverride, on: self)
-            .store(in: &cancellables)
+        // Always keep TabBar visible - don't hide based on spaces
+        // userSession.clientProxy.spaceService.topLevelSpacesPublisher
+        //     .combineLatest(flowParameters.appSettings.$createSpaceEnabled)
+        //     .map { topLevelSpaces, isCreateSpaceEnabled in
+        //         !isCreateSpaceEnabled && topLevelSpaces.isEmpty ? .hidden : nil
+        //     }
+        //     .weakAssign(to: \.chatsTabDetails.barVisibilityOverride, on: self)
+        //     .store(in: &cancellables)
     }
     
     // MARK: - Onboarding
@@ -443,7 +481,8 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                                                                             allowPictureInPicture: true,
                                                                             appSettings: flowParameters.appSettings,
                                                                             appHooks: flowParameters.appHooks,
-                                                                            analytics: flowParameters.analytics))
+                                                                            analytics: flowParameters.analytics,
+                                                                            recordingService: ServiceLocator.shared.recordingService))
         
         callScreenCoordinator.actions
             .sink { [weak self] action in

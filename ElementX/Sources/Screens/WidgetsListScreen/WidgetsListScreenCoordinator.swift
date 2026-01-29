@@ -13,7 +13,7 @@ struct WidgetsListScreenCoordinatorParameters {
 
 enum WidgetsListScreenCoordinatorAction {
     case showSettings
-    case openWidget(widget: MatrixWidget, roomId: String)
+    case openWidget(WidgetItem)
 }
 
 final class WidgetsListScreenCoordinator: CoordinatorProtocol {
@@ -38,8 +38,8 @@ final class WidgetsListScreenCoordinator: CoordinatorProtocol {
             switch action {
             case .showSettings:
                 self.actionsSubject.send(.showSettings)
-            case .openWidget(let widget, let roomId):
-                self.actionsSubject.send(.openWidget(widget: widget, roomId: roomId))
+            case .openWidget(let widget):
+                self.actionsSubject.send(.openWidget(widget))
             }
         }
         .store(in: &cancellables)

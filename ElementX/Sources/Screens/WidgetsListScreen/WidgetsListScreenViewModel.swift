@@ -17,6 +17,7 @@ protocol WidgetsListScreenViewModelProtocol {
 class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScreenViewModelProtocol {
     private let userSession: UserSessionProtocol
     private let actionsSubject: PassthroughSubject<WidgetsListScreenViewModelAction, Never> = .init()
+    private var widgetsCancellables: Set<AnyCancellable> = []
 
     var actionsPublisher: AnyPublisher<WidgetsListScreenViewModelAction, Never> {
         actionsSubject.eraseToAnyPublisher()
@@ -25,62 +26,84 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
     init(userSession: UserSessionProtocol) {
         self.userSession = userSession
 
-        super.init(initialViewState: WidgetsListScreenViewState(), mediaProvider: userSession.mediaProvider)
+        var initialState = WidgetsListScreenViewState()
+        initialState.userID = userSession.clientProxy.userID
+        initialState.userDisplayName = userSession.clientProxy.userDisplayNamePublisher.value
+        initialState.userAvatarURL = userSession.clientProxy.userAvatarURLPublisher.value
 
-        Task {
-            await loadWidgets()
-        }
+        super.init(initialViewState: initialState, mediaProvider: userSession.mediaProvider)
+
+        setupSubscriptions()
+        loadWidgets()
     }
 
     override func process(viewAction: WidgetsListScreenViewAction) {
         switch viewAction {
         case .showSettings:
             actionsSubject.send(.showSettings)
-        case .selectWidget(let item):
-            // Open first widget in the room
-            if let widget = item.widgets.first {
-                actionsSubject.send(.openWidget(widget: widget, roomId: item.id))
-            }
+        case .selectWidget(let widget):
+            actionsSubject.send(.openWidget(widget))
         }
     }
 
     // MARK: - Private
 
-    private func loadWidgets() async {
-        state.isLoading = true
+    private func setupSubscriptions() {
+        userSession.clientProxy.userDisplayNamePublisher
+            .receive(on: DispatchQueue.main)
+            .weakAssign(to: \.state.userDisplayName, on: self)
+            .store(in: &widgetsCancellables)
 
-        var roomsWithWidgets: [WidgetRoomItem] = []
+        userSession.clientProxy.userAvatarURLPublisher
+            .receive(on: DispatchQueue.main)
+            .weakAssign(to: \.state.userAvatarURL, on: self)
+            .store(in: &widgetsCancellables)
 
-        // Get all room summaries from provider
-        let roomSummaryProvider = userSession.clientProxy.roomSummaryProvider
-        let summaries = roomSummaryProvider.roomListPublisher.value
+        userSession.sessionSecurityStatePublisher
+            .map { $0.verificationState != .verified || $0.recoveryState != .enabled }
+            .receive(on: DispatchQueue.main)
+            .weakAssign(to: \.state.requiresExtraAccountSetup, on: self)
+            .store(in: &widgetsCancellables)
+    }
 
-        // For demo purposes, show all rooms with demo widgets
-        // TODO: In production, fetch actual widgets from room state events
-        for summary in summaries where !summary.isSpace {
-            // Demo widget for each room
-            let demoWidgets = [
-                MatrixWidget(
-                    id: "stats_widget_\(summary.id)",
-                    type: "customwidget",
-                    name: "Статистика",
-                    url: "https://stats.market.implica.ru/?roomId=\(summary.id)",
-                    creatorUserId: "@system:matrix.org",
-                    waitForIframeLoad: true,
-                    data: nil
-                )
-            ]
-
-            let item = WidgetRoomItem(
-                id: summary.id,
-                roomName: summary.name,
-                roomAvatar: summary.avatar,
-                widgets: demoWidgets
+    private func loadWidgets() {
+        state.widgets = [
+            WidgetItem(
+                id: "statistics",
+                name: "Статистика",
+                description: "Просмотр статистики и аналитики",
+                icon: "chart.bar.fill",
+                url: "https://stats.market.implica.ru/"
+            ),
+            WidgetItem(
+                id: "calendar",
+                name: "Календарь",
+                description: "Календарь событий и встреч",
+                icon: "calendar",
+                url: "https://calendar.market.implica.ru/"
+            ),
+            WidgetItem(
+                id: "tasks",
+                name: "Задачи",
+                description: "Управление задачами и проектами",
+                icon: "checklist",
+                url: "https://tasks.market.implica.ru/"
+            ),
+            WidgetItem(
+                id: "files",
+                name: "Файлы",
+                description: "Файловый менеджер",
+                icon: "folder.fill",
+                url: "https://files.market.implica.ru/"
+            ),
+            WidgetItem(
+                id: "notes",
+                name: "Заметки",
+                description: "Создание и редактирование заметок",
+                icon: "note.text",
+                url: "https://notes.market.implica.ru/"
             )
-            roomsWithWidgets.append(item)
-        }
-
-        state.rooms = roomsWithWidgets
+        ]
         state.isLoading = false
     }
 }

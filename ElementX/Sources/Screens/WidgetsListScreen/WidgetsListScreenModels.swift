@@ -8,23 +8,37 @@ import Foundation
 
 enum WidgetsListScreenViewAction {
     case showSettings
-    case selectWidget(WidgetRoomItem)
+    case selectWidget(WidgetItem)
 }
 
 enum WidgetsListScreenViewModelAction {
     case showSettings
-    case openWidget(widget: MatrixWidget, roomId: String)
+    case openWidget(WidgetItem)
 }
 
 struct WidgetsListScreenViewState: BindableState {
-    var rooms: [WidgetRoomItem] = []
+    var widgets: [WidgetItem] = []
     var isLoading: Bool = false
+    var searchQuery = ""
+
+    // User info for avatar
+    var userID: String = ""
+    var userDisplayName: String?
+    var userAvatarURL: URL?
+    var requiresExtraAccountSetup = false
+
+    var bindings = WidgetsListScreenViewStateBindings()
 }
 
-/// Room with widgets
-struct WidgetRoomItem: Identifiable, Equatable {
-    let id: String  // Room ID
-    let roomName: String
-    let roomAvatar: RoomAvatar
-    let widgets: [MatrixWidget]
+struct WidgetsListScreenViewStateBindings {
+    var searchQuery = ""
+}
+
+/// Available widget
+struct WidgetItem: Identifiable, Equatable {
+    let id: String
+    let name: String
+    let description: String
+    let icon: String
+    let url: String
 }

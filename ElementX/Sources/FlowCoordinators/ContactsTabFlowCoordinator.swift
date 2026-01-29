@@ -8,20 +8,20 @@ import Combine
 import Foundation
 import SwiftState
 
-enum WidgetsTabFlowCoordinatorAction {
+enum ContactsTabFlowCoordinatorAction {
     case showSettings
 }
 
-class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
+class ContactsTabFlowCoordinator: FlowCoordinatorProtocol {
     private let userSession: UserSessionProtocol
     private var flowParameters: CommonFlowParameters
     private let navigationStackCoordinator: NavigationStackCoordinator
 
-    private var widgetsListCoordinator: WidgetsListScreenCoordinator?
+    private var contactsListCoordinator: ContactsListScreenCoordinator?
 
     enum State: StateType {
         case initial
-        case widgetsListScreen
+        case contactsListScreen
     }
 
     enum Event: EventType {
@@ -31,8 +31,8 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
     private let stateMachine: StateMachine<State, Event>
     private var cancellables: Set<AnyCancellable> = []
 
-    private let actionsSubject: PassthroughSubject<WidgetsTabFlowCoordinatorAction, Never> = .init()
-    var actionsPublisher: AnyPublisher<WidgetsTabFlowCoordinatorAction, Never> {
+    private let actionsSubject: PassthroughSubject<ContactsTabFlowCoordinatorAction, Never> = .init()
+    var actionsPublisher: AnyPublisher<ContactsTabFlowCoordinatorAction, Never> {
         actionsSubject.eraseToAnyPublisher()
     }
 
@@ -58,20 +58,20 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
     }
 
     func stop() {
-        widgetsListCoordinator?.stop()
+        contactsListCoordinator?.stop()
     }
 
     // MARK: - Private
 
     private func configureStateMachine() {
-        stateMachine.addRoutes(event: .start, transitions: [.initial => .widgetsListScreen]) { [weak self] _ in
-            self?.showWidgetsListScreen()
+        stateMachine.addRoutes(event: .start, transitions: [.initial => .contactsListScreen]) { [weak self] _ in
+            self?.showContactsListScreen()
         }
     }
 
-    private func showWidgetsListScreen() {
-        let parameters = WidgetsListScreenCoordinatorParameters(userSession: userSession)
-        let coordinator = WidgetsListScreenCoordinator(parameters: parameters)
+    private func showContactsListScreen() {
+        let parameters = ContactsListScreenCoordinatorParameters(userSession: userSession)
+        let coordinator = ContactsListScreenCoordinator(parameters: parameters)
 
         coordinator.actionsPublisher.sink { [weak self] action in
             guard let self else { return }
@@ -79,20 +79,14 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
             switch action {
             case .showSettings:
                 self.actionsSubject.send(.showSettings)
-            case .openWidget(let widget):
-                self.presentWidget(widget)
+            case .openChat(let roomId):
+                // TODO: Navigate to chat
+                MXLog.info("Open chat: \(roomId)")
             }
         }
         .store(in: &cancellables)
 
         navigationStackCoordinator.setRootCoordinator(coordinator)
-        widgetsListCoordinator = coordinator
-    }
-
-    private func presentWidget(_ widget: WidgetItem) {
-        let parameters = WidgetWebViewScreenCoordinatorParameters(widget: widget)
-        let coordinator = WidgetWebViewScreenCoordinator(parameters: parameters)
-
-        navigationStackCoordinator.push(coordinator)
+        contactsListCoordinator = coordinator
     }
 }
