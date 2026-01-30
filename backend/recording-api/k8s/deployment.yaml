@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recording-api
+  namespace: livekit
+  labels:
+    app: recording-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: recording-api
+  template:
+    metadata:
+      labels:
+        app: recording-api
+    spec:
+      containers:
+      - name: recording-api
+        image: recording-api:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 3000
+          name: http
+        env:
+        - name: PORT
+          value: "3000"
+        - name: LIVEKIT_URL
+          valueFrom:
+            configMapKeyRef:
+              name: recording-api-config
+              key: LIVEKIT_URL
+        - name: LIVEKIT_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: recording-api-secret
+              key: LIVEKIT_API_KEY
+        - name: LIVEKIT_API_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: recording-api-secret
+              key: LIVEKIT_API_SECRET
+        - name: S3_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: recording-api-config
+              key: S3_ENDPOINT
+        - name: S3_BUCKET
+          valueFrom:
+            configMapKeyRef:
+              name: recording-api-config
+              key: S3_BUCKET
+        - name: S3_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: recording-api-secret
+              key: S3_ACCESS_KEY
+        - name: S3_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: recording-api-secret
+              key: S3_SECRET_KEY
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1001
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true

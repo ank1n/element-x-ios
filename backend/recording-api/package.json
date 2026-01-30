@@ -1,0 +1,20 @@
+{
+  "name": "recording-api",
+  "version": "1.0.0",
+  "description": "LiveKit Recording API for Element X Fork",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "livekit-server-sdk": "^2.0.0",
+    "cors": "^2.8.5",
+    "helmet": "^7.1.0",
+    "morgan": "^1.10.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

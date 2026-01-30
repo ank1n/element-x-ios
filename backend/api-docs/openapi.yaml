@@ -1,0 +1,1410 @@
+openapi: 3.0.3
+info:
+  title: Element X Custom Platform API
+  description: |
+    # Обзор
+
+    Полная документация API для кастомизированной платформы Element X.
+
+    ## Разделы
+
+    - **Matrix Client-Server API** — основной протокол Matrix для сообщений и комнат
+    - **Element Call API** — видео/аудио звонки через LiveKit
+    - **Recording API** — запись звонков (кастомное расширение)
+    - **Apps API** — встраиваемые приложения (кастомное расширение)
+
+    ## Аутентификация
+
+    Все запросы к Matrix API требуют Bearer токен:
+    ```
+    Authorization: Bearer <access_token>
+    ```
+
+    ## Серверы
+
+    | Окружение | URL |
+    |-----------|-----|
+    | Production | https://market.implica.ru |
+    | Matrix | https://matrix.market.implica.ru |
+    | LiveKit | wss://livekit.market.implica.ru |
+
+  version: 1.0.0
+  contact:
+    name: Development Team
+    email: dev@implica.ru
+  license:
+    name: AGPL-3.0
+    url: https://www.gnu.org/licenses/agpl-3.0.html
+
+servers:
+  - url: https://market.implica.ru
+    description: Production API
+  - url: https://matrix.market.implica.ru
+    description: Matrix Homeserver
+  - url: https://api.market.implica.ru
+    description: Custom APIs (Recording, Apps)
+
+tags:
+  - name: Matrix Auth
+    description: Аутентификация и регистрация Matrix
+  - name: Matrix Rooms
+    description: Работа с комнатами Matrix
+  - name: Matrix Messages
+    description: Отправка и получение сообщений
+  - name: Matrix Sync
+    description: Синхронизация состояния клиента
+  - name: Matrix Presence
+    description: Статус присутствия пользователей
+  - name: Element Call
+    description: Видео/аудио звонки через Element Call
+  - name: Recording
+    description: |
+      **[CUSTOM]** Запись звонков через LiveKit Egress.
+      Требует развернутый Recording API сервер.
+  - name: Apps
+    description: |
+      **[CUSTOM]** Встраиваемые веб-приложения (виджеты).
+
+paths:
+  # ============================================
+  # MATRIX AUTH
+  # ============================================
+  /_matrix/client/v3/login:
+    get:
+      tags: [Matrix Auth]
+      summary: Получить доступные методы входа
+      operationId: getLoginFlows
+      responses:
+        '200':
+          description: Список методов аутентификации
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  flows:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type:
+                          type: string
+                          example: "m.login.password"
+              example:
+                flows:
+                  - type: "m.login.password"
+                  - type: "m.login.sso"
+                  - type: "m.login.token"
+
+    post:
+      tags: [Matrix Auth]
+      summary: Войти в аккаунт
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/PasswordLogin'
+                - $ref: '#/components/schemas/TokenLogin'
+            examples:
+              password:
+                summary: Вход по паролю
+                value:
+                  type: "m.login.password"
+                  identifier:
+                    type: "m.id.user"
+                    user: "@user:server.com"
+                  password: "secret"
+                  initial_device_display_name: "Element X iOS"
+              token:
+                summary: Вход по токену
+                value:
+                  type: "m.login.token"
+                  token: "login_token_here"
+      responses:
+        '200':
+          description: Успешный вход
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Аккаунт заблокирован
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /_matrix/client/v3/logout:
+    post:
+      tags: [Matrix Auth]
+      summary: Выйти из аккаунта
+      operationId: logout
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Успешный выход
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /_matrix/client/v3/register:
+    post:
+      tags: [Matrix Auth]
+      summary: Зарегистрировать нового пользователя
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                  example: "newuser"
+                password:
+                  type: string
+                  example: "securepassword123"
+                initial_device_display_name:
+                  type: string
+                  example: "Element X iOS"
+                auth:
+                  type: object
+                  description: Данные интерактивной аутентификации
+      responses:
+        '200':
+          description: Регистрация завершена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Требуется интерактивная аутентификация
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthFlows'
+
+  # ============================================
+  # MATRIX SYNC
+  # ============================================
+  /_matrix/client/v3/sync:
+    get:
+      tags: [Matrix Sync]
+      summary: Синхронизация состояния клиента
+      description: |
+        Long-polling endpoint для получения обновлений.
+        Возвращает новые сообщения, изменения комнат, присутствие и т.д.
+      operationId: sync
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: since
+          in: query
+          description: Токен для инкрементальной синхронизации
+          schema:
+            type: string
+        - name: timeout
+          in: query
+          description: Время ожидания в миллисекундах (long-polling)
+          schema:
+            type: integer
+            default: 30000
+        - name: filter
+          in: query
+          description: ID фильтра или JSON фильтра
+          schema:
+            type: string
+        - name: full_state
+          in: query
+          description: Вернуть полное состояние комнат
+          schema:
+            type: boolean
+            default: false
+        - name: set_presence
+          in: query
+          description: Установить статус присутствия
+          schema:
+            type: string
+            enum: [online, offline, unavailable]
+      responses:
+        '200':
+          description: Данные синхронизации
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncResponse'
+
+  # ============================================
+  # MATRIX ROOMS
+  # ============================================
+  /_matrix/client/v3/joined_rooms:
+    get:
+      tags: [Matrix Rooms]
+      summary: Список комнат пользователя
+      operationId: getJoinedRooms
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Список ID комнат
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  joined_rooms:
+                    type: array
+                    items:
+                      type: string
+                    example: ["!room1:server.com", "!room2:server.com"]
+
+  /_matrix/client/v3/createRoom:
+    post:
+      tags: [Matrix Rooms]
+      summary: Создать новую комнату
+      operationId: createRoom
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRoomRequest'
+      responses:
+        '200':
+          description: Комната создана
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  room_id:
+                    type: string
+                    example: "!newroom:server.com"
+
+  /_matrix/client/v3/rooms/{roomId}/join:
+    post:
+      tags: [Matrix Rooms]
+      summary: Присоединиться к комнате
+      operationId: joinRoom
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/roomId'
+      responses:
+        '200':
+          description: Успешно присоединился
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  room_id:
+                    type: string
+
+  /_matrix/client/v3/rooms/{roomId}/leave:
+    post:
+      tags: [Matrix Rooms]
+      summary: Покинуть комнату
+      operationId: leaveRoom
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/roomId'
+      responses:
+        '200':
+          description: Успешно покинул комнату
+
+  /_matrix/client/v3/rooms/{roomId}/members:
+    get:
+      tags: [Matrix Rooms]
+      summary: Получить участников комнаты
+      operationId: getRoomMembers
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/roomId'
+        - name: membership
+          in: query
+          schema:
+            type: string
+            enum: [join, invite, leave, ban]
+      responses:
+        '200':
+          description: Список участников
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  chunk:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MemberEvent'
+
+  # ============================================
+  # MATRIX MESSAGES
+  # ============================================
+  /_matrix/client/v3/rooms/{roomId}/messages:
+    get:
+      tags: [Matrix Messages]
+      summary: Получить историю сообщений
+      operationId: getMessages
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/roomId'
+        - name: from
+          in: query
+          required: true
+          description: Токен пагинации (из sync или предыдущего запроса)
+          schema:
+            type: string
+        - name: to
+          in: query
+          description: Токен конца пагинации
+          schema:
+            type: string
+        - name: dir
+          in: query
+          required: true
+          description: Направление (b = назад, f = вперед)
+          schema:
+            type: string
+            enum: [b, f]
+        - name: limit
+          in: query
+          description: Максимум сообщений
+          schema:
+            type: integer
+            default: 10
+        - name: filter
+          in: query
+          description: JSON фильтр событий
+          schema:
+            type: string
+      responses:
+        '200':
+          description: История сообщений
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessagesResponse'
+
+  /_matrix/client/v3/rooms/{roomId}/send/{eventType}/{txnId}:
+    put:
+      tags: [Matrix Messages]
+      summary: Отправить сообщение
+      operationId: sendMessage
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/roomId'
+        - name: eventType
+          in: path
+          required: true
+          description: Тип события (обычно m.room.message)
+          schema:
+            type: string
+            example: "m.room.message"
+        - name: txnId
+          in: path
+          required: true
+          description: Уникальный ID транзакции (для идемпотентности)
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MessageContent'
+            examples:
+              text:
+                summary: Текстовое сообщение
+                value:
+                  msgtype: "m.text"
+                  body: "Привет!"
+              image:
+                summary: Изображение
+                value:
+                  msgtype: "m.image"
+                  body: "photo.jpg"
+                  url: "mxc://server.com/abc123"
+                  info:
+                    mimetype: "image/jpeg"
+                    w: 1920
+                    h: 1080
+              voice:
+                summary: Голосовое сообщение
+                value:
+                  msgtype: "m.audio"
+                  body: "Voice message"
+                  url: "mxc://server.com/voice123"
+                  info:
+                    mimetype: "audio/ogg"
+                    duration: 5000
+                  "org.matrix.msc3245.voice": {}
+      responses:
+        '200':
+          description: Сообщение отправлено
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  event_id:
+                    type: string
+                    example: "$event123:server.com"
+
+  # ============================================
+  # MATRIX PRESENCE
+  # ============================================
+  /_matrix/client/v3/presence/{userId}/status:
+    get:
+      tags: [Matrix Presence]
+      summary: Получить статус присутствия пользователя
+      operationId: getPresence
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            example: "@user:server.com"
+      responses:
+        '200':
+          description: Статус присутствия
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PresenceStatus'
+
+    put:
+      tags: [Matrix Presence]
+      summary: Установить свой статус присутствия
+      operationId: setPresence
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [presence]
+              properties:
+                presence:
+                  type: string
+                  enum: [online, offline, unavailable]
+                status_msg:
+                  type: string
+                  example: "На встрече"
+      responses:
+        '200':
+          description: Статус обновлен
+
+  # ============================================
+  # ELEMENT CALL / LIVEKIT
+  # ============================================
+  /_matrix/client/v1/rooms/{roomId}/call/members:
+    get:
+      tags: [Element Call]
+      summary: Получить участников звонка в комнате
+      description: |
+        Возвращает список активных участников Element Call в комнате.
+        Использует MatrixRTC state events.
+      operationId: getCallMembers
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/roomId'
+      responses:
+        '200':
+          description: Участники звонка
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  members:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CallMember'
+
+  /livekit/jwt:
+    post:
+      tags: [Element Call]
+      summary: Получить JWT токен для LiveKit
+      description: |
+        Генерирует JWT токен для подключения к LiveKit серверу.
+        Требует Matrix access token.
+      operationId: getLiveKitToken
+      servers:
+        - url: https://jwt.market.implica.ru
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [room]
+              properties:
+                room:
+                  type: string
+                  description: Имя комнаты LiveKit (обычно хеш от Matrix room ID)
+                  example: "NXGOiUAU8nIbDx0IxIrKpifuQB03"
+      responses:
+        '200':
+          description: JWT токен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jwt:
+                    type: string
+                    description: JWT токен для LiveKit
+                  url:
+                    type: string
+                    description: URL LiveKit сервера
+                    example: "wss://livekit.market.implica.ru"
+
+  # ============================================
+  # RECORDING API (CUSTOM)
+  # ============================================
+  /api/recording/start:
+    post:
+      tags: [Recording]
+      summary: Начать запись звонка
+      description: |
+        **[CUSTOM API]**
+
+        Запускает запись звонка через LiveKit Egress.
+        Записывает в S3-совместимое хранилище.
+
+        Требует:
+        - Активный звонок в комнате
+        - LiveKit Egress сервис
+      operationId: startRecording
+      servers:
+        - url: https://api.market.implica.ru
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartRecordingRequest'
+      responses:
+        '200':
+          description: Запись начата
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartRecordingResponse'
+              example:
+                success: true
+                egressId: "EG_abc123xyz"
+                status: 1
+                roomName: "!room:server.com"
+                filepath: "recordings/room_1706612400.mp4"
+        '400':
+          description: Неверный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "roomName is required"
+        '500':
+          description: Ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "Failed to start egress"
+
+  /api/recording/stop:
+    post:
+      tags: [Recording]
+      summary: Остановить запись
+      description: |
+        **[CUSTOM API]**
+
+        Останавливает активную запись. Файл сохраняется в S3.
+      operationId: stopRecording
+      servers:
+        - url: https://api.market.implica.ru
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StopRecordingRequest'
+      responses:
+        '200':
+          description: Запись остановлена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StopRecordingResponse'
+        '400':
+          description: Неверный запрос
+        '404':
+          description: Запись не найдена
+        '500':
+          description: Ошибка сервера
+
+  /api/recording/status/{egressId}:
+    get:
+      tags: [Recording]
+      summary: Получить статус записи
+      description: |
+        **[CUSTOM API]**
+
+        Возвращает текущий статус записи по egressId.
+      operationId: getRecordingStatus
+      servers:
+        - url: https://api.market.implica.ru
+      parameters:
+        - name: egressId
+          in: path
+          required: true
+          description: ID записи (egress)
+          schema:
+            type: string
+            example: "EG_abc123xyz"
+      responses:
+        '200':
+          description: Статус записи
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingStatusResponse'
+        '404':
+          description: Запись не найдена
+
+  /api/recording/list:
+    get:
+      tags: [Recording]
+      summary: Список записей
+      description: |
+        **[CUSTOM API]**
+
+        Возвращает список всех записей, опционально фильтрованных по комнате.
+      operationId: listRecordings
+      servers:
+        - url: https://api.market.implica.ru
+      parameters:
+        - name: roomName
+          in: query
+          description: Фильтр по имени комнаты
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Список записей
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingListResponse'
+
+  # ============================================
+  # APPS API (CUSTOM)
+  # ============================================
+  /api/apps/list:
+    get:
+      tags: [Apps]
+      summary: Список доступных приложений
+      description: |
+        **[CUSTOM API]**
+
+        Возвращает каталог встраиваемых веб-приложений.
+      operationId: listApps
+      servers:
+        - url: https://api.market.implica.ru
+      parameters:
+        - name: category
+          in: query
+          description: Фильтр по категории
+          schema:
+            $ref: '#/components/schemas/AppCategory'
+      responses:
+        '200':
+          description: Список приложений
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  apps:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AppItem'
+              example:
+                success: true
+                apps:
+                  - id: "stats"
+                    name: "Статистика"
+                    description: "Аналитика звонков и сообщений"
+                    icon: "chart-bar"
+                    url: "https://stats.market.implica.ru"
+                    category: "analytics"
+                  - id: "tasks"
+                    name: "Задачи"
+                    description: "Управление задачами команды"
+                    icon: "clipboard-list"
+                    url: "https://tasks.market.implica.ru"
+                    category: "productivity"
+
+  /api/apps/{appId}:
+    get:
+      tags: [Apps]
+      summary: Получить информацию о приложении
+      description: |
+        **[CUSTOM API]**
+
+        Возвращает детальную информацию о конкретном приложении.
+      operationId: getApp
+      servers:
+        - url: https://api.market.implica.ru
+      parameters:
+        - name: appId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Информация о приложении
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  app:
+                    $ref: '#/components/schemas/AppItem'
+        '404':
+          description: Приложение не найдено
+
+  # ============================================
+  # HEALTH CHECK
+  # ============================================
+  /health:
+    get:
+      tags: [Recording, Apps]
+      summary: Проверка здоровья сервиса
+      operationId: healthCheck
+      servers:
+        - url: https://api.market.implica.ru
+      responses:
+        '200':
+          description: Сервис работает
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+                  timestamp:
+                    type: string
+                    format: date-time
+
+# ============================================
+# COMPONENTS
+# ============================================
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Matrix access token
+
+  parameters:
+    roomId:
+      name: roomId
+      in: path
+      required: true
+      description: ID комнаты Matrix
+      schema:
+        type: string
+        example: "!room123:server.com"
+
+  responses:
+    Unauthorized:
+      description: Требуется аутентификация
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              errcode:
+                type: string
+                example: "M_UNKNOWN_TOKEN"
+              error:
+                type: string
+                example: "Invalid access token"
+
+    RateLimited:
+      description: Превышен лимит запросов
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              errcode:
+                type: string
+                example: "M_LIMIT_EXCEEDED"
+              error:
+                type: string
+              retry_after_ms:
+                type: integer
+                example: 5000
+
+  schemas:
+    # === Auth ===
+    PasswordLogin:
+      type: object
+      required: [type, identifier, password]
+      properties:
+        type:
+          type: string
+          const: "m.login.password"
+        identifier:
+          type: object
+          properties:
+            type:
+              type: string
+              example: "m.id.user"
+            user:
+              type: string
+              example: "@user:server.com"
+        password:
+          type: string
+        initial_device_display_name:
+          type: string
+
+    TokenLogin:
+      type: object
+      required: [type, token]
+      properties:
+        type:
+          type: string
+          const: "m.login.token"
+        token:
+          type: string
+
+    LoginResponse:
+      type: object
+      properties:
+        user_id:
+          type: string
+          example: "@user:server.com"
+        access_token:
+          type: string
+        device_id:
+          type: string
+          example: "DEVICEID123"
+        home_server:
+          type: string
+          example: "server.com"
+        well_known:
+          type: object
+          properties:
+            m.homeserver:
+              type: object
+              properties:
+                base_url:
+                  type: string
+
+    AuthFlows:
+      type: object
+      properties:
+        flows:
+          type: array
+          items:
+            type: object
+            properties:
+              stages:
+                type: array
+                items:
+                  type: string
+        session:
+          type: string
+
+    # === Sync ===
+    SyncResponse:
+      type: object
+      properties:
+        next_batch:
+          type: string
+          description: Токен для следующей синхронизации
+        rooms:
+          type: object
+          properties:
+            join:
+              type: object
+              additionalProperties:
+                $ref: '#/components/schemas/JoinedRoom'
+            invite:
+              type: object
+            leave:
+              type: object
+        presence:
+          type: object
+
+    JoinedRoom:
+      type: object
+      properties:
+        timeline:
+          type: object
+          properties:
+            events:
+              type: array
+              items:
+                $ref: '#/components/schemas/RoomEvent'
+            prev_batch:
+              type: string
+            limited:
+              type: boolean
+        state:
+          type: object
+          properties:
+            events:
+              type: array
+              items:
+                $ref: '#/components/schemas/StateEvent'
+        unread_notifications:
+          type: object
+          properties:
+            notification_count:
+              type: integer
+            highlight_count:
+              type: integer
+
+    # === Room ===
+    CreateRoomRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          example: "Новая комната"
+        topic:
+          type: string
+        invite:
+          type: array
+          items:
+            type: string
+          example: ["@user1:server.com", "@user2:server.com"]
+        is_direct:
+          type: boolean
+          default: false
+        preset:
+          type: string
+          enum: [private_chat, public_chat, trusted_private_chat]
+        visibility:
+          type: string
+          enum: [public, private]
+          default: private
+
+    MemberEvent:
+      type: object
+      properties:
+        type:
+          type: string
+          example: "m.room.member"
+        state_key:
+          type: string
+          example: "@user:server.com"
+        content:
+          type: object
+          properties:
+            membership:
+              type: string
+              enum: [join, invite, leave, ban]
+            displayname:
+              type: string
+            avatar_url:
+              type: string
+
+    # === Messages ===
+    RoomEvent:
+      type: object
+      properties:
+        type:
+          type: string
+        event_id:
+          type: string
+        sender:
+          type: string
+        origin_server_ts:
+          type: integer
+          format: int64
+        content:
+          type: object
+
+    StateEvent:
+      allOf:
+        - $ref: '#/components/schemas/RoomEvent'
+        - type: object
+          properties:
+            state_key:
+              type: string
+
+    MessageContent:
+      type: object
+      required: [msgtype, body]
+      properties:
+        msgtype:
+          type: string
+          enum: [m.text, m.image, m.audio, m.video, m.file, m.emote, m.notice]
+        body:
+          type: string
+        format:
+          type: string
+          example: "org.matrix.custom.html"
+        formatted_body:
+          type: string
+        url:
+          type: string
+          description: MXC URL для медиа
+        info:
+          type: object
+          properties:
+            mimetype:
+              type: string
+            size:
+              type: integer
+            w:
+              type: integer
+            h:
+              type: integer
+            duration:
+              type: integer
+        "m.relates_to":
+          type: object
+          description: Для ответов и реакций
+
+    MessagesResponse:
+      type: object
+      properties:
+        start:
+          type: string
+        end:
+          type: string
+        chunk:
+          type: array
+          items:
+            $ref: '#/components/schemas/RoomEvent'
+        state:
+          type: array
+          items:
+            $ref: '#/components/schemas/StateEvent'
+
+    # === Presence ===
+    PresenceStatus:
+      type: object
+      properties:
+        presence:
+          type: string
+          enum: [online, offline, unavailable]
+        last_active_ago:
+          type: integer
+          description: Миллисекунды с последней активности
+        status_msg:
+          type: string
+        currently_active:
+          type: boolean
+
+    # === Element Call ===
+    CallMember:
+      type: object
+      properties:
+        user_id:
+          type: string
+          example: "@user:server.com"
+        device_id:
+          type: string
+        session_id:
+          type: string
+        feeds:
+          type: array
+          items:
+            type: object
+            properties:
+              purpose:
+                type: string
+                enum: [m.usermedia, m.screenshare]
+
+    # === Recording ===
+    StartRecordingRequest:
+      type: object
+      required: [roomName]
+      properties:
+        roomName:
+          type: string
+          description: Matrix room ID или имя комнаты LiveKit
+          example: "!room:server.com"
+        layout:
+          type: string
+          enum: [grid-dark, grid-light, speaker]
+          default: grid-dark
+          description: Раскладка видео в записи
+
+    StartRecordingResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        egressId:
+          type: string
+          description: ID записи (egress)
+        status:
+          type: integer
+          description: "0=unknown, 1=active, 2=ended"
+        roomName:
+          type: string
+        filepath:
+          type: string
+          description: Путь к файлу в S3
+        error:
+          type: string
+
+    StopRecordingRequest:
+      type: object
+      required: [egressId]
+      properties:
+        egressId:
+          type: string
+
+    StopRecordingResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        egressId:
+          type: string
+        status:
+          type: integer
+        error:
+          type: string
+
+    RecordingStatusResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        egress:
+          $ref: '#/components/schemas/EgressInfo'
+        error:
+          type: string
+
+    RecordingListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        recordings:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecordingInfo'
+
+    EgressInfo:
+      type: object
+      properties:
+        egressId:
+          type: string
+        roomName:
+          type: string
+        status:
+          type: integer
+          description: "0=unknown, 1=active, 2=ended, 3=failed"
+        startedAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    RecordingInfo:
+      allOf:
+        - $ref: '#/components/schemas/EgressInfo'
+        - type: object
+          properties:
+            downloadUrl:
+              type: string
+              format: uri
+              description: URL для скачивания записи
+            fileSize:
+              type: integer
+              description: Размер файла в байтах
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+
+    # === Apps ===
+    AppItem:
+      type: object
+      required: [id, name, description, icon, url, category]
+      properties:
+        id:
+          type: string
+          example: "stats"
+        name:
+          type: string
+          example: "Статистика"
+        description:
+          type: string
+          example: "Аналитика звонков и сообщений"
+        icon:
+          type: string
+          description: Имя иконки (Material Icons)
+          example: "chart-bar"
+        url:
+          type: string
+          format: uri
+          example: "https://stats.market.implica.ru"
+        category:
+          $ref: '#/components/schemas/AppCategory'
+
+    AppCategory:
+      type: string
+      enum: [all, productivity, communication, tools, analytics]
+      description: |
+        Категория приложения:
+        - all: Все
+        - productivity: Продуктивность
+        - communication: Связь
+        - tools: Инструменты
+        - analytics: Аналитика
+
+    # === Client Models ===
+    ContactItem:
+      type: object
+      description: Модель контакта для клиентских приложений
+      required: [id, displayName, isOnline]
+      properties:
+        id:
+          type: string
+          description: Matrix User ID
+          example: "@user:server.com"
+        displayName:
+          type: string
+          example: "Иван Петров"
+        avatarURL:
+          type: string
+          format: uri
+          nullable: true
+          example: "mxc://server.com/avatar123"
+        isOnline:
+          type: boolean
+
+    CallHistoryItem:
+      type: object
+      description: Запись в истории звонков (клиентская модель)
+      required: [id, contactName, contactId, callType, timestamp, isMissed]
+      properties:
+        id:
+          type: string
+        contactName:
+          type: string
+          example: "Иван Петров"
+        contactId:
+          type: string
+          example: "@ivan:server.com"
+        callType:
+          $ref: '#/components/schemas/CallType'
+        timestamp:
+          type: string
+          format: date-time
+        duration:
+          type: integer
+          description: Длительность в секундах
+          nullable: true
+        isMissed:
+          type: boolean
+        recordingURL:
+          type: string
+          format: uri
+          nullable: true
+
+    CallType:
+      type: string
+      enum: [incoming, outgoing, video]
+      description: |
+        Тип звонка:
+        - incoming: Входящий
+        - outgoing: Исходящий
+        - video: Видеозвонок
+
+    RecordingState:
+      oneOf:
+        - type: object
+          properties:
+            type:
+              const: idle
+          required: [type]
+        - type: object
+          properties:
+            type:
+              const: starting
+          required: [type]
+        - type: object
+          properties:
+            type:
+              const: recording
+            egressId:
+              type: string
+          required: [type, egressId]
+        - type: object
+          properties:
+            type:
+              const: stopping
+          required: [type]
+        - type: object
+          properties:
+            type:
+              const: error
+            message:
+              type: string
+          required: [type, message]
+      description: |
+        Состояние записи звонка:
+        - idle: Не записывает
+        - starting: Запускается
+        - recording: Записывает (с egressId)
+        - stopping: Останавливается
+        - error: Ошибка (с сообщением)

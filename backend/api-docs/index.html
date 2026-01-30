@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Element X API Documentation</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui.css">
+  <link rel="icon" type="image/png" href="https://element.io/favicon.ico">
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+    }
+    .swagger-ui .topbar {
+      display: none;
+    }
+    .swagger-ui .info {
+      margin: 20px 0;
+    }
+    .swagger-ui .info .title {
+      font-size: 32px;
+    }
+    /* Custom header */
+    .custom-header {
+      background: linear-gradient(135deg, #0DBD8B 0%, #0A8F6A 100%);
+      color: white;
+      padding: 20px 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .custom-header h1 {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 24px;
+      font-weight: 600;
+    }
+    .custom-header .links {
+      display: flex;
+      gap: 20px;
+    }
+    .custom-header a {
+      color: white;
+      text-decoration: none;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+      opacity: 0.9;
+    }
+    .custom-header a:hover {
+      opacity: 1;
+      text-decoration: underline;
+    }
+    /* Custom tag colors */
+    .swagger-ui .opblock-tag[data-tag="Recording"],
+    .swagger-ui .opblock-tag[data-tag="Apps"] {
+      border-left: 4px solid #0DBD8B;
+    }
+    .swagger-ui .opblock.opblock-post {
+      border-color: #0DBD8B;
+      background: rgba(13, 189, 139, 0.1);
+    }
+    .swagger-ui .opblock.opblock-post .opblock-summary-method {
+      background: #0DBD8B;
+    }
+    /* Badge for custom APIs */
+    .custom-badge {
+      background: #0DBD8B;
+      color: white;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: bold;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+  </style>
+</head>
+<body>
+  <div class="custom-header">
+    <h1>Element X Platform API</h1>
+    <div class="links">
+      <a href="https://github.com/ank1n/element-x-ios" target="_blank">GitHub iOS</a>
+      <a href="https://spec.matrix.org" target="_blank">Matrix Spec</a>
+      <a href="https://docs.livekit.io" target="_blank">LiveKit Docs</a>
+    </div>
+  </div>
+
+  <div id="swagger-ui"></div>
+
+  <script src="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui-bundle.js"></script>
+  <script src="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui-standalone-preset.js"></script>
+  <script>
+    window.onload = function() {
+      const ui = SwaggerUIBundle({
+        url: "openapi.yaml",
+        dom_id: '#swagger-ui',
+        deepLinking: true,
+        presets: [
+          SwaggerUIBundle.presets.apis,
+          SwaggerUIStandalonePreset
+        ],
+        plugins: [
+          SwaggerUIBundle.plugins.DownloadUrl
+        ],
+        layout: "StandaloneLayout",
+        tagsSorter: function(a, b) {
+          // Custom order: Matrix first, then Element Call, then Custom APIs
+          const order = [
+            'Matrix Auth',
+            'Matrix Sync',
+            'Matrix Rooms',
+            'Matrix Messages',
+            'Matrix Presence',
+            'Element Call',
+            'Recording',
+            'Apps'
+          ];
+          return order.indexOf(a) - order.indexOf(b);
+        },
+        operationsSorter: "method",
+        docExpansion: "list",
+        filter: true,
+        showExtensions: true,
+        showCommonExtensions: true,
+        tryItOutEnabled: true,
+        requestInterceptor: function(request) {
+          // Add default headers
+          if (!request.headers['Content-Type']) {
+            request.headers['Content-Type'] = 'application/json';
+          }
+          return request;
+        }
+      });
+
+      window.ui = ui;
+    };
+  </script>
+</body>
+</html>
