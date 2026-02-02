@@ -11,6 +11,7 @@
 ### Web (@web-dev)
 | Задача | Срок | Статус |
 |--------|------|--------|
+| **Оптимизация WebRTC (Element Call)** | 03.02 | **ожидает** |
 | Ознакомиться с ТЗ и репозиторием | — | ожидает |
 | Боковая панель с 4 секциями | — | ожидает |
 | Раздел "Звонки" с историей | — | ожидает |
@@ -26,7 +27,7 @@
 | Зона | Задача | Кто | Срок | Статус |
 |------|--------|-----|------|--------|
 | matrix namespace | — | — | — | свободно |
-| livekit namespace | Оптимизация скорости соединения + запись | @claude | 02.02 | в работе |
+| livekit namespace | — | — | — | свободно |
 | nginx configs | — | — | — | свободно |
 | SSL/DNS | настроить dev.market.implica.ru | @devops | — | ожидает DNS |
 
@@ -65,6 +66,7 @@
 - [x] Ingress для dev.market.implica.ru (ждёт DNS)
 - [x] LiveKit TURN/TLS: UDP 3478, TLS 5349 с Let's Encrypt сертификатом
 - [x] LiveKit deployment strategy: Recreate (для hostNetwork)
+- [x] LiveKit качество звонков: congestion control, увеличенные буферы, оптимизированный PLI
 
 ### Документация
 - [x] TZ-ELEMENT-X-WEB-CUSTOMIZATION.md — ТЗ для Web
@@ -75,6 +77,16 @@
 ---
 
 ## История изменений
+
+### 2026-02-02
+- [x] k8s: LiveKit оптимизация качества звонков — @claude
+  - Congestion control (allow_pause: false)
+  - Увеличены буферы (video: 1000, audio: 400)
+  - Агрессивный PLI (250ms/500ms/500ms)
+  - Оптимизирован playout delay (50-500ms)
+- [x] docs: TZ-WEBRTC-QUALITY-OPTIMIZATION.md — ТЗ по оптимизации WebRTC для Web — @claude
+- [x] docs: backend/livekit/OPTIMIZATIONS.md — документация применённых оптимизаций — @claude
+- [x] ios: исправлен URL Recording API (eddb774) — @claude
 
 ### 2026-01-30
 - [x] k8s: api-docs deployment — @ios-dev
