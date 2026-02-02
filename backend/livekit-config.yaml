@@ -3,6 +3,8 @@ rtc:
   port_range_start: 50000
   port_range_end: 60000
   use_external_ip: false
+  # Отключаем STUN для локальных тестов
+  stun_servers: []
 
 keys:
   devkey: secret
