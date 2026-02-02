@@ -26,7 +26,7 @@
 | Зона | Задача | Кто | Срок | Статус |
 |------|--------|-----|------|--------|
 | matrix namespace | — | — | — | свободно |
-| livekit namespace | — | — | — | свободно |
+| livekit namespace | Оптимизация скорости соединения + запись | @claude | 02.02 | в работе |
 | nginx configs | — | — | — | свободно |
 | SSL/DNS | настроить dev.market.implica.ru | @devops | — | ожидает DNS |
 
