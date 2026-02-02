@@ -6,7 +6,7 @@
 | Задача | Срок | Статус |
 |--------|------|--------|
 | Тестирование записи звонков | 31.01 | в работе |
-| Исправить передачу видео/аудио в звонках | 31.01 | в работе |
+| Тест звонков после TURN/TLS настройки | 31.01 | ожидает |
 
 ### Web (@web-dev)
 | Задача | Срок | Статус |
@@ -41,7 +41,7 @@
 ## Ожидает решения
 
 - [ ] **DNS**: нужна A-запись `dev.market.implica.ru → 194.87.190.230`
-- [ ] **Звонки**: разобраться почему не передаётся видео/аудио (NAT/TURN?)
+- [x] **Звонки**: настроен TURN/TLS для symmetric NAT (см. выполнено)
 
 ---
 
@@ -56,12 +56,15 @@
 
 ### Backend
 - [x] Recording API: start, stop, status, list endpoints
-- [x] K8s deployment recording-api в namespace matrix
+- [x] K8s deployment recording-api в namespace livekit
+- [x] Recording API внешний доступ: `https://livekit.market.implica.ru/recording-api/*`
 - [x] Swagger UI: openapi.yaml с полной спецификацией API
 
 ### DevOps
 - [x] K8s: api-docs deployment для Swagger UI
 - [x] Ingress для dev.market.implica.ru (ждёт DNS)
+- [x] LiveKit TURN/TLS: UDP 3478, TLS 5349 с Let's Encrypt сертификатом
+- [x] LiveKit deployment strategy: Recreate (для hostNetwork)
 
 ### Документация
 - [x] TZ-ELEMENT-X-WEB-CUSTOMIZATION.md — ТЗ для Web
@@ -78,6 +81,10 @@
 - [x] swagger: openapi.yaml — @ios-dev
 - [x] docs: sync-rules, getting-started — @ios-dev
 - [x] git: запушено в github.com/ank1n/element-x-ios — @ios-dev
+- [x] fix: Recording API внешний доступ (добавлен prefix /recording-api, удалён дублирующий ingress) — @ios-dev
+- [x] k8s: LiveKit TURN/TLS настройка (cert_file, key_file, tls_port: 5349, udp_port: 3478) — @ios-dev
+- [x] k8s: TLS secret volume mount для LiveKit deployment — @ios-dev
+- [x] k8s: LiveKit deployment strategy изменён на Recreate — @ios-dev
 
 ### 2026-01-29
 - [x] ios: 4-tab навигация — @ios-dev

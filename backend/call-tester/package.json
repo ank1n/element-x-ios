@@ -1,0 +1,17 @@
+{
+  "name": "call-tester",
+  "version": "1.0.0",
+  "description": "Automated LiveKit call testing tool",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node test-recording.js"
+  },
+  "keywords": ["livekit", "testing", "calls"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "livekit-server-sdk": "^2.9.1",
+    "axios": "^1.7.9"
+  }
+}

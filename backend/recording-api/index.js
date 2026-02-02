@@ -21,7 +21,7 @@ const config = {
     s3AccessKey: process.env.S3_ACCESS_KEY || 'minioadmin',
     s3SecretKey: process.env.S3_SECRET_KEY || 'MinioAdmin2026!',
     s3Bucket: process.env.S3_BUCKET || 'livekit-recordings',
-    port: parseInt(process.env.PORT, 10) || 3000
+    port: parseInt(process.env.PORT, 10) || 3001
 };
 
 // Initialize LiveKit Egress Client
@@ -31,13 +31,16 @@ const egressClient = new EgressClient(
     config.livekitApiSecret
 );
 
+// Create router for API endpoints
+const router = express.Router();
+
 // Health check
-app.get('/health', (req, res) => {
+router.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 // Start recording
-app.post('/api/recording/start', async (req, res) => {
+router.post('/api/recording/start', async (req, res) => {
     const { roomName, layout = 'grid-dark' } = req.body;
 
     if (!roomName) {
@@ -89,7 +92,7 @@ app.post('/api/recording/start', async (req, res) => {
 });
 
 // Stop recording
-app.post('/api/recording/stop', async (req, res) => {
+router.post('/api/recording/stop', async (req, res) => {
     const { egressId } = req.body;
 
     if (!egressId) {
@@ -119,7 +122,7 @@ app.post('/api/recording/stop', async (req, res) => {
 });
 
 // Get recording status
-app.get('/api/recording/status/:egressId', async (req, res) => {
+router.get('/api/recording/status/:egressId', async (req, res) => {
     const { egressId } = req.params;
 
     try {
@@ -153,7 +156,7 @@ app.get('/api/recording/status/:egressId', async (req, res) => {
 });
 
 // List all active recordings
-app.get('/api/recording/list', async (req, res) => {
+router.get('/api/recording/list', async (req, res) => {
     const { roomName } = req.query;
 
     try {
@@ -179,10 +182,11 @@ app.get('/api/recording/list', async (req, res) => {
     }
 });
 
+// Mount router at both root and /recording-api for K8s ingress compatibility
+app.use('/', router);
+app.use('/recording-api', router);
+
 // Start server
 app.listen(config.port, '0.0.0.0', () => {
-    console.log(`Recording API server running on port ${config.port}`);
-    console.log(`LiveKit URL: ${config.livekitUrl}`);
-    console.log(`S3 Endpoint: ${config.s3Endpoint}`);
-    console.log(`S3 Bucket: ${config.s3Bucket}`);
+    console.log(`Recording API ready on port ${config.port}`);
 });
