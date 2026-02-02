@@ -53,7 +53,7 @@ class RecordingService: RecordingServiceProtocol {
         do {
             let request = RecordingStartRequest(roomName: roomName)
             let response: RecordingStartResponse = try await post(
-                endpoint: "/api/recording/start",
+                endpoint: "/start",
                 body: request
             )
 
@@ -87,7 +87,7 @@ class RecordingService: RecordingServiceProtocol {
         do {
             let request = RecordingStopRequest(egressId: egressId)
             let response: RecordingStopResponse = try await post(
-                endpoint: "/api/recording/stop",
+                endpoint: "/stop",
                 body: request
             )
 
@@ -112,7 +112,7 @@ class RecordingService: RecordingServiceProtocol {
 
     func getStatus(egressId: String) async throws -> EgressInfo {
         let response: RecordingStatusResponse = try await get(
-            endpoint: "/api/recording/status/\(egressId)"
+            endpoint: "/status/\(egressId)"
         )
 
         guard response.success, let egress = response.egress else {
