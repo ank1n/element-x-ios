@@ -126,6 +126,13 @@ room.on(RoomEvent.ConnectionQualityChanged, (quality, participant) => {
 
 **Где:** Создание audio track
 
+**КРИТИЧНО ДЛЯ УСТРАНЕНИЯ ХРИПОВ!** ⚠️
+
+**Проблема найдена в production логах:**
+- `disableRed: true` — Element Call отключает RED encoding
+- Отсутствует FEC в Opus
+- Это вызывает хрипы при старте звонка
+
 **Код:**
 ```javascript
 const audioTrack = await createLocalAudioTrack({
@@ -142,10 +149,21 @@ const audioTrack = await createLocalAudioTrack({
   opus: {
     maxaveragebitrate: 40000,   // 40kbps для качественного голоса
     stereo: false,
-    useinbandfec: true,         // Forward Error Correction — устраняет хрипы
+    useinbandfec: true,         // 🔥 Forward Error Correction — КРИТИЧНО!
     usedtx: false,              // Не использовать DTX (может давать артефакты)
     maxplaybackrate: 48000,
     sprop_maxcapturerate: 48000
+  }
+});
+```
+
+**ВАЖНО:** Включить RED encoding в LiveKit publishDefaults:
+```javascript
+const room = new Room({
+  // ...
+  publishDefaults: {
+    red: true,  // 🔥 КРИТИЧНО! Включить RED для защиты от потери пакетов
+    // ...
   }
 });
 ```
