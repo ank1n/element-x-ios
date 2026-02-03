@@ -152,8 +152,19 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     func stop() {
         Task {
             await hangup()
+
+            // Clean up recording state if active
+            if let recordingService, recordingService.state.isRecording {
+                do {
+                    try await recordingService.stopRecording()
+                    MXLog.info("Recording stopped on call end")
+                } catch {
+                    // If recording already stopped (e.g. EGRESS_COMPLETE), this is handled gracefully
+                    MXLog.info("Recording cleanup on call end: \(error.localizedDescription)")
+                }
+            }
         }
-        
+
         elementCallService.tearDownCallSession()
         UIDevice.current.isProximityMonitoringEnabled = false
     }

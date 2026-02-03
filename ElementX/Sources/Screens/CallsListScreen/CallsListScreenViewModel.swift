@@ -16,6 +16,7 @@ protocol CallsListScreenViewModelProtocol {
 
 class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenViewModelProtocol {
     private let userSession: UserSessionProtocol
+    private let callHistoryService: CallHistoryServiceProtocol
     private let actionsSubject: PassthroughSubject<CallsListScreenViewModelAction, Never> = .init()
     private var callsCancellables: Set<AnyCancellable> = []
 
@@ -25,8 +26,11 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         actionsSubject.eraseToAnyPublisher()
     }
 
-    init(userSession: UserSessionProtocol, audioPlayer: AudioPlayerProtocol = AudioPlayer()) {
+    init(userSession: UserSessionProtocol,
+         callHistoryService: CallHistoryServiceProtocol,
+         audioPlayer: AudioPlayerProtocol = AudioPlayer()) {
         self.userSession = userSession
+        self.callHistoryService = callHistoryService
         self.audioPlayer = audioPlayer
 
         var initialState = CallsListScreenViewState()
@@ -121,59 +125,89 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
     }
 
     private func loadCallHistory() {
-        // Demo call history with some recordings
-        state.callHistory = [
-            CallHistoryItem(
-                id: "1",
-                contactName: "Алексей Петров",
-                contactId: "@alexey:server.com",
-                callType: .incoming,
-                timestamp: Date().addingTimeInterval(-3600),
-                duration: 125,
-                isMissed: false,
-                recordingURL: URL(string: "https://api.market.implica.ru/recordings/call-1.mp3")
-            ),
-            CallHistoryItem(
-                id: "2",
-                contactName: "Мария Иванова",
-                contactId: "@maria:server.com",
-                callType: .outgoing,
-                timestamp: Date().addingTimeInterval(-7200),
-                duration: 340,
-                isMissed: false,
-                recordingURL: URL(string: "https://api.market.implica.ru/recordings/call-2.mp3")
-            ),
-            CallHistoryItem(
-                id: "3",
-                contactName: "Дмитрий Сидоров",
-                contactId: "@dmitry:server.com",
-                callType: .video,
-                timestamp: Date().addingTimeInterval(-86400),
-                duration: nil,
-                isMissed: true,
-                recordingURL: nil
-            ),
-            CallHistoryItem(
-                id: "4",
-                contactName: "Елена Козлова",
-                contactId: "@elena:server.com",
-                callType: .incoming,
-                timestamp: Date().addingTimeInterval(-172800),
-                duration: 45,
-                isMissed: false,
-                recordingURL: nil
-            ),
-            CallHistoryItem(
-                id: "5",
-                contactName: "Сергей Новиков",
-                contactId: "@sergey:server.com",
-                callType: .outgoing,
-                timestamp: Date().addingTimeInterval(-259200),
-                duration: nil,
-                isMissed: true,
-                recordingURL: nil
-            )
-        ]
-        state.isLoading = false
+        state.isLoading = true
+
+        Task {
+            do {
+                let recordings = try await callHistoryService.fetchRecordings()
+                await MainActor.run {
+                    state.callHistory = recordings
+                    state.isLoading = false
+                }
+            } catch {
+                MXLog.error("Failed to load call history: \(error)")
+                await MainActor.run {
+                    state.isLoading = false
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Call History Service
+
+protocol CallHistoryServiceProtocol: AnyObject {
+    func fetchRecordings() async throws -> [CallHistoryItem]
+}
+
+class CallHistoryService: CallHistoryServiceProtocol {
+    private let baseURL: URL
+    private let urlSession: URLSession
+
+    init(baseURL: URL, urlSession: URLSession? = nil) {
+        self.baseURL = baseURL
+
+        if let urlSession {
+            self.urlSession = urlSession
+        } else {
+            let configuration = URLSessionConfiguration.default
+            configuration.timeoutIntervalForRequest = 10.0
+            configuration.timeoutIntervalForResource = 30.0
+            self.urlSession = URLSession(configuration: configuration)
+        }
+    }
+
+    func fetchRecordings() async throws -> [CallHistoryItem] {
+        let url = baseURL.appendingPathComponent("/recording-api/list")
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 10.0
+
+        let (data, response) = try await urlSession.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw CallHistoryError.invalidResponse
+        }
+
+        guard httpResponse.statusCode == 200 else {
+            throw CallHistoryError.serverError("HTTP \(httpResponse.statusCode)")
+        }
+
+        let apiResponse = try JSONDecoder().decode(CallHistoryResponse.self, from: data)
+
+        guard apiResponse.success, let recordings = apiResponse.recordings else {
+            let errorMessage = apiResponse.error ?? "Failed to fetch recordings"
+            throw CallHistoryError.serverError(errorMessage)
+        }
+
+        return recordings.compactMap { $0.toCallHistoryItem() }
+            .sorted { $0.timestamp > $1.timestamp }
+    }
+}
+
+enum CallHistoryError: LocalizedError {
+    case networkError(Error)
+    case serverError(String)
+    case invalidResponse
+
+    var errorDescription: String? {
+        switch self {
+        case .networkError(let error):
+            return "Network error: \(error.localizedDescription)"
+        case .serverError(let message):
+            return "Server error: \(message)"
+        case .invalidResponse:
+            return "Invalid response from server"
+        }
     }
 }

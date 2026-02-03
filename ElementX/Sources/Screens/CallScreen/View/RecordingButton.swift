@@ -12,19 +12,32 @@ struct RecordingButton: View {
 
     var body: some View {
         Button(action: action) {
-            ZStack {
-                Circle()
-                    .fill(backgroundColor)
-                    .frame(width: 44, height: 44)
+            HStack(spacing: 8) {
+                ZStack {
+                    Circle()
+                        .fill(backgroundColor)
+                        .frame(width: 44, height: 44)
 
-                if recordingState.isTransitioning {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        .scaleEffect(0.8)
-                } else {
-                    Image(systemName: iconName)
-                        .font(.system(size: 20, weight: .semibold))
+                    if recordingState.isTransitioning {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .scaleEffect(0.8)
+                    } else {
+                        Image(systemName: iconName)
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                }
+
+                // Show duration when recording
+                if let duration = recordingState.formattedDuration {
+                    Text(duration)
+                        .font(.system(.body, design: .monospaced).weight(.semibold))
                         .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Color.red.opacity(0.9))
+                        .cornerRadius(8)
                 }
             }
         }
@@ -142,7 +155,7 @@ struct RecordingConsentView: View {
     VStack(spacing: 20) {
         RecordingButton(recordingState: .idle) { }
         RecordingButton(recordingState: .starting) { }
-        RecordingButton(recordingState: .recording(egressId: "test")) { }
+        RecordingButton(recordingState: .recording(egressId: "test", duration: 65)) { }
         RecordingButton(recordingState: .stopping) { }
         RecordingIndicator()
     }

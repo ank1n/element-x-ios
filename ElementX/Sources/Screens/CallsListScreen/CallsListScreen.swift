@@ -318,7 +318,8 @@ struct CallsListScreen: View {
 
 struct CallsListScreen_Previews: PreviewProvider {
     static var previews: some View {
-        let viewModel = CallsListScreenViewModel(userSession: UserSessionMock(.init()))
+        let mockService = CallHistoryService(baseURL: URL(string: "https://api.market.implica.ru")!)
+        let viewModel = CallsListScreenViewModel(userSession: UserSessionMock(.init()), callHistoryService: mockService)
         NavigationStack {
             CallsListScreen(context: viewModel.context)
         }

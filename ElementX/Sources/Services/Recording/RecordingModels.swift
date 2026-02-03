@@ -57,7 +57,7 @@ struct EgressInfo: Codable {
 enum RecordingState: Equatable {
     case idle
     case starting
-    case recording(egressId: String)
+    case recording(egressId: String, duration: TimeInterval)
     case stopping
     case error(String)
 
@@ -75,6 +75,20 @@ enum RecordingState: Equatable {
         default:
             return false
         }
+    }
+
+    var recordingDuration: TimeInterval? {
+        if case .recording(_, let duration) = self {
+            return duration
+        }
+        return nil
+    }
+
+    var formattedDuration: String? {
+        guard let duration = recordingDuration else { return nil }
+        let minutes = Int(duration) / 60
+        let seconds = Int(duration) % 60
+        return String(format: "%d:%02d", minutes, seconds)
     }
 }
 

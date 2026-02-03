@@ -9,6 +9,7 @@ import SwiftUI
 
 struct CallsListScreenCoordinatorParameters {
     let userSession: UserSessionProtocol
+    let callHistoryService: CallHistoryServiceProtocol
 }
 
 enum CallsListScreenCoordinatorAction {
@@ -28,7 +29,10 @@ final class CallsListScreenCoordinator: CoordinatorProtocol {
     init(parameters: CallsListScreenCoordinatorParameters) {
         self.parameters = parameters
 
-        viewModel = CallsListScreenViewModel(userSession: parameters.userSession)
+        viewModel = CallsListScreenViewModel(
+            userSession: parameters.userSession,
+            callHistoryService: parameters.callHistoryService
+        )
     }
 
     func start() {

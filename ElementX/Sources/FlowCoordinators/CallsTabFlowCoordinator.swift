@@ -70,7 +70,14 @@ class CallsTabFlowCoordinator: FlowCoordinatorProtocol {
     }
 
     private func showCallsListScreen() {
-        let parameters = CallsListScreenCoordinatorParameters(userSession: userSession)
+        // Initialize CallHistoryService with Recording API endpoint
+        let apiBaseURL = URL(string: "https://api.market.implica.ru")!
+        let callHistoryService = CallHistoryService(baseURL: apiBaseURL)
+
+        let parameters = CallsListScreenCoordinatorParameters(
+            userSession: userSession,
+            callHistoryService: callHistoryService
+        )
         let coordinator = CallsListScreenCoordinator(parameters: parameters)
 
         coordinator.actionsPublisher.sink { [weak self] action in
