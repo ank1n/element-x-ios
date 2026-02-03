@@ -168,7 +168,7 @@ class CallHistoryService: CallHistoryServiceProtocol {
     }
 
     func fetchRecordings() async throws -> [CallHistoryItem] {
-        let url = baseURL.appendingPathComponent("/recording-api/list")
+        let url = baseURL.appendingPathComponent("/api/recording/list")
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.timeoutInterval = 10.0

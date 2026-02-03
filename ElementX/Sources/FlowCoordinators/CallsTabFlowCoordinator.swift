@@ -71,7 +71,7 @@ class CallsTabFlowCoordinator: FlowCoordinatorProtocol {
 
     private func showCallsListScreen() {
         // Initialize CallHistoryService with Recording API endpoint
-        let apiBaseURL = URL(string: "https://api.market.implica.ru")!
+        let apiBaseURL = URL(string: "https://livekit.market.implica.ru/recording-api")!
         let callHistoryService = CallHistoryService(baseURL: apiBaseURL)
 
         let parameters = CallsListScreenCoordinatorParameters(
