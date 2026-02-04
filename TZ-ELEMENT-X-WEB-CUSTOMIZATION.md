@@ -826,8 +826,8 @@ src/
 | Recording API: метаданные участников | 1-2 дня | ✅ готово |
 | Recording API: расширить GET /list | 0.5 дня | ✅ готово |
 | Recording API: фильтрация | 0.5 дня | ✅ готово |
-| WebRTC: устранить хрипы (audio RED/FEC) | 0.5 дня | ⏳ |
-| WebRTC: simulcast для видео | 0.5 дня | ⏳ |
+| WebRTC: устранить хрипы (audio RED/FEC) | 0.5 дня | ✅ готово |
+| WebRTC: simulcast для видео | 0.5 дня | ✅ готово |
 | **Итого критичное** | **3-4 дня** | |
 
 > 📄 **Детали WebRTC оптимизации:** см. `TZ-WEBRTC-QUALITY-OPTIMIZATION.md`

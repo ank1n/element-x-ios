@@ -2,7 +2,15 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
-const { EgressClient, RoomServiceClient, EncodedFileOutput, S3Upload } = require('livekit-server-sdk');
+const {
+    EgressClient,
+    RoomServiceClient,
+    EncodedFileOutput,
+    S3Upload,
+    EncodingOptions,
+    AudioCodec,
+    VideoCodec
+} = require('livekit-server-sdk');
 const { Client: MinioClient } = require('minio');
 const Database = require('better-sqlite3');
 const path = require('path');
@@ -151,6 +159,30 @@ async function getFileSize(filename) {
     }
 }
 
+// Get all audio track IDs from room participants
+async function getAudioTrackIds(roomName) {
+    try {
+        const participants = await roomClient.listParticipants(roomName);
+        const audioTrackIds = [];
+
+        for (const participant of participants) {
+            if (participant.tracks) {
+                for (const track of participant.tracks) {
+                    if (track.type === 'AUDIO' && track.sid) {
+                        audioTrackIds.push(track.sid);
+                    }
+                }
+            }
+        }
+
+        console.log(`Found ${audioTrackIds.length} audio tracks in room ${roomName}`);
+        return audioTrackIds;
+    } catch (error) {
+        console.error('Error getting audio tracks:', error);
+        return [];
+    }
+}
+
 // Start recording - EXTENDED with metadata
 router.post('/api/recording/start', async (req, res) => {
     const {
@@ -185,7 +217,8 @@ router.post('/api/recording/start', async (req, res) => {
 
         const roomName = roomResult.roomName;
         const timestamp = Date.now();
-        const filepath = `recordings/${roomName}_${timestamp}.mp4`;
+        // Audio-only recording with AAC codec for iOS compatibility
+        const filepath = `recordings/${roomName}_${timestamp}.m4a`;
 
         const fileOutput = new EncodedFileOutput({
             filepath: filepath,
@@ -201,10 +234,34 @@ router.post('/api/recording/start', async (req, res) => {
             }
         });
 
-        const info = await egressClient.startRoomCompositeEgress(roomName, {
-            file: fileOutput,
-            layout: layout
+        // Audio-only encoding options - AAC for iOS compatibility (AVPlayer doesn't support OPUS)
+        const encodingOpts = new EncodingOptions({
+            audioCodec: AudioCodec.AAC,
+            audioBitrate: 128000,      // 128kbps for clear audio
+            audioFrequency: 48000      // 48kHz sample rate
         });
+
+        // Get audio track IDs for Track Composite (faster than Room Composite)
+        const audioTrackIds = await getAudioTrackIds(roomName);
+
+        let info;
+        if (audioTrackIds.length > 0) {
+            // Use Track Composite - much faster startup (~1 sec vs 5 sec)
+            // Records the first audio track directly without browser
+            console.log(`Using Track Composite with audio track: ${audioTrackIds[0]}`);
+            info = await egressClient.startTrackCompositeEgress(roomName, fileOutput, {
+                audioTrackId: audioTrackIds[0],
+                encodingOptions: encodingOpts
+            });
+        } else {
+            // Fallback to Room Composite if no tracks found
+            console.log('No audio tracks found, falling back to Room Composite');
+            info = await egressClient.startRoomCompositeEgress(roomName, fileOutput, {
+                layout: layout,
+                encodingOptions: encodingOpts,
+                audioOnly: true
+            });
+        }
 
         // Save metadata to SQLite
         const participantsJson = participants ? JSON.stringify(participants) : null;
