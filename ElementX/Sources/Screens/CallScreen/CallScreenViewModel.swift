@@ -151,9 +151,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     
     func stop() {
         Task {
-            await hangup()
-
-            // Clean up recording state if active
+            // ВАЖНО: Сначала останавливаем запись, потом закрываем звонок
+            // Иначе LiveKit уничтожит комнату и запись будет прервана (ABORTED)
             if let recordingService, recordingService.state.isRecording {
                 do {
                     try await recordingService.stopRecording()
@@ -163,10 +162,14 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                     MXLog.info("Recording cleanup on call end: \(error.localizedDescription)")
                 }
             }
-        }
 
-        elementCallService.tearDownCallSession()
-        UIDevice.current.isProximityMonitoringEnabled = false
+            await hangup()
+
+            await MainActor.run {
+                elementCallService.tearDownCallSession()
+                UIDevice.current.isProximityMonitoringEnabled = false
+            }
+        }
     }
     
     // MARK: - Private
