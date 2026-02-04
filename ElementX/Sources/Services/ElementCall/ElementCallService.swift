@@ -105,7 +105,10 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         if ongoingCallID != nil {
             tearDownCallSession()
         }
-        
+
+        // Check if this is an outgoing call (not from incoming ring)
+        let isOutgoingCall = incomingCallID == nil || incomingCallID?.roomID != roomID
+
         // If this starting from a ring reuse those identifiers
         // Make sure the roomID matches
         let callID = if let incomingCallID, incomingCallID.roomID == roomID {
@@ -113,9 +116,14 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         } else {
             CallID(callKitID: UUID(), roomID: roomID, rtcNotificationID: nil)
         }
-        
+
         incomingCallID = nil
         ongoingCallID = callID
+
+        // For outgoing calls, send startCall action (incoming calls already sent it when answered)
+        if isOutgoingCall {
+            actionsSubject.send(.startCall(roomID: roomID))
+        }
         
         // Don't bother starting another CallKit session as it won't work properly
         // https://developer.apple.com/forums//thread/767949?answerId=812951022#812951022
@@ -307,15 +315,20 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     // MARK: - Private
     
     private func tearDownCallSession(sendEndCallAction: Bool = true) {
-        if sendEndCallAction, let ongoingCallID {
-            let transaction = CXTransaction(action: CXEndCallAction(call: ongoingCallID.callKitID))
-            callController.request(transaction) { error in
-                if let error {
-                    MXLog.error("Failed transaction with error: \(error)")
+        if let ongoingCallID {
+            // Send endCall action for call history tracking
+            actionsSubject.send(.endCall(roomID: ongoingCallID.roomID))
+
+            if sendEndCallAction {
+                let transaction = CXTransaction(action: CXEndCallAction(call: ongoingCallID.callKitID))
+                callController.request(transaction) { error in
+                    if let error {
+                        MXLog.error("Failed transaction with error: \(error)")
+                    }
                 }
             }
         }
-        
+
         ongoingCallID = nil
     }
     

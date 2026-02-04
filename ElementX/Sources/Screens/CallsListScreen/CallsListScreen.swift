@@ -187,79 +187,76 @@ struct CallsListScreen: View {
 
     private func callCell(_ call: CallHistoryItem) -> some View {
         VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                Button {
-                    context.send(viewAction: .selectCall(call))
-                } label: {
-                    HStack(spacing: 16) {
+            HStack(spacing: 16) {
+                // Avatar
+                ZStack {
+                    Circle()
+                        .fill(avatarColor(for: call.contactName))
+                        .frame(width: 52, height: 52)
+
+                    Text(String(call.contactName.prefix(1)).uppercased())
+                        .font(.compound.headingMD)
+                        .foregroundColor(.white)
+                }
+
+                // Call info
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .top) {
+                        Text(call.contactName)
+                            .font(.compound.bodyLGSemibold)
+                            .foregroundColor(call.isMissed ? .red : .compound.textPrimary)
+                            .lineLimit(1)
+
+                        Spacer()
+
+                        Text(timeAgo(from: call.timestamp))
+                            .font(.compound.bodySM)
+                            .foregroundColor(.compound.textSecondary)
+                    }
+
+                    HStack(spacing: 4) {
+                        Image(systemName: callIcon(for: call))
+                            .font(.caption)
+                            .foregroundColor(call.isMissed ? .red : .compound.textSecondary)
+
+                        Text(callDescription(for: call))
+                            .font(.compound.bodySM)
+                            .foregroundColor(.compound.textSecondary)
+
+                        if call.hasRecording {
+                            Image(systemName: "waveform")
+                                .font(.caption)
+                                .foregroundColor(.compound.iconAccentTertiary)
+                        }
+                    }
+                }
+
+                // Play recording button
+                if call.hasRecording {
+                    Button {
+                        context.send(viewAction: .playRecording(call))
+                    } label: {
                         ZStack {
                             Circle()
-                                .fill(avatarColor(for: call.contactName))
-                                .frame(width: 52, height: 52)
+                                .fill(isPlayingCall(call) ? Color.compound.bgActionPrimaryRest : Color.compound.bgSubtleSecondary)
+                                .frame(width: 40, height: 40)
 
-                            Text(String(call.contactName.prefix(1)).uppercased())
-                                .font(.compound.headingMD)
-                                .foregroundColor(.white)
-                        }
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(alignment: .top, spacing: 16) {
-                            Text(call.contactName)
-                                .font(.compound.bodyLGSemibold)
-                                .foregroundColor(call.isMissed ? .red : .compound.textPrimary)
-                                .lineLimit(1)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-
-                            Text(timeAgo(from: call.timestamp))
-                                .font(.compound.bodySM)
-                                .foregroundColor(.compound.textSecondary)
-                        }
-
-                        HStack(spacing: 4) {
-                            Image(systemName: callIcon(for: call))
-                                .font(.caption)
-                                .foregroundColor(call.isMissed ? .red : .compound.textSecondary)
-
-                            Text(callDescription(for: call))
-                                .font(.compound.bodySM)
-                                .foregroundColor(.compound.textSecondary)
-
-                            if call.hasRecording {
-                                Image(systemName: "waveform")
-                                    .font(.caption)
-                                    .foregroundColor(.compound.iconAccentTertiary)
+                            if context.viewState.playingCallId == call.id && context.viewState.playbackState == .loading {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .scaleEffect(0.7)
+                            } else {
+                                Image(systemName: isPlayingCall(call) ? "pause.fill" : "play.fill")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(isPlayingCall(call) ? .white : .compound.iconPrimary)
                             }
                         }
                     }
+                    .buttonStyle(.plain)
                 }
             }
-            .buttonStyle(.plain)
-
-            // Play recording button
-            if call.hasRecording {
-                Button {
-                    context.send(viewAction: .playRecording(call))
-                } label: {
-                    ZStack {
-                        Circle()
-                            .fill(isPlayingCall(call) ? Color.compound.bgActionPrimaryRest : Color.compound.bgSubtleSecondary)
-                            .frame(width: 40, height: 40)
-
-                        if context.viewState.playingCallId == call.id && context.viewState.playbackState == .loading {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                .scaleEffect(0.7)
-                        } else {
-                            Image(systemName: isPlayingCall(call) ? "pause.fill" : "play.fill")
-                                .font(.system(size: 14))
-                                .foregroundColor(isPlayingCall(call) ? .white : .compound.iconPrimary)
-                        }
-                    }
-                }
-                .buttonStyle(.plain)
-                .padding(.trailing, 8)
-            }
-            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
 
             // Progress bar when playing this call
             if context.viewState.playingCallId == call.id && context.viewState.playbackState != .stopped {
