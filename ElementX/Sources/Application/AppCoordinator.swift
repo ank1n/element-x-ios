@@ -58,6 +58,7 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
     let windowManager: SecureWindowManagerProtocol
     let notificationManager: NotificationManagerProtocol
 
+    private let callHistoryCoordinator: CallHistoryCoordinator
     private let appRouteURLParser: AppRouteURLParser
     
     private var storedAppRoute: AppRoute?
@@ -125,7 +126,13 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
                                             appHooks: appHooks)
         Self.setupServiceLocator(appSettings: appSettings, appHooks: appHooks)
         Self.setupSentry(bugReportService: bugReportService, appSettings: appSettings)
-        
+
+        // Initialize call history coordinator
+        callHistoryCoordinator = CallHistoryCoordinator(
+            elementCallService: elementCallService,
+            localCallHistoryService: ServiceLocator.shared.localCallHistoryService
+        )
+
         ServiceLocator.shared.analytics.signpost.start()
         ServiceLocator.shared.analytics.startIfEnabled()
         
@@ -393,6 +400,9 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
 
         // Setup Recording Service for call recording
         ServiceLocator.shared.setupRecordingService()
+
+        // Setup Local Call History Service
+        ServiceLocator.shared.setupLocalCallHistoryService()
     }
     
     /// Perform any required migrations for the app to function correctly.
@@ -818,8 +828,9 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         guard let userSession else {
             fatalError("User session not setup")
         }
-        
+
         elementCallService.setClientProxy(userSession.clientProxy)
+        callHistoryCoordinator.setClientProxy(userSession.clientProxy)
     }
     
     private func presentCallScreen(genericCallLink url: URL) {

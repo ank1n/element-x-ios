@@ -13,7 +13,17 @@ protocol RecordingServiceProtocol: AnyObject {
     var statePublisher: AnyPublisher<RecordingState, Never> { get }
     var state: RecordingState { get }
 
+    /// Start recording (API v1 - simple)
     func startRecording(roomName: String) async throws -> String
+
+    /// Start recording with participant metadata (API v2)
+    func startRecording(
+        roomName: String,
+        matrixRoomId: String?,
+        participants: [(userId: String, displayName: String)]?,
+        initiatedBy: String?
+    ) async throws -> String
+
     func stopRecording() async throws
     func getStatus(egressId: String) async throws -> EgressInfo
 }
@@ -56,7 +66,23 @@ class RecordingService: RecordingServiceProtocol {
 
     // MARK: - Public Methods
 
+    /// Start recording (API v1 - simple)
     func startRecording(roomName: String) async throws -> String {
+        try await startRecording(
+            roomName: roomName,
+            matrixRoomId: nil,
+            participants: nil,
+            initiatedBy: nil
+        )
+    }
+
+    /// Start recording with participant metadata (API v2)
+    func startRecording(
+        roomName: String,
+        matrixRoomId: String?,
+        participants: [(userId: String, displayName: String)]?,
+        initiatedBy: String?
+    ) async throws -> String {
         guard !state.isRecording else {
             throw RecordingError.alreadyRecording
         }
@@ -68,7 +94,12 @@ class RecordingService: RecordingServiceProtocol {
         stateSubject.send(.starting)
 
         do {
-            let request = RecordingStartRequest(roomName: roomName)
+            let request = RecordingStartRequest(
+                roomName: roomName,
+                matrixRoomId: matrixRoomId,
+                participants: participants,
+                initiatedBy: initiatedBy
+            )
 
             // Add timeout to the request
             let response: RecordingStartResponse = try await withTimeout(seconds: requestTimeout) {
@@ -285,6 +316,20 @@ class RecordingServiceMock: RecordingServiceProtocol {
     var stopRecordingResult: Result<Void, Error> = .success(())
 
     func startRecording(roomName: String) async throws -> String {
+        try await startRecording(
+            roomName: roomName,
+            matrixRoomId: nil,
+            participants: nil,
+            initiatedBy: nil
+        )
+    }
+
+    func startRecording(
+        roomName: String,
+        matrixRoomId: String?,
+        participants: [(userId: String, displayName: String)]?,
+        initiatedBy: String?
+    ) async throws -> String {
         switch startRecordingResult {
         case .success(let egressId):
             stateSubject.send(.recording(egressId: egressId, duration: 0))

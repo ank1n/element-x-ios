@@ -9,7 +9,7 @@ import SwiftUI
 
 struct CallsListScreenCoordinatorParameters {
     let userSession: UserSessionProtocol
-    let callHistoryService: CallHistoryServiceProtocol
+    let callHistoryService: CallHistoryServiceProtocol?
 }
 
 enum CallsListScreenCoordinatorAction {

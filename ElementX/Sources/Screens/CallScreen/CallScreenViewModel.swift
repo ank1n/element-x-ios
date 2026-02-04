@@ -369,17 +369,36 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     private func startRecording() async {
         guard let recordingService else { return }
 
-        // Get room name from configuration
+        // Get room info and participant metadata from configuration
         let roomName: String
+        var matrixRoomId: String?
+        var participants: [(userId: String, displayName: String)]?
+        var initiatedBy: String?
+
         switch configuration.kind {
         case .genericCallLink(let url):
             roomName = url.lastPathComponent
-        case .roomCall(let roomProxy, _, _, _, _, _):
+
+        case .roomCall(let roomProxy, let clientProxy, _, _, _, _):
             roomName = roomProxy.id
+            matrixRoomId = roomProxy.id
+            initiatedBy = clientProxy.userID
+
+            // Get participant info from room members
+            if let members = await roomProxy.members() {
+                participants = members
+                    .filter { $0.isActive }
+                    .map { ($0.userID, $0.displayName ?? $0.userID) }
+            }
         }
 
         do {
-            let egressId = try await recordingService.startRecording(roomName: roomName)
+            let egressId = try await recordingService.startRecording(
+                roomName: roomName,
+                matrixRoomId: matrixRoomId,
+                participants: participants,
+                initiatedBy: initiatedBy
+            )
             MXLog.info("Recording started with egress ID: \(egressId)")
         } catch {
             MXLog.error("Failed to start recording: \(error)")

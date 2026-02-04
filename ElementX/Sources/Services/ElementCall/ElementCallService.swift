@@ -211,13 +211,15 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         
         endUnansweredCallTask = Task { [weak self] in
             try? await self?.timeProvider.clock.sleep(for: ringDuration)
-            
+
             guard let self, !Task.isCancelled else {
                 return
             }
-            
+
             if let incomingCallID, incomingCallID.callKitID == callID.callKitID {
                 callProvider.reportCall(with: incomingCallID.callKitID, endedAt: nil, reason: .unanswered)
+                // Notify about missed call
+                actionsSubject.send(.missedCall(roomID: incomingCallID.roomID))
             }
         }
     }
@@ -411,5 +413,10 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         declineListenerHandle = nil
         endUnansweredCallTask?.cancel()
         callProvider.reportCall(with: incomingCallID.callKitID, endedAt: nil, reason: reason)
+
+        // Notify about missed call for unanswered scenarios
+        if reason == .remoteEnded || reason == .unanswered {
+            actionsSubject.send(.missedCall(roomID: incomingCallID.roomID))
+        }
     }
 }

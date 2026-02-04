@@ -8,13 +8,42 @@ import Foundation
 
 // MARK: - API Request/Response Models
 
+/// Participant info for Recording API v2
+struct RecordingParticipantRequest: Codable {
+    let userId: String
+    let displayName: String
+}
+
 struct RecordingStartRequest: Codable {
     let roomName: String
     let layout: String?
 
+    // Recording API v2 fields
+    let matrixRoomId: String?
+    let participants: [RecordingParticipantRequest]?
+    let initiatedBy: String?
+
     init(roomName: String, layout: String = "grid-dark") {
         self.roomName = roomName
         self.layout = layout
+        self.matrixRoomId = nil
+        self.participants = nil
+        self.initiatedBy = nil
+    }
+
+    /// Recording API v2 initializer with participant metadata
+    init(roomName: String,
+         layout: String = "grid-dark",
+         matrixRoomId: String?,
+         participants: [(userId: String, displayName: String)]?,
+         initiatedBy: String?) {
+        self.roomName = roomName
+        self.layout = layout
+        self.matrixRoomId = matrixRoomId
+        self.participants = participants?.map {
+            RecordingParticipantRequest(userId: $0.userId, displayName: $0.displayName)
+        }
+        self.initiatedBy = initiatedBy
     }
 }
 

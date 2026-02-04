@@ -12,6 +12,7 @@ enum ElementCallServiceAction {
     case receivedIncomingCallRequest
     case startCall(roomID: String)
     case endCall(roomID: String)
+    case missedCall(roomID: String)
     case setAudioEnabled(_ enabled: Bool, roomID: String)
 }
 

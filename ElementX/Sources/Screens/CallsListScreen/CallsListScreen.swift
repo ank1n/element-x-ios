@@ -24,6 +24,7 @@ struct CallsListScreen: View {
             .toolbar { toolbar }
             .background(Color.compound.bgCanvasDefault.ignoresSafeArea())
             .toolbarBloom(hasSearchBar: true)
+            .alert(item: $context.alertInfo)
     }
 
     @ToolbarContentBuilder
@@ -82,6 +83,12 @@ struct CallsListScreen: View {
             }
             .scrollDismissesKeyboard(.immediately)
             .scrollBounceBehavior(context.viewState.callHistory.isEmpty ? .basedOnSize : .automatic)
+            .refreshable {
+                context.send(viewAction: .refresh)
+            }
+            .onAppear {
+                context.send(viewAction: .refresh)
+            }
         }
     }
 
@@ -179,23 +186,24 @@ struct CallsListScreen: View {
     }
 
     private func callCell(_ call: CallHistoryItem) -> some View {
-        HStack(spacing: 0) {
-            Button {
-                context.send(viewAction: .selectCall(call))
-            } label: {
-                HStack(spacing: 16) {
-                    ZStack {
-                        Circle()
-                            .fill(avatarColor(for: call.contactName))
-                            .frame(width: 52, height: 52)
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                Button {
+                    context.send(viewAction: .selectCall(call))
+                } label: {
+                    HStack(spacing: 16) {
+                        ZStack {
+                            Circle()
+                                .fill(avatarColor(for: call.contactName))
+                                .frame(width: 52, height: 52)
 
-                        Text(String(call.contactName.prefix(1)).uppercased())
-                            .font(.compound.headingMD)
-                            .foregroundColor(.white)
-                    }
+                            Text(String(call.contactName.prefix(1)).uppercased())
+                                .font(.compound.headingMD)
+                                .foregroundColor(.white)
+                        }
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(alignment: .top, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(alignment: .top, spacing: 16) {
                             Text(call.contactName)
                                 .font(.compound.bodyLGSemibold)
                                 .foregroundColor(call.isMissed ? .red : .compound.textPrimary)
@@ -251,15 +259,53 @@ struct CallsListScreen: View {
                 .buttonStyle(.plain)
                 .padding(.trailing, 8)
             }
+            }
+
+            // Progress bar when playing this call
+            if context.viewState.playingCallId == call.id && context.viewState.playbackState != .stopped {
+                HStack(spacing: 8) {
+                    Text(formatTime(context.viewState.playbackCurrentTime))
+                        .font(.caption2)
+                        .foregroundColor(.compound.textSecondary)
+                        .monospacedDigit()
+
+                    GeometryReader { geometry in
+                        ZStack(alignment: .leading) {
+                            Rectangle()
+                                .fill(Color.compound.bgSubtleSecondary)
+                                .frame(height: 4)
+                                .cornerRadius(2)
+
+                            Rectangle()
+                                .fill(Color.compound.iconAccentTertiary)
+                                .frame(width: geometry.size.width * context.viewState.playbackProgress, height: 4)
+                                .cornerRadius(2)
+                        }
+                    }
+                    .frame(height: 4)
+
+                    Text(formatTime(context.viewState.playbackDuration))
+                        .font(.caption2)
+                        .foregroundColor(.compound.textSecondary)
+                        .monospacedDigit()
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 4)
+                .padding(.bottom, 8)
+            }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(Color.compound.borderDisabled)
                 .frame(height: 1 / UIScreen.main.scale)
                 .padding(.leading, 84)
         }
+    }
+
+    private func formatTime(_ time: TimeInterval) -> String {
+        let minutes = Int(time) / 60
+        let seconds = Int(time) % 60
+        return String(format: "%d:%02d", minutes, seconds)
     }
 
     private func avatarColor(for name: String) -> Color {
@@ -303,10 +349,10 @@ struct CallsListScreen: View {
     }
 
     private func timeAgo(from date: Date) -> String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
+        let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "ru_RU")
-        return formatter.localizedString(for: date, relativeTo: Date())
+        formatter.dateFormat = "d MMM, HH:mm"
+        return formatter.string(from: date)
     }
 
     private func isPlayingCall(_ call: CallHistoryItem) -> Bool {
@@ -318,9 +364,16 @@ struct CallsListScreen: View {
 
 struct CallsListScreen_Previews: PreviewProvider {
     static var previews: some View {
-        let mockService = CallHistoryService(baseURL: URL(string: "https://api.market.implica.ru")!)
-        let viewModel = CallsListScreenViewModel(userSession: UserSessionMock(.init()), callHistoryService: mockService)
-        NavigationStack {
+        // Setup ServiceLocator for preview
+        ServiceLocator.shared.setupLocalCallHistoryService()
+
+        let mockService = CallHistoryService(baseURL: URL(string: "https://livekit.market.implica.ru/recording-api")!)
+        let viewModel = CallsListScreenViewModel(
+            userSession: UserSessionMock(.init()),
+            localCallHistoryService: ServiceLocator.shared.localCallHistoryService,
+            callHistoryService: mockService
+        )
+        return NavigationStack {
             CallsListScreen(context: viewModel.context)
         }
     }

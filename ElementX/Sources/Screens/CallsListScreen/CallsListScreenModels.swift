@@ -11,6 +11,7 @@ enum CallsListScreenViewAction {
     case selectCall(CallHistoryItem)
     case startNewCall
     case playRecording(CallHistoryItem)
+    case refresh
 }
 
 enum CallsListScreenViewModelAction {
@@ -33,18 +34,22 @@ struct CallsListScreenViewState: BindableState {
     var playingCallId: String?
     var playbackState: MediaPlayerState = .stopped
     var playbackProgress: Double = 0
+    var playbackDuration: TimeInterval = 0
+    var playbackCurrentTime: TimeInterval = 0
+    var downloadProgress: Double = 0  // 0.0 to 1.0
 
     var bindings = CallsListScreenViewStateBindings()
 }
 
 struct CallsListScreenViewStateBindings {
     var searchQuery = ""
+    var alertInfo: AlertInfo<UUID>?
 }
 
 /// Call history item
 struct CallHistoryItem: Identifiable, Equatable {
     let id: String
-    let contactName: String
+    var contactName: String
     let contactId: String
     let callType: CallType
     let timestamp: Date
@@ -85,6 +90,12 @@ struct CallHistoryResponse: Codable {
     let error: String?
 }
 
+/// Participant info from Recording API v2
+struct RecordingParticipant: Codable {
+    let userId: String
+    let displayName: String
+}
+
 /// Individual recording from API
 struct CallHistoryAPIItem: Codable {
     let egressId: String
@@ -93,37 +104,61 @@ struct CallHistoryAPIItem: Codable {
     let startedAt: String?
     let endedAt: String?
 
+    // New fields from Recording API v2
+    let matrixRoomId: String?
+    let participants: [RecordingParticipant]?
+    let initiatedBy: String?
+    let duration: Int?
+    let fileSize: Int?
+
     func toCallHistoryItem() -> CallHistoryItem? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
         guard let startedAtString = startedAt,
-              let startDate = ISO8601DateFormatter().date(from: startedAtString) else {
+              let startDate = formatter.date(from: startedAtString) else {
             return nil
         }
 
         let endDate: Date? = if let endedAtString = endedAt {
-            ISO8601DateFormatter().date(from: endedAtString)
+            formatter.date(from: endedAtString)
         } else {
             nil
         }
 
-        let duration = if let endDate {
+        // Use duration from API if available, otherwise calculate from dates
+        let callDuration: TimeInterval? = if let duration {
+            TimeInterval(duration)
+        } else if let endDate {
             endDate.timeIntervalSince(startDate)
         } else {
-            nil as TimeInterval?
+            nil
         }
 
         let playbackURL: URL? = if RecordingStatus(rawValue: status) == .complete {
-            URL(string: "https://minio.market.implica.ru/livekit-recordings/\(egressId).mp4")
+            URL(string: "https://livekit.market.implica.ru/recording-api/api/recording/play/\(egressId)")
         } else {
             nil
         }
 
+        // Use participants from API v2 if available
+        let displayName: String
+        if let participants, !participants.isEmpty {
+            displayName = participants.map { $0.displayName }.joined(separator: ", ")
+        } else {
+            displayName = "Видеозвонок"
+        }
+
+        // Use matrixRoomId if available, otherwise fallback to roomName
+        let contactId = matrixRoomId ?? roomName
+
         return CallHistoryItem(
             id: egressId,
-            contactName: roomName,
-            contactId: roomName, // TODO: Map to Matrix room ID
-            callType: .outgoing,
+            contactName: displayName,
+            contactId: contactId,
+            callType: .video,
             timestamp: startDate,
-            duration: duration,
+            duration: callDuration,
             isMissed: false,
             recordingURL: playbackURL
         )

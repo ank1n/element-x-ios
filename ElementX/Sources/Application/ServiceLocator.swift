@@ -43,4 +43,17 @@ class ServiceLocator {
         let service = RecordingService(baseURL: settings.recordingAPIBaseURL)
         register(recordingService: service)
     }
+
+    // MARK: - Local Call History
+
+    private(set) var localCallHistoryService: LocalCallHistoryServiceProtocol!
+
+    func register(localCallHistoryService: LocalCallHistoryServiceProtocol) {
+        self.localCallHistoryService = localCallHistoryService
+    }
+
+    func setupLocalCallHistoryService() {
+        let service = LocalCallHistoryService()
+        register(localCallHistoryService: service)
+    }
 }
