@@ -26,6 +26,9 @@ protocol RecordingServiceProtocol: AnyObject {
 
     func stopRecording() async throws
     func getStatus(egressId: String) async throws -> EgressInfo
+
+    /// Принудительный сброс состояния записи (при входе в новый звонок)
+    func forceReset()
 }
 
 // MARK: - Implementation
@@ -201,6 +204,18 @@ class RecordingService: RecordingServiceProtocol {
         return egress
     }
 
+    /// Принудительный сброс состояния записи (при входе в новый звонок)
+    func forceReset() {
+        MXLog.info("Force resetting recording state")
+        stateResetTask?.cancel()
+        stateResetTask = nil
+        durationTimer?.cancel()
+        durationTimer = nil
+        currentEgressId = nil
+        recordingStartTime = nil
+        stateSubject.send(.idle)
+    }
+
     // MARK: - Private Methods
 
     /// Schedule automatic state reset to idle after showing error
@@ -350,6 +365,10 @@ class RecordingServiceMock: RecordingServiceProtocol {
 
     func getStatus(egressId: String) async throws -> EgressInfo {
         EgressInfo(egressId: egressId, roomName: "test-room", status: 1, startedAt: nil, endedAt: nil)
+    }
+
+    func forceReset() {
+        stateSubject.send(.idle)
     }
 
     func simulateState(_ state: RecordingState) {

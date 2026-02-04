@@ -51,7 +51,10 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         self.analyticsService = analyticsService
         self.recordingService = recordingService
         isPictureInPictureAllowed = allowPictureInPicture
-        
+
+        // Сбрасываем состояние записи от предыдущего звонка
+        recordingService?.forceReset()
+
         var isGenericCallLink = false
         switch configuration.kind {
         case .genericCallLink(let url):
