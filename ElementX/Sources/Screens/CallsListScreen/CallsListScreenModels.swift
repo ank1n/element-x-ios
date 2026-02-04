@@ -112,16 +112,13 @@ struct CallHistoryAPIItem: Codable {
     let fileSize: Int?
 
     func toCallHistoryItem() -> CallHistoryItem? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-
         guard let startedAtString = startedAt,
-              let startDate = formatter.date(from: startedAtString) else {
+              let startDate = Self.parseDate(startedAtString) else {
             return nil
         }
 
         let endDate: Date? = if let endedAtString = endedAt {
-            formatter.date(from: endedAtString)
+            Self.parseDate(endedAtString)
         } else {
             nil
         }
@@ -162,5 +159,27 @@ struct CallHistoryAPIItem: Codable {
             isMissed: false,
             recordingURL: playbackURL
         )
+    }
+
+    /// Парсит дату в разных форматах от Recording API
+    private static func parseDate(_ string: String) -> Date? {
+        // Формат 1: "2026-02-04 10:17:11" (из API v2)
+        let simpleFormatter = DateFormatter()
+        simpleFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        simpleFormatter.timeZone = TimeZone(identifier: "Europe/Moscow")
+        if let date = simpleFormatter.date(from: string) {
+            return date
+        }
+
+        // Формат 2: ISO8601 с миллисекундами "2026-02-04T10:17:11.000Z"
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = isoFormatter.date(from: string) {
+            return date
+        }
+
+        // Формат 3: ISO8601 без миллисекунд "2026-02-04T10:17:11Z"
+        isoFormatter.formatOptions = [.withInternetDateTime]
+        return isoFormatter.date(from: string)
     }
 }

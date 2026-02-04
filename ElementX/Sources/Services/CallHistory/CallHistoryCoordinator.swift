@@ -50,6 +50,13 @@ class CallHistoryCoordinator {
             MXLog.info("📞 CallHistory: Received incoming call request")
 
         case .startCall(let roomID):
+            // Предотвращаем дублирование - если уже есть активный звонок в этой комнате, игнорируем
+            if currentCallRoomID == roomID, currentCallID != nil {
+                MXLog.info("📞 CallHistory: Ignoring duplicate startCall for room \(roomID)")
+                pendingIncomingCall = false
+                return
+            }
+
             // Определяем направление звонка
             let direction: LocalCallHistoryItem.CallDirection = pendingIncomingCall ? .incoming : .outgoing
             pendingIncomingCall = false

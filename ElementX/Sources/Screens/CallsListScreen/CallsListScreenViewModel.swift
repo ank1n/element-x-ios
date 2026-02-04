@@ -79,11 +79,14 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
             .store(in: &callsCancellables)
     }
 
+    /// Кэш записей с сервера (egressId -> recording info)
+    private var serverRecordings: [CallHistoryItem] = []
+
     private func updateCallHistoryFromLocal(_ localCalls: [LocalCallHistoryItem]) {
-        MXLog.info("📞 Updating call history from local: \(localCalls.count) calls")
+        MXLog.info("📞 Updating call history from local: \(localCalls.count) calls, server recordings: \(serverRecordings.count)")
 
         // Конвертируем локальные записи в CallHistoryItem
-        let calls = localCalls.map { local -> CallHistoryItem in
+        var calls = localCalls.map { local -> CallHistoryItem in
             // Определяем тип звонка
             let callType: CallHistoryItem.CallType
             switch local.direction {
@@ -93,10 +96,15 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
                 callType = .outgoing
             }
 
-            // Ищем запись для этого звонка
+            // Ищем запись для этого звонка по egressId или по времени
             var recordingURL: URL?
             if let egressId = local.recordingEgressId {
                 recordingURL = URL(string: "https://livekit.market.implica.ru/recording-api/api/recording/play/\(egressId)")
+            } else {
+                // Попробуем найти запись по roomID и близкому времени
+                if let matchingRecording = findMatchingRecording(for: local) {
+                    recordingURL = matchingRecording.recordingURL
+                }
             }
 
             return CallHistoryItem(
@@ -111,8 +119,41 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
             )
         }
 
+        // Добавляем записи с сервера которые не имеют соответствия в локальной истории
+        for recording in serverRecordings {
+            let hasLocalMatch = localCalls.contains { local in
+                isRecordingMatchingCall(recording, localCall: local)
+            }
+            if !hasLocalMatch {
+                calls.append(recording)
+            }
+        }
+
+        // Сортируем по времени (новые сверху)
+        calls.sort { $0.timestamp > $1.timestamp }
+
         state.callHistory = calls
         state.isLoading = false
+    }
+
+    /// Находит запись с сервера, соответствующую локальному звонку
+    private func findMatchingRecording(for localCall: LocalCallHistoryItem) -> CallHistoryItem? {
+        serverRecordings.first { recording in
+            isRecordingMatchingCall(recording, localCall: localCall)
+        }
+    }
+
+    /// Проверяет соответствует ли запись локальному звонку (по roomID и близости времени)
+    private func isRecordingMatchingCall(_ recording: CallHistoryItem, localCall: LocalCallHistoryItem) -> Bool {
+        // Проверяем roomID (contactId в recording может быть matrixRoomId или encoded roomName)
+        let roomMatches = recording.contactId == localCall.roomID ||
+                          recording.contactId.contains(localCall.roomID)
+
+        // Проверяем близость по времени (в пределах 5 минут)
+        let timeDiff = abs(recording.timestamp.timeIntervalSince(localCall.startedAt))
+        let timeMatches = timeDiff < 300 // 5 минут
+
+        return roomMatches && timeMatches
     }
 
     // MARK: - Server Recordings
@@ -130,18 +171,19 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
                 let recordings = try await callHistoryService.fetchRecordings()
                 MXLog.info("📞 Loaded \(recordings.count) recordings from server")
 
-                // Сохраняем в кэш для быстрого доступа
-                // TODO: связывать записи с локальными звонками по roomID и времени
                 await MainActor.run {
-                    // Пока что просто добавляем записи как отдельные звонки
-                    // если локальная история пуста
-                    if localCallHistoryService.getAllCalls().isEmpty {
-                        state.callHistory = recordings
-                        state.isLoading = false
-                    }
+                    // Сохраняем записи в кэш
+                    serverRecordings = recordings
+
+                    // Обновляем UI объединяя с локальной историей
+                    let localCalls = localCallHistoryService.getAllCalls()
+                    updateCallHistoryFromLocal(localCalls)
                 }
             } catch {
                 MXLog.error("📞 Failed to fetch recordings: \(error)")
+                await MainActor.run {
+                    state.isLoading = false
+                }
             }
         }
     }
