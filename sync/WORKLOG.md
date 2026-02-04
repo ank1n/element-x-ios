@@ -11,7 +11,7 @@
 ### Web (@web-dev)
 | Задача | Срок | Статус |
 |--------|------|--------|
-| **Оптимизация WebRTC (Element Call)** | 03.02 | **ожидает** |
+| **Оптимизация WebRTC (Element Call)** | 03.02 | **готово** |
 | Ознакомиться с ТЗ и репозиторием | — | ожидает |
 | Боковая панель с 4 секциями | — | ожидает |
 | Раздел "Звонки" с историей | — | ожидает |
@@ -80,6 +80,18 @@
 ## История изменений
 
 ### 2026-02-04
+- [x] **k8s: Исправлены звонки Web→iOS** — @claude
+  - Проблема: iOS показывал "Неподдерживаемый вызов" при звонках с Element Web
+  - Причина: Element Web использовал legacy `m.call.invite` вместо MatrixRTC
+  - Решение: добавлен `feature_group_calls: true` в Element Web config
+  - Теперь Web отправляет `org.matrix.msc3401.call.member` события (как iOS)
+  - Обновлён ConfigMap `element-config` в namespace `matrix`
+- [x] web: Element Call WebRTC оптимизация — @web-dev
+  - Включен RED encoding для защиты от потери пакетов аудио
+  - Отключен DTX для устранения хрипов при старте звонка
+  - Добавлен слой simulcast h540 (960x540) для лучшей адаптации
+  - Понижено дефолтное разрешение видео с 720p до 540p
+  - Путь: `element-call-src/src/livekit/options.ts`
 - [x] backend: Recording API v2 с поддержкой метаданных — @web-dev
   - SQLite база для хранения metadata (participants, matrixRoomId, initiatedBy)
   - POST /start принимает: matrixRoomId, participants[], initiatedBy
