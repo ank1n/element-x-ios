@@ -33,7 +33,7 @@ protocol RecordingServiceProtocol: AnyObject {
 class RecordingService: RecordingServiceProtocol {
     private let baseURL: URL
     private let urlSession: URLSession
-    private let requestTimeout: TimeInterval = 5.0
+    private let requestTimeout: TimeInterval = 15.0
 
     private let stateSubject = CurrentValueSubject<RecordingState, Never>(.idle)
 
