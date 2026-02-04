@@ -272,10 +272,30 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         state.playingCallId = call.id
         state.playbackState = .loading
 
-        // Сначала пробуем воспроизвести напрямую с URL (стриминг)
-        // Если не работает — скачиваем файл
-        MXLog.info("Playing recording directly from URL: \(recordingURL)")
-        audioPlayer.load(sourceURL: recordingURL, playbackURL: recordingURL, autoplay: true)
+        // Download file first, then play locally
+        currentDownloadTask = Task {
+            do {
+                let localURL = try await downloadRecording(from: recordingURL, callId: call.id)
+
+                // Check if cancelled
+                guard !Task.isCancelled, state.playingCallId == call.id else {
+                    return
+                }
+
+                await MainActor.run {
+                    audioPlayer.load(sourceURL: recordingURL, playbackURL: localURL, autoplay: true)
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+
+                MXLog.error("Failed to download recording: \(error)")
+                await MainActor.run {
+                    state.playbackState = .error
+                    state.playingCallId = nil
+                    state.bindings.alertInfo = AlertInfo(id: UUID(), title: "Ошибка загрузки", message: "\(error.localizedDescription)")
+                }
+            }
+        }
     }
 
     private func stopPlayback() {
@@ -310,50 +330,57 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
 
         // Create URLSession with longer timeout for large files
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 60.0
-        config.timeoutIntervalForResource = 120.0
+        config.timeoutIntervalForRequest = 120.0
+        config.timeoutIntervalForResource = 300.0
+        config.waitsForConnectivity = true
         let session = URLSession(configuration: config)
+
+        // Create request with explicit headers
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("*/*", forHTTPHeaderField: "Accept")
+        request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+        request.timeoutInterval = 120.0
 
         // Retry up to 3 times
         var lastError: Error?
         for attempt in 1...3 {
             do {
                 MXLog.info("Downloading recording from: \(url), attempt \(attempt)")
-                let (tempURL, response) = try await session.download(from: url)
+
+                // Use data() instead of download() for more reliable transfer
+                let (data, response) = try await session.data(for: request)
 
                 // Check response
                 if let httpResponse = response as? HTTPURLResponse {
-                    MXLog.info("Download response: \(httpResponse.statusCode), content-length: \(httpResponse.expectedContentLength)")
+                    MXLog.info("Download response: \(httpResponse.statusCode), data size: \(data.count), content-length: \(httpResponse.expectedContentLength)")
 
                     guard httpResponse.statusCode == 200 else {
                         throw CallHistoryError.serverError("HTTP \(httpResponse.statusCode)")
                     }
                 }
 
-                // Check downloaded file size
-                let tempAttrs = try? fileManager.attributesOfItem(atPath: tempURL.path)
-                let downloadedSize = tempAttrs?[.size] as? Int ?? 0
-                MXLog.info("Downloaded file size: \(downloadedSize)")
+                MXLog.info("Downloaded data size: \(data.count) bytes")
 
                 // Минимум 100KB для коротких записей
-                if downloadedSize < 100_000 {
-                    throw CallHistoryError.serverError("File too small: \(downloadedSize) bytes")
+                if data.count < 100_000 {
+                    throw CallHistoryError.serverError("File too small: \(data.count) bytes")
                 }
 
-                // Move to cache
+                // Write to file
                 if fileManager.fileExists(atPath: localURL.path) {
                     try? fileManager.removeItem(at: localURL)
                 }
-                try fileManager.moveItem(at: tempURL, to: localURL)
+                try data.write(to: localURL)
 
-                MXLog.info("Saved to: \(localURL.path)")
+                MXLog.info("Saved to: \(localURL.path), size: \(data.count)")
                 return localURL
 
             } catch {
                 MXLog.error("Download attempt \(attempt) failed: \(error)")
                 lastError = error
                 if attempt < 3 {
-                    try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second delay
+                    try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 second delay
                 }
             }
         }
