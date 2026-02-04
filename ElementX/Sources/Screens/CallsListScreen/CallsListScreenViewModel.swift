@@ -329,10 +329,15 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         }
 
         // Create URLSession with longer timeout for large files
-        let config = URLSessionConfiguration.default
+        let config = URLSessionConfiguration.ephemeral  // Ephemeral avoids caching issues
         config.timeoutIntervalForRequest = 120.0
         config.timeoutIntervalForResource = 300.0
         config.waitsForConnectivity = true
+        config.allowsCellularAccess = true
+        config.allowsExpensiveNetworkAccess = true
+        config.allowsConstrainedNetworkAccess = true
+        // Try to avoid QUIC issues
+        config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         let session = URLSession(configuration: config)
 
         // Create request with explicit headers
@@ -340,7 +345,11 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         request.httpMethod = "GET"
         request.setValue("*/*", forHTTPHeaderField: "Accept")
         request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+        request.setValue("close", forHTTPHeaderField: "Connection")  // Force connection close
         request.timeoutInterval = 120.0
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        // Disable HTTP/3 by using explicit HTTP version
+        request.assumesHTTP3Capable = false
 
         // Retry up to 3 times
         var lastError: Error?
