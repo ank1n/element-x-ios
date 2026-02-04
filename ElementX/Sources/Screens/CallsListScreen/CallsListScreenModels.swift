@@ -139,10 +139,16 @@ struct CallHistoryAPIItem: Codable {
             nil
         }
 
-        // Use participants from API v2 if available
+        // Use participants from API v2 if available (limit to 2 names)
         let displayName: String
         if let participants, !participants.isEmpty {
-            displayName = participants.map { $0.displayName }.joined(separator: ", ")
+            let names = participants.map { $0.displayName }
+            if names.count <= 2 {
+                displayName = names.joined(separator: ", ")
+            } else {
+                let firstTwo = names.prefix(2).joined(separator: ", ")
+                displayName = "\(firstTwo) +\(names.count - 2)"
+            }
         } else {
             displayName = "Видеозвонок"
         }

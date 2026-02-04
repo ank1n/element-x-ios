@@ -6387,6 +6387,41 @@ class ElementCallServiceMock: ElementCallServiceProtocol, @unchecked Sendable {
         }
         setAudioEnabledRoomIDClosure?(enabled, roomID)
     }
+    //MARK: - markNextCallAsIncoming
+
+    var markNextCallAsIncomingUnderlyingCallsCount = 0
+    var markNextCallAsIncomingCallsCount: Int {
+        get {
+            if Thread.isMainThread {
+                return markNextCallAsIncomingUnderlyingCallsCount
+            } else {
+                var returnValue: Int? = nil
+                DispatchQueue.main.sync {
+                    returnValue = markNextCallAsIncomingUnderlyingCallsCount
+                }
+
+                return returnValue!
+            }
+        }
+        set {
+            if Thread.isMainThread {
+                markNextCallAsIncomingUnderlyingCallsCount = newValue
+            } else {
+                DispatchQueue.main.sync {
+                    markNextCallAsIncomingUnderlyingCallsCount = newValue
+                }
+            }
+        }
+    }
+    var markNextCallAsIncomingCalled: Bool {
+        return markNextCallAsIncomingCallsCount > 0
+    }
+    var markNextCallAsIncomingClosure: (() -> Void)?
+
+    func markNextCallAsIncoming() {
+        markNextCallAsIncomingCallsCount += 1
+        markNextCallAsIncomingClosure?()
+    }
 }
 class ElementCallWidgetDriverMock: ElementCallWidgetDriverProtocol, @unchecked Sendable {
     var widgetID: String {

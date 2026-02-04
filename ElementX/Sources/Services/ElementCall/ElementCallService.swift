@@ -96,18 +96,29 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         self.callProvider.setDelegate(self, queue: nil)
     }
     
+    /// Флаг для пометки следующего звонка как входящего (когда VoIP push недоступен)
+    private var nextCallIsIncoming = false
+
     func setClientProxy(_ clientProxy: any ClientProxyProtocol) {
         self.clientProxy = clientProxy
     }
-    
+
+    func markNextCallAsIncoming() {
+        nextCallIsIncoming = true
+        // Также отправляем событие для CallHistoryCoordinator
+        actionsSubject.send(.receivedIncomingCallRequest)
+        MXLog.info("Marked next call as incoming")
+    }
+
     func setupCallSession(roomID: String, roomDisplayName: String) async {
         // Drop any ongoing calls when starting a new one
         if ongoingCallID != nil {
             tearDownCallSession()
         }
 
-        // Check if this is an outgoing call (not from incoming ring)
-        let isOutgoingCall = incomingCallID == nil || incomingCallID?.roomID != roomID
+        // Check if this is an outgoing call (not from incoming ring or explicit marking)
+        let isOutgoingCall = !nextCallIsIncoming && (incomingCallID == nil || incomingCallID?.roomID != roomID)
+        nextCallIsIncoming = false
 
         // If this starting from a ring reuse those identifiers
         // Make sure the roomID matches

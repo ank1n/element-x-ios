@@ -459,6 +459,11 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
     }
     
     private func presentCallScreen(roomProxy: JoinedRoomProxyProtocol) {
+        // Если в комнате уже есть звонок, значит пользователь присоединяется к входящему звонку
+        if roomProxy.infoPublisher.value.hasRoomCall {
+            flowParameters.elementCallService.markNextCallAsIncoming()
+        }
+
         let colorScheme: ColorScheme = flowParameters.windowManager.mainWindow.traitCollection.userInterfaceStyle == .light ? .light : .dark
         presentCallScreen(configuration: .init(roomProxy: roomProxy,
                                                clientProxy: userSession.clientProxy,
