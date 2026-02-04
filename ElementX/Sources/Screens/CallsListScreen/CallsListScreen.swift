@@ -231,29 +231,31 @@ struct CallsListScreen: View {
                     }
                 }
 
-                // Play recording button
-                if call.hasRecording {
-                    Button {
+                // Action button - always shown for consistent layout
+                Button {
+                    if call.hasRecording {
                         context.send(viewAction: .playRecording(call))
-                    } label: {
-                        ZStack {
-                            Circle()
-                                .fill(isPlayingCall(call) ? Color.compound.bgActionPrimaryRest : Color.compound.bgSubtleSecondary)
-                                .frame(width: 40, height: 40)
+                    } else {
+                        context.send(viewAction: .selectCall(call))
+                    }
+                } label: {
+                    ZStack {
+                        Circle()
+                            .fill(actionButtonBackground(for: call))
+                            .frame(width: 40, height: 40)
 
-                            if context.viewState.playingCallId == call.id && context.viewState.playbackState == .loading {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                    .scaleEffect(0.7)
-                            } else {
-                                Image(systemName: isPlayingCall(call) ? "pause.fill" : "play.fill")
-                                    .font(.system(size: 14))
-                                    .foregroundColor(isPlayingCall(call) ? .white : .compound.iconPrimary)
-                            }
+                        if context.viewState.playingCallId == call.id && context.viewState.playbackState == .loading {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .scaleEffect(0.7)
+                        } else {
+                            Image(systemName: actionButtonIcon(for: call))
+                                .font(.system(size: 14))
+                                .foregroundColor(actionButtonForeground(for: call))
                         }
                     }
-                    .buttonStyle(.plain)
                 }
+                .buttonStyle(.plain)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -354,6 +356,30 @@ struct CallsListScreen: View {
 
     private func isPlayingCall(_ call: CallHistoryItem) -> Bool {
         context.viewState.playingCallId == call.id && context.viewState.playbackState == .playing
+    }
+
+    // MARK: - Action Button Helpers
+
+    private func actionButtonIcon(for call: CallHistoryItem) -> String {
+        if call.hasRecording {
+            return isPlayingCall(call) ? "pause.fill" : "play.fill"
+        } else {
+            return "phone.fill"
+        }
+    }
+
+    private func actionButtonBackground(for call: CallHistoryItem) -> Color {
+        if call.hasRecording && isPlayingCall(call) {
+            return Color.compound.bgActionPrimaryRest
+        }
+        return Color.compound.bgSubtleSecondary
+    }
+
+    private func actionButtonForeground(for call: CallHistoryItem) -> Color {
+        if call.hasRecording && isPlayingCall(call) {
+            return .white
+        }
+        return .compound.iconPrimary
     }
 }
 

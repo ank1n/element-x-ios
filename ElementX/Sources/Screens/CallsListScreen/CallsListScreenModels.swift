@@ -77,6 +77,7 @@ enum RecordingStatus: Int, Codable {
     case ending = 2
     case complete = 3
     case failed = 4
+    case aborted = 5  // запись прервана
 
     var isCompleted: Bool {
         self == .complete
@@ -111,7 +112,7 @@ struct CallHistoryAPIItem: Codable {
     let duration: Int?
     let fileSize: Int?
 
-    func toCallHistoryItem() -> CallHistoryItem? {
+    func toCallHistoryItem(currentUserID: String? = nil) -> CallHistoryItem? {
         guard let startedAtString = startedAt,
               let startDate = Self.parseDate(startedAtString) else {
             return nil
@@ -146,6 +147,14 @@ struct CallHistoryAPIItem: Codable {
             displayName = "Видеозвонок"
         }
 
+        // Determine call direction from initiatedBy
+        let callType: CallHistoryItem.CallType
+        if let currentUserID, let initiatedBy {
+            callType = initiatedBy == currentUserID ? .outgoing : .incoming
+        } else {
+            callType = .video
+        }
+
         // Use matrixRoomId if available, otherwise fallback to roomName
         let contactId = matrixRoomId ?? roomName
 
@@ -153,7 +162,7 @@ struct CallHistoryAPIItem: Codable {
             id: egressId,
             contactName: displayName,
             contactId: contactId,
-            callType: .video,
+            callType: callType,
             timestamp: startDate,
             duration: callDuration,
             isMissed: false,
