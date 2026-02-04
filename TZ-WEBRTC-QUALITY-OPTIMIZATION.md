@@ -485,7 +485,116 @@ Config: будет включен simulcast, codec settings
 
 ---
 
-## 8. Вопросы?
+## 8. Recording API: Мультиканальная запись звонков
+
+### 8.1 Требования к записи
+
+**Формат выходного файла:**
+- Один файл на звонок
+- Мультиканальная аудиозапись (каждый участник в отдельном канале)
+- Контейнер: MP4/M4A
+- Аудио кодек: AAC (для совместимости с iOS AVPlayer)
+
+### 8.2 Проблема с текущей реализацией
+
+**Track Composite Egress** (быстрый старт ~1 сек):
+- ❌ Поддерживает только OPUS
+- ❌ iOS AVPlayer не воспроизводит OPUS
+- ✅ Быстрый старт записи
+
+**Room Composite Egress** (медленный старт ~5 сек):
+- ✅ Поддерживает AAC
+- ❌ Медленный старт (headless браузер)
+- ❌ Микширует все в один канал
+
+### 8.3 Решение: Транскодирование на сервере
+
+**Архитектура:**
+```
+1. Запись в OPUS (Track Composite) — быстро
+2. После завершения → ffmpeg транскодирование в AAC
+3. Хранение AAC версии в MinIO
+4. iOS получает AAC файл
+```
+
+**Команда транскодирования:**
+```bash
+ffmpeg -i input.ogg -c:a aac -b:a 128k -ar 48000 output.m4a
+```
+
+### 8.4 API: Информация о каналах и участниках
+
+**Новый endpoint:** `GET /api/recording/channels/:egressId`
+
+**Response:**
+```json
+{
+  "success": true,
+  "egressId": "EG_xxx",
+  "channels": [
+    {
+      "channelIndex": 0,
+      "userId": "@ankin:market.implica.ru",
+      "displayName": "ankin",
+      "startTime": "00:00:00",
+      "endTime": "00:05:23"
+    },
+    {
+      "channelIndex": 1,
+      "userId": "@dbondar:market.implica.ru",
+      "displayName": "dbondar",
+      "startTime": "00:00:02",
+      "endTime": "00:05:20"
+    }
+  ],
+  "totalChannels": 2,
+  "duration": 323
+}
+```
+
+### 8.5 Расширение метаданных записи
+
+**Обновить таблицу `recording_metadata`:**
+```sql
+ALTER TABLE recording_metadata ADD COLUMN channels_info TEXT;
+-- JSON с информацией о каналах
+```
+
+**При старте записи сохранять:**
+- ID каждого участника
+- Какой трек (канал) соответствует какому участнику
+- Время подключения/отключения участника
+
+### 8.6 Задачи для реализации
+
+| # | Задача | Приоритет |
+|---|--------|-----------|
+| 1 | Добавить ffmpeg в Docker образ recording-api | Высокий |
+| 2 | Реализовать автотранскодирование после записи | Высокий |
+| 3 | Сохранять маппинг каналов-участников | Высокий |
+| 4 | Создать endpoint `/api/recording/channels/:id` | Средний |
+| 5 | Мультиканальная запись (отдельный трек на участника) | Средний |
+
+### 8.7 Пример использования (iOS)
+
+```swift
+// 1. Получить список каналов
+let channelsURL = URL(string: "https://api/recording/channels/\(egressId)")!
+let (data, _) = try await URLSession.shared.data(from: channelsURL)
+let channels = try JSONDecoder().decode(ChannelsResponse.self, from: data)
+
+// 2. Показать UI с возможностью выбора канала
+for channel in channels.channels {
+    print("Канал \(channel.channelIndex): \(channel.displayName)")
+}
+
+// 3. Воспроизвести конкретный канал или все вместе
+audioPlayer.play(recordingURL, channel: selectedChannel)
+```
+
+---
+
+## 9. Вопросы?
 
 Если что-то непонятно или нужна помощь:
 - Пиши в общий чат
