@@ -314,46 +314,71 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
 
         let localURL = cacheDirectory.appendingPathComponent("\(callId).mp4")
 
-        // Check if cached file exists and is valid (> 1MB)
+        // Check if cached file exists and is valid (> 500KB for short recordings)
         if fileManager.fileExists(atPath: localURL.path) {
             let attrs = try? fileManager.attributesOfItem(atPath: localURL.path)
             let fileSize = attrs?[.size] as? Int ?? 0
-            if fileSize > 1_000_000 {
+            if fileSize > 500_000 {
                 MXLog.info("Using cached file: \(localURL.path), size: \(fileSize)")
                 return localURL
             } else {
                 // Remove corrupted/incomplete file
                 try? fileManager.removeItem(at: localURL)
-                MXLog.info("Removed corrupted cache file")
+                MXLog.info("Removed corrupted cache file, size was: \(fileSize)")
             }
         }
 
-        // Download file
-        MXLog.info("Downloading recording from: \(url)")
-        let (tempURL, response) = try await URLSession.shared.download(from: url)
+        // Create URLSession with longer timeout for large files
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 60.0
+        config.timeoutIntervalForResource = 120.0
+        let session = URLSession(configuration: config)
 
-        // Check response
-        if let httpResponse = response as? HTTPURLResponse {
-            MXLog.info("Download response: \(httpResponse.statusCode), content-length: \(httpResponse.expectedContentLength)")
+        // Retry up to 3 times
+        var lastError: Error?
+        for attempt in 1...3 {
+            do {
+                MXLog.info("Downloading recording from: \(url), attempt \(attempt)")
+                let (tempURL, response) = try await session.download(from: url)
+
+                // Check response
+                if let httpResponse = response as? HTTPURLResponse {
+                    MXLog.info("Download response: \(httpResponse.statusCode), content-length: \(httpResponse.expectedContentLength)")
+
+                    guard httpResponse.statusCode == 200 else {
+                        throw CallHistoryError.serverError("HTTP \(httpResponse.statusCode)")
+                    }
+                }
+
+                // Check downloaded file size
+                let tempAttrs = try? fileManager.attributesOfItem(atPath: tempURL.path)
+                let downloadedSize = tempAttrs?[.size] as? Int ?? 0
+                MXLog.info("Downloaded file size: \(downloadedSize)")
+
+                // Минимум 100KB для коротких записей
+                if downloadedSize < 100_000 {
+                    throw CallHistoryError.serverError("File too small: \(downloadedSize) bytes")
+                }
+
+                // Move to cache
+                if fileManager.fileExists(atPath: localURL.path) {
+                    try? fileManager.removeItem(at: localURL)
+                }
+                try fileManager.moveItem(at: tempURL, to: localURL)
+
+                MXLog.info("Saved to: \(localURL.path)")
+                return localURL
+
+            } catch {
+                MXLog.error("Download attempt \(attempt) failed: \(error)")
+                lastError = error
+                if attempt < 3 {
+                    try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second delay
+                }
+            }
         }
 
-        // Check downloaded file size
-        let tempAttrs = try? fileManager.attributesOfItem(atPath: tempURL.path)
-        let downloadedSize = tempAttrs?[.size] as? Int ?? 0
-        MXLog.info("Downloaded file size: \(downloadedSize)")
-
-        if downloadedSize < 1_000_000 {
-            throw CallHistoryError.serverError("File too small: \(downloadedSize) bytes")
-        }
-
-        // Move to cache
-        if fileManager.fileExists(atPath: localURL.path) {
-            try? fileManager.removeItem(at: localURL)
-        }
-        try fileManager.moveItem(at: tempURL, to: localURL)
-
-        MXLog.info("Saved to: \(localURL.path)")
-        return localURL
+        throw lastError ?? CallHistoryError.serverError("Download failed after 3 attempts")
     }
 
     // MARK: - Private
