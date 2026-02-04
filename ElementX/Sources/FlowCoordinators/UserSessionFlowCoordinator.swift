@@ -459,8 +459,12 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
     }
     
     private func presentCallScreen(roomProxy: JoinedRoomProxyProtocol) {
-        // Если в комнате уже есть звонок, значит пользователь присоединяется к входящему звонку
-        if roomProxy.infoPublisher.value.hasRoomCall {
+        // Если в комнате уже есть звонок И текущий пользователь НЕ участвует в нём,
+        // значит пользователь присоединяется к входящему звонку
+        let roomInfo = roomProxy.infoPublisher.value
+        let isJoiningExistingCall = roomInfo.hasRoomCall &&
+                                    !roomInfo.activeRoomCallParticipants.contains(roomProxy.ownUserID)
+        if isJoiningExistingCall {
             flowParameters.elementCallService.markNextCallAsIncoming()
         }
 

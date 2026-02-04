@@ -178,10 +178,10 @@ struct CallHistoryAPIItem: Codable {
 
     /// Парсит дату в разных форматах от Recording API
     private static func parseDate(_ string: String) -> Date? {
-        // Формат 1: "2026-02-04 10:17:11" (из API v2)
+        // Формат 1: "2026-02-04 10:17:11" (из API v2) - время в UTC
         let simpleFormatter = DateFormatter()
         simpleFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        simpleFormatter.timeZone = TimeZone(identifier: "Europe/Moscow")
+        simpleFormatter.timeZone = TimeZone(identifier: "UTC")
         if let date = simpleFormatter.date(from: string) {
             return date
         }
