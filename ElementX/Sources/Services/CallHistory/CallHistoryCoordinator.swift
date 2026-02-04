@@ -101,8 +101,8 @@ class CallHistoryCoordinator {
             return
         }
 
-        // Получаем имя комнаты
-        let roomDisplayName = roomProxy.displayName
+        // Получаем имя комнаты из info
+        let roomDisplayName = roomProxy.infoPublisher.value.displayName
 
         // Получаем участников
         var participants: [String: String] = [:]
