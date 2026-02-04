@@ -99,7 +99,12 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
             // Ищем запись для этого звонка по egressId или по времени
             var recordingURL: URL?
             if let egressId = local.recordingEgressId {
-                recordingURL = URL(string: "https://livekit.market.implica.ru/recording-api/api/recording/play/\(egressId)")
+                // Проверяем статус записи на сервере - URL будет только для завершенных записей
+                if let serverRecording = serverRecordings.first(where: { $0.id == egressId }),
+                   serverRecording.recordingURL != nil {
+                    recordingURL = serverRecording.recordingURL
+                }
+                // Если запись не найдена или не завершена - не показываем кнопку воспроизведения
             } else {
                 // Попробуем найти запись по roomID и близкому времени
                 if let matchingRecording = findMatchingRecording(for: local) {
