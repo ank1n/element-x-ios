@@ -272,30 +272,10 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         state.playingCallId = call.id
         state.playbackState = .loading
 
-        // Download file first, then play locally
-        currentDownloadTask = Task {
-            do {
-                let localURL = try await downloadRecording(from: recordingURL, callId: call.id)
-
-                // Check if cancelled
-                guard !Task.isCancelled, state.playingCallId == call.id else {
-                    return
-                }
-
-                await MainActor.run {
-                    audioPlayer.load(sourceURL: recordingURL, playbackURL: localURL, autoplay: true)
-                }
-            } catch {
-                guard !Task.isCancelled else { return }
-
-                MXLog.error("Failed to download recording: \(error)")
-                await MainActor.run {
-                    state.playbackState = .error
-                    state.playingCallId = nil
-                    state.bindings.alertInfo = AlertInfo(id: UUID(), title: "Ошибка загрузки", message: "\(error.localizedDescription)")
-                }
-            }
-        }
+        // Сначала пробуем воспроизвести напрямую с URL (стриминг)
+        // Если не работает — скачиваем файл
+        MXLog.info("Playing recording directly from URL: \(recordingURL)")
+        audioPlayer.load(sourceURL: recordingURL, playbackURL: recordingURL, autoplay: true)
     }
 
     private func stopPlayback() {
