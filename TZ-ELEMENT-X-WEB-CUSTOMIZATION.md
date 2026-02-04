@@ -1,8 +1,9 @@
 # Техническое задание: Кастомизация Element X Web
 
-**Версия:** 1.0
-**Дата:** 30 января 2026
+**Версия:** 1.1
+**Дата:** 03 февраля 2026
 **Основано на:** iOS реализации Element X Fork
+**Обновлено:** Добавлены критические задачи по Recording API
 
 ---
 
@@ -17,6 +18,87 @@
 - **Звонки**: история звонков с воспроизведением записей
 - **Приложения**: каталог встраиваемых веб-приложений (виджетов)
 - **Запись звонков**: интеграция с LiveKit Egress API
+
+---
+
+## 🔴 КРИТИЧНО: Доработка Recording API
+
+### Проблема
+iOS приложение уже использует Recording API, но **не может показать имена участников** звонков.
+`roomName` в API зашифрован LiveKit и не содержит информации о пользователях.
+
+### Текущий ответ API
+```json
+{
+  "recordings": [
+    {"egressId": "EG_xxx", "roomName": "NXGOiUAU8n...", "status": 3}
+  ]
+}
+```
+
+### Требуемые изменения
+
+#### 1. Расширить POST /api/recording/start
+
+Добавить параметры (опциональные для совместимости):
+```json
+{
+  "roomName": "encrypted_livekit_room_name",
+  "matrixRoomId": "!abc123:matrix.market.implica.ru",
+  "participants": [
+    {"userId": "@user1:server", "displayName": "Иван Петров"},
+    {"userId": "@user2:server", "displayName": "Мария Сидорова"}
+  ],
+  "initiatedBy": "@user1:server"
+}
+```
+
+#### 2. Добавить базу данных для метаданных
+
+```sql
+CREATE TABLE recording_metadata (
+  egress_id TEXT PRIMARY KEY,
+  room_name TEXT NOT NULL,
+  matrix_room_id TEXT,
+  participants TEXT,  -- JSON array
+  initiated_by TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+#### 3. Расширить GET /api/recording/list
+
+```json
+{
+  "recordings": [
+    {
+      "egressId": "EG_xxx",
+      "roomName": "encrypted",
+      "matrixRoomId": "!abc:server",
+      "participants": [
+        {"userId": "@ivan:server", "displayName": "Иван Петров"},
+        {"userId": "@maria:server", "displayName": "Мария Сидорова"}
+      ],
+      "status": 3,
+      "startedAt": "2026-02-02T14:50:07.188Z",
+      "endedAt": "2026-02-02T14:51:33.984Z",
+      "duration": 86,
+      "fileSize": 15209801
+    }
+  ]
+}
+```
+
+#### 4. Добавить фильтрацию
+
+- `?userId=@user:server` - записи где участвовал пользователь
+- `?matrixRoomId=!room:server` - записи из конкретной комнаты
+- `?from=2026-02-01&to=2026-02-03` - по дате
+
+### Код Recording API
+
+**Путь:** `backend/recording-api/index.js`
+**URL:** https://livekit.market.implica.ru/recording-api
 
 ---
 
@@ -737,6 +819,36 @@ src/
 
 ## 12. План реализации
 
+### 🔴 Приоритет: Критические задачи (блокируют iOS)
+
+| Задача | Оценка | Статус |
+|--------|--------|--------|
+| Recording API: метаданные участников | 1-2 дня | ✅ готово |
+| Recording API: расширить GET /list | 0.5 дня | ✅ готово |
+| Recording API: фильтрация | 0.5 дня | ✅ готово |
+| WebRTC: устранить хрипы (audio RED/FEC) | 0.5 дня | ⏳ |
+| WebRTC: simulcast для видео | 0.5 дня | ⏳ |
+| **Итого критичное** | **3-4 дня** | |
+
+> 📄 **Детали WebRTC оптимизации:** см. `TZ-WEBRTC-QUALITY-OPTIMIZATION.md`
+
+### 🟡 Приоритет: Веб-интерфейс
+
+| Задача | Оценка | Статус |
+|--------|--------|--------|
+| 4-tab навигация | 1 день | 🔄 частично (2 кнопки) |
+| Вкладка Контакты | 2 дня | ⏳ |
+| Вкладка Звонки + плеер | 2-3 дня | ⏳ |
+| Вкладка Приложения | 2 дня | ⏳ |
+| **Итого веб** | **7-8 дней** | |
+
+### Фаза 0: Recording API (КРИТИЧНО) ✅
+- [x] Добавить SQLite для метаданных
+- [x] Расширить POST /api/recording/start
+- [x] Расширить GET /api/recording/list
+- [x] Добавить фильтрацию
+- [ ] Тестирование с iOS
+
 ### Фаза 1: Структура навигации
 - [ ] Создать 4-tab layout
 - [ ] Базовые экраны для каждой вкладки
@@ -819,3 +931,44 @@ const demoApps: AppItem[] = [
   { id: "files", name: "Файлы", description: "Файловое хранилище", icon: "folder", url: "https://files.market.implica.ru", category: "tools" },
 ];
 ```
+
+---
+
+## Приложение B: Связанные документы
+
+| Документ | Описание | Приоритет |
+|----------|----------|-----------|
+| `TZ-WEBRTC-QUALITY-OPTIMIZATION.md` | Оптимизация качества звонков (хрипы, лаги) | 🔴 Высокий |
+| `IMPLEMENTATION-PLAN.md` | Общий план реализации проекта | Справочник |
+| `backend/recording-api/` | Исходный код Recording API | Код |
+
+---
+
+## Приложение C: Контакты и доступы
+
+### Git репозиторий
+```
+Форк: https://github.com/ank1n/element-x-ios
+Backend: backend/recording-api/
+```
+
+### API Endpoints
+```
+Recording API: https://livekit.market.implica.ru/recording-api
+LiveKit: wss://livekit.market.implica.ru
+Matrix: https://matrix.market.implica.ru
+```
+
+### Тестирование
+```bash
+# Проверить Recording API
+curl https://livekit.market.implica.ru/recording-api/api/recording/list
+
+# Скачать запись
+curl -o test.mp4 https://livekit.market.implica.ru/recording-api/api/recording/play/EG_y58fKCUEjYY9
+```
+
+---
+
+**Дата обновления:** 03.02.2026
+**Автор:** @claude + @ankin

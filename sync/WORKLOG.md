@@ -20,7 +20,7 @@
 ### Backend (общая зона)
 | Зона | Задача | Кто | Срок | Статус |
 |------|--------|-----|------|--------|
-| recording-api | — | — | — | свободно |
+| recording-api | ✅ v2 с метаданными участников | @web-dev | 03.02 | готово |
 | apps-api | реализовать endpoints | — | — | свободно |
 
 ### DevOps / K8s (общая зона)
@@ -60,6 +60,7 @@
 - [x] K8s deployment recording-api в namespace livekit
 - [x] Recording API внешний доступ: `https://livekit.market.implica.ru/recording-api/*`
 - [x] Swagger UI: openapi.yaml с полной спецификацией API
+- [x] **Recording API v2**: метаданные участников, фильтрация, SQLite
 
 ### DevOps
 - [x] K8s: api-docs deployment для Swagger UI
@@ -77,6 +78,21 @@
 ---
 
 ## История изменений
+
+### 2026-02-04
+- [x] backend: Recording API v2 с поддержкой метаданных — @web-dev
+  - SQLite база для хранения metadata (participants, matrixRoomId, initiatedBy)
+  - POST /start принимает: matrixRoomId, participants[], initiatedBy
+  - GET /list возвращает: participants с displayName, duration, fileSize
+  - Фильтрация: ?userId=, ?matrixRoomId=, ?from=, ?to=
+  - Пагинация: ?limit=, ?offset=
+  - PersistentVolumeClaim для SQLite
+- [x] k8s: recording-api deployment обновлён до v2 — @web-dev
+
+### 2026-02-03
+- [x] web: Element X Web кастомизация — боковая панель с кнопками Contacts, Calls — @web-dev
+- [x] web: исправлен circular dependency в SpacePanel (использование string literals вместо Action enum) — @web-dev
+- [x] docs: docs/customization-notes.md — документация по кастомизации Element Web — @web-dev
 
 ### 2026-02-02
 - [x] k8s: LiveKit оптимизация качества звонков — @claude

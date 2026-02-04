@@ -10,7 +10,7 @@ spec:
   selector:
     app: recording-api
   ports:
-  - port: 3000
-    targetPort: 3000
+  - port: 3001
+    targetPort: 3001
     protocol: TCP
     name: http

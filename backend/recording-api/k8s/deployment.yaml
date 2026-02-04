@@ -20,11 +20,13 @@ spec:
         image: recording-api:latest
         imagePullPolicy: IfNotPresent
         ports:
-        - containerPort: 3000
+        - containerPort: 3001
           name: http
         env:
         - name: PORT
-          value: "3000"
+          value: "3001"
+        - name: DB_PATH
+          value: "/data/recordings.db"
         - name: LIVEKIT_URL
           valueFrom:
             configMapKeyRef:
@@ -60,6 +62,9 @@ spec:
             secretKeyRef:
               name: recording-api-secret
               key: S3_SECRET_KEY
+        volumeMounts:
+        - name: data
+          mountPath: /data
         resources:
           requests:
             memory: "128Mi"
@@ -70,17 +75,32 @@ spec:
         livenessProbe:
           httpGet:
             path: /health
-            port: 3000
+            port: 3001
           initialDelaySeconds: 10
           periodSeconds: 30
         readinessProbe:
           httpGet:
             path: /health
-            port: 3000
+            port: 3001
           initialDelaySeconds: 5
           periodSeconds: 10
         securityContext:
           runAsNonRoot: true
           runAsUser: 1001
           allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: true
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: recording-api-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: recording-api-data
+  namespace: livekit
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi

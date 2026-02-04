@@ -1,152 +1,210 @@
 # Recording API
 
-REST API для управления записью звонков через LiveKit Egress.
+API для управления записью звонков LiveKit с поддержкой метаданных участников.
+
+## Возможности
+
+- Запуск/остановка записи звонков через LiveKit Egress
+- Хранение метаданных о записях (участники, Matrix room ID)
+- Фильтрация записей по пользователю, комнате, дате
+- Потоковое воспроизведение записей из MinIO
+- Поддержка Range requests для видео
 
 ## API Endpoints
 
-### Health Check
-```
-GET /health
-```
+### POST /api/recording/start
 
-### Start Recording
-```
-POST /api/recording/start
-Content-Type: application/json
+Начать запись звонка.
 
+**Request:**
+```json
 {
-  "roomName": "your-room-name",
-  "layout": "grid-dark"  // optional, default: "grid-dark"
-}
-
-Response:
-{
-  "success": true,
-  "egressId": "EG_xxx",
-  "status": 0,
-  "roomName": "your-room-name",
-  "filepath": "recordings/your-room-name_1234567890.mp4"
+  "roomName": "encrypted_livekit_room_name",
+  "matrixRoomId": "!abc123:matrix.market.implica.ru",
+  "participants": [
+    {"userId": "@user1:server", "displayName": "Иван Петров"},
+    {"userId": "@user2:server", "displayName": "Мария Сидорова"}
+  ],
+  "initiatedBy": "@user1:server",
+  "layout": "grid-dark"
 }
 ```
 
-### Stop Recording
-```
-POST /api/recording/stop
-Content-Type: application/json
-
-{
-  "egressId": "EG_xxx"
-}
-
-Response:
+**Response:**
+```json
 {
   "success": true,
-  "egressId": "EG_xxx",
-  "status": 2
+  "egressId": "EG_xxxxx",
+  "status": 1,
+  "roomName": "actual_livekit_room",
+  "matrixRoomId": "!abc123:server",
+  "participants": [...],
+  "filepath": "recordings/room_1706612400.mp4"
 }
 ```
 
-### Get Recording Status
-```
-GET /api/recording/status/:egressId
+### POST /api/recording/stop
 
-Response:
+Остановить запись.
+
+**Request:**
+```json
+{
+  "egressId": "EG_xxxxx"
+}
+```
+
+**Response:**
+```json
 {
   "success": true,
-  "egress": {
-    "egressId": "EG_xxx",
-    "roomName": "your-room-name",
-    "status": 1,
-    "startedAt": "...",
-    "endedAt": null
-  }
+  "egressId": "EG_xxxxx",
+  "status": 2,
+  "duration": 86,
+  "fileSize": 15209801
 }
 ```
 
-### List Recordings
-```
-GET /api/recording/list?roomName=optional-filter
+### GET /api/recording/list
 
-Response:
+Получить список записей с фильтрацией.
+
+**Query Parameters:**
+- `matrixRoomId` - фильтр по Matrix room ID
+- `userId` - фильтр по участнику (ищет в JSON массиве participants)
+- `from` - начальная дата (ISO 8601)
+- `to` - конечная дата (ISO 8601)
+- `limit` - количество записей (default: 50)
+- `offset` - смещение для пагинации (default: 0)
+
+**Response:**
+```json
 {
   "success": true,
-  "recordings": [...]
+  "recordings": [
+    {
+      "egressId": "EG_xxx",
+      "roomName": "encrypted",
+      "matrixRoomId": "!abc:server",
+      "participants": [
+        {"userId": "@ivan:server", "displayName": "Иван Петров"},
+        {"userId": "@maria:server", "displayName": "Мария Сидорова"}
+      ],
+      "initiatedBy": "@ivan:server",
+      "status": 3,
+      "startedAt": "2026-02-02T14:50:07.188Z",
+      "endedAt": "2026-02-02T14:51:33.984Z",
+      "duration": 86,
+      "fileSize": 15209801
+    }
+  ],
+  "total": 42,
+  "limit": 50,
+  "offset": 0
 }
 ```
 
-## Local Development
+### GET /api/recording/status/:egressId
 
-```bash
-# Install dependencies
-npm install
+Получить статус конкретной записи.
 
-# Run with default config
-npm start
+### GET /api/recording/play/:egressId
 
-# Run with watch mode
-npm run dev
+Потоковое воспроизведение записи. Поддерживает Range requests.
 
-# With custom config
-LIVEKIT_URL=wss://your-livekit.com \
-LIVEKIT_API_KEY=your-key \
-LIVEKIT_API_SECRET=your-secret \
-npm start
+### GET /health
+
+Health check endpoint.
+
+## Переменные окружения
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| PORT | 3001 | Порт сервера |
+| DB_PATH | /data/recordings.db | Путь к SQLite базе |
+| LIVEKIT_URL | wss://livekit.market.implica.ru | LiveKit WebSocket URL |
+| LIVEKIT_API_KEY | devkey | LiveKit API Key |
+| LIVEKIT_API_SECRET | - | LiveKit API Secret |
+| S3_ENDPOINT | http://minio:9000 | MinIO endpoint |
+| S3_ACCESS_KEY | minioadmin | MinIO access key |
+| S3_SECRET_KEY | - | MinIO secret key |
+| S3_BUCKET | livekit-recordings | Bucket для записей |
+
+## База данных
+
+SQLite база создается автоматически при запуске.
+
+**Таблица recording_metadata:**
+```sql
+CREATE TABLE recording_metadata (
+  egress_id TEXT PRIMARY KEY,
+  room_name TEXT NOT NULL,
+  matrix_room_id TEXT,
+  participants TEXT,  -- JSON array
+  initiated_by TEXT,
+  filepath TEXT,
+  created_at DATETIME,
+  ended_at DATETIME,
+  duration INTEGER,
+  file_size INTEGER
+);
 ```
 
-## Deployment
+## Развертывание
 
-### Build and Deploy
+### Docker
+
 ```bash
-# Build locally and deploy
-./deploy.sh all
-
-# Or step by step
-./deploy.sh build
-./deploy.sh deploy
-
-# With remote registry
-REGISTRY=your-registry.com/repo IMAGE_TAG=v1.0.0 ./deploy.sh all
+docker build -t recording-api .
+docker run -p 3001:3001 -v /path/to/data:/data recording-api
 ```
 
-### Manual Kubernetes Deployment
-```bash
-# Apply all resources
-kubectl apply -k k8s/
+### Kubernetes
 
-# Check status
-kubectl get pods -n livekit -l app=recording-api
-kubectl logs -n livekit -l app=recording-api
+```bash
+cd k8s
+kubectl apply -k .
 ```
 
-## Environment Variables
+## Примеры использования
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| PORT | Server port | 3000 |
-| LIVEKIT_URL | LiveKit server URL | wss://livekit.market.implica.ru |
-| LIVEKIT_API_KEY | LiveKit API key | devkey |
-| LIVEKIT_API_SECRET | LiveKit API secret | (see secret.yaml) |
-| S3_ENDPOINT | MinIO/S3 endpoint | http://minio.minio.svc.cluster.local:9000 |
-| S3_ACCESS_KEY | S3 access key | minioadmin |
-| S3_SECRET_KEY | S3 secret key | (see secret.yaml) |
-| S3_BUCKET | S3 bucket name | livekit-recordings |
-
-## Testing
+### Curl
 
 ```bash
-# Health check
-curl https://api.market.implica.ru/health
-
-# Start recording
+# Начать запись
 curl -X POST https://api.market.implica.ru/api/recording/start \
   -H "Content-Type: application/json" \
-  -d '{"roomName": "test-room"}'
+  -d '{
+    "roomName": "test-room",
+    "matrixRoomId": "!room:server",
+    "participants": [{"userId": "@user:server", "displayName": "User"}],
+    "initiatedBy": "@user:server"
+  }'
 
-# Stop recording
-curl -X POST https://api.market.implica.ru/api/recording/stop \
-  -H "Content-Type: application/json" \
-  -d '{"egressId": "EG_xxx"}'
+# Получить записи пользователя
+curl "https://api.market.implica.ru/api/recording/list?userId=@user:server"
 
-# List recordings
-curl https://api.market.implica.ru/api/recording/list
+# Получить записи за период
+curl "https://api.market.implica.ru/api/recording/list?from=2026-02-01&to=2026-02-03"
+
+# Скачать запись
+curl -o recording.mp4 https://api.market.implica.ru/api/recording/play/EG_xxxxx
 ```
+
+## Совместимость
+
+API поддерживает короткие пути для совместимости с iOS:
+- `/start` → `/api/recording/start`
+- `/stop` → `/api/recording/stop`
+- `/status/:id` → `/api/recording/status/:id`
+- `/list` → `/api/recording/list`
+- `/play/:id` → `/api/recording/play/:id`
+
+## Изменения
+
+### v2.0.0 (2026-02-03)
+- Добавлена SQLite база для метаданных
+- Расширен POST /start с поддержкой participants, matrixRoomId, initiatedBy
+- Расширен GET /list с фильтрацией и метаданными
+- Добавлен duration и fileSize в ответы
+- Поддержка Range requests в /play
