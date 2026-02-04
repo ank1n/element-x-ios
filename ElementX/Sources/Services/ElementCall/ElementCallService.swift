@@ -131,10 +131,9 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         incomingCallID = nil
         ongoingCallID = callID
 
-        // For outgoing calls, send startCall action (incoming calls already sent it when answered)
-        if isOutgoingCall {
-            actionsSubject.send(.startCall(roomID: roomID))
-        }
+        // Always send startCall action for call history tracking
+        // Direction is determined by pendingIncomingCall flag in CallHistoryCoordinator
+        actionsSubject.send(.startCall(roomID: roomID))
         
         // Don't bother starting another CallKit session as it won't work properly
         // https://developer.apple.com/forums//thread/767949?answerId=812951022#812951022
