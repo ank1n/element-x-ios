@@ -94,7 +94,12 @@ class AudioPlayer: NSObject, AudioPlayerProtocol {
         self.playbackURL = playbackURL
         self.autoplay = autoplay
         playerItem = AVPlayerItem(url: playbackURL)
+
+        // Увеличиваем буфер для предотвращения треска
+        playerItem?.preferredForwardBufferDuration = 5.0  // 5 секунд буфера
+
         internalAudioPlayer = AVQueuePlayer(playerItem: playerItem)
+        internalAudioPlayer?.automaticallyWaitsToMinimizeStalling = true
         addObservers()
     }
     
@@ -134,7 +139,8 @@ class AudioPlayer: NSObject, AudioPlayerProtocol {
     private func setupAudioSession() {
         releaseAudioSessionTask = nil
         do {
-            try audioSession.setCategory(.playback)
+            // Оптимизированные настройки для качественного воспроизведения
+            try audioSession.setCategory(.playback, mode: .spokenAudio, options: [.allowBluetooth, .allowBluetoothA2DP])
             try audioSession.setActive(true)
         } catch {
             MXLog.error("Could not redirect audio playback to speakers.")
