@@ -6,10 +6,17 @@
 
 import Foundation
 
+enum ContactFilter: String, CaseIterable {
+    case all = "Все"
+    case online = "В сети"
+    case favorites = "Избранные"
+}
+
 enum ContactsListScreenViewAction {
     case showSettings
     case selectContact(ContactItem)
     case addContact
+    case selectFilter(ContactFilter)
 }
 
 enum ContactsListScreenViewModelAction {
@@ -21,6 +28,7 @@ struct ContactsListScreenViewState: BindableState {
     var contacts: [ContactItem] = []
     var isLoading: Bool = false
     var searchQuery = ""
+    var selectedFilter: ContactFilter = .all
 
     // User info for avatar
     var userID: String = ""

@@ -81,9 +81,27 @@ struct ContactsListScreen: View {
     private var filtersSection: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                FilterChipView(title: "Все", isSelected: true) { }
-                FilterChipView(title: "В сети", isSelected: false) { }
-                FilterChipView(title: "Избранные", isSelected: false) { }
+                GenericFilterView(
+                    title: "Все",
+                    isActive: Binding(
+                        get: { context.viewState.selectedFilter == .all },
+                        set: { if $0 { context.send(viewAction: .selectFilter(.all)) } }
+                    )
+                )
+                GenericFilterView(
+                    title: "В сети",
+                    isActive: Binding(
+                        get: { context.viewState.selectedFilter == .online },
+                        set: { if $0 { context.send(viewAction: .selectFilter(.online)) } }
+                    )
+                )
+                GenericFilterView(
+                    title: "Избранные",
+                    isActive: Binding(
+                        get: { context.viewState.selectedFilter == .favorites },
+                        set: { if $0 { context.send(viewAction: .selectFilter(.favorites)) } }
+                    )
+                )
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -145,12 +163,27 @@ struct ContactsListScreen: View {
     }
 
     private var filteredContacts: [ContactItem] {
-        if context.searchQuery.isEmpty {
-            return context.viewState.contacts
+        var contacts = context.viewState.contacts
+
+        // Apply filter
+        switch context.viewState.selectedFilter {
+        case .all:
+            break
+        case .online:
+            contacts = contacts.filter { $0.isOnline }
+        case .favorites:
+            // TODO: Add favorites support
+            break
         }
-        return context.viewState.contacts.filter {
-            $0.displayName.localizedCaseInsensitiveContains(context.searchQuery)
+
+        // Apply search
+        if !context.searchQuery.isEmpty {
+            contacts = contacts.filter {
+                $0.displayName.localizedCaseInsensitiveContains(context.searchQuery)
+            }
         }
+
+        return contacts
     }
 
     private func contactCell(_ contact: ContactItem) -> some View {
@@ -190,27 +223,6 @@ struct ContactsListScreen: View {
                 }
             }
             .padding(.horizontal, 16)
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-// MARK: - Filter Chip View
-
-struct FilterChipView: View {
-    let title: String
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.compound.bodySM)
-                .foregroundColor(isSelected ? .white : .compound.textPrimary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(isSelected ? Color.compound.bgActionPrimaryRest : Color.compound.bgSubtleSecondary)
-                .cornerRadius(16)
         }
         .buttonStyle(.plain)
     }

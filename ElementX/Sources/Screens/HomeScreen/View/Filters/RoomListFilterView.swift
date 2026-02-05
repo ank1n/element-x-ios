@@ -20,7 +20,20 @@ struct RoomListFilterView: View {
     }
 }
 
-private struct FilterToggleStyle: ToggleStyle {
+/// Универсальный фильтр для переиспользования в Звонках, Контактах, Приложениях
+struct GenericFilterView: View {
+    let title: String
+    @Binding var isActive: Bool
+
+    var body: some View {
+        Toggle(isOn: $isActive) {
+            Text(title)
+        }
+        .toggleStyle(FilterToggleStyle())
+    }
+}
+
+struct FilterToggleStyle: ToggleStyle {
     private func strokeColor(isOn: Bool) -> Color {
         isOn ? .compound.bgActionPrimaryRest : .compound.borderInteractiveSecondary
     }

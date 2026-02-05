@@ -90,10 +90,13 @@ struct WidgetsListScreen: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(AppCategory.allCases, id: \.self) { category in
-                    FilterChipView(title: category.rawValue,
-                                   isSelected: selectedCategory == category) {
-                        selectedCategory = category
-                    }
+                    GenericFilterView(
+                        title: category.rawValue,
+                        isActive: Binding(
+                            get: { selectedCategory == category },
+                            set: { if $0 { selectedCategory = category } }
+                        )
+                    )
                 }
             }
             .padding(.horizontal, 16)

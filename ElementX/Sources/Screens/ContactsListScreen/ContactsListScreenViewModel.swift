@@ -44,6 +44,8 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
             actionsSubject.send(.openChat(roomId: contact.id))
         case .addContact:
             break
+        case .selectFilter(let filter):
+            state.selectedFilter = filter
         }
     }
 

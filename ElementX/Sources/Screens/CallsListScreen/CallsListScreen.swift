@@ -97,10 +97,13 @@ struct CallsListScreen: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(CallFilter.allCases, id: \.self) { filter in
-                    FilterChipView(title: filter.rawValue,
-                                   isSelected: selectedFilter == filter) {
-                        selectedFilter = filter
-                    }
+                    GenericFilterView(
+                        title: filter.rawValue,
+                        isActive: Binding(
+                            get: { selectedFilter == filter },
+                            set: { if $0 { selectedFilter = filter } }
+                        )
+                    )
                 }
             }
             .padding(.horizontal, 16)
