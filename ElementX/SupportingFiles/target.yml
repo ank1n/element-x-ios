@@ -251,6 +251,7 @@ targets:
     - package: SwiftSoup
     - package: DSWaveformImage
       product: DSWaveformImageViews
+    - package: Lottie
 
     sources:
     - path: ../Sources

@@ -158,6 +158,9 @@ packages:
   Version:
     url: https://github.com/mxcl/Version
     minorVersion: 2.2.0
+  Lottie:
+    url: https://github.com/airbnb/lottie-ios
+    minorVersion: 4.6.0
 
 aggregateTargets:
   Periphery:

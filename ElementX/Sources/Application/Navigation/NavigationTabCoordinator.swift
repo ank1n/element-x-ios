@@ -7,6 +7,7 @@
 //
 
 import Compound
+import Lottie
 import SwiftUI
 
 /// Class responsible for displaying an arbitrary number of coordinators within the tab bar.
@@ -24,18 +25,21 @@ import SwiftUI
         let title: String
         let icon: KeyPath<CompoundIcons, Image>
         let selectedIcon: KeyPath<CompoundIcons, Image>
+        /// Lottie animation name (e.g. "TabContacts"). When set, Lottie icon is used instead of CompoundIcon.
+        let lottieIcon: String?
         var badgeCount = 0
         var barVisibilityOverride: Visibility?
-        
+
         /// Provide the tab's split coordinator in here to have the tab bar automatically hidden
         /// when pushing a child into the split view's details on iPhone/compact iPad.
         weak var navigationSplitCoordinator: NavigationSplitCoordinator?
-        
-        init(tag: Tag, title: String, icon: KeyPath<CompoundIcons, Image>, selectedIcon: KeyPath<CompoundIcons, Image>) {
+
+        init(tag: Tag, title: String, icon: KeyPath<CompoundIcons, Image>, selectedIcon: KeyPath<CompoundIcons, Image>, lottieIcon: String? = nil) {
             self.tag = tag
             self.title = title
             self.icon = icon
             self.selectedIcon = selectedIcon
+            self.lottieIcon = lottieIcon
         }
         
         func barVisibility(in horizontalSizeClass: UserInterfaceSizeClass?) -> Visibility {
@@ -300,12 +304,90 @@ import SwiftUI
 
 private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    
+
     @Bindable var navigationTabCoordinator: NavigationTabCoordinator<Tag>
-    
+
     @State private var standardAppearance = UITabBarAppearance()
-    
+    @State private var selectedIndex = 0
+
+    /// Whether any tab has a Lottie icon configured (use custom tab bar)
+    private var useLottieTabBar: Bool {
+        navigationTabCoordinator.tabModules.contains { $0.details.lottieIcon != nil }
+    }
+
     var body: some View {
+        if useLottieTabBar {
+            lottieTabBarBody
+        } else {
+            standardTabBarBody
+        }
+    }
+
+    // MARK: - Lottie Tab Bar (Stalk-style)
+
+    private var lottieTabBarBody: some View {
+        VStack(spacing: 0) {
+            // Content area
+            ZStack {
+                ForEach(navigationTabCoordinator.tabModules.indices, id: \.self) { index in
+                    let module = navigationTabCoordinator.tabModules[index]
+                    module.coordinator?.toPresentable()
+                        .id(module.id)
+                        .opacity(selectedIndex == index ? 1 : 0)
+                        .allowsHitTesting(selectedIndex == index)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            // Custom Lottie Tab Bar
+            StalkTabBar(
+                items: navigationTabCoordinator.tabModules.map { module in
+                    StalkTabItem(
+                        id: "\(module.details.tag)",
+                        title: module.details.title,
+                        lottieIcon: module.details.lottieIcon,
+                        badgeCount: module.details.badgeCount
+                    )
+                },
+                selectedIndex: $selectedIndex
+            )
+        }
+        .onChange(of: selectedIndex) { _, newValue in
+            guard newValue < navigationTabCoordinator.tabModules.count else { return }
+            navigationTabCoordinator.selectedTab = navigationTabCoordinator.tabModules[newValue].details.tag
+        }
+        .onChange(of: navigationTabCoordinator.selectedTab) { _, newValue in
+            guard let newValue,
+                  let index = navigationTabCoordinator.tabModules.firstIndex(where: { $0.details.tag == newValue }) else { return }
+            if selectedIndex != index {
+                selectedIndex = index
+            }
+        }
+        .sheet(item: $navigationTabCoordinator.sheetModule) { module in
+            module.coordinator?.toPresentable()
+                .id(module.id)
+        }
+        .fullScreenCover(item: $navigationTabCoordinator.fullScreenCoverModule) { module in
+            module.coordinator?.toPresentable()
+                .id(module.id)
+        }
+        .accessibilityHidden(navigationTabCoordinator.overlayModule?.coordinator != nil && navigationTabCoordinator.overlayPresentationMode == .fullScreen)
+        .overlay {
+            Group {
+                if let coordinator = navigationTabCoordinator.overlayModule?.coordinator {
+                    coordinator.toPresentable()
+                        .opacity(navigationTabCoordinator.overlayPresentationMode == .minimized ? 0 : 1)
+                        .transition(.opacity)
+                }
+            }
+            .animation(.elementDefault, value: navigationTabCoordinator.overlayPresentationMode)
+            .animation(.elementDefault, value: navigationTabCoordinator.overlayModule)
+        }
+    }
+
+    // MARK: - Standard Tab Bar (fallback)
+
+    private var standardTabBarBody: some View {
         TabView(selection: $navigationTabCoordinator.selectedTab) {
             ForEach(navigationTabCoordinator.tabModules) { module in
                 module.coordinator?.toPresentable()
@@ -345,12 +427,12 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
             .animation(.elementDefault, value: navigationTabCoordinator.overlayModule)
         }
     }
-    
+
     private func configureAppearance(_ tabBarController: UITabBarController) {
         standardAppearance.configureWithDefaultBackground()
-        standardAppearance.stackedLayoutAppearance.normal.badgeBackgroundColor = .compound.iconAccentPrimary // iPhone Portrait
-        standardAppearance.compactInlineLayoutAppearance.normal.badgeBackgroundColor = .compound.iconAccentPrimary // iPhone Landscape
-        standardAppearance.inlineLayoutAppearance.normal.badgeBackgroundColor = .compound.iconAccentPrimary // iPadOS 17 (doesn't work for 18+)
+        standardAppearance.stackedLayoutAppearance.normal.badgeBackgroundColor = .compound.iconAccentPrimary
+        standardAppearance.compactInlineLayoutAppearance.normal.badgeBackgroundColor = .compound.iconAccentPrimary
+        standardAppearance.inlineLayoutAppearance.normal.badgeBackgroundColor = .compound.iconAccentPrimary
         tabBarController.tabBar.standardAppearance = standardAppearance
     }
 }

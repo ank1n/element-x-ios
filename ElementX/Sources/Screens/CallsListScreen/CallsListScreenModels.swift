@@ -82,6 +82,32 @@ enum RecordingStatus: Int, Codable {
     var isCompleted: Bool {
         self == .complete
     }
+
+    var displayName: String {
+        switch self {
+        case .starting:
+            return "Starting..."
+        case .active:
+            return "Recording"
+        case .ending:
+            return "Finishing..."
+        case .complete:
+            return "Available"
+        case .failed:
+            return "Failed"
+        case .aborted:
+            return "Aborted"
+        }
+    }
+
+    var isInProgress: Bool {
+        switch self {
+        case .starting, .active, .ending:
+            return true
+        case .complete, .failed, .aborted:
+            return false
+        }
+    }
 }
 
 /// API response for recordings list

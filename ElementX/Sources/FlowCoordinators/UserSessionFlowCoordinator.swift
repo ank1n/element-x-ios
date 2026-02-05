@@ -87,14 +87,14 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         let contactsStackCoordinator = NavigationStackCoordinator()
         contactsTabFlowCoordinator = ContactsTabFlowCoordinator(navigationStackCoordinator: contactsStackCoordinator,
                                                                  flowParameters: flowParameters)
-        contactsTabDetails = .init(tag: HomeTab.contacts, title: "Контакты", icon: \.userProfile, selectedIcon: \.userProfileSolid)
+        contactsTabDetails = .init(tag: HomeTab.contacts, title: "Контакты", icon: \.userProfile, selectedIcon: \.userProfileSolid, lottieIcon: "TabContacts")
         contactsTabDetails.barVisibilityOverride = .visible
 
         // 2. Calls tab
         let callsStackCoordinator = NavigationStackCoordinator()
         callsTabFlowCoordinator = CallsTabFlowCoordinator(navigationStackCoordinator: callsStackCoordinator,
                                                           flowParameters: flowParameters)
-        callsTabDetails = .init(tag: HomeTab.calls, title: "Звонки", icon: \.voiceCall, selectedIcon: \.voiceCallSolid)
+        callsTabDetails = .init(tag: HomeTab.calls, title: "Звонки", icon: \.voiceCall, selectedIcon: \.voiceCallSolid, lottieIcon: "TabCalls")
         callsTabDetails.barVisibilityOverride = .visible
 
         // 3. Chats tab
@@ -102,7 +102,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         chatsTabFlowCoordinator = ChatsTabFlowCoordinator(isNewLogin: isNewLogin,
                                                           navigationSplitCoordinator: chatsSplitCoordinator,
                                                           flowParameters: flowParameters)
-        chatsTabDetails = .init(tag: HomeTab.chats, title: "Чаты", icon: \.chat, selectedIcon: \.chatSolid)
+        chatsTabDetails = .init(tag: HomeTab.chats, title: "Чаты", icon: \.chat, selectedIcon: \.chatSolid, lottieIcon: "TabChats")
         chatsTabDetails.navigationSplitCoordinator = chatsSplitCoordinator
         chatsTabDetails.barVisibilityOverride = .visible
 
@@ -110,7 +110,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         let appsStackCoordinator = NavigationStackCoordinator()
         appsTabFlowCoordinator = WidgetsTabFlowCoordinator(navigationStackCoordinator: appsStackCoordinator,
                                                            flowParameters: flowParameters)
-        appsTabDetails = .init(tag: HomeTab.apps, title: "Приложения", icon: \.extensions, selectedIcon: \.extensionsSolid)
+        appsTabDetails = .init(tag: HomeTab.apps, title: "Приложения", icon: \.extensions, selectedIcon: \.extensionsSolid, lottieIcon: "TabSettings")
         appsTabDetails.barVisibilityOverride = .visible
 
         onboardingStackCoordinator = NavigationStackCoordinator()
