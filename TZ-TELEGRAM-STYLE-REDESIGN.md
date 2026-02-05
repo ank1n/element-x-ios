@@ -555,7 +555,60 @@ ElementX/Sources/
 
 ---
 
-## 10. Референсы
+## 10. Иконки Tab Bar (Lottie-анимации)
+
+### 10.1 Источник иконок
+Иконки взяты из официального репозитория Telegram iOS:
+- https://github.com/TelegramMessenger/Telegram-iOS
+
+### 10.2 Файлы анимаций
+```
+ios/ElementX/Resources/TelegramIcons/
+├── TabContacts.json   (5.9 KB)  — анимация "Контакты"
+├── TabCalls.json      (6.6 KB)  — анимация "Звонки"
+├── TabChats.json      (8.2 KB)  — анимация "Чаты"
+└── TabSettings.json   (19.5 KB) — анимация "Настройки"
+```
+
+### 10.3 Библиотека Lottie
+Добавлена зависимость в `project.yml`:
+```yaml
+Lottie:
+  url: https://github.com/airbnb/lottie-ios
+  minorVersion: 4.6.0
+```
+
+### 10.4 Использование в коде
+```swift
+import Lottie
+
+// Создание анимированной иконки
+let animationView = LottieAnimationView(name: "TabContacts")
+animationView.contentMode = .scaleAspectFit
+animationView.loopMode = .playOnce
+
+// Воспроизведение при выборе таба
+func tabSelected() {
+    animationView.play()
+}
+
+// Цвет иконки
+animationView.setValueProvider(
+    ColorValueProvider(UIColor.systemBlue.lottieColorValue),
+    keypath: AnimationKeypath(keypath: "**.Fill 1.Color")
+)
+```
+
+### 10.5 Поведение анимации
+| Состояние | Действие |
+|-----------|----------|
+| Таб неактивен | Статичный первый кадр, серый цвет |
+| Таб выбран | Воспроизведение анимации, синий цвет |
+| Повторный тап на активный таб | Повторная анимация |
+
+---
+
+## 11. Референсы (документация)
 
 ### Telegram Design Resources
 - [Telegram iOS UI Kit (Figma)](https://www.figma.com/community/file/1342906900898425723/telegram-ios-ui-kit)

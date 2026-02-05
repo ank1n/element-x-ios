@@ -165,17 +165,25 @@ async function getAudioTrackIds(roomName) {
         const participants = await roomClient.listParticipants(roomName);
         const audioTrackIds = [];
 
+        console.log(`[TRACKS] Room ${roomName} has ${participants.length} participants`);
+
         for (const participant of participants) {
+            console.log(`[TRACKS] Participant: ${participant.identity}, tracks: ${JSON.stringify(participant.tracks?.map(t => ({sid: t.sid, type: t.type, source: t.source})))}`);
+
             if (participant.tracks) {
                 for (const track of participant.tracks) {
-                    if (track.type === 'AUDIO' && track.sid) {
+                    // Track type can be: AUDIO=1, VIDEO=2 (protobuf enum)
+                    // Also check source: MICROPHONE=1, CAMERA=2, SCREEN_SHARE=3, etc
+                    const isAudio = track.type === 1 || track.type === 'AUDIO' || track.source === 1 || track.source === 'MICROPHONE';
+                    if (isAudio && track.sid) {
                         audioTrackIds.push(track.sid);
+                        console.log(`[TRACKS] Found audio track: ${track.sid}`);
                     }
                 }
             }
         }
 
-        console.log(`Found ${audioTrackIds.length} audio tracks in room ${roomName}`);
+        console.log(`[TRACKS] Total audio tracks found: ${audioTrackIds.length}`);
         return audioTrackIds;
     } catch (error) {
         console.error('Error getting audio tracks:', error);
@@ -218,7 +226,8 @@ router.post('/api/recording/start', async (req, res) => {
         const roomName = roomResult.roomName;
         const timestamp = Date.now();
         // Audio-only recording with AAC codec for iOS compatibility
-        const filepath = `recordings/${roomName}_${timestamp}.m4a`;
+        // LiveKit adds .mp4 extension automatically, so we just use base name
+        const filepath = `recordings/${roomName}_${timestamp}`;
 
         const fileOutput = new EncodedFileOutput({
             filepath: filepath,
@@ -241,27 +250,15 @@ router.post('/api/recording/start', async (req, res) => {
             audioFrequency: 48000      // 48kHz sample rate
         });
 
-        // Get audio track IDs for Track Composite (faster than Room Composite)
-        const audioTrackIds = await getAudioTrackIds(roomName);
-
-        let info;
-        if (audioTrackIds.length > 0) {
-            // Use Track Composite - much faster startup (~1 sec vs 5 sec)
-            // Records the first audio track directly without browser
-            console.log(`Using Track Composite with audio track: ${audioTrackIds[0]}`);
-            info = await egressClient.startTrackCompositeEgress(roomName, fileOutput, {
-                audioTrackId: audioTrackIds[0],
-                encodingOptions: encodingOpts
-            });
-        } else {
-            // Fallback to Room Composite if no tracks found
-            console.log('No audio tracks found, falling back to Room Composite');
-            info = await egressClient.startRoomCompositeEgress(roomName, fileOutput, {
-                layout: layout,
-                encodingOptions: encodingOpts,
-                audioOnly: true
-            });
-        }
+        // Use Room Composite with AAC codec
+        // Note: Track Composite is faster but has issues with track validation
+        // Room Composite takes ~5 sec to start (headless Chrome) but is reliable
+        console.log(`Using Room Composite for room: ${roomName}`);
+        const info = await egressClient.startRoomCompositeEgress(roomName, fileOutput, {
+            layout: layout,
+            encodingOptions: encodingOpts,
+            audioOnly: true
+        });
 
         // Save metadata to SQLite
         const participantsJson = participants ? JSON.stringify(participants) : null;
@@ -535,15 +532,23 @@ router.get('/api/recording/play/:egressId', async (req, res) => {
     console.log(`[PROXY] Requested egressId: ${egressId}`);
 
     try {
-        // First check metadata for filepath
-        const metadata = getMetadataByEgressId.get(egressId);
-        let filename = metadata?.filepath;
-
-        // If not in metadata, try to get from egress
-        if (!filename) {
+        // First try to get actual filename from egress (most reliable)
+        let filename = null;
+        try {
             const list = await egressClient.listEgress({ egressId: egressId });
             const egress = list.find(e => e.egressId === egressId);
             filename = egress?.file?.filename || egress?.fileResults?.[0]?.filename;
+        } catch (e) {
+            console.log('[PROXY] Could not get filename from egress:', e.message);
+        }
+
+        // Fallback to metadata filepath (add .mp4 as LiveKit adds it automatically)
+        if (!filename) {
+            const metadata = getMetadataByEgressId.get(egressId);
+            if (metadata?.filepath) {
+                // LiveKit always adds .mp4 extension to the output file
+                filename = metadata.filepath.endsWith('.mp4') ? metadata.filepath : metadata.filepath + '.mp4';
+            }
         }
 
         if (!filename) {
@@ -571,13 +576,13 @@ router.get('/api/recording/play/:egressId', async (req, res) => {
                 'Content-Range': `bytes ${start}-${end}/${stat.size}`,
                 'Accept-Ranges': 'bytes',
                 'Content-Length': chunksize,
-                'Content-Type': 'video/mp4'
+                'Content-Type': 'audio/mp4'
             });
 
             const dataStream = await minioClient.getObject(config.s3Bucket, filename, { offset: start, length: chunksize });
             dataStream.pipe(res);
         } else {
-            res.setHeader('Content-Type', 'video/mp4');
+            res.setHeader('Content-Type', 'audio/mp4');
             res.setHeader('Content-Length', stat.size);
             res.setHeader('Accept-Ranges', 'bytes');
 
