@@ -141,9 +141,19 @@ struct HomeScreenRoomCell: View {
                 }
                 
                 if room.badges.isDotShown {
-                    Circle()
-                        .frame(width: 12, height: 12)
-                        .accessibilityLabel(L10n.a11yNotificationsNewMessages)
+                    if room.badges.unreadCount > 0 {
+                        Text(room.badges.unreadCount > 99 ? "99+" : "\(room.badges.unreadCount)")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .frame(minWidth: 20, minHeight: 20)
+                            .background(Capsule().fill(room.isHighlighted ? Color.red : .compound.iconQuaternary))
+                            .accessibilityLabel(L10n.a11yNotificationsNewMessages)
+                    } else {
+                        Circle()
+                            .frame(width: 12, height: 12)
+                            .accessibilityLabel(L10n.a11yNotificationsNewMessages)
+                    }
                 }
             }
             .foregroundColor(room.isHighlighted ? .compound.iconAccentTertiary : .compound.iconQuaternary)

@@ -183,6 +183,7 @@ struct HomeScreenRoom: Identifiable, Equatable {
         let isMentionShown: Bool
         let isMuteShown: Bool
         let isCallShown: Bool
+        let unreadCount: UInt
     }
     
     let name: String
@@ -220,7 +221,7 @@ struct HomeScreenRoom: Identifiable, Equatable {
         HomeScreenRoom(id: UUID().uuidString,
                        roomID: nil,
                        type: .placeholder,
-                       badges: .init(isDotShown: false, isMentionShown: false, isMuteShown: false, isCallShown: false),
+                       badges: .init(isDotShown: false, isMentionShown: false, isMuteShown: false, isCallShown: false, unreadCount: 0),
                        name: "Placeholder room name",
                        isDirect: false,
                        isHighlighted: false,
@@ -259,7 +260,8 @@ extension HomeScreenRoom {
                   badges: .init(isDotShown: isDotShown,
                                 isMentionShown: isMentionShown,
                                 isMuteShown: isMuteShown,
-                                isCallShown: isCallShown),
+                                isCallShown: isCallShown,
+                                unreadCount: hideUnreadMessagesBadge ? 0 : summary.unreadNotificationsCount),
                   name: summary.name,
                   isDirect: summary.isDirect,
                   isHighlighted: isHighlighted,

@@ -27,6 +27,9 @@ import SwiftUI
         let selectedIcon: KeyPath<CompoundIcons, Image>
         /// Lottie animation name (e.g. "TabContacts"). When set, Lottie icon is used instead of CompoundIcon.
         let lottieIcon: String?
+        /// SF Symbol fallback for tabs without Lottie icon
+        let sfSymbol: String?
+        let sfSymbolSelected: String?
         var badgeCount = 0
         var barVisibilityOverride: Visibility?
 
@@ -34,12 +37,15 @@ import SwiftUI
         /// when pushing a child into the split view's details on iPhone/compact iPad.
         weak var navigationSplitCoordinator: NavigationSplitCoordinator?
 
-        init(tag: Tag, title: String, icon: KeyPath<CompoundIcons, Image>, selectedIcon: KeyPath<CompoundIcons, Image>, lottieIcon: String? = nil) {
+        init(tag: Tag, title: String, icon: KeyPath<CompoundIcons, Image>, selectedIcon: KeyPath<CompoundIcons, Image>,
+             lottieIcon: String? = nil, sfSymbol: String? = nil, sfSymbolSelected: String? = nil) {
             self.tag = tag
             self.title = title
             self.icon = icon
             self.selectedIcon = selectedIcon
             self.lottieIcon = lottieIcon
+            self.sfSymbol = sfSymbol
+            self.sfSymbolSelected = sfSymbolSelected
         }
         
         func barVisibility(in horizontalSizeClass: UserInterfaceSizeClass?) -> Visibility {
@@ -346,6 +352,8 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
                         id: "\(module.details.tag)",
                         title: module.details.title,
                         lottieIcon: module.details.lottieIcon,
+                        sfSymbol: module.details.sfSymbol,
+                        sfSymbolSelected: module.details.sfSymbolSelected,
                         badgeCount: module.details.badgeCount
                     )
                 },

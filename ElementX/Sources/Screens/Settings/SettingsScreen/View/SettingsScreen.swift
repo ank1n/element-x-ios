@@ -38,9 +38,8 @@ struct SettingsScreen: View {
             }
         }
         .compoundList()
-        .navigationTitle(L10n.commonSettings)
+        .navigationTitle("Профиль")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { toolbar }
     }
     
     private var userSection: some View {

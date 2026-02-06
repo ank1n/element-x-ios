@@ -26,7 +26,6 @@ struct HomeScreen: View {
             .toolbar { toolbar }
             .background(Color.compound.bgCanvasDefault.ignoresSafeArea())
             .track(screen: .Home)
-            .toolbarBloom(hasSearchBar: true)
             .sentryTrace("\(Self.self)")
     }
     
@@ -34,11 +33,6 @@ struct HomeScreen: View {
         
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .navigationBarLeading) {
-            settingsButton
-        }
-        .backportSharedBackgroundVisibility(.hidden)
-        
         ToolbarItem(placement: .primaryAction) {
             if #available(iOS 26, *) {
                 newRoomButton
@@ -47,23 +41,6 @@ struct HomeScreen: View {
                     .buttonStyle(.compound(.super, size: .toolbarIcon))
             }
         }
-    }
-    
-    private var settingsButton: some View {
-        Button {
-            context.send(viewAction: .showSettings)
-        } label: {
-            LoadableAvatarImage(url: context.viewState.userAvatarURL,
-                                name: context.viewState.userDisplayName,
-                                contentID: context.viewState.userID,
-                                avatarSize: .user(on: .chats),
-                                mediaProvider: context.mediaProvider)
-                .accessibilityIdentifier(A11yIdentifiers.homeScreen.userAvatar)
-                .clipShape(.circle)
-                .overlayBadge(10, isBadged: context.viewState.requiresExtraAccountSetup)
-                .compositingGroup()
-        }
-        .accessibilityLabel(L10n.commonSettings)
     }
     
     @ViewBuilder

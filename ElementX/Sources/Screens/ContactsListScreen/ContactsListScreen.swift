@@ -15,37 +15,16 @@ struct ContactsListScreen: View {
             .navigationTitle("Контакты")
             .toolbar { toolbar }
             .background(Color.compound.bgCanvasDefault.ignoresSafeArea())
-            .toolbarBloom(hasSearchBar: true)
     }
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .navigationBarLeading) {
-            settingsButton
-        }
-        .backportSharedBackgroundVisibility(.hidden)
-
         ToolbarItem(placement: .primaryAction) {
             Button {
                 context.send(viewAction: .addContact)
             } label: {
                 CompoundIcon(\.plus)
             }
-        }
-    }
-
-    private var settingsButton: some View {
-        Button {
-            context.send(viewAction: .showSettings)
-        } label: {
-            LoadableAvatarImage(url: context.viewState.userAvatarURL,
-                                name: context.viewState.userDisplayName,
-                                contentID: context.viewState.userID,
-                                avatarSize: .user(on: .chats),
-                                mediaProvider: context.mediaProvider)
-                .clipShape(.circle)
-                .overlayBadge(10, isBadged: context.viewState.requiresExtraAccountSetup)
-                .compositingGroup()
         }
     }
 

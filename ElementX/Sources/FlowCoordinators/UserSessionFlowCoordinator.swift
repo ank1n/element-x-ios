@@ -20,7 +20,7 @@ enum UserSessionFlowCoordinatorAction {
 }
 
 class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
-    enum HomeTab: Hashable { case contacts, calls, chats, apps }
+    enum HomeTab: Hashable { case contacts, calls, chats, apps, profile }
 
     private let navigationRootCoordinator: NavigationRootCoordinator
     private let navigationTabCoordinator: NavigationTabCoordinator<HomeTab>
@@ -42,26 +42,21 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
     private let appsTabFlowCoordinator: WidgetsTabFlowCoordinator
     private let appsTabDetails: NavigationTabCoordinator<HomeTab>.TabDetails
 
-    // periphery:ignore - retaining purpose
-    private var settingsFlowCoordinator: SettingsFlowCoordinator?
-    
+    // 5. Profile tab
+    private let profileTabFlowCoordinator: SettingsFlowCoordinator
+    private let profileTabStackCoordinator: NavigationStackCoordinator
+    private let profileTabDetails: NavigationTabCoordinator<HomeTab>.TabDetails
+
     enum State: StateType {
         /// The state machine hasn't started.
         case initial
         /// The root screen for this flow.
         case tabBar
-        /// Showing the settings screen.
-        case settingsScreen
     }
-    
+
     enum Event: EventType {
         /// The flow is being started.
         case start
-        
-        /// Request presentation of the settings screen.
-        case showSettingsScreen
-        /// The settings screen has been dismissed.
-        case dismissedSettingsScreen
     }
     
     private let stateMachine: StateMachine<State, Event>
@@ -110,8 +105,17 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         let appsStackCoordinator = NavigationStackCoordinator()
         appsTabFlowCoordinator = WidgetsTabFlowCoordinator(navigationStackCoordinator: appsStackCoordinator,
                                                            flowParameters: flowParameters)
-        appsTabDetails = .init(tag: HomeTab.apps, title: "Приложения", icon: \.extensions, selectedIcon: \.extensionsSolid, lottieIcon: "TabSettings")
+        appsTabDetails = .init(tag: HomeTab.apps, title: "Приложения", icon: \.extensions, selectedIcon: \.extensionsSolid, sfSymbol: "square.grid.2x2", sfSymbolSelected: "square.grid.2x2.fill")
         appsTabDetails.barVisibilityOverride = .visible
+
+        // 5. Profile tab (uses SettingsFlowCoordinator)
+        let profileStack = NavigationStackCoordinator()
+        profileTabStackCoordinator = profileStack
+        profileTabFlowCoordinator = SettingsFlowCoordinator(appLockService: appLockService,
+                                                             navigationStackCoordinator: profileStack,
+                                                             flowParameters: flowParameters)
+        profileTabDetails = .init(tag: HomeTab.profile, title: "Профиль", icon: \.userProfile, selectedIcon: \.userProfileSolid, lottieIcon: "TabSettings")
+        profileTabDetails.barVisibilityOverride = .visible
 
         onboardingStackCoordinator = NavigationStackCoordinator()
         onboardingFlowCoordinator = OnboardingFlowCoordinator(isNewLogin: isNewLogin,
@@ -123,7 +127,8 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
             .init(coordinator: contactsStackCoordinator, details: contactsTabDetails),
             .init(coordinator: callsStackCoordinator, details: callsTabDetails),
             .init(coordinator: chatsSplitCoordinator, details: chatsTabDetails),
-            .init(coordinator: appsStackCoordinator, details: appsTabDetails)
+            .init(coordinator: appsStackCoordinator, details: appsTabDetails),
+            .init(coordinator: profileStack, details: profileTabDetails)
         ])
         
         stateMachine = flowParameters.stateMachineFactory.makeUserSessionFlowStateMachine(state: .initial)
@@ -148,10 +153,8 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         case .accountProvisioningLink:
             break // We always ignore this flow when logged in.
         case .settings, .chatBackupSettings:
-            if stateMachine.state != .settingsScreen {
-                stateMachine.tryEvent(.showSettingsScreen)
-            }
-            settingsFlowCoordinator?.handleAppRoute(appRoute, animated: animated)
+            navigationTabCoordinator.selectedTab = .profile
+            profileTabFlowCoordinator.handleAppRoute(appRoute, animated: animated)
         case .call(let roomID):
             Task { await presentCallScreen(roomID: roomID) }
         case .genericCallLink(let url):
@@ -180,12 +183,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
     // or verification flows until they're complete… This needs more thought before we
     // codify it all into the state machine.
     private func clearPresentedSheets(animated: Bool) {
-        switch stateMachine.state {
-        case .initial, .tabBar:
-            break
-        case .settingsScreen:
-            navigationTabCoordinator.setSheetCoordinator(nil, animated: animated)
-        }
+        // Settings is now a tab, no sheets to clear for it
     }
     
     func isDisplayingRoomScreen(withRoomID roomID: String) -> Bool {
@@ -198,21 +196,15 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
     private func configureStateMachine() {
         stateMachine.addRoutes(event: .start, transitions: [.initial => .tabBar]) { [weak self] _ in
             guard let self else { return }
-            
+
             contactsTabFlowCoordinator.start()
             callsTabFlowCoordinator.start()
             chatsTabFlowCoordinator.start()
             appsTabFlowCoordinator.start()
+            profileTabFlowCoordinator.handleAppRoute(.settings, animated: false)
             attemptStartingOnboarding()
         }
-        
-        stateMachine.addRoutes(event: .showSettingsScreen, transitions: [.tabBar => .settingsScreen]) { [weak self] _ in
-            self?.startSettingsFlow()
-        }
-        stateMachine.addRoutes(event: .dismissedSettingsScreen, transitions: [.settingsScreen => .tabBar]) { [weak self] _ in
-            self?.settingsFlowCoordinator = nil
-        }
-        
+
         stateMachine.addErrorHandler { context in
             fatalError("Unexpected transition: \(context)")
         }
@@ -226,7 +218,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                 case .switchToChatsTab:
                     navigationTabCoordinator.selectedTab = .chats
                 case .showSettings:
-                    handleAppRoute(.settings, animated: true)
+                    navigationTabCoordinator.selectedTab = .profile
                 case .showChatBackupSettings:
                     handleAppRoute(.chatBackupSettings, animated: true)
                 case .sessionVerification(let flow):
@@ -247,7 +239,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                 guard let self else { return }
                 switch action {
                 case .showSettings:
-                    stateMachine.tryEvent(.showSettingsScreen)
+                    navigationTabCoordinator.selectedTab = .profile
                 }
             }
             .store(in: &cancellables)
@@ -258,7 +250,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                 guard let self else { return }
                 switch action {
                 case .showSettings:
-                    stateMachine.tryEvent(.showSettingsScreen)
+                    navigationTabCoordinator.selectedTab = .profile
                 }
             }
             .store(in: &cancellables)
@@ -269,7 +261,24 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                 guard let self else { return }
                 switch action {
                 case .showSettings:
-                    stateMachine.tryEvent(.showSettingsScreen)
+                    navigationTabCoordinator.selectedTab = .profile
+                }
+            }
+            .store(in: &cancellables)
+
+        // Profile tab actions
+        profileTabFlowCoordinator.actions
+            .sink { [weak self] action in
+                guard let self else { return }
+                switch action {
+                case .dismiss:
+                    navigationTabCoordinator.selectedTab = .chats
+                case .clearCache:
+                    actionsSubject.send(.clearCache)
+                case .runLogoutFlow:
+                    Task { await self.runLogoutFlow() }
+                case .forceLogout:
+                    actionsSubject.send(.forceLogout)
                 }
             }
             .store(in: &cancellables)
@@ -357,43 +366,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         }
     }
     
-    // MARK: - Settings
-    
-    private func startSettingsFlow() {
-        let navigationStackCoordinator = NavigationStackCoordinator()
-        let coordinator = SettingsFlowCoordinator(appLockService: appLockService,
-                                                  navigationStackCoordinator: navigationStackCoordinator,
-                                                  flowParameters: flowParameters)
-        
-        coordinator.actions.sink { [weak self] action in
-            guard let self else { return }
-            
-            switch action {
-            case .dismiss:
-                navigationTabCoordinator.setSheetCoordinator(nil)
-            case .clearCache:
-                actionsSubject.send(.clearCache)
-            case .runLogoutFlow:
-                Task {
-                    self.navigationTabCoordinator.setSheetCoordinator(nil)
-                    
-                    // The sheet needs to be dismissed before the alert can be shown
-                    try await Task.sleep(for: .milliseconds(100))
-                    await self.runLogoutFlow()
-                }
-            case .forceLogout:
-                actionsSubject.send(.forceLogout)
-            }
-        }
-        .store(in: &cancellables)
-        
-        settingsFlowCoordinator = coordinator
-        coordinator.handleAppRoute(.settings, animated: false)
-        
-        navigationTabCoordinator.setSheetCoordinator(navigationStackCoordinator) { [weak self] in
-            self?.stateMachine.tryEvent(.dismissedSettingsScreen)
-        }
-    }
+    // MARK: - Settings (now embedded as Profile tab)
     
     // MARK: - Session Verification
     

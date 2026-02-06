@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
+import Compound
 import Lottie
 import SwiftUI
 
@@ -12,17 +13,23 @@ struct StalkTabItem: Identifiable {
     let id: String
     let title: String
     let lottieIcon: String?
+    let sfSymbol: String?
+    let sfSymbolSelected: String?
     var badgeCount: Int = 0
 
-    init(id: String, title: String, lottieIcon: String? = nil, badgeCount: Int = 0) {
+    init(id: String, title: String, lottieIcon: String? = nil,
+         sfSymbol: String? = nil, sfSymbolSelected: String? = nil,
+         badgeCount: Int = 0) {
         self.id = id
         self.title = title
         self.lottieIcon = lottieIcon
+        self.sfSymbol = sfSymbol
+        self.sfSymbolSelected = sfSymbolSelected
         self.badgeCount = badgeCount
     }
 }
 
-/// Stalk-style tab bar with Lottie-animated icons
+/// Stalk-style tab bar with Lottie-animated icons and SF Symbol fallback
 struct StalkTabBar: View {
     let items: [StalkTabItem]
     @Binding var selectedIndex: Int
@@ -31,59 +38,50 @@ struct StalkTabBar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Divider()
-                .frame(height: 0.5)
-                .background(Color(.separator))
+            // Top separator
+            Rectangle()
+                .fill(Color(.separator))
+                .frame(height: 0.33)
 
             HStack(spacing: 0) {
                 ForEach(items.indices, id: \.self) { index in
                     tabButton(for: items[index], index: index)
                 }
             }
-            .padding(.top, 6)
-            .padding(.bottom, 2)
-            .background(.bar)
+            .frame(height: 49)
+            .background(Color(.systemBackground))
         }
     }
 
     @ViewBuilder
     private func tabButton(for item: StalkTabItem, index: Int) -> some View {
-        Button {
-            let wasSelected = selectedIndex == index
-            selectedIndex = index
+        let isActive = selectedIndex == index
 
-            // Play animation on tap (even if already selected, like Stalk)
-            if wasSelected || true {
-                animatingIndex = index
-                // Reset animation flag after a short delay
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                    if animatingIndex == index {
-                        animatingIndex = nil
-                    }
+        Button {
+            selectedIndex = index
+            animatingIndex = index
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                if animatingIndex == index {
+                    animatingIndex = nil
                 }
             }
         } label: {
-            VStack(spacing: 2) {
+            VStack(spacing: 3) {
                 ZStack(alignment: .topTrailing) {
-                    if let lottieIcon = item.lottieIcon {
-                        LottieTabBarIcon(
-                            animationName: lottieIcon,
-                            isSelected: selectedIndex == index,
-                            playAnimation: animatingIndex == index
-                        )
-                        .frame(width: 28, height: 28)
-                    }
+                    iconView(for: item, index: index, isActive: isActive)
+                        .frame(width: 30, height: 30)
 
                     // Badge
                     if item.badgeCount > 0 {
                         badgeView(count: item.badgeCount)
-                            .offset(x: 8, y: -4)
+                            .offset(x: 10, y: -4)
                     }
                 }
 
                 Text(item.title)
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(selectedIndex == index ? .accentColor : .secondary)
+                    .foregroundColor(isActive ? .accentColor : Color(.systemGray))
+                    .lineLimit(1)
             }
             .frame(maxWidth: .infinity)
         }
@@ -91,13 +89,28 @@ struct StalkTabBar: View {
     }
 
     @ViewBuilder
+    private func iconView(for item: StalkTabItem, index: Int, isActive: Bool) -> some View {
+        if let lottieIcon = item.lottieIcon {
+            LottieTabBarIcon(
+                animationName: lottieIcon,
+                isSelected: isActive,
+                playAnimation: animatingIndex == index
+            )
+        } else if let sfSymbol = item.sfSymbol {
+            Image(systemName: isActive ? (item.sfSymbolSelected ?? sfSymbol) : sfSymbol)
+                .font(.system(size: 22))
+                .foregroundColor(isActive ? .accentColor : Color(.systemGray))
+        }
+    }
+
+    @ViewBuilder
     private func badgeView(count: Int) -> some View {
         let text = count > 99 ? "99+" : "\(count)"
         Text(text)
-            .font(.system(size: 11, weight: .semibold))
+            .font(.system(size: 11, weight: .bold))
             .foregroundColor(.white)
             .padding(.horizontal, 5)
-            .padding(.vertical, 1)
+            .frame(minWidth: 18, minHeight: 18)
             .background(Color.red)
             .clipShape(Capsule())
     }

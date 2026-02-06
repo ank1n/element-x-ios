@@ -7,44 +7,83 @@
 import Lottie
 import SwiftUI
 
-/// SwiftUI wrapper for Lottie animation used in Stalk-style tab bar icons
+/// A fixed-size container for LottieAnimationView that reports its intrinsic size correctly to SwiftUI.
+class LottieContainerView: UIView {
+    let animationView: LottieAnimationView
+    private let iconSize: CGFloat
+
+    init(name: String, size: CGFloat) {
+        iconSize = size
+        animationView = LottieAnimationView(name: name)
+        super.init(frame: CGRect(x: 0, y: 0, width: size, height: size))
+
+        animationView.contentMode = .scaleAspectFit
+        animationView.loopMode = .playOnce
+        animationView.backgroundBehavior = .pauseAndRestore
+        animationView.isUserInteractionEnabled = false
+
+        addSubview(animationView)
+        animationView.frame = bounds
+        animationView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var intrinsicContentSize: CGSize {
+        CGSize(width: iconSize, height: iconSize)
+    }
+}
+
+/// SwiftUI wrapper for Lottie animation used in Stalk-style tab bar icons.
 struct LottieTabBarIcon: UIViewRepresentable {
     let animationName: String
     let isSelected: Bool
     let playAnimation: Bool
+    var iconSize: CGFloat = 30
 
     private let activeColor: UIColor = .systemBlue
     private let inactiveColor: UIColor = .systemGray
 
-    func makeUIView(context: Context) -> LottieAnimationView {
-        let animationView = LottieAnimationView(name: animationName)
-        animationView.contentMode = .scaleAspectFit
-        animationView.loopMode = .playOnce
-        animationView.backgroundBehavior = .pauseAndRestore
+    func makeUIView(context: Context) -> LottieContainerView {
+        let container = LottieContainerView(name: animationName, size: iconSize)
+        let av = container.animationView
 
-        // Set initial color
-        applyColor(to: animationView, color: isSelected ? activeColor : inactiveColor)
+        applyColor(to: av, color: isSelected ? activeColor : inactiveColor)
+        // Show the frame where all shapes are fully visible (2 frames before end
+        // to avoid gap between last shape keyframe and animation end marker).
+        showStaticFrame(av)
 
-        // Show first frame by default
-        animationView.currentProgress = 0
-
-        return animationView
+        return container
     }
 
-    func updateUIView(_ animationView: LottieAnimationView, context: Context) {
+    func updateUIView(_ container: LottieContainerView, context: Context) {
+        let av = container.animationView
         let color = isSelected ? activeColor : inactiveColor
-        applyColor(to: animationView, color: color)
+        applyColor(to: av, color: color)
 
         if playAnimation, isSelected {
-            animationView.currentProgress = 0
-            animationView.play()
+            av.currentProgress = 0
+            av.play()
+        } else if !av.isAnimationPlaying {
+            showStaticFrame(av)
         }
     }
 
-    private func applyColor(to animationView: LottieAnimationView, color: UIColor) {
-        let colorProvider = ColorValueProvider(color.lottieColorValue)
-        // Apply color to all fill and stroke paths
-        animationView.setValueProvider(colorProvider, keypath: AnimationKeypath(keypath: "**.Fill 1.Color"))
-        animationView.setValueProvider(colorProvider, keypath: AnimationKeypath(keypath: "**.Stroke 1.Color"))
+    /// Shows the frame where all shapes are fully rendered.
+    /// Some Lottie files have a gap between the last shape keyframe and the animation end marker (op),
+    /// so we show 2 frames before the end to land on the fully-expanded shapes.
+    private func showStaticFrame(_ av: LottieAnimationView) {
+        if let endFrame = av.animation?.endFrame, endFrame > 2 {
+            av.currentFrame = endFrame - 2
+        } else {
+            av.currentProgress = 1
+        }
+    }
+
+    private func applyColor(to av: LottieAnimationView, color: UIColor) {
+        let provider = ColorValueProvider(color.lottieColorValue)
+        av.setValueProvider(provider, keypath: AnimationKeypath(keypath: "**.Fill 1.Color"))
+        av.setValueProvider(provider, keypath: AnimationKeypath(keypath: "**.Stroke 1.Color"))
     }
 }
