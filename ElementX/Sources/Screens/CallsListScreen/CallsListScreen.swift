@@ -14,13 +14,11 @@ struct CallsListScreen: View {
     enum CallFilter: String, CaseIterable {
         case all = "Все"
         case missed = "Пропущенные"
-        case incoming = "Входящие"
-        case outgoing = "Исходящие"
     }
 
     var body: some View {
         content
-            .navigationTitle("Звонки")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbar }
             .background(Color.compound.bgCanvasDefault.ignoresSafeArea())
             .alert(item: $context.alertInfo)
@@ -28,11 +26,25 @@ struct CallsListScreen: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
+        ToolbarItem(placement: .principal) {
+            Picker("", selection: $selectedFilter) {
+                ForEach(CallFilter.allCases, id: \.self) { filter in
+                    Text(filter.rawValue).tag(filter)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 220)
+        }
+        ToolbarItem(placement: .cancellationAction) {
+            Button("Изменить") {
+                // TODO: implement edit mode (delete call history)
+            }
+        }
         ToolbarItem(placement: .primaryAction) {
             Button {
                 context.send(viewAction: .startNewCall)
             } label: {
-                CompoundIcon(\.plus)
+                Image(systemName: "phone.badge.plus")
             }
         }
     }
@@ -42,18 +54,14 @@ struct CallsListScreen: View {
         GeometryReader { geometry in
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    Section {
-                        if context.viewState.isLoading {
-                            loadingCells
-                        } else if filteredCalls.isEmpty {
-                            emptyStateView(minHeight: geometry.size.height)
-                        } else {
-                            ForEach(filteredCalls) { call in
-                                callCell(call)
-                            }
+                    if context.viewState.isLoading {
+                        loadingCells
+                    } else if filteredCalls.isEmpty {
+                        emptyStateView(minHeight: geometry.size.height)
+                    } else {
+                        ForEach(filteredCalls) { call in
+                            callCell(call)
                         }
-                    } header: {
-                        filtersSection
                     }
                 }
                 .searchable(text: $context.searchQuery, placement: .navigationBarDrawer(displayMode: .always))
@@ -69,26 +77,6 @@ struct CallsListScreen: View {
                 context.send(viewAction: .refresh)
             }
         }
-    }
-
-    @ViewBuilder
-    private var filtersSection: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(CallFilter.allCases, id: \.self) { filter in
-                    GenericFilterView(
-                        title: filter.rawValue,
-                        isActive: Binding(
-                            get: { selectedFilter == filter },
-                            set: { if $0 { selectedFilter = filter } }
-                        )
-                    )
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-        }
-        .background(Color.compound.bgCanvasDefault)
     }
 
     private var loadingCells: some View {
@@ -158,10 +146,6 @@ struct CallsListScreen: View {
             break
         case .missed:
             calls = calls.filter { $0.isMissed }
-        case .incoming:
-            calls = calls.filter { $0.callType == .incoming }
-        case .outgoing:
-            calls = calls.filter { $0.callType == .outgoing }
         }
 
         return calls

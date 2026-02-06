@@ -37,7 +37,7 @@ struct FilterToggleStyle: ToggleStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 15, weight: .medium))
-            .foregroundColor(configuration.isOn ? .primary : Color(.systemGray))
+            .foregroundColor(configuration.isOn ? .accentColor : Color(.systemGray))
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .overlay(alignment: .bottom) {

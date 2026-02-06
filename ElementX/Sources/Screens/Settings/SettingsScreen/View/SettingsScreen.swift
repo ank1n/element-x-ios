@@ -39,7 +39,7 @@ struct SettingsScreen: View {
         }
         .compoundList()
         .navigationTitle("Настройки")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
     }
     
     private var userSection: some View {

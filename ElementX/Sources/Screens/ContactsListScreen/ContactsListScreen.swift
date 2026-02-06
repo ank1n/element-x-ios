@@ -19,11 +19,23 @@ struct ContactsListScreen: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
+        ToolbarItem(placement: .cancellationAction) {
+            Menu {
+                Button { /* TODO: sort by name */ } label: {
+                    Label("По имени", systemImage: "textformat")
+                }
+                Button { /* TODO: sort by last seen */ } label: {
+                    Label("По времени", systemImage: "clock")
+                }
+            } label: {
+                Image(systemName: "arrow.up.arrow.down")
+            }
+        }
         ToolbarItem(placement: .primaryAction) {
             Button {
                 context.send(viewAction: .addContact)
             } label: {
-                CompoundIcon(\.plus)
+                Image(systemName: "plus")
             }
         }
     }
