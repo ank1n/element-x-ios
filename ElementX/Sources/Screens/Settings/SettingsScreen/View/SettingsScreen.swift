@@ -38,7 +38,7 @@ struct SettingsScreen: View {
             }
         }
         .compoundList()
-        .navigationTitle("Профиль")
+        .navigationTitle("Настройки")
         .navigationBarTitleDisplayMode(.inline)
     }
     

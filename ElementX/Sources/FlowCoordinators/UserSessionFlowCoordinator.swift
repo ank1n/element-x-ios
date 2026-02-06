@@ -82,14 +82,14 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         let contactsStackCoordinator = NavigationStackCoordinator()
         contactsTabFlowCoordinator = ContactsTabFlowCoordinator(navigationStackCoordinator: contactsStackCoordinator,
                                                                  flowParameters: flowParameters)
-        contactsTabDetails = .init(tag: HomeTab.contacts, title: "Контакты", icon: \.userProfile, selectedIcon: \.userProfileSolid, lottieIcon: "TabContacts")
+        contactsTabDetails = .init(tag: HomeTab.contacts, title: "Контакты", icon: \.userProfile, selectedIcon: \.userProfileSolid, sfSymbol: "person", sfSymbolSelected: "person.fill")
         contactsTabDetails.barVisibilityOverride = .visible
 
         // 2. Calls tab
         let callsStackCoordinator = NavigationStackCoordinator()
         callsTabFlowCoordinator = CallsTabFlowCoordinator(navigationStackCoordinator: callsStackCoordinator,
                                                           flowParameters: flowParameters)
-        callsTabDetails = .init(tag: HomeTab.calls, title: "Звонки", icon: \.voiceCall, selectedIcon: \.voiceCallSolid, lottieIcon: "TabCalls")
+        callsTabDetails = .init(tag: HomeTab.calls, title: "Звонки", icon: \.voiceCall, selectedIcon: \.voiceCallSolid, sfSymbol: "phone", sfSymbolSelected: "phone.fill")
         callsTabDetails.barVisibilityOverride = .visible
 
         // 3. Chats tab
@@ -97,7 +97,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         chatsTabFlowCoordinator = ChatsTabFlowCoordinator(isNewLogin: isNewLogin,
                                                           navigationSplitCoordinator: chatsSplitCoordinator,
                                                           flowParameters: flowParameters)
-        chatsTabDetails = .init(tag: HomeTab.chats, title: "Чаты", icon: \.chat, selectedIcon: \.chatSolid, lottieIcon: "TabChats")
+        chatsTabDetails = .init(tag: HomeTab.chats, title: "Чаты", icon: \.chat, selectedIcon: \.chatSolid, sfSymbol: "message", sfSymbolSelected: "message.fill")
         chatsTabDetails.navigationSplitCoordinator = chatsSplitCoordinator
         chatsTabDetails.barVisibilityOverride = .visible
 
@@ -114,7 +114,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         profileTabFlowCoordinator = SettingsFlowCoordinator(appLockService: appLockService,
                                                              navigationStackCoordinator: profileStack,
                                                              flowParameters: flowParameters)
-        profileTabDetails = .init(tag: HomeTab.profile, title: "Профиль", icon: \.userProfile, selectedIcon: \.userProfileSolid, lottieIcon: "TabSettings")
+        profileTabDetails = .init(tag: HomeTab.profile, title: "Настройки", icon: \.userProfile, selectedIcon: \.userProfileSolid, sfSymbol: "gearshape", sfSymbolSelected: "gearshape.fill")
         profileTabDetails.barVisibilityOverride = .visible
 
         onboardingStackCoordinator = NavigationStackCoordinator()

@@ -98,7 +98,7 @@ struct StalkTabBar: View {
             )
         } else if let sfSymbol = item.sfSymbol {
             Image(systemName: isActive ? (item.sfSymbolSelected ?? sfSymbol) : sfSymbol)
-                .font(.system(size: 22))
+                .font(.system(size: 24))
                 .foregroundColor(isActive ? .accentColor : Color(.systemGray))
         }
     }

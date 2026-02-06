@@ -26,7 +26,7 @@ struct RoomListFiltersView: View {
                         .frame(width: 0, height: 0)
                         .id(leadingID)
                     
-                    HStack(spacing: 8) {
+                    HStack(spacing: 0) {
                         if state.isFiltering {
                             clearButton(scrollViewProxy: proxy)
                         }
@@ -49,7 +49,7 @@ struct RoomListFiltersView: View {
                 }
             }
             .scrollIndicators(.hidden)
-            .padding(.vertical, 12)
+            .padding(.vertical, 8)
             .padding(.bottom, -macScrollBarPadding)
         }
     }

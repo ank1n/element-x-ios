@@ -316,13 +316,13 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
     @State private var standardAppearance = UITabBarAppearance()
     @State private var selectedIndex = 0
 
-    /// Whether any tab has a Lottie icon configured (use custom tab bar)
-    private var useLottieTabBar: Bool {
-        navigationTabCoordinator.tabModules.contains { $0.details.lottieIcon != nil }
+    /// Whether any tab has a Lottie/SF Symbol icon configured (use custom Stalk tab bar)
+    private var useCustomTabBar: Bool {
+        navigationTabCoordinator.tabModules.contains { $0.details.lottieIcon != nil || $0.details.sfSymbol != nil }
     }
 
     var body: some View {
-        if useLottieTabBar {
+        if useCustomTabBar {
             lottieTabBarBody
         } else {
             standardTabBarBody
