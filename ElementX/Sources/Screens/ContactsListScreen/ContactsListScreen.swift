@@ -44,19 +44,23 @@ struct ContactsListScreen: View {
     private var content: some View {
         GeometryReader { geometry in
             ScrollView {
-                LazyVStack(spacing: 0) {
-                    Section {
-                        if context.viewState.isLoading {
-                            loadingCells
-                        } else if filteredContacts.isEmpty {
-                            emptyStateView(minHeight: geometry.size.height)
-                        } else {
-                            ForEach(filteredContacts) { contact in
-                                contactCell(contact)
+                LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    filtersSection
+
+                    if context.viewState.isLoading {
+                        loadingCells
+                    } else if filteredContacts.isEmpty {
+                        emptyStateView(minHeight: geometry.size.height)
+                    } else {
+                        ForEach(groupedContacts, id: \.letter) { group in
+                            Section {
+                                ForEach(group.contacts) { contact in
+                                    contactCell(contact)
+                                }
+                            } header: {
+                                sectionHeader(group.letter)
                             }
                         }
-                    } header: {
-                        filtersSection
                     }
                 }
                 .searchable(text: $context.searchQuery, placement: .navigationBarDrawer(displayMode: .always))
@@ -66,6 +70,32 @@ struct ContactsListScreen: View {
             .scrollDismissesKeyboard(.immediately)
             .scrollBounceBehavior(context.viewState.contacts.isEmpty ? .basedOnSize : .automatic)
         }
+    }
+
+    private func sectionHeader(_ letter: String) -> some View {
+        Text(letter)
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundColor(.compound.textSecondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 4)
+            .background(Color.compound.bgSubtleSecondary)
+    }
+
+    private struct ContactGroup {
+        let letter: String
+        let contacts: [ContactItem]
+    }
+
+    private var groupedContacts: [ContactGroup] {
+        let sorted = filteredContacts.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+        var groups: [String: [ContactItem]] = [:]
+        for contact in sorted {
+            let firstChar = String(contact.displayName.prefix(1)).uppercased()
+            let letter = firstChar.isEmpty ? "#" : firstChar
+            groups[letter, default: []].append(contact)
+        }
+        return groups.keys.sorted().map { ContactGroup(letter: $0, contacts: groups[$0]!) }
     }
 
     @ViewBuilder
@@ -181,11 +211,11 @@ struct ContactsListScreen: View {
         Button {
             context.send(viewAction: .selectContact(contact))
         } label: {
-            HStack(spacing: 16) {
+            HStack(spacing: 12) {
                 LoadableAvatarImage(url: contact.avatarURL,
                                     name: contact.displayName,
                                     contentID: contact.id,
-                                    avatarSize: .room(on: .chats),
+                                    avatarSize: .custom(44),
                                     mediaProvider: context.mediaProvider)
                     .accessibilityHidden(true)
 
@@ -194,28 +224,51 @@ struct ContactsListScreen: View {
                         .font(.compound.bodyLGSemibold)
                         .foregroundColor(.compound.textPrimary)
                         .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
 
-                    HStack(spacing: 4) {
-                        Circle()
-                            .fill(contact.isOnline ? Color.green : Color.compound.iconTertiary)
-                            .frame(width: 8, height: 8)
-
-                        Text(contact.isOnline ? "В сети" : "Не в сети")
-                            .font(.compound.bodySM)
-                            .foregroundColor(.compound.textSecondary)
-                    }
+                    Text(contact.isOnline ? "в сети" : contactLastSeen(contact))
+                        .font(.compound.bodySM)
+                        .foregroundColor(.compound.textSecondary)
+                        .lineLimit(1)
                 }
-                .padding(.vertical, 12)
-                .overlay(alignment: .bottom) {
-                    Rectangle()
-                        .fill(Color.compound.borderDisabled)
-                        .frame(height: 1 / UIScreen.main.scale)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                if contact.isOnline {
+                    Circle()
+                        .fill(Color.green)
+                        .frame(width: 10, height: 10)
                 }
             }
             .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(Color.compound.borderDisabled)
+                    .frame(height: 1 / UIScreen.main.scale)
+                    .padding(.leading, 72)
+            }
         }
         .buttonStyle(.plain)
+    }
+
+    private func contactLastSeen(_ contact: ContactItem) -> String {
+        guard let lastSeen = contact.lastSeenDate else {
+            return "не в сети"
+        }
+        let interval = Date().timeIntervalSince(lastSeen)
+        if interval < 60 {
+            return "был(а) только что"
+        } else if interval < 3600 {
+            let minutes = Int(interval / 60)
+            return "был(а) \(minutes) мин. назад"
+        } else if interval < 86400 {
+            let hours = Int(interval / 3600)
+            return "был(а) \(hours) ч. назад"
+        } else {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "ru_RU")
+            formatter.dateFormat = "d MMM"
+            return "был(а) \(formatter.string(from: lastSeen))"
+        }
     }
 }
 

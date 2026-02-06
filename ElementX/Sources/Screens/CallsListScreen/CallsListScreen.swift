@@ -53,14 +53,20 @@ struct CallsListScreen: View {
     private var content: some View {
         GeometryReader { geometry in
             ScrollView {
-                LazyVStack(spacing: 0) {
+                LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
                     if context.viewState.isLoading {
                         loadingCells
                     } else if filteredCalls.isEmpty {
                         emptyStateView(minHeight: geometry.size.height)
                     } else {
-                        ForEach(filteredCalls) { call in
-                            callCell(call)
+                        ForEach(groupedCalls, id: \.title) { group in
+                            Section {
+                                ForEach(group.calls) { call in
+                                    callCell(call)
+                                }
+                            } header: {
+                                dateSectionHeader(group.title)
+                            }
                         }
                     }
                 }
@@ -75,6 +81,66 @@ struct CallsListScreen: View {
             }
             .onAppear {
                 context.send(viewAction: .refresh)
+            }
+        }
+    }
+
+    private func dateSectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundColor(.compound.textSecondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 4)
+            .background(Color.compound.bgSubtleSecondary)
+    }
+
+    private struct CallGroup: Equatable {
+        let title: String
+        let calls: [CallHistoryItem]
+    }
+
+    private var groupedCalls: [CallGroup] {
+        let calendar = Calendar.current
+        var groups: [(String, [CallHistoryItem])] = []
+        var currentTitle = ""
+        var currentCalls: [CallHistoryItem] = []
+
+        for call in filteredCalls {
+            let title = dateGroupTitle(for: call.timestamp, calendar: calendar)
+            if title != currentTitle {
+                if !currentCalls.isEmpty {
+                    groups.append((currentTitle, currentCalls))
+                }
+                currentTitle = title
+                currentCalls = [call]
+            } else {
+                currentCalls.append(call)
+            }
+        }
+        if !currentCalls.isEmpty {
+            groups.append((currentTitle, currentCalls))
+        }
+        return groups.map { CallGroup(title: $0.0, calls: $0.1) }
+    }
+
+    private func dateGroupTitle(for date: Date, calendar: Calendar) -> String {
+        if calendar.isDateInToday(date) {
+            return "Сегодня"
+        } else if calendar.isDateInYesterday(date) {
+            return "Вчера"
+        } else {
+            let daysAgo = calendar.dateComponents([.day], from: date, to: Date()).day ?? 0
+            if daysAgo < 7 {
+                let formatter = DateFormatter()
+                formatter.locale = Locale(identifier: "ru_RU")
+                formatter.dateFormat = "EEEE"
+                return formatter.string(from: date).capitalized
+            } else {
+                let formatter = DateFormatter()
+                formatter.locale = Locale(identifier: "ru_RU")
+                formatter.dateFormat = "d MMMM"
+                return formatter.string(from: date)
             }
         }
     }

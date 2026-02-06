@@ -48,29 +48,24 @@ struct SettingsScreen: View {
                 Button {
                     context.send(viewAction: .userDetails)
                 } label: {
-                    HStack(spacing: 12) {
+                    VStack(spacing: 8) {
                         LoadableAvatarImage(url: context.viewState.userAvatarURL,
                                             name: context.viewState.userDisplayName,
                                             contentID: context.viewState.userID,
-                                            avatarSize: .user(on: .settings),
+                                            avatarSize: .custom(80),
                                             mediaProvider: context.mediaProvider)
                             .accessibilityHidden(true)
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(context.viewState.userDisplayName ?? "")
-                                .font(.compound.headingMD)
-                                .foregroundColor(.compound.textPrimary)
-                            Text(context.viewState.userID)
-                                .font(.compound.bodySM)
-                                .foregroundColor(.compound.textSecondary)
-                        }
-                        
-                        Spacer()
-                        
-                        ListRowAccessory.navigationLink
+
+                        Text(context.viewState.userDisplayName ?? "")
+                            .font(.system(size: 22, weight: .bold))
+                            .foregroundColor(.compound.textPrimary)
+
+                        Text(context.viewState.userID)
+                            .font(.compound.bodySM)
+                            .foregroundColor(.compound.textSecondary)
                     }
-                    .padding(.horizontal, ListRowPadding.horizontal)
-                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
                 }
             })
         }

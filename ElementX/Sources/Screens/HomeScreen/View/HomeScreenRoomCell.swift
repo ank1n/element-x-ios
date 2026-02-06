@@ -28,7 +28,7 @@ struct HomeScreenRoomCell: View {
                 action(.selectRoom(roomIdentifier: roomID))
             }
         } label: {
-            HStack(spacing: 16.0) {
+            HStack(spacing: 12.0) {
                 avatar
                 
                 content

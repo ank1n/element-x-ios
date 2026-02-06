@@ -177,14 +177,19 @@ struct WidgetsListScreen: View {
                         .foregroundColor(.compound.textSecondary)
                         .lineLimit(2)
                 }
-                .padding(.vertical, 12)
-                .overlay(alignment: .bottom) {
-                    Rectangle()
-                        .fill(Color.compound.borderDisabled)
-                        .frame(height: 1 / UIScreen.main.scale)
-                }
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(Color(.tertiaryLabel))
             }
             .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(Color.compound.borderDisabled)
+                    .frame(height: 1 / UIScreen.main.scale)
+                    .padding(.leading, 84)
+            }
         }
         .buttonStyle(.plain)
     }

@@ -86,7 +86,8 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
                 id: summary.id,
                 displayName: summary.name,
                 avatarURL: nil,
-                isOnline: false
+                isOnline: false,
+                lastSeenDate: nil
             )
             contacts.append(contact)
         }
