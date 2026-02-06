@@ -244,13 +244,6 @@ struct SettingsScreen: View {
         Text(L10n.settingsVersionNumber(InfoPlistReader.main.bundleShortVersionString, InfoPlistReader.main.bundleVersion))
     }
     
-    private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .confirmationAction) {
-            Button(L10n.actionDone) { context.send(viewAction: .close) }
-                .accessibilityIdentifier(A11yIdentifiers.settingsScreen.done)
-        }
-    }
-    
     @ViewBuilder
     private var securitySectionBadge: some View {
         if context.viewState.showSecuritySectionBadge {

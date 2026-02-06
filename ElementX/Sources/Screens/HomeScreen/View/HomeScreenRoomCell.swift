@@ -151,6 +151,7 @@ struct HomeScreenRoomCell: View {
                             .accessibilityLabel(L10n.a11yNotificationsNewMessages)
                     } else {
                         Circle()
+                            .fill(room.isHighlighted ? Color.red : (room.badges.isMuteShown ? Color(.systemGray) : Color(red: 0.33, green: 0.78, blue: 0.39)))
                             .frame(width: 12, height: 12)
                             .accessibilityLabel(L10n.a11yNotificationsNewMessages)
                     }
