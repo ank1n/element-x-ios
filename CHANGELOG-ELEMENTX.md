@@ -589,6 +589,58 @@ git cherry-pick ea581d3
 
 ---
 
+### 10. Telegram-style доработки — алфавитный индекс, секции дат, профиль
+
+**Дата**: 2026-02-06
+**Коммит**: `859b3d6`
+
+#### Описание:
+Продолжение Telegram-style редизайна. Алфавитный индекс контактов, группировка звонков по датам, центрированный профиль в настройках.
+
+#### Изменения:
+
+**1. Контакты: алфавитный индекс**
+- Sticky section headers (D, N, S, T...) с `pinnedViews: [.sectionHeaders]`
+- Группировка по первой букве имени
+- Аватар уменьшен с 52pt до 44pt (`.custom(44)`)
+- Онлайн-индикатор 10pt перенесён вправо
+- Relative time для оффлайн: "был(а) X мин./ч. назад"
+- Добавлено поле `lastSeenDate` в `ContactItem`
+
+**2. Звонки: группировка по датам**
+- Section headers: "Сегодня", "Вчера", день недели, "d MMMM"
+- `pinnedViews: [.sectionHeaders]` для sticky headers
+- Автоматическая группировка через `Calendar.isDateInToday/Yesterday`
+
+**3. Настройки: центрированный профиль**
+- Аватар 80pt по центру (`.custom(80)`)
+- Имя 22pt bold под аватаром
+- Matrix ID под именем
+- Убран chevron и горизонтальный layout
+
+**4. Приложения: chevron**
+- Добавлена иконка `chevron.right` справа в ячейках виджетов
+- Separator перенесён с текстовой зоны на полную ширину (padding .leading: 84)
+
+**5. Чаты: spacing**
+- HStack spacing avatar-text: 16pt → 12pt (ближе к Telegram)
+
+#### Изменённые файлы:
+- **ContactsListScreen.swift** — alphabetical index, cell rework, relative time
+- **ContactsListScreenModels.swift** — `lastSeenDate` в ContactItem
+- **ContactsListScreenViewModel.swift** — lastSeenDate parameter
+- **CallsListScreen.swift** — date grouping sections
+- **SettingsScreen.swift** — centered profile header
+- **WidgetsListScreen.swift** — chevron in cells
+- **HomeScreenRoomCell.swift** — spacing 16→12
+
+#### Коммит для применения:
+```bash
+git cherry-pick 859b3d6
+```
+
+---
+
 ## 🎯 Текущий статус
 
 **Версия Element X**: Форк на основе upstream develop
@@ -603,8 +655,9 @@ git cherry-pick ea581d3
 - ✅ Telegram-style: SF Symbol иконки, underline фильтры, зелёные бейджи (#7)
 - ✅ Telegram-style: шапки и навигация — segmented control, compose, Edit (#8)
 - ✅ Telegram-style: двойной bubble иконка, dot-бейджи, cleanup (#9)
+- ✅ Telegram-style: алфавитный индекс, секции дат, профиль, chevron (#10)
 
-**Последний коммит**: `ea581d3` - feat: доработки Telegram-style UI
+**Последний коммит**: `859b3d6` - feat: Telegram-style доработки
 
 ---
 
@@ -621,6 +674,7 @@ git cherry-pick ea581d3
 - [ ] Применить коммит #7: Telegram-style SF Symbols + underline + бейджи (`3b4452e`)
 - [ ] Применить коммит #8: Telegram-style шапки (`265fc03`)
 - [ ] Применить коммит #9: Telegram-style доработки (`ea581d3`)
+- [ ] Применить коммит #10: Алфавит, секции дат, профиль (`859b3d6`)
 - [ ] Добавить Lottie dependency в Package.swift / project.yml
 - [ ] Разрешить конфликты в UserSessionFlowCoordinator.swift
 - [ ] Проект собирается без ошибок
