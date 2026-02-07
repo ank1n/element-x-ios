@@ -309,7 +309,7 @@ struct CallsListScreen: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
 
-            // Progress bar when playing this call
+            // Interactive slider when playing this call
             if context.viewState.playingCallId == call.id && context.viewState.playbackState != .stopped {
                 HStack(spacing: 8) {
                     Text(formatTime(context.viewState.playbackCurrentTime))
@@ -317,20 +317,14 @@ struct CallsListScreen: View {
                         .foregroundColor(.compound.textSecondary)
                         .monospacedDigit()
 
-                    GeometryReader { geometry in
-                        ZStack(alignment: .leading) {
-                            Rectangle()
-                                .fill(Color.compound.bgSubtleSecondary)
-                                .frame(height: 4)
-                                .cornerRadius(2)
-
-                            Rectangle()
-                                .fill(Color.compound.iconAccentTertiary)
-                                .frame(width: geometry.size.width * context.viewState.playbackProgress, height: 4)
-                                .cornerRadius(2)
-                        }
-                    }
-                    .frame(height: 4)
+                    Slider(
+                        value: Binding(
+                            get: { context.viewState.playbackProgress },
+                            set: { context.send(viewAction: .seekPlayback(progress: $0)) }
+                        ),
+                        in: 0...1
+                    )
+                    .tint(.compound.iconAccentTertiary)
 
                     Text(formatTime(context.viewState.playbackDuration))
                         .font(.caption2)

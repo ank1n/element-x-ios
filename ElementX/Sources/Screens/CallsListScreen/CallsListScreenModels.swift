@@ -11,6 +11,7 @@ enum CallsListScreenViewAction {
     case selectCall(CallHistoryItem)
     case startNewCall
     case playRecording(CallHistoryItem)
+    case seekPlayback(progress: Double)
     case refresh
 }
 

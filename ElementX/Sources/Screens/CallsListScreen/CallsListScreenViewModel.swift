@@ -63,6 +63,8 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
             break
         case .playRecording(let call):
             handlePlayRecording(call)
+        case .seekPlayback(let progress):
+            Task { await audioPlayer.seek(to: progress) }
         case .refresh:
             loadRecordingsFromServer()
         }
