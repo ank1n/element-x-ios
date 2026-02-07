@@ -639,6 +639,53 @@ git cherry-pick ea581d3
 git cherry-pick 859b3d6
 ```
 
+### 11. Swipe actions на ячейках чатов
+
+**Дата**: 2026-02-07
+**Коммит**: `35bbc8e`
+
+#### Описание:
+Добавлены Telegram-style swipe actions на ячейках списка чатов. Кастомный SwipeActionView для работы в ScrollView+LazyVStack (нативный .swipeActions не работает вне List).
+
+#### Изменения:
+- Свайп влево: серая кнопка "Настройки" (ellipsis) + красная "Покинуть комнату" (trash)
+- Свайп вправо: синяя "Прочитано/Непрочитано" (envelope) + оранжевая "Избранное" (pin)
+- Кастомный DragGesture с highPriorityGesture для совместной работы с Button
+- Rubber band эффект при перетягивании за границы
+- Context menu сохранено как дополнение
+
+#### Изменённые файлы:
+- `ElementX/Sources/Screens/HomeScreen/View/HomeScreenRoomList.swift` — SwipeActionView + swipe actions
+
+#### Коммит для применения:
+```bash
+git cherry-pick 35bbc8e
+```
+
+---
+
+### 12. Badge непрочитанных на вкладке Чаты в Tab Bar
+
+**Дата**: 2026-02-07
+**Коммит**: `a5d8724`
+
+#### Описание:
+Красный бейдж с числом непрочитанных сообщений на иконке вкладки "Чаты" в Tab Bar. Обновляется в реальном времени.
+
+#### Изменения:
+- Подписка на alternateRoomSummaryProvider.roomListPublisher
+- Агрегация unreadNotificationsCount по всем комнатам
+- Обновление chatsTabDetails.badgeCount через Observable
+- Бейдж: красный capsule, 99+ для >99
+
+#### Изменённые файлы:
+- `ElementX/Sources/FlowCoordinators/UserSessionFlowCoordinator.swift` — подписка + обновление badgeCount
+
+#### Коммит для применения:
+```bash
+git cherry-pick a5d8724
+```
+
 ---
 
 ## 🎯 Текущий статус
@@ -656,8 +703,10 @@ git cherry-pick 859b3d6
 - ✅ Telegram-style: шапки и навигация — segmented control, compose, Edit (#8)
 - ✅ Telegram-style: двойной bubble иконка, dot-бейджи, cleanup (#9)
 - ✅ Telegram-style: алфавитный индекс, секции дат, профиль, chevron (#10)
+- ✅ Swipe actions на ячейках чатов (#11)
+- ✅ Badge непрочитанных на вкладке Чаты (#12)
 
-**Последний коммит**: `859b3d6` - feat: Telegram-style доработки
+**Последний коммит**: `a5d8724` - feat: badge непрочитанных на вкладке Чаты
 
 ---
 

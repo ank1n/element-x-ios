@@ -1,0 +1,43 @@
+# План: 4 задачи
+
+## Задача 0: Фикс Lottie иконок в StalkTabBar
+
+**Проблема:** LottieAnimationView (UIView) не имеет Auto Layout constraints — занимает весь экран.
+**Файл:** `LottieTabBarIcon.swift`
+**Фикс:** В `makeUIView` добавить `translatesAutoresizingMaskIntoConstraints = false` и width/height constraints = 28pt.
+
+## Задача 1: Добавить Профиль как 5-й таб
+
+**Файл:** `UserSessionFlowCoordinator.swift`
+- HomeTab enum: добавить `profile`
+- Новые properties: profileTabFlowCoordinator (SettingsFlowCoordinator), profileTabStackCoordinator, profileTabDetails
+- Init: создать 5-й таб с lottieIcon "TabSettings"; Apps: lottieIcon → nil
+- setTabs: 5 табов
+- configureStateMachine: вызвать handleAppRoute(.settings) для profile tab; убрать State.settingsScreen, Event.showSettingsScreen/dismissedSettingsScreen, startSettingsFlow()
+- setupObservers: все .showSettings → `navigationTabCoordinator.selectedTab = .profile`
+- handleAppRoute(.settings) → переключить на .profile
+- clearPresentedSheets: убрать settingsScreen case
+- Удалить settingsFlowCoordinator? optional
+
+**Файл:** `SettingsScreen.swift`
+- Убрать кнопку "Done" из toolbar
+- navigationTitle → "Профиль"
+
+## Задача 2: Убрать avatar-header со всех экранов
+
+4 файла — одинаковые изменения:
+- `HomeScreen.swift` — убрать settingsButton + ToolbarItem(.navigationBarLeading), убрать .toolbarBloom
+- `CallsListScreen.swift` — аналогично
+- `ContactsListScreen.swift` — аналогично
+- `WidgetsListScreen.swift` — аналогично
+
+## Задача 3: Числовой badge непрочитанных
+
+**Файл:** `HomeScreenModels.swift`
+- Добавить `unreadCount: UInt` в Badges struct
+- Заполнять из `summary.unreadNotificationsCount`
+
+**Файл:** `HomeScreenRoomCell.swift`
+- Заменить `Circle().frame(12,12)` на числовой badge: красная капсула с числом (белый текст)
+
+## Порядок: 0 → 1 → 2 → 3 → билд → тест

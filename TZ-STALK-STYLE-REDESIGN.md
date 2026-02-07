@@ -1,16 +1,16 @@
-# Техническое задание: Редизайн Element X iOS в стиле Telegram
+# Техническое задание: Редизайн Element X iOS в стиле Stalk
 
 **Версия:** 1.0
 **Дата:** 05 февраля 2026
 **Приоритет:** Высокий
-**Референс:** Telegram iOS 2022-2024 (до Liquid Glass)
+**Референс:** Stalk — собственный стиль на базе лучших UX-практик
 
 ---
 
 ## 1. Обзор
 
 ### 1.1 Цель
-Переработать интерфейс Element X iOS для соответствия UX-паттернам Telegram (классический дизайн до октября 2025).
+Переработать интерфейс Element X iOS в стиле Stalk — чистый, современный мессенджер.
 
 ### 1.2 Ключевые изменения
 - Нижний Tab Bar с 5 вкладками
@@ -66,7 +66,7 @@
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Стало (стиль Telegram):**
+**Стало (стиль Stalk):**
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                        Чаты                          [Edit] │  ← Navigation Bar
@@ -140,7 +140,7 @@
 
 **Код (референс):**
 ```swift
-struct TelegramStyleFilterTabs: View {
+struct StalkStyleFilterTabs: View {
     let tabs: [String]
     @Binding var selectedIndex: Int
 
@@ -476,17 +476,17 @@ struct TelegramStyleFilterTabs: View {
 ## 8. План реализации
 
 ### Фаза 1: Инфраструктура (2-3 дня)
-- [ ] Создать `TelegramStyleFilterTabs` компонент
-- [ ] Создать `TelegramStyleSearchBar` компонент
-- [ ] Создать `TelegramStyleChatCell` компонент
-- [ ] Создать `TelegramStyleCallCell` компонент
-- [ ] Создать `TelegramStyleContactCell` компонент
+- [ ] Создать `StalkStyleFilterTabs` компонент
+- [ ] Создать `StalkStyleSearchBar` компонент
+- [ ] Создать `StalkStyleChatCell` компонент
+- [ ] Создать `StalkStyleCallCell` компонент
+- [ ] Создать `StalkStyleContactCell` компонент
 - [ ] Обновить Tab Bar на 5 вкладок
 
 ### Фаза 2: Чаты (2-3 дня)
 - [ ] Убрать header с аватаром
 - [ ] Добавить стандартный navigation title
-- [ ] Интегрировать TelegramStyleFilterTabs
+- [ ] Интегрировать StalkStyleFilterTabs
 - [ ] Переверстать ячейки чатов
 - [ ] Добавить swipe actions
 - [ ] Добавить section headers по датам
@@ -524,11 +524,11 @@ struct TelegramStyleFilterTabs: View {
 ```
 ElementX/Sources/
 ├── Other/SwiftUI/Views/
-│   ├── TelegramStyleFilterTabs.swift
-│   ├── TelegramStyleSearchBar.swift
-│   ├── TelegramStyleChatCell.swift
-│   ├── TelegramStyleCallCell.swift
-│   └── TelegramStyleContactCell.swift
+│   ├── StalkStyleFilterTabs.swift
+│   ├── StalkStyleSearchBar.swift
+│   ├── StalkStyleChatCell.swift
+│   ├── StalkStyleCallCell.swift
+│   └── StalkStyleContactCell.swift
 ├── Screens/
 │   └── ProfileScreen/
 │       ├── ProfileScreenCoordinator.swift
@@ -558,12 +558,11 @@ ElementX/Sources/
 ## 10. Иконки Tab Bar (Lottie-анимации)
 
 ### 10.1 Источник иконок
-Иконки взяты из официального репозитория Telegram iOS:
-- https://github.com/TelegramMessenger/Telegram-iOS
+Lottie-анимации для иконок tab bar (собственный дизайн Stalk).
 
 ### 10.2 Файлы анимаций
 ```
-ios/ElementX/Resources/TelegramIcons/
+ios/ElementX/Resources/StalkIcons/
 ├── TabContacts.json   (5.9 KB)  — анимация "Контакты"
 ├── TabCalls.json      (6.6 KB)  — анимация "Звонки"
 ├── TabChats.json      (8.2 KB)  — анимация "Чаты"
@@ -610,11 +609,6 @@ animationView.setValueProvider(
 
 ## 11. Референсы (документация)
 
-### Telegram Design Resources
-- [Telegram iOS UI Kit (Figma)](https://www.figma.com/community/file/1342906900898425723/telegram-ios-ui-kit)
-- [Telegram UI Screens (Figma)](https://www.figma.com/community/file/874574404452104362/telegram-ui-screens)
-- [Telegram Blog: Chat Folders](https://telegram.org/blog/folders)
-
 ### Apple HIG
 - [Tab Bars](https://developer.apple.com/design/human-interface-guidelines/tab-bars)
 - [Search](https://developer.apple.com/design/human-interface-guidelines/searching)
@@ -628,7 +622,7 @@ animationView.setValueProvider(
 - [ ] Tab Bar соответствует макету (5 вкладок)
 - [ ] Нет header с аватаром на основных экранах
 - [ ] Filter tabs с подчеркиванием
-- [ ] Ячейки в стиле Telegram
+- [ ] Ячейки в стиле Stalk
 
 ### Функциональные
 - [ ] Все фильтры работают

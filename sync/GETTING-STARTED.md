@@ -160,7 +160,7 @@ GET  /apps/:id
 
 ## Контакты
 
-- **iOS Dev**: @ankin (Telegram)
+- **iOS Dev**: @ankin
 - **Сервер**: ozzy.implica.ru
 
 ---
