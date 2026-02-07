@@ -688,6 +688,37 @@ git cherry-pick a5d8724
 
 ---
 
+### 13. Недавние поисковые запросы + фикс навбара на вкладке Чаты
+
+**Дата**: 2026-02-08
+**Коммит**: `95323f8`
+
+#### Описание:
+Недавние поисковые запросы в стиле Telegram — при фокусе на пустом поисковом поле показываются последние 5 запросов с иконкой часов. Также исправлена проблема со скрытой навигационной панелью на вкладке Чаты.
+
+#### Изменения:
+- Сохранение запросов в UserDefaults при выборе комнаты из результатов поиска
+- Overlay "Недавние" с кнопкой "Очистить" при пустом поле поиска в фокусе
+- Каждый запрос с иконкой clock.arrow.circlepath, тап вставляет в поле поиска
+- Очистка поискового запроса при переходе в комнату (как в Telegram)
+- Фикс: отключён .ignoresSafeArea() на NavigationSplitCoordinator (скрывал навбар в StalkTabBar)
+- Фикс: добавлен .navigationBarTitleDisplayMode(.large) + .toolbarVisibility(.visible) на HomeScreen
+
+#### Изменённые файлы:
+- `ElementX/Sources/Application/Settings/AppSettings.swift` — ключ recentSearchQueries + @UserPreference
+- `ElementX/Sources/Screens/HomeScreen/HomeScreenModels.swift` — новые ViewActions + state
+- `ElementX/Sources/Screens/HomeScreen/HomeScreenViewModel.swift` — сохранение/загрузка/очистка запросов
+- `ElementX/Sources/Screens/HomeScreen/View/HomeScreenContent.swift` — UI overlay недавних поисков
+- `ElementX/Sources/Screens/HomeScreen/View/HomeScreen.swift` — large title + visible toolbar
+- `ElementX/Sources/Application/Navigation/NavigationCoordinators.swift` — отключён ignoresSafeArea
+
+#### Коммит для применения:
+```bash
+git cherry-pick 95323f8
+```
+
+---
+
 ## 🎯 Текущий статус
 
 **Версия Element X**: Форк на основе upstream develop

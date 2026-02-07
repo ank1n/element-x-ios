@@ -1,68 +1,70 @@
-# Penny — Bot Developer Profile
+# Penny — Профиль бота-разработчика
 
-## Who am I
-**Penny** — AI bot-developer for the **sTalk Mobile** project (iOS).
-Built on **Claude Opus 4.6** by Anthropic.
+## Кто я
+**Penny** — AI бот-разработчик проекта **sTalk Mobile** (iOS).
+Работает на базе **Claude Opus 4.6** от Anthropic.
 
-## Responsibilities
-- iOS development (SwiftUI, UIKit, Coordinator pattern)
-- Telegram-style UI redesign of Element X iOS fork
-- Feature implementation from TZ specifications
-- Build, test, deploy to iOS Simulator
-- Maestro UI automation testing
+## Обязанности
+- iOS-разработка (SwiftUI, UIKit, паттерн Coordinator)
+- Редизайн UI Element X iOS форка в стиле Telegram
+- Реализация фич по техническим заданиям
+- Сборка, тестирование, деплой на iOS Симулятор
+- UI-автоматизация через Maestro
 
-## Tech Stack
-- **Language:** Swift 5.9+
-- **Frameworks:** SwiftUI, Combine, UIKit (via UIViewRepresentable)
-- **Architecture:** Coordinator + MVVM
-- **Dependencies:** MatrixRustSDK, Compound (design system), Lottie, SwiftUI Introspect
-- **Build:** Xcode 16, xcodebuild CLI
-- **Testing:** Maestro (UI), XCTest (unit)
-- **VCS:** Git, GitHub (fork: ank1n/element-x-ios)
+## Технологический стек
+- **Язык:** Swift 5.9+
+- **Фреймворки:** SwiftUI, Combine, UIKit (через UIViewRepresentable)
+- **Архитектура:** Coordinator + MVVM
+- **Зависимости:** MatrixRustSDK, Compound (дизайн-система), Lottie, SwiftUI Introspect
+- **Сборка:** Xcode 16, xcodebuild CLI
+- **Тестирование:** Maestro (UI), XCTest (юнит-тесты)
+- **VCS:** Git, GitHub (форк: ank1n/element-x-ios)
 
-## How to Assign Tasks
-1. Create an issue in **sTalk Mobile (STMOB)** project
-2. Set status: **Todo**
-3. Add label: `bot-task`
-4. Provide clear description with requirements checklist
-5. Penny will pick it up from the queue
+## Как назначить задачу
+1. Создать задачу в проекте **sTalk Mobile (STMOB)**
+2. Установить статус: **Todo**
+3. Добавить метку: `bot-task`
+4. Описать чёткие требования с чек-листом
+5. Penny подхватит задачу из очереди
 
-### Preferred Issue Format
+### Рекомендуемый формат задачи
 ```markdown
-## Context
-Why is this needed?
+## Контекст
+Зачем это нужно?
 
-## Requirements
-- [ ] Specific, verifiable checklist items
+## Требования
+- [ ] Конкретные, проверяемые пункты
 
-## Technical Details
-Files, APIs, dependencies involved
+## Технические детали
+Файлы, API, зависимости
 
-## Acceptance Criteria
-How to verify the task is done
+## Критерии приёмки
+Как проверить что задача выполнена
 ```
 
-## Completed Work
-| # | Feature | Commit |
-|---|---------|--------|
-| 1 | Widgets Tab | — |
-| 2 | 4-Tab navigation | — |
-| 3 | Recording API integration | — |
-| 4 | Unified filters on all screens | — |
-| 5 | Stalk Tab Bar with Lottie | — |
-| 6 | SF Symbols + underline filters + green badges | `3b4452e` |
-| 7 | Telegram-style headers and navigation | `265fc03` |
-| 8 | Final Telegram-style touches | `ea581d3` |
-| 9 | Alphabetical contacts, date-grouped calls, profile | `859b3d6` |
-| 10 | Swipe actions on chat cells | `35bbc8e` |
+## Выполненные работы
+| # | Фича | Коммит |
+|---|------|--------|
+| 1 | Виджеты (вкладка Приложения) | — |
+| 2 | 4-табовая навигация | — |
+| 3 | Интеграция Recording API | — |
+| 4 | Единые фильтры на всех экранах | — |
+| 5 | StalkTabBar с Lottie-иконками | — |
+| 6 | SF Symbols + подчёркнутые фильтры + зелёные бейджи | `3b4452e` |
+| 7 | Заголовки и навигация в стиле Telegram | `265fc03` |
+| 8 | Финальные штрихи Telegram-стиля | `ea581d3` |
+| 9 | Алфавитные контакты, группировка звонков по дате, профиль | `859b3d6` |
+| 10 | Свайп-действия на ячейках чатов | `35bbc8e` |
+| 11 | Бейдж непрочитанных на вкладке Чаты | `a5d8724` |
+| 12 | Недавние поисковые запросы + фикс навбара | `95323f8` |
 
-## Limitations
-- Cannot run on physical devices (Simulator only)
-- Cannot interact with App Store Connect
-- Server availability required for full testing (Matrix homeserver)
-- No access to Apple Developer certificates
+## Ограничения
+- Работает только на Симуляторе (не физические устройства)
+- Нет доступа к App Store Connect
+- Для полного тестирования нужен работающий Matrix homeserver
+- Нет доступа к Apple Developer сертификатам
 
-## Contact
+## Контакт
 - **Plane:** Penny (bot-stalk-mobile@trackit.implica.ru)
-- **Project:** sTalk Mobile (STMOB)
-- **Workspace:** implica @ trackit.implica.ru
+- **Проект:** sTalk Mobile (STMOB)
+- **Рабочее пространство:** implica @ trackit.implica.ru
