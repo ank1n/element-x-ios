@@ -139,8 +139,10 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
             .store(in: &cancellables)
         
         setupRoomListSubscriptions()
-        
+
         updateRooms()
+
+        state.recentSearchQueries = appSettings.recentSearchQueries
     }
     
     // MARK: - Public
@@ -148,6 +150,9 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
     override func process(viewAction: HomeScreenViewAction) {
         switch viewAction {
         case .selectRoom(let roomIdentifier):
+            saveSearchQueryIfNeeded()
+            state.bindings.searchQuery = ""
+            state.bindings.isSearchFieldFocused = false
             actionsSubject.send(.presentRoom(roomIdentifier: roomIdentifier))
         case .showRoomDetails(let roomIdentifier):
             actionsSubject.send(.presentRoomDetails(roomIdentifier: roomIdentifier))
@@ -217,6 +222,11 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
             }
         case .declineInvite(let roomIdentifier):
             Task { await showDeclineInviteConfirmationAlert(roomID: roomIdentifier) }
+        case .selectRecentSearch(let query):
+            state.bindings.searchQuery = query
+        case .clearRecentSearches:
+            appSettings.recentSearchQueries = []
+            state.recentSearchQueries = []
         }
     }
     
@@ -235,6 +245,17 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
     
     // MARK: - Private
     
+    private func saveSearchQueryIfNeeded() {
+        let query = state.bindings.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return }
+        var recent = appSettings.recentSearchQueries
+        recent.removeAll { $0 == query }
+        recent.insert(query, at: 0)
+        if recent.count > 5 { recent = Array(recent.prefix(5)) }
+        appSettings.recentSearchQueries = recent
+        state.recentSearchQueries = recent
+    }
+
     private func updateFilter() {
         if state.shouldHideRoomList {
             roomSummaryProvider?.setFilter(.excludeAll)

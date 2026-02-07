@@ -360,7 +360,7 @@ private struct NavigationSplitCoordinatorView: View {
                 columnVisibility = oldValue
             }
         }
-        .ignoresSafeArea() // Necessary when embedded in a TabView on iPadOS otherwise there's a gap at the top (as of 18.5).
+        // .ignoresSafeArea() — disabled: was needed for TabView on iPadOS, breaks navigation bar with custom StalkTabBar
     }
     
     /// The NavigationStack that will be used in compact layouts

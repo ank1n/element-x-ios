@@ -73,6 +73,9 @@ final class AppSettings {
         case spaceSettingsEnabled
         case createSpaceEnabled
         
+        // Search
+        case recentSearchQueries
+
         // Doug's tweaks 🔧
         case hideUnreadMessagesBadge
         case hideQuietNotificationAlerts
@@ -181,6 +184,10 @@ final class AppSettings {
     /// The Set of room identifiers that the user has acknowledged have visible history.
     @UserPreference(key: UserDefaultsKeys.acknowledgedHistoryVisibleRooms, defaultValue: [], storageType: .userDefaults(store))
     var acknowledgedHistoryVisibleRooms: Set<String>
+
+    /// Recent search queries (last 5)
+    @UserPreference(key: UserDefaultsKeys.recentSearchQueries, defaultValue: [], storageType: .userDefaults(store))
+    var recentSearchQueries: [String]
     
     /// The initial set of account providers shown to the user in the authentication flow.
     ///

@@ -23,6 +23,8 @@ struct HomeScreen: View {
                    actions: leaveRoomAlertActions,
                    message: leaveRoomAlertMessage)
             .navigationTitle("Чаты")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbarVisibility(.visible, for: .navigationBar)
             .toolbar { toolbar }
             .background(Color.compound.bgCanvasDefault.ignoresSafeArea())
             .track(screen: .Home)

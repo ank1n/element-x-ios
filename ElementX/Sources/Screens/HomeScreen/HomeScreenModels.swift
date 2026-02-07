@@ -49,6 +49,9 @@ enum HomeScreenViewAction {
     
     case acceptInvite(roomIdentifier: String)
     case declineInvite(roomIdentifier: String)
+
+    case selectRecentSearch(query: String)
+    case clearRecentSearches
 }
 
 enum HomeScreenRoomListMode: CustomStringConvertible {
@@ -108,6 +111,8 @@ struct HomeScreenViewState: BindableState {
     var hideInviteAvatars = false
     
     var reportRoomEnabled = false
+
+    var recentSearchQueries: [String] = []
     
     var visibleRooms: [HomeScreenRoom] {
         if roomListMode == .skeletons {

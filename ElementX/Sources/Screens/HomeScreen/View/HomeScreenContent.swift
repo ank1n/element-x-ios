@@ -110,6 +110,10 @@ struct HomeScreenContent: View {
                     RoomListFiltersEmptyStateView(state: context.filtersState)
                         .background(.compound.bgCanvasDefault)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if context.viewState.shouldHideRoomList, !context.viewState.recentSearchQueries.isEmpty {
+                    recentSearchesView
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .background(.compound.bgCanvasDefault)
                 }
             }
             .scrollDismissesKeyboard(.immediately)
@@ -139,6 +143,46 @@ struct HomeScreenContent: View {
         }
     }
     
+    // MARK: - Recent Searches
+
+    private var recentSearchesView: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Недавние")
+                    .font(.compound.bodySMSemibold)
+                    .foregroundColor(.compound.textSecondary)
+                Spacer()
+                Button {
+                    context.send(viewAction: .clearRecentSearches)
+                } label: {
+                    Text("Очистить")
+                        .font(.compound.bodySM)
+                        .foregroundColor(.compound.textActionAccent)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+
+            ForEach(context.viewState.recentSearchQueries, id: \.self) { query in
+                Button {
+                    context.send(viewAction: .selectRecentSearch(query: query))
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 16))
+                            .foregroundColor(.compound.iconSecondary)
+                        Text(query)
+                            .font(.compound.bodyLG)
+                            .foregroundColor(.compound.textPrimary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                }
+            }
+        }
+    }
+
     /// Often times the scroll view's content size isn't correct yet when this method is called e.g. when cancelling a search
     /// Dispatch it with a delay to allow the UI to update and the computations to be correct
     /// Once we move to iOS 17 we should remove all of this and use scroll anchors instead
