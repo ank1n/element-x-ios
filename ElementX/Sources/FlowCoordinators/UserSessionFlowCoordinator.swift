@@ -283,6 +283,18 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
             }
             .store(in: &cancellables)
 
+        // Unread badge count on Chats tab
+        userSession.clientProxy.alternateRoomSummaryProvider.roomListPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] rooms in
+                guard let self else { return }
+                let totalUnread = rooms.reduce(0) { sum, room in
+                    sum + Int(room.unreadNotificationsCount)
+                }
+                chatsTabDetails.badgeCount = totalUnread
+            }
+            .store(in: &cancellables)
+
         userSession.sessionSecurityStatePublisher
             .map(\.verificationState)
             .filter { $0 != .unknown }
