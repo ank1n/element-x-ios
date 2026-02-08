@@ -41,14 +41,15 @@ struct FilterToggleStyle: ToggleStyle {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .overlay(alignment: .bottom) {
-                if configuration.isOn {
-                    Rectangle()
-                        .fill(Color.accentColor)
-                        .frame(height: 2)
-                }
+                Rectangle()
+                    .fill(configuration.isOn ? Color.accentColor : Color.clear)
+                    .frame(height: 2)
             }
+            .animation(.easeInOut(duration: 0.2), value: configuration.isOn)
             .onTapGesture {
-                configuration.isOn.toggle()
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    configuration.isOn.toggle()
+                }
             }
     }
 }

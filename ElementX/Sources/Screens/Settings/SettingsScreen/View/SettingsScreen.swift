@@ -45,34 +45,57 @@ struct SettingsScreen: View {
     private var userSection: some View {
         Section {
             ListRow(kind: .custom {
-                Button {
-                    context.send(viewAction: .userDetails)
-                } label: {
-                    VStack(spacing: 8) {
-                        LoadableAvatarImage(url: context.viewState.userAvatarURL,
-                                            name: context.viewState.userDisplayName,
-                                            contentID: context.viewState.userID,
-                                            avatarSize: .custom(80),
-                                            mediaProvider: context.mediaProvider)
-                            .accessibilityHidden(true)
+                VStack(spacing: 8) {
+                    LoadableAvatarImage(url: context.viewState.userAvatarURL,
+                                        name: context.viewState.userDisplayName,
+                                        contentID: context.viewState.userID,
+                                        avatarSize: .custom(80),
+                                        mediaProvider: context.mediaProvider)
+                        .accessibilityHidden(true)
 
-                        Text(context.viewState.userDisplayName ?? "")
-                            .font(.system(size: 22, weight: .bold))
-                            .foregroundColor(.compound.textPrimary)
+                    Text(context.viewState.userDisplayName ?? "")
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundColor(.compound.textPrimary)
 
-                        Text(context.viewState.userID)
-                            .font(.compound.bodySM)
-                            .foregroundColor(.compound.textSecondary)
+                    Text(context.viewState.userID)
+                        .font(.compound.bodySM)
+                        .foregroundColor(.compound.textSecondary)
+
+                    HStack(spacing: 12) {
+                        Button {
+                            context.send(viewAction: .userDetails)
+                        } label: {
+                            Label("Изменить фото", systemImage: "camera")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.accentColor)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(Color.accentColor.opacity(0.12))
+                                .clipShape(Capsule())
+                        }
+
+                        Button {
+                            context.send(viewAction: .userDetails)
+                        } label: {
+                            Label("Изменить имя", systemImage: "pencil")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.accentColor)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(Color.accentColor.opacity(0.12))
+                                .clipShape(Capsule())
+                        }
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
+                    .padding(.top, 4)
                 }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
             })
         }
     }
     
     private var manageMyAppSection: some View {
-        Section {
+        Section(header: Text("Аккаунт")) {
             ListRow(label: .default(title: L10n.screenNotificationSettingsTitle,
                                     icon: \.notifications),
                     kind: .navigationLink {
@@ -101,7 +124,7 @@ struct SettingsScreen: View {
     }
     
     private var manageAccountSection: some View {
-        Section {
+        Section(header: Text("Приватность")) {
             if context.viewState.showLinkNewDeviceButton {
                 ListRow(label: .default(title: L10n.commonLinkNewDevice,
                                         icon: \.devices),
@@ -139,7 +162,7 @@ struct SettingsScreen: View {
     }
     
     private var generalSection: some View {
-        Section {
+        Section(header: Text("Поддержка")) {
             ListRow(label: .default(title: L10n.commonAdvancedSettings,
                                     icon: \.settings),
                     kind: .navigationLink {

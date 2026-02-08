@@ -38,10 +38,10 @@ struct StalkTabBar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Top separator
+            // Top separator (0.5pt per ТЗ §2.1.1)
             Rectangle()
-                .fill(Color(.separator))
-                .frame(height: 0.33)
+                .fill(Color.compound.borderDisabled)
+                .frame(height: 1 / UIScreen.main.scale)
 
             HStack(spacing: 0) {
                 ForEach(items.indices, id: \.self) { index in
