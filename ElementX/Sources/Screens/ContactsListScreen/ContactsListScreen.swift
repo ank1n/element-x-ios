@@ -13,6 +13,7 @@ struct ContactsListScreen: View {
     var body: some View {
         content
             .navigationTitle("Контакты")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbar }
             .background(Color.compound.bgCanvasDefault.ignoresSafeArea())
     }
@@ -264,7 +265,7 @@ struct ContactsListScreen: View {
 
                     Text(contact.isOnline ? "в сети" : contactLastSeen(contact))
                         .font(.compound.bodySM)
-                        .foregroundColor(.compound.textSecondary)
+                        .foregroundColor(contact.isOnline ? .stalkOnlineGreen : .compound.textSecondary)
                         .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

@@ -5,7 +5,6 @@
 //
 
 import Compound
-import Lottie
 import SwiftUI
 import UIKit
 
@@ -25,30 +24,42 @@ extension Color {
             ? UIColor(red: 0.25, green: 0.72, blue: 0.32, alpha: 1)
             : UIColor(red: 0.20, green: 0.78, blue: 0.35, alpha: 1)
     })
+
+    /// Telegram-style outgoing bubble (green)
+    static let stalkBubbleOutgoing = Color(UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 0.17, green: 0.37, blue: 0.22, alpha: 1)  // #2B5F37
+            : UIColor(red: 0.88, green: 0.99, blue: 0.78, alpha: 1)  // #E1FEC6
+    })
+
+    /// Telegram-style incoming bubble (white/dark gray)
+    static let stalkBubbleIncoming = Color(UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 0.16, green: 0.16, blue: 0.17, alpha: 1)  // #282829
+            : UIColor.white
+    })
 }
 
 /// Stalk-style tab bar item configuration
 struct StalkTabItem: Identifiable {
     let id: String
     let title: String
-    let lottieIcon: String?
     let sfSymbol: String?
     let sfSymbolSelected: String?
     var badgeCount: Int = 0
 
-    init(id: String, title: String, lottieIcon: String? = nil,
+    init(id: String, title: String,
          sfSymbol: String? = nil, sfSymbolSelected: String? = nil,
          badgeCount: Int = 0) {
         self.id = id
         self.title = title
-        self.lottieIcon = lottieIcon
         self.sfSymbol = sfSymbol
         self.sfSymbolSelected = sfSymbolSelected
         self.badgeCount = badgeCount
     }
 }
 
-/// Stalk-style tab bar with Lottie-animated icons and SF Symbol fallback
+/// Stalk-style tab bar with SF Symbol icons (filled/outline)
 struct StalkTabBar: View {
     let items: [StalkTabItem]
     @Binding var selectedIndex: Int
@@ -109,13 +120,7 @@ struct StalkTabBar: View {
 
     @ViewBuilder
     private func iconView(for item: StalkTabItem, index: Int, isActive: Bool) -> some View {
-        if let lottieIcon = item.lottieIcon {
-            LottieTabBarIcon(
-                animationName: lottieIcon,
-                isSelected: isActive,
-                playAnimation: animatingIndex == index
-            )
-        } else if let sfSymbol = item.sfSymbol {
+        if let sfSymbol = item.sfSymbol {
             Image(systemName: isActive ? (item.sfSymbolSelected ?? sfSymbol) : sfSymbol)
                 .font(.system(size: 24))
                 .foregroundColor(isActive ? .accentColor : Color(.systemGray))

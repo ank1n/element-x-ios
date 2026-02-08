@@ -97,7 +97,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         chatsTabFlowCoordinator = ChatsTabFlowCoordinator(isNewLogin: isNewLogin,
                                                           navigationSplitCoordinator: chatsSplitCoordinator,
                                                           flowParameters: flowParameters)
-        chatsTabDetails = .init(tag: HomeTab.chats, title: "Чаты", icon: \.chat, selectedIcon: \.chatSolid, sfSymbol: "bubble.left.and.bubble.right", sfSymbolSelected: "bubble.left.and.bubble.right.fill")
+        chatsTabDetails = .init(tag: HomeTab.chats, title: "Чаты", icon: \.chat, selectedIcon: \.chatSolid, sfSymbol: "message", sfSymbolSelected: "message.fill")
         chatsTabDetails.navigationSplitCoordinator = chatsSplitCoordinator
         chatsTabDetails.barVisibilityOverride = .visible
 

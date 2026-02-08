@@ -23,7 +23,7 @@ struct HomeScreen: View {
                    actions: leaveRoomAlertActions,
                    message: leaveRoomAlertMessage)
             .navigationTitle("Чаты")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarTitleDisplayMode(.inline)
             .toolbarVisibility(.visible, for: .navigationBar)
             .toolbar { toolbar }
             .background(Color.compound.bgCanvasDefault.ignoresSafeArea())

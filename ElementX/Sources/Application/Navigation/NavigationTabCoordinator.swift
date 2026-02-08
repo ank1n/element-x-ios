@@ -25,10 +25,9 @@ import SwiftUI
         let title: String
         let icon: KeyPath<CompoundIcons, Image>
         let selectedIcon: KeyPath<CompoundIcons, Image>
-        /// Lottie animation name (e.g. "TabContacts"). When set, Lottie icon is used instead of CompoundIcon.
-        let lottieIcon: String?
-        /// SF Symbol fallback for tabs without Lottie icon
+        /// SF Symbol name for tab icon (outline style)
         let sfSymbol: String?
+        /// SF Symbol name for selected tab icon (filled style)
         let sfSymbolSelected: String?
         var badgeCount = 0
         var barVisibilityOverride: Visibility?
@@ -38,12 +37,11 @@ import SwiftUI
         weak var navigationSplitCoordinator: NavigationSplitCoordinator?
 
         init(tag: Tag, title: String, icon: KeyPath<CompoundIcons, Image>, selectedIcon: KeyPath<CompoundIcons, Image>,
-             lottieIcon: String? = nil, sfSymbol: String? = nil, sfSymbolSelected: String? = nil) {
+             sfSymbol: String? = nil, sfSymbolSelected: String? = nil) {
             self.tag = tag
             self.title = title
             self.icon = icon
             self.selectedIcon = selectedIcon
-            self.lottieIcon = lottieIcon
             self.sfSymbol = sfSymbol
             self.sfSymbolSelected = sfSymbolSelected
         }
@@ -318,7 +316,7 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
 
     /// Whether any tab has a Lottie/SF Symbol icon configured (use custom Stalk tab bar)
     private var useCustomTabBar: Bool {
-        navigationTabCoordinator.tabModules.contains { $0.details.lottieIcon != nil || $0.details.sfSymbol != nil }
+        navigationTabCoordinator.tabModules.contains { $0.details.sfSymbol != nil }
     }
 
     var body: some View {
@@ -351,7 +349,6 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
                     StalkTabItem(
                         id: "\(module.details.tag)",
                         title: module.details.title,
-                        lottieIcon: module.details.lottieIcon,
                         sfSymbol: module.details.sfSymbol,
                         sfSymbolSelected: module.details.sfSymbolSelected,
                         badgeCount: module.details.badgeCount
