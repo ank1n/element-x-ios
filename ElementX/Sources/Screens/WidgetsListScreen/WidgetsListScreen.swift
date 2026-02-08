@@ -21,6 +21,7 @@ struct WidgetsListScreen: View {
     var body: some View {
         content
             .navigationTitle("Приложения")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbar }
             .background(Color.compound.bgCanvasDefault.ignoresSafeArea())
     }
