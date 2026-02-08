@@ -43,33 +43,70 @@ struct ContactsListScreen: View {
     @ViewBuilder
     private var content: some View {
         GeometryReader { geometry in
-            ScrollView {
-                LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
-                    filtersSection
+            ScrollViewReader { scrollProxy in
+                ScrollView {
+                    LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                        filtersSection
 
-                    if context.viewState.isLoading {
-                        loadingCells
-                    } else if filteredContacts.isEmpty {
-                        emptyStateView(minHeight: geometry.size.height)
-                    } else {
-                        ForEach(groupedContacts, id: \.letter) { group in
-                            Section {
-                                ForEach(group.contacts) { contact in
-                                    contactCell(contact)
+                        if context.viewState.isLoading {
+                            loadingCells
+                        } else if filteredContacts.isEmpty {
+                            emptyStateView(minHeight: geometry.size.height)
+                        } else {
+                            ForEach(groupedContacts, id: \.letter) { group in
+                                Section {
+                                    ForEach(group.contacts) { contact in
+                                        contactCell(contact)
+                                    }
+                                } header: {
+                                    sectionHeader(group.letter)
+                                        .id(group.letter)
                                 }
-                            } header: {
-                                sectionHeader(group.letter)
                             }
                         }
                     }
+                    .searchable(text: $context.searchQuery, placement: .navigationBarDrawer(displayMode: .always))
+                    .compoundSearchField()
+                    .disableAutocorrection(true)
                 }
-                .searchable(text: $context.searchQuery, placement: .navigationBarDrawer(displayMode: .always))
-                .compoundSearchField()
-                .disableAutocorrection(true)
+                .scrollDismissesKeyboard(.immediately)
+                .scrollBounceBehavior(context.viewState.contacts.isEmpty ? .basedOnSize : .automatic)
+                .overlay(alignment: .trailing) {
+                    if !groupedContacts.isEmpty && context.searchQuery.isEmpty {
+                        alphabetScrubber(scrollProxy: scrollProxy)
+                    }
+                }
             }
-            .scrollDismissesKeyboard(.immediately)
-            .scrollBounceBehavior(context.viewState.contacts.isEmpty ? .basedOnSize : .automatic)
         }
+    }
+
+    // MARK: - Alphabet Scrubber
+
+    @ViewBuilder
+    private func alphabetScrubber(scrollProxy: ScrollViewProxy) -> some View {
+        let letters = groupedContacts.map(\.letter)
+        VStack(spacing: 0) {
+            ForEach(letters, id: \.self) { letter in
+                Text(letter)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.compound.textSecondary)
+                    .frame(width: 16, height: 14)
+            }
+        }
+        .padding(.trailing, 2)
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    let index = Int(value.location.y / 14)
+                    if index >= 0, index < letters.count {
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            scrollProxy.scrollTo(letters[index], anchor: .top)
+                        }
+                    }
+                }
+        )
     }
 
     private func sectionHeader(_ letter: String) -> some View {
