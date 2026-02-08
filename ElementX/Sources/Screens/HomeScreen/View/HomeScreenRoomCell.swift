@@ -144,14 +144,14 @@ struct HomeScreenRoomCell: View {
                     if room.badges.unreadCount > 0 {
                         Text(room.badges.unreadCount > 99 ? "99+" : "\(room.badges.unreadCount)")
                             .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(.white)
+                            .foregroundColor(.compound.textOnSolidPrimary)
                             .padding(.horizontal, 6)
                             .frame(minWidth: 20, minHeight: 20)
-                            .background(Capsule().fill(room.isHighlighted ? Color.red : (room.badges.isMuteShown ? Color(.systemGray) : Color(red: 0.33, green: 0.78, blue: 0.39))))
+                            .background(Capsule().fill(room.isHighlighted ? .compound.textCriticalPrimary : (room.badges.isMuteShown ? Color(.systemGray) : Color.stalkBadgeGreen)))
                             .accessibilityLabel(L10n.a11yNotificationsNewMessages)
                     } else {
                         Circle()
-                            .fill(room.isHighlighted ? Color.red : (room.badges.isMuteShown ? Color(.systemGray) : Color(red: 0.33, green: 0.78, blue: 0.39)))
+                            .fill(room.isHighlighted ? .compound.textCriticalPrimary : (room.badges.isMuteShown ? Color(.systemGray) : Color.stalkBadgeGreen))
                             .frame(width: 12, height: 12)
                             .accessibilityLabel(L10n.a11yNotificationsNewMessages)
                     }

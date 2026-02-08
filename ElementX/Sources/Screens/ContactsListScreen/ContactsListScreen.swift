@@ -271,7 +271,7 @@ struct ContactsListScreen: View {
 
                 if contact.isOnline {
                     Circle()
-                        .fill(Color.green)
+                        .fill(Color.stalkOnlineGreen)
                         .frame(width: 10, height: 10)
                 }
             }

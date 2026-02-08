@@ -228,7 +228,7 @@ struct CallsListScreen: View {
 
                     Text(String(call.contactName.prefix(1)).uppercased())
                         .font(.compound.headingMD)
-                        .foregroundColor(.white)
+                        .foregroundColor(.compound.textOnSolidPrimary)
                 }
 
                 // Call info
@@ -236,7 +236,7 @@ struct CallsListScreen: View {
                     HStack(alignment: .top) {
                         Text(call.contactName)
                             .font(.compound.bodyLGSemibold)
-                            .foregroundColor(call.isMissed ? .red : .compound.textPrimary)
+                            .foregroundColor(call.isMissed ? .compound.textCriticalPrimary : .compound.textPrimary)
                             .lineLimit(1)
 
                         Spacer()
@@ -249,7 +249,7 @@ struct CallsListScreen: View {
                     HStack(spacing: 4) {
                         Image(systemName: callIcon(for: call))
                             .font(.caption)
-                            .foregroundColor(call.isMissed ? .red : .compound.textSecondary)
+                            .foregroundColor(call.isMissed ? .compound.iconCriticalPrimary : .compound.textSecondary)
 
                         Text(callDescription(for: call))
                             .font(.compound.bodySM)
@@ -282,7 +282,7 @@ struct CallsListScreen: View {
                                 } else {
                                     Image(systemName: isPlayingCall(call) ? "pause.fill" : "play.fill")
                                         .font(.system(size: 12))
-                                        .foregroundColor(isPlayingCall(call) ? .white : .compound.iconPrimary)
+                                        .foregroundColor(isPlayingCall(call) ? .compound.textOnSolidPrimary : .compound.iconPrimary)
                                 }
                             }
                         }

@@ -178,7 +178,7 @@ struct WidgetsListScreen: View {
 
                     Image(systemName: widget.icon)
                         .font(.system(size: 24))
-                        .foregroundColor(.white)
+                        .foregroundColor(.compound.textOnSolidPrimary)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {

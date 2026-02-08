@@ -7,6 +7,25 @@
 import Compound
 import Lottie
 import SwiftUI
+import UIKit
+
+// MARK: - sTalk Adaptive Colors
+
+extension Color {
+    /// Telegram-style green badge for unread messages (adaptive for dark mode)
+    static let stalkBadgeGreen = Color(UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 0.29, green: 0.70, blue: 0.35, alpha: 1)
+            : UIColor(red: 0.33, green: 0.78, blue: 0.39, alpha: 1)
+    })
+
+    /// Online status indicator green (adaptive for dark mode)
+    static let stalkOnlineGreen = Color(UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 0.25, green: 0.72, blue: 0.32, alpha: 1)
+            : UIColor(red: 0.20, green: 0.78, blue: 0.35, alpha: 1)
+    })
+}
 
 /// Stalk-style tab bar item configuration
 struct StalkTabItem: Identifiable {
@@ -108,10 +127,10 @@ struct StalkTabBar: View {
         let text = count > 99 ? "99+" : "\(count)"
         Text(text)
             .font(.system(size: 11, weight: .bold))
-            .foregroundColor(.white)
+            .foregroundColor(.compound.textOnSolidPrimary)
             .padding(.horizontal, 5)
             .frame(minWidth: 18, minHeight: 18)
-            .background(Color.red)
+            .background(Color.compound.textCriticalPrimary)
             .clipShape(Capsule())
     }
 }
