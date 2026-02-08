@@ -66,42 +66,49 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
             .store(in: &widgetsCancellables)
     }
 
+    /// Extract domain from homeserver URL for building service URLs
+    private var serverDomain: String {
+        let homeserver = userSession.clientProxy.homeserver
+        return URL(string: homeserver)?.host ?? "stalk.implica.ru"
+    }
+
     private func loadWidgets() {
+        let domain = serverDomain
         state.widgets = [
             WidgetItem(
                 id: "statistics",
                 name: "Статистика",
                 description: "Просмотр статистики и аналитики",
                 icon: "chart.bar.fill",
-                url: "https://stats.market.implica.ru/"
+                url: "https://stats.\(domain)/"
             ),
             WidgetItem(
                 id: "calendar",
                 name: "Календарь",
                 description: "Календарь событий и встреч",
                 icon: "calendar",
-                url: "https://calendar.market.implica.ru/"
+                url: "https://calendar.\(domain)/"
             ),
             WidgetItem(
                 id: "tasks",
                 name: "Задачи",
                 description: "Управление задачами и проектами",
                 icon: "checklist",
-                url: "https://tasks.market.implica.ru/"
+                url: "https://tasks.\(domain)/"
             ),
             WidgetItem(
                 id: "files",
                 name: "Файлы",
                 description: "Файловый менеджер",
                 icon: "folder.fill",
-                url: "https://files.market.implica.ru/"
+                url: "https://files.\(domain)/"
             ),
             WidgetItem(
                 id: "notes",
                 name: "Заметки",
                 description: "Создание и редактирование заметок",
                 icon: "note.text",
-                url: "https://notes.market.implica.ru/"
+                url: "https://notes.\(domain)/"
             )
         ]
         state.isLoading = false

@@ -130,7 +130,7 @@ struct WidgetWebViewScreen_Previews: PreviewProvider {
             name: "Test Widget",
             description: "Test description",
             icon: "chart.bar.fill",
-            url: "https://stats.market.implica.ru"
+            url: "https://stats.stalk.implica.ru"
         )
         let viewModel = WidgetWebViewScreenViewModel(widget: widget)
         NavigationStack {

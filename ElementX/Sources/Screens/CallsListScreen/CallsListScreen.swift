@@ -409,7 +409,7 @@ struct CallsListScreen_Previews: PreviewProvider {
         // Setup ServiceLocator for preview
         ServiceLocator.shared.setupLocalCallHistoryService()
 
-        let mockService = CallHistoryService(baseURL: URL(string: "https://livekit.market.implica.ru/recording-api")!)
+        let mockService = CallHistoryService(baseURL: URL(string: "https://livekit.stalk.implica.ru/recording-api")!)
         let viewModel = CallsListScreenViewModel(
             userSession: UserSessionMock(.init()),
             localCallHistoryService: ServiceLocator.shared.localCallHistoryService,

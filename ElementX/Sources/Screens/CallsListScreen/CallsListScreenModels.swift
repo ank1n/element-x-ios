@@ -139,7 +139,7 @@ struct CallHistoryAPIItem: Codable {
     let duration: Int?
     let fileSize: Int?
 
-    func toCallHistoryItem(currentUserID: String? = nil) -> CallHistoryItem? {
+    func toCallHistoryItem(currentUserID: String? = nil, apiBaseURL: URL? = nil) -> CallHistoryItem? {
         guard let startedAtString = startedAt,
               let startDate = Self.parseDate(startedAtString) else {
             return nil
@@ -165,8 +165,9 @@ struct CallHistoryAPIItem: Codable {
         // - status 2 (ENDING) с endedAt - файл уже создан, LiveKit ещё не обновил статус
         let recordingStatus = RecordingStatus(rawValue: status)
         let isPlayable = recordingStatus == .complete || (recordingStatus == .ending && endedAt != nil)
+        let baseURLString = apiBaseURL?.absoluteString ?? "https://livekit.stalk.implica.ru/recording-api"
         let playbackURL: URL? = if isPlayable {
-            URL(string: "https://livekit.market.implica.ru/recording-api/api/recording/play/\(egressId)")
+            URL(string: "\(baseURLString)/api/recording/play/\(egressId)")
         } else {
             nil
         }

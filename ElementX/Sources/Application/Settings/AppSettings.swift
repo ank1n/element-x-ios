@@ -193,7 +193,7 @@ final class AppSettings {
     ///
     /// Account provider is the friendly term for the server name. It should not contain an `https` prefix and should
     /// match the last part of the user ID. For example `example.com` and not `https://matrix.example.com`.
-    private(set) var accountProviders = ["matrix.market.implica.ru"]
+    private(set) var accountProviders = ["stalk.implica.ru"]
     /// Whether or not the user is allowed to manually enter their own account provider or must select from one of `defaultAccountProviders`.
     private(set) var allowOtherAccountProviders = true
     /// Whether the components surrounding the app brand/logo should be hidden or not
@@ -371,7 +371,7 @@ final class AppSettings {
     // MARK: - Recording API
 
     /// The base URL for the call recording API service
-    @UserPreference(key: UserDefaultsKeys.recordingAPIBaseURL, defaultValue: URL(string: "https://livekit.market.implica.ru")!, storageType: .userDefaults(store))
+    @UserPreference(key: UserDefaultsKeys.recordingAPIBaseURL, defaultValue: URL(string: "https://livekit.stalk.implica.ru")!, storageType: .userDefaults(store))
     var recordingAPIBaseURL: URL
 
     // MARK: - Users

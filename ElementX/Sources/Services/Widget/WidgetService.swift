@@ -51,7 +51,7 @@ class WidgetService: WidgetServiceProtocol {
                 id: "stats_widget_1",
                 type: "customwidget",
                 name: "Статистика",
-                url: "https://stats.market.implica.ru/?roomId=$matrix_room_id&userId=$matrix_user_id",
+                url: "https://stats.stalk.implica.ru/?roomId=$matrix_room_id&userId=$matrix_user_id",
                 creatorUserId: roomProxy.ownUserID,
                 waitForIframeLoad: true,
                 data: nil

@@ -11,7 +11,7 @@ import Foundation
 struct SavedAccount: Codable, Identifiable, Equatable {
     /// Unique identifier for the saved account
     var id: String { "\(serverURL)_\(userId)" }
-    /// The homeserver URL (e.g. "matrix.market.implica.ru")
+    /// The homeserver URL (e.g. "stalk.implica.ru")
     let serverURL: String
     /// The Matrix user ID (e.g. "@user:server.ru")
     let userId: String

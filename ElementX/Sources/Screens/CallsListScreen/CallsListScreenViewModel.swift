@@ -480,7 +480,7 @@ class CallHistoryService: NSObject, CallHistoryServiceProtocol, URLSessionDelega
                 print("📞 FETCH: Attempt \(attempt)...")
                 let (data, response) = try await urlSession.data(for: request)
                 print("📞 FETCH: Got response, data size: \(data.count)")
-                return try processResponse(data: data, response: response, currentUserID: currentUserID)
+                return try processResponse(data: data, response: response, currentUserID: currentUserID, apiBaseURL: baseURL)
             } catch {
                 print("📞 FETCH: Attempt \(attempt) failed: \(error)")
                 lastError = error
@@ -492,7 +492,7 @@ class CallHistoryService: NSObject, CallHistoryServiceProtocol, URLSessionDelega
         throw lastError ?? CallHistoryError.invalidResponse
     }
 
-    private func processResponse(data: Data, response: URLResponse, currentUserID: String?) throws -> [CallHistoryItem] {
+    private func processResponse(data: Data, response: URLResponse, currentUserID: String?, apiBaseURL: URL? = nil) throws -> [CallHistoryItem] {
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw CallHistoryError.invalidResponse
@@ -509,7 +509,7 @@ class CallHistoryService: NSObject, CallHistoryServiceProtocol, URLSessionDelega
             throw CallHistoryError.serverError(errorMessage)
         }
 
-        return recordings.compactMap { $0.toCallHistoryItem(currentUserID: currentUserID) }
+        return recordings.compactMap { $0.toCallHistoryItem(currentUserID: currentUserID, apiBaseURL: apiBaseURL) }
             .sorted { $0.timestamp > $1.timestamp }
     }
 }
