@@ -140,6 +140,22 @@ struct WidgetsListScreen: View {
     private var filteredWidgets: [WidgetItem] {
         var widgets = context.viewState.widgets
 
+        // Apply category filter
+        if selectedCategory != .all {
+            let widgetCategory: WidgetCategory? = {
+                switch selectedCategory {
+                case .all: return nil
+                case .productivity: return .productivity
+                case .communication: return .communication
+                case .tools: return .tools
+                }
+            }()
+            if let category = widgetCategory {
+                widgets = widgets.filter { $0.category == category }
+            }
+        }
+
+        // Apply search
         if !context.searchQuery.isEmpty {
             widgets = widgets.filter {
                 $0.name.localizedCaseInsensitiveContains(context.searchQuery) ||
