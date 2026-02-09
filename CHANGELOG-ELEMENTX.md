@@ -953,6 +953,60 @@ git cherry-pick 71745dc  # Приложения (пропущен в перво�
 
 ---
 
+### 22. Навигация контакт → чат (как в Telegram)
+
+**Дата**: 2026-02-09
+**Коммиты**: `ec1cb80`, `e49ba44`
+
+#### Описание:
+Тап на контакт открывает чат с ним — как в Telegram. Чат открывается внутри навигационного стека Контактов (не переключается на вкладку Чаты). Кнопка "Назад" возвращает в список контактов.
+
+#### Изменения:
+
+**1. ContactsTabFlowCoordinator — открытие чата в своём стеке**
+- Добавлен `RoomFlowCoordinator` с `isChildFlow: true` — пушит экран чата поверх списка контактов
+- Обработка `.openChat(roomId:)` от ContactsListScreenViewModel
+- Кнопка "Назад" корректно возвращает в список контактов (не в Чаты)
+- Поддержка `.presentCallScreen` для звонков из контактов
+
+**2. ContactsListScreen — полная область нажатия**
+- Добавлен `.contentShape(Rectangle())` на HStack ячейки контакта
+- Тап работает по всей строке, а не только по тексту имени
+
+#### Изменённые файлы:
+- `ElementX/Sources/FlowCoordinators/ContactsTabFlowCoordinator.swift` — RoomFlowCoordinator + openRoom()
+- `ElementX/Sources/Screens/ContactsListScreen/ContactsListScreen.swift` — .contentShape(Rectangle())
+
+#### Коммиты для применения:
+```bash
+git cherry-pick e49ba44  # финальная версия (включает фикс навигации + contentShape)
+```
+
+---
+
+### 23. Фильтр пустых комнат в контактах — только реальные люди
+
+**Дата**: 2026-02-09
+**Коммит**: `7bbfa2b`
+
+#### Описание:
+В списке контактов теперь отображаются только реальные люди (DM-комнаты с 2+ участниками). Пустые и покинутые комнаты ("Empty Room") отфильтрованы. Также добавлены аватарки контактов из RoomSummary.
+
+#### Изменения:
+- Фильтр `activeMembersCount >= 2` — исключает покинутые/пустые DM
+- Фильтр `!name.hasPrefix("Empty Room")` — исключает комнаты с дефолтным именем
+- Передача `avatarURL` из `summary.avatarURL` в `ContactItem` (ранее был `nil`)
+
+#### Изменённые файлы:
+- `ElementX/Sources/Screens/ContactsListScreen/ContactsListScreenViewModel.swift` — фильтр в updateContacts()
+
+#### Коммит для применения:
+```bash
+git cherry-pick 7bbfa2b
+```
+
+---
+
 ## 🎯 Текущий статус
 
 **Версия Element X**: Форк на основе upstream develop
@@ -979,8 +1033,10 @@ git cherry-pick 71745dc  # Приложения (пропущен в перво�
 - ✅ Миграция на stalk.implica.ru — динамические URL (#19)
 - ✅ Telegram-style Tab Bar — SF Symbols filled/outline, зелёные бабблы (#20)
 - ✅ Inline titles на всех экранах (#21)
+- ✅ Навигация контакт → чат (как в Telegram) (#22)
+- ✅ Фильтр пустых комнат в контактах (#23)
 
-**Последний коммит**: `71745dc` - fix: inline title на экране Приложения
+**Последний коммит**: `7bbfa2b` - contacts: фильтр пустых комнат, только реальные люди
 
 ---
 
@@ -1009,6 +1065,8 @@ git cherry-pick 71745dc  # Приложения (пропущен в перво�
 - [ ] Применить коммит #19: Миграция stalk.implica.ru + динамические URL (`8d9ef0f`)
 - [ ] Применить коммит #20: Telegram-style Tab Bar + зелёные бабблы (`c220ddc`)
 - [ ] Применить коммиты #21: Inline titles на всех экранах (`c220ddc`, `71745dc`)
+- [ ] Применить коммит #22: Навигация контакт → чат (`e49ba44`)
+- [ ] Применить коммит #23: Фильтр пустых комнат в контактах (`7bbfa2b`)
 - [ ] Добавить Lottie dependency в Package.swift / project.yml
 - [ ] Разрешить конфликты в UserSessionFlowCoordinator.swift
 - [ ] Проект собирается без ошибок
@@ -1020,6 +1078,8 @@ git cherry-pick 71745dc  # Приложения (пропущен в перво�
 - [ ] Секции настроек с заголовками отображаются
 - [ ] Фильтрация приложений по категориям работает
 - [ ] Dark Mode: все цвета корректны, нет hardcoded RGB
+- [ ] Навигация контакт → чат работает (назад → контакты)
+- [ ] Только реальные люди в контактах (без Empty Room)
 
 ---
 
