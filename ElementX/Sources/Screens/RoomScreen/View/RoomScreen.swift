@@ -45,6 +45,19 @@ struct RoomScreen: View {
                     pinnedItemsBanner
                 }
             }
+            .safeAreaInset(edge: .top) {
+                if context.viewState.isSearchActive {
+                    RoomSearchBar(
+                        searchQuery: $context.searchQuery,
+                        resultCount: context.viewState.searchResultCount,
+                        currentIndex: context.viewState.currentSearchResultIndex,
+                        onPrevious: { context.send(viewAction: .searchPrevious) },
+                        onNext: { context.send(viewAction: .searchNext) },
+                        onDismiss: { context.send(viewAction: .toggleSearch) }
+                    )
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 VStack(spacing: 0) {
                     RoomScreenFooterView(details: context.viewState.footerDetails,
@@ -166,9 +179,18 @@ struct RoomScreen: View {
         
         if !ProcessInfo.processInfo.isiOSAppOnMac {
             ToolbarItem(placement: .primaryAction) {
-                if context.viewState.shouldShowCallButton {
-                    callButton
-                        .disabled(!context.viewState.canJoinCall)
+                HStack(spacing: 4) {
+                    Button {
+                        context.send(viewAction: .toggleSearch)
+                    } label: {
+                        CompoundIcon(\.search)
+                    }
+                    .accessibilityLabel(L10n.actionSearch)
+
+                    if context.viewState.shouldShowCallButton {
+                        callButton
+                            .disabled(!context.viewState.canJoinCall)
+                    }
                 }
             }
         }

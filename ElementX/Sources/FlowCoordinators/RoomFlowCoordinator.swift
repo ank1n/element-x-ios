@@ -945,10 +945,15 @@ class RoomFlowCoordinator: FlowCoordinatorProtocol {
                 stateMachine.tryEvent(.presentReportRoomScreen)
             case .transferOwnership:
                 presentTransferOwnershipScreen()
+            case .presentRoomSearch:
+                // Pop room details and activate search in the room screen
+                navigationStackCoordinator.pop()
+                stateMachine.tryEvent(.dismissRoomDetails)
+                roomScreenCoordinator?.activateSearch()
             }
         }
         .store(in: &cancellables)
-        
+
         if isRoot {
             navigationStackCoordinator.setRootCoordinator(coordinator, animated: animated) { [weak self] in
                 guard let self else { return }

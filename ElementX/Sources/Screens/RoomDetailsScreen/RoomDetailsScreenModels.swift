@@ -30,6 +30,7 @@ enum RoomDetailsScreenViewModelAction: Equatable {
     case displayReportRoom
     case transferOwnership
     case displayWidgets
+    case displayRoomSearch
 }
 
 // MARK: View
@@ -100,6 +101,7 @@ struct RoomDetailsScreenViewState: BindableState {
         if !ProcessInfo.processInfo.isiOSAppOnMac, canJoinCall {
             shortcuts.append(.call)
         }
+        shortcuts.append(.search)
         if dmRecipientInfo == nil, canInviteUsers {
             shortcuts.append(.invite)
         }
@@ -233,12 +235,14 @@ enum RoomDetailsScreenViewAction {
     case processTapRequestsToJoin
     case processTapReport
     case processTapWidgets
+    case processTapSearch
 }
 
 enum RoomDetailsScreenViewShortcut {
     case share(link: URL)
     case mute
     case call
+    case search
     case invite
 }
 

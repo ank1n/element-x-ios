@@ -19,6 +19,7 @@ enum RoomScreenViewModelAction: Equatable {
     case displayKnockRequests
     case displayRoom(roomID: String, via: [String])
     case displayMessageForwarding(MessageForwardingItem)
+    case focusSearchResult(eventID: String)
 }
 
 enum RoomScreenViewAction {
@@ -31,6 +32,9 @@ enum RoomScreenViewAction {
     case dismissKnockRequests
     case viewKnockRequests
     case displaySuccessorRoom
+    case toggleSearch
+    case searchNext
+    case searchPrevious
 }
 
 struct RoomScreenViewState: BindableState {
@@ -93,12 +97,24 @@ struct RoomScreenViewState: BindableState {
         return historyVisibleDetails
     }
     
+    // MARK: - Search
+
+    var isSearchActive = false
+    var searchResultEventIDs: [String] = []
+    var currentSearchResultIndex: Int = 0
+
+    var searchResultCount: Int {
+        searchResultEventIDs.count
+    }
+
     var bindings = RoomScreenViewStateBindings()
 }
 
 struct RoomScreenViewStateBindings {
     /// The view model used to present a QuickLook media preview.
     var mediaPreviewViewModel: TimelineMediaPreviewViewModel?
+
+    var searchQuery = ""
 }
 
 enum RoomScreenFooterViewAction {

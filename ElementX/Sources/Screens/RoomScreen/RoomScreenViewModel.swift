@@ -20,7 +20,8 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
     private let appSettings: AppSettings
     private let analyticsService: AnalyticsService
     private let userIndicatorController: UserIndicatorControllerProtocol
-    
+    private var timelineController: (any TimelineControllerProtocol)?
+
     private var initialSelectedPinnedEventID: String?
     private let pinnedEventStringBuilder: RoomEventStringBuilder
     
@@ -57,13 +58,15 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
          appSettings: AppSettings,
          appHooks: AppHooks,
          analyticsService: AnalyticsService,
-         userIndicatorController: UserIndicatorControllerProtocol) {
+         userIndicatorController: UserIndicatorControllerProtocol,
+         timelineController: (any TimelineControllerProtocol)? = nil) {
         clientProxy = userSession.clientProxy
         self.roomProxy = roomProxy
         self.appSettings = appSettings
         self.analyticsService = analyticsService
         self.userIndicatorController = userIndicatorController
-        
+        self.timelineController = timelineController
+
         self.initialSelectedPinnedEventID = initialSelectedPinnedEventID
         pinnedEventStringBuilder = .pinnedEventStringBuilder(userID: roomProxy.ownUserID)
 
@@ -76,7 +79,8 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
         
         updateRoomInfo(roomProxy.infoPublisher.value)
         setupSubscriptions(ongoingCallRoomIDPublisher: ongoingCallRoomIDPublisher)
-        
+        setupSearchSubscription()
+
         Task {
             await updateVerificationBadge()
         }
@@ -115,6 +119,12 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
             guard let successorID = roomProxy.infoPublisher.value.successor?.roomId else { return }
             let serverNames = roomProxy.knownServerNames(maxCount: 50) // Limit to the same number used by ClientProxy.resolveRoomAlias(_:)
             actionsSubject.send(.displayRoom(roomID: successorID, via: Array(serverNames)))
+        case .toggleSearch:
+            toggleSearch()
+        case .searchNext:
+            navigateSearchResult(forward: true)
+        case .searchPrevious:
+            navigateSearchResult(forward: false)
         }
     }
     
@@ -436,8 +446,77 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
         state.pinnedEventsBannerState.previousPin()
     }
     
+    // MARK: - Search
+
+    private func setupSearchSubscription() {
+        context.$viewState
+            .map(\.bindings.searchQuery)
+            .removeDuplicates()
+            .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
+            .sink { [weak self] query in
+                self?.performSearch(query: query)
+            }
+            .store(in: &cancellables)
+    }
+
+    private func performSearch(query: String) {
+        guard !query.isEmpty, let timelineController else {
+            state.searchResultEventIDs = []
+            state.currentSearchResultIndex = 0
+            return
+        }
+
+        let items = timelineController.timelineItems
+        var resultEventIDs = [String]()
+
+        for item in items {
+            guard let eventItem = item as? EventBasedTimelineItemProtocol,
+                  let eventID = item.id.eventID else {
+                continue
+            }
+
+            if eventItem.body.localizedCaseInsensitiveContains(query) {
+                resultEventIDs.append(eventID)
+            }
+        }
+
+        state.searchResultEventIDs = resultEventIDs
+        state.currentSearchResultIndex = resultEventIDs.isEmpty ? 0 : resultEventIDs.count - 1
+
+        // Focus on the last (most recent) result
+        if let eventID = resultEventIDs.last {
+            actionsSubject.send(.focusSearchResult(eventID: eventID))
+        }
+    }
+
+    private func toggleSearch() {
+        state.isSearchActive.toggle()
+        if !state.isSearchActive {
+            state.bindings.searchQuery = ""
+            state.searchResultEventIDs = []
+            state.currentSearchResultIndex = 0
+        }
+    }
+
+    func activateSearch() {
+        state.isSearchActive = true
+    }
+
+    private func navigateSearchResult(forward: Bool) {
+        guard !state.searchResultEventIDs.isEmpty else { return }
+
+        if forward {
+            state.currentSearchResultIndex = (state.currentSearchResultIndex + 1) % state.searchResultEventIDs.count
+        } else {
+            state.currentSearchResultIndex = (state.currentSearchResultIndex - 1 + state.searchResultEventIDs.count) % state.searchResultEventIDs.count
+        }
+
+        let eventID = state.searchResultEventIDs[state.currentSearchResultIndex]
+        actionsSubject.send(.focusSearchResult(eventID: eventID))
+    }
+
     // MARK: Loading indicators
-    
+
     private static let loadingIndicatorIdentifier = "\(RoomScreenViewModel.self)-Loading"
     private static let errorIndicatorIdentifier = "\(RoomScreenViewModel.self)-Error"
     

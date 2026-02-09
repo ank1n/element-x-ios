@@ -165,6 +165,8 @@ class RoomDetailsScreenViewModel: RoomDetailsScreenViewModelType, RoomDetailsScr
             actionsSubject.send(.displayReportRoom)
         case .processTapWidgets:
             actionsSubject.send(.displayWidgets)
+        case .processTapSearch:
+            actionsSubject.send(.displayRoomSearch)
         }
     }
     

@@ -76,7 +76,8 @@ final class RoomScreenCoordinator: CoordinatorProtocol {
                                             appSettings: parameters.appSettings,
                                             appHooks: parameters.appHooks,
                                             analyticsService: parameters.analytics,
-                                            userIndicatorController: parameters.userIndicatorController)
+                                            userIndicatorController: parameters.userIndicatorController,
+                                            timelineController: parameters.timelineController)
         
         timelineViewModel = TimelineViewModel(roomProxy: parameters.roomProxy,
                                               focussedEventID: parameters.focussedEvent?.eventID,
@@ -189,6 +190,8 @@ final class RoomScreenCoordinator: CoordinatorProtocol {
                     actionsSubject.send(.presentMessageForwarding(forwardingItem: forwardingItem))
                 case .displayThread(let threadRootEventID, let focussedEventID):
                     actionsSubject.send(.presentThread(threadRootEventID: threadRootEventID, focussedEventID: focussedEventID))
+                case .focusSearchResult(let eventID):
+                    Task { await self.timelineViewModel.focusOnEvent(eventID: eventID) }
                 }
             }
             .store(in: &cancellables)
@@ -215,6 +218,10 @@ final class RoomScreenCoordinator: CoordinatorProtocol {
         composerViewModel.process(timelineAction: .setMode(mode: .default)) // Make sure we're not e.g. replying.
         composerViewModel.process(timelineAction: .setText(plainText: string, htmlText: nil))
         composerViewModel.process(timelineAction: .setFocus)
+    }
+
+    func activateSearch() {
+        roomViewModel.activateSearch()
     }
     
     func stop() {

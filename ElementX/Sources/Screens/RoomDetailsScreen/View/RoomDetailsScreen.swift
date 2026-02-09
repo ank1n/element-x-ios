@@ -88,32 +88,44 @@ struct RoomDetailsScreen: View {
     private var headerSectionShortcuts: some View {
         HStack(spacing: 8) {
             ForEach(context.viewState.shortcuts, id: \.self) { shortcut in
-                switch shortcut {
-                case .mute:
-                    toggleMuteButton
-                case .share(let permalink):
-                    ShareLink(item: permalink) {
-                        CompoundIcon(\.shareIos)
-                    }
-                    .buttonStyle(FormActionButtonStyle(title: L10n.actionShare))
-                case .call:
-                    Button {
-                        context.send(viewAction: .processTapCall)
-                    } label: {
-                        CompoundIcon(\.videoCall)
-                    }
-                    .buttonStyle(FormActionButtonStyle(title: L10n.actionCall))
-                case .invite:
-                    Button {
-                        context.send(viewAction: .processTapInvite)
-                    } label: {
-                        CompoundIcon(\.userAdd)
-                    }
-                    .buttonStyle(FormActionButtonStyle(title: L10n.actionInvite))
-                }
+                shortcutButton(for: shortcut)
             }
         }
         .padding(.top, 32)
+    }
+
+    @ViewBuilder
+    private func shortcutButton(for shortcut: RoomDetailsScreenViewShortcut) -> some View {
+        switch shortcut {
+        case .mute:
+            toggleMuteButton
+        case .share(let permalink):
+            ShareLink(item: permalink) {
+                CompoundIcon(\.shareIos)
+            }
+            .buttonStyle(FormActionButtonStyle(title: L10n.actionShare))
+        case .call:
+            Button {
+                context.send(viewAction: .processTapCall)
+            } label: {
+                CompoundIcon(\.videoCall)
+            }
+            .buttonStyle(FormActionButtonStyle(title: L10n.actionCall))
+        case .search:
+            Button {
+                context.send(viewAction: .processTapSearch)
+            } label: {
+                CompoundIcon(\.search)
+            }
+            .buttonStyle(FormActionButtonStyle(title: L10n.actionSearch))
+        case .invite:
+            Button {
+                context.send(viewAction: .processTapInvite)
+            } label: {
+                CompoundIcon(\.userAdd)
+            }
+            .buttonStyle(FormActionButtonStyle(title: L10n.actionInvite))
+        }
     }
     
     @ViewBuilder
