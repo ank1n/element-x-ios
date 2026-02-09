@@ -719,6 +719,240 @@ git cherry-pick 95323f8
 
 ---
 
+### 14. Интерактивный slider для плеера записей
+
+**Дата**: 2026-02-08
+**Коммит**: `c00a5b1`
+
+#### Описание:
+Замена статичного progress bar на интерактивный Slider для перемотки записей звонков.
+
+#### Изменения:
+- Slider(value:in:) вместо GeometryReader+Rectangle
+- Новый action seekPlayback(progress:) для перемотки тапом/перетягиванием
+- AudioPlayer.seek(to:) для позиционирования воспроизведения
+
+#### Изменённые файлы:
+- `ElementX/Sources/Screens/CallsListScreen/CallsListScreen.swift` — Slider UI
+- `ElementX/Sources/Screens/CallsListScreen/CallsListScreenModels.swift` — seekPlayback action
+- `ElementX/Sources/Screens/CallsListScreen/CallsListScreenViewModel.swift` — обработка seek
+
+#### Коммит для применения:
+```bash
+git cherry-pick c00a5b1
+```
+
+### 15. Алфавитный скруббер на экране Контакты
+
+**Дата**: 2026-02-08
+**Коммит**: `5b31df2`
+
+#### Описание:
+Добавлен алфавитный скруббер (A-Я) справа на экране контактов для быстрой навигации по секциям.
+
+#### Изменения:
+- ScrollViewReader для программной прокрутки к секциям
+- Alphabet scrubber с DragGesture для быстрой навигации
+- Скруббер скрывается при активном поиске
+- Sticky section headers с id для scroll anchor
+
+#### Изменённые файлы:
+- `ElementX/Sources/Screens/ContactsListScreen/ContactsListScreen.swift` — ScrollViewReader + alphabetScrubber
+
+#### Коммит для применения:
+```bash
+git cherry-pick 5b31df2
+```
+
+---
+
+### 16. Кнопки редактирования профиля, секции настроек, анимация фильтров
+
+**Дата**: 2026-02-08
+**Коммит**: `32f5a0a`
+
+#### Описание:
+Комплексное обновление UI: кнопки редактирования в профиле, группировка настроек по секциям, анимация переключения фильтров, корректная разделительная линия Tab Bar.
+
+#### Изменения:
+- Профиль: кнопки "Изменить фото" и "Изменить имя" в capsule-стиле под аватаром
+- Настройки: заголовки секций "Аккаунт", "Приватность", "Поддержка"
+- Фильтры: анимация переключения 0.2s easeInOut (подчёркивание + цвет текста)
+- Tab Bar: разделительная линия 0.5pt borderDisabled (по ТЗ §2.1.1)
+
+#### Изменённые файлы:
+- `ElementX/Sources/Screens/Settings/SettingsScreen/View/SettingsScreen.swift` — кнопки + секции
+- `ElementX/Sources/Screens/HomeScreen/View/Filters/RoomListFilterView.swift` — анимация фильтров
+- `ElementX/Sources/Other/SwiftUI/Views/StalkTabBar.swift` — разделитель Tab Bar
+
+#### Коммит для применения:
+```bash
+git cherry-pick 32f5a0a
+```
+
+### 17. Фильтрация приложений по категориям
+
+**Дата**: 2026-02-08
+**Коммит**: `c2a16c4`
+
+#### Описание:
+Реализована фильтрация виджетов/приложений по категориям: Продуктивность, Связь, Инструменты.
+
+#### Изменения:
+- WidgetCategory enum: productivity, communication, tools
+- Поле category в WidgetItem с дефолтным значением .tools
+- Фильтрация по selectedCategory в filteredWidgets
+
+#### Изменённые файлы:
+- `ElementX/Sources/Screens/WidgetsListScreen/WidgetsListScreenModels.swift` — WidgetCategory enum
+- `ElementX/Sources/Screens/WidgetsListScreen/WidgetsListScreen.swift` — фильтрация по категории
+
+#### Коммит для применения:
+```bash
+git cherry-pick c2a16c4
+```
+
+---
+
+### 18. Dark Mode аудит — adaptive цвета
+
+**Дата**: 2026-02-08
+**Коммит**: `608e0d9`
+
+#### Описание:
+Аудит и замена hardcoded RGB цветов на adaptive/compound цвета для корректной работы в Dark Mode.
+
+#### Изменения:
+- Color.stalkBadgeGreen / stalkOnlineGreen с UITraitCollection (light/dark)
+- HomeScreenRoomCell: badge .white → .textOnSolidPrimary, .red → .textCriticalPrimary
+- CallsListScreen: пропущенные .red → .textCriticalPrimary/.iconCriticalPrimary
+- ContactsListScreen: online .green → .stalkOnlineGreen
+- WidgetsListScreen: icon .white → .textOnSolidPrimary
+- StalkTabBar: badge цвета → compound equivalents
+
+#### Изменённые файлы:
+- `ElementX/Sources/Other/SwiftUI/Views/StalkTabBar.swift` — adaptive цвета + badge
+- `ElementX/Sources/Screens/HomeScreen/View/HomeScreenRoomCell.swift` — badge цвета
+- `ElementX/Sources/Screens/CallsListScreen/CallsListScreen.swift` — missed call + play цвета
+- `ElementX/Sources/Screens/ContactsListScreen/ContactsListScreen.swift` — online indicator
+- `ElementX/Sources/Screens/WidgetsListScreen/WidgetsListScreen.swift` — icon цвет
+
+#### Коммит для применения:
+```bash
+git cherry-pick 608e0d9
+```
+
+### 19. Миграция на сервер stalk.implica.ru — динамические URL
+
+**Дата**: 2026-02-08
+**Коммит**: `8d9ef0f`
+
+#### Описание:
+Миграция с market.implica.ru на новый production-сервер stalk.implica.ru. Все URL сервисов (Recording API, виджеты) стали динамическими — определяются по домену homeserver, к которому подключён пользователь.
+
+#### Изменения:
+
+**1. Default сервер → stalk.implica.ru**
+- accountProvider: `matrix.market.implica.ru` → `stalk.implica.ru`
+- Recording API default: `livekit.market.implica.ru` → `livekit.stalk.implica.ru`
+
+**2. Динамические URL сервисов**
+- Recording API: домен извлекается из `clientProxy.homeserver` → `livekit.{domain}/recording-api`
+- Виджеты: serverDomain computed property → `stats.{domain}`, `calendar.{domain}`, etc.
+- Playback URL в CallHistoryItem принимает apiBaseURL параметр
+
+**3. Удалены все hardcoded ссылки на market.implica.ru**
+
+#### Изменённые файлы:
+- `ElementX/Sources/Application/Settings/AppSettings.swift` — default server URLs
+- `ElementX/Sources/FlowCoordinators/CallsTabFlowCoordinator.swift` — dynamic Recording API URL
+- `ElementX/Sources/Screens/CallsListScreen/CallsListScreenModels.swift` — apiBaseURL parameter
+- `ElementX/Sources/Screens/CallsListScreen/CallsListScreenViewModel.swift` — pass apiBaseURL
+- `ElementX/Sources/Screens/WidgetsListScreen/WidgetsListScreenViewModel.swift` — serverDomain + dynamic widget URLs
+- `ElementX/Sources/Screens/CallsListScreen/CallsListScreen.swift` — mock URL update
+
+#### Коммит для применения:
+```bash
+git cherry-pick 8d9ef0f
+```
+
+### 20. Telegram-style Tab Bar — SF Symbols filled/outline, убран Lottie
+
+**Дата**: 2026-02-09
+**Коммит**: `c220ddc`
+
+#### Описание:
+Приведение Tab Bar к классическому стилю Telegram iOS. Убраны Lottie-анимации из Tab Bar, иконки полностью на SF Symbols (filled для активной вкладки, outline для неактивной). Иконка Чаты заменена на один пузырь `message` (как в Telegram).
+
+#### Изменения:
+
+**1. Удалён Lottie из Tab Bar**
+- Убран `import Lottie` из StalkTabBar.swift
+- Убрано поле `lottieIcon` из StalkTabItem и TabDetails
+- Убрана Lottie-ветка из iconView() — теперь только SF Symbols
+- NavigationTabCoordinator: убрана проверка `lottieIcon != nil`
+
+**2. Иконка Чаты → один пузырь**
+- `bubble.left.and.bubble.right` → `message` / `message.fill`
+- Один пузырь — ближе к оригинальному Telegram
+
+**3. Зелёные бабблы исходящих сообщений (Telegram-style)**
+- Outgoing: #E1FEC6 (light) / #2B5F37 (dark) — зелёные
+- Incoming: #FFFFFF (light) / #282829 (dark) — белые/тёмно-серые
+- Добавлены `Color.stalkBubbleOutgoing` / `.stalkBubbleIncoming` в StalkTabBar.swift
+- TimelineItemBubbledStylerView: `.compound._bgBubbleOutgoing` → `.stalkBubbleOutgoing`
+
+**4. Зелёный "в сети" в контактах**
+- Текст "в сети" теперь `.stalkOnlineGreen` вместо `.compound.textSecondary`
+
+#### Изменённые файлы:
+- `ElementX/Sources/FlowCoordinators/UserSessionFlowCoordinator.swift` — иконка Чаты → message/message.fill
+- `ElementX/Sources/Application/Navigation/NavigationTabCoordinator.swift` — убран lottieIcon из TabDetails
+- `ElementX/Sources/Other/SwiftUI/Views/StalkTabBar.swift` — убран Lottie, добавлены bubble colors
+- `ElementX/Sources/Screens/Timeline/View/Style/TimelineItemBubbledStylerView.swift` — зелёные бабблы
+- `ElementX/Sources/Screens/ContactsListScreen/ContactsListScreen.swift` — зелёный "в сети"
+- `ElementX/Sources/Screens/HomeScreen/View/HomeScreen.swift` — inline title
+- `ElementX/Sources/Screens/Settings/SettingsScreen/View/SettingsScreen.swift` — inline title
+
+#### Коммит для применения:
+```bash
+git cherry-pick c220ddc
+```
+
+---
+
+### 21. Inline titles на всех экранах (убраны large titles)
+
+**Дата**: 2026-02-09
+**Коммит**: `c220ddc`, `71745dc`
+
+#### Описание:
+Замена всех large titles на inline centered — как в классическом Telegram iOS. Все 5 основных экранов теперь используют `.navigationBarTitleDisplayMode(.inline)`.
+
+#### Изменения:
+
+| Экран | Было | Стало |
+|-------|------|-------|
+| Чаты (HomeScreen) | `.large` | `.inline` |
+| Настройки (SettingsScreen) | `.large` | `.inline` |
+| Контакты (ContactsListScreen) | default (large) | `.inline` |
+| Приложения (WidgetsListScreen) | default (large) | `.inline` |
+| Звонки (CallsListScreen) | уже `.inline` | без изменений |
+
+#### Изменённые файлы:
+- `ElementX/Sources/Screens/HomeScreen/View/HomeScreen.swift` — `.large` → `.inline`
+- `ElementX/Sources/Screens/Settings/SettingsScreen/View/SettingsScreen.swift` — `.large` → `.inline`
+- `ElementX/Sources/Screens/ContactsListScreen/ContactsListScreen.swift` — добавлен `.inline`
+- `ElementX/Sources/Screens/WidgetsListScreen/WidgetsListScreen.swift` — добавлен `.inline`
+
+#### Коммиты для применения:
+```bash
+git cherry-pick c220ddc  # Чаты, Настройки, Контакты + бабблы + иконки
+git cherry-pick 71745dc  # Приложения (пропущен в первом коммите)
+```
+
+---
+
 ## 🎯 Текущий статус
 
 **Версия Element X**: Форк на основе upstream develop
@@ -736,8 +970,17 @@ git cherry-pick 95323f8
 - ✅ Telegram-style: алфавитный индекс, секции дат, профиль, chevron (#10)
 - ✅ Swipe actions на ячейках чатов (#11)
 - ✅ Badge непрочитанных на вкладке Чаты (#12)
+- ✅ Недавние поисковые запросы + фикс навбара (#13)
+- ✅ Интерактивный slider для плеера записей (#14)
+- ✅ Алфавитный скруббер на экране Контакты (#15)
+- ✅ Кнопки редактирования профиля, секции настроек, анимация фильтров (#16)
+- ✅ Фильтрация приложений по категориям (#17)
+- ✅ Dark Mode аудит — adaptive цвета (#18)
+- ✅ Миграция на stalk.implica.ru — динамические URL (#19)
+- ✅ Telegram-style Tab Bar — SF Symbols filled/outline, зелёные бабблы (#20)
+- ✅ Inline titles на всех экранах (#21)
 
-**Последний коммит**: `a5d8724` - feat: badge непрочитанных на вкладке Чаты
+**Последний коммит**: `71745dc` - fix: inline title на экране Приложения
 
 ---
 
@@ -755,15 +998,30 @@ git cherry-pick 95323f8
 - [ ] Применить коммит #8: Telegram-style шапки (`265fc03`)
 - [ ] Применить коммит #9: Telegram-style доработки (`ea581d3`)
 - [ ] Применить коммит #10: Алфавит, секции дат, профиль (`859b3d6`)
+- [ ] Применить коммит #11: Swipe actions (`35bbc8e`)
+- [ ] Применить коммит #12: Badge непрочитанных (`a5d8724`)
+- [ ] Применить коммит #13: Недавние поисковые запросы (`95323f8`)
+- [ ] Применить коммит #14: Интерактивный slider записей (`c00a5b1`)
+- [ ] Применить коммит #15: Алфавитный скруббер контактов (`5b31df2`)
+- [ ] Применить коммит #16: Кнопки профиля, секции настроек, анимация (`32f5a0a`)
+- [ ] Применить коммит #17: Фильтрация приложений по категориям (`c2a16c4`)
+- [ ] Применить коммит #18: Dark Mode adaptive цвета (`608e0d9`)
+- [ ] Применить коммит #19: Миграция stalk.implica.ru + динамические URL (`8d9ef0f`)
+- [ ] Применить коммит #20: Telegram-style Tab Bar + зелёные бабблы (`c220ddc`)
+- [ ] Применить коммиты #21: Inline titles на всех экранах (`c220ddc`, `71745dc`)
 - [ ] Добавить Lottie dependency в Package.swift / project.yml
 - [ ] Разрешить конфликты в UserSessionFlowCoordinator.swift
 - [ ] Проект собирается без ошибок
 - [ ] 5 вкладок с SF Symbol иконками работают
-- [ ] Underline фильтры отображаются на всех экранах
-- [ ] Зелёные/серые/красные бейджи корректны
-- [ ] Записи звонков воспроизводятся
+- [ ] Underline фильтры с анимацией отображаются на всех экранах
+- [ ] Зелёные/серые/красные бейджи корректны (adaptive для dark mode)
+- [ ] Записи звонков воспроизводятся с интерактивным slider
+- [ ] Кнопки "Изменить фото" / "Изменить имя" в профиле работают
+- [ ] Секции настроек с заголовками отображаются
+- [ ] Фильтрация приложений по категориям работает
+- [ ] Dark Mode: все цвета корректны, нет hardcoded RGB
 
 ---
 
 **Дата создания**: 2026-01-28
-**Последнее обновление**: 2026-02-06
+**Последнее обновление**: 2026-02-09
