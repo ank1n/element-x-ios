@@ -10,7 +10,7 @@ import SwiftState
 
 enum ContactsTabFlowCoordinatorAction {
     case showSettings
-    case openChat(roomId: String)
+    case presentCallScreen(roomProxy: JoinedRoomProxyProtocol)
 }
 
 class ContactsTabFlowCoordinator: FlowCoordinatorProtocol {
@@ -19,6 +19,7 @@ class ContactsTabFlowCoordinator: FlowCoordinatorProtocol {
     private let navigationStackCoordinator: NavigationStackCoordinator
 
     private var contactsListCoordinator: ContactsListScreenCoordinator?
+    private var roomFlowCoordinator: RoomFlowCoordinator?
 
     enum State: StateType {
         case initial
@@ -55,7 +56,7 @@ class ContactsTabFlowCoordinator: FlowCoordinatorProtocol {
     }
 
     func clearRoute(animated: Bool) {
-        // Clear any presented screens
+        navigationStackCoordinator.popToRoot(animated: animated)
     }
 
     func stop() {
@@ -81,12 +82,36 @@ class ContactsTabFlowCoordinator: FlowCoordinatorProtocol {
             case .showSettings:
                 self.actionsSubject.send(.showSettings)
             case .openChat(let roomId):
-                self.actionsSubject.send(.openChat(roomId: roomId))
+                self.openRoom(roomID: roomId)
             }
         }
         .store(in: &cancellables)
 
         navigationStackCoordinator.setRootCoordinator(coordinator)
         contactsListCoordinator = coordinator
+    }
+
+    private func openRoom(roomID: String) {
+        let roomFlowCoordinator = RoomFlowCoordinator(roomID: roomID,
+                                                       isChildFlow: true,
+                                                       navigationStackCoordinator: navigationStackCoordinator,
+                                                       flowParameters: flowParameters)
+
+        roomFlowCoordinator.actions.sink { [weak self] action in
+            guard let self else { return }
+
+            switch action {
+            case .presentCallScreen(let roomProxy):
+                actionsSubject.send(.presentCallScreen(roomProxy: roomProxy))
+            case .finished:
+                self.roomFlowCoordinator = nil
+            default:
+                break
+            }
+        }
+        .store(in: &cancellables)
+
+        self.roomFlowCoordinator = roomFlowCoordinator
+        roomFlowCoordinator.handleAppRoute(.room(roomID: roomID, via: []), animated: true)
     }
 }

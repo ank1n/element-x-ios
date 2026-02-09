@@ -240,9 +240,8 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                 switch action {
                 case .showSettings:
                     navigationTabCoordinator.selectedTab = .profile
-                case .openChat(let roomId):
-                    chatsTabFlowCoordinator.handleAppRoute(.room(roomID: roomId, via: []), animated: true)
-                    navigationTabCoordinator.selectedTab = .chats
+                case .presentCallScreen(let roomProxy):
+                    self.presentCallScreen(roomProxy: roomProxy)
                 }
             }
             .store(in: &cancellables)

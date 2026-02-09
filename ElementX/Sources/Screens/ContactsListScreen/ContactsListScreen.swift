@@ -278,6 +278,7 @@ struct ContactsListScreen: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
+            .contentShape(Rectangle())
             .overlay(alignment: .bottom) {
                 Rectangle()
                     .fill(Color.compound.borderDisabled)
