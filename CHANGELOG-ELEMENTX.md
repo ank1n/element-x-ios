@@ -1007,6 +1007,163 @@ git cherry-pick 7bbfa2b
 
 ---
 
+### 24. Поиск сообщений внутри чата (как в Telegram)
+
+**Дата**: 2026-02-09
+**Коммит**: `d8fb603`
+
+#### Описание:
+Добавлен поиск по сообщениям внутри комнаты (in-room search) с inline search bar, аналогично Telegram. Поиск работает по уже загруженным сообщениям таймлайна (клиентский поиск).
+
+#### Функциональность:
+- 🔍 Кнопка поиска в toolbar комнаты (рядом с кнопкой видеозвонка)
+- 📝 Inline search bar появляется сверху при активации поиска
+- 🔢 Счётчик результатов (текущий / всего): "X/Y"
+- ⬆️⬇️ Кнопки навигации вверх/вниз по результатам
+- ✖️ Кнопка закрытия поиска
+- 🎯 Автоматический скролл к найденным сообщениям
+- 📱 Кнопка "Поиск" в Room Details shortcuts
+- 🔄 Роутинг из Room Details → активация поиска в комнате
+
+#### Технические детали:
+- Поиск по тексту сообщений через `EventBasedTimelineItemProtocol.body.localizedCaseInsensitiveContains(query)`
+- Debounce 300ms для оптимизации поиска при вводе
+- Передача `timelineController` в `RoomScreenViewModel` для доступа к items
+- Навигация через `focusOnEvent(eventID:)` для скролла к результатам
+- Search bar использует `.safeAreaInset(edge: .top)` для overlay
+
+#### Созданные файлы (1 новый):
+
+1. **ElementX/Sources/Screens/RoomScreen/View/RoomSearchBar.swift**
+   - SwiftUI компонент inline search bar
+   - TextField + счётчик + кнопки ↑↓ + кнопка ✖️
+   - Auto-focus при появлении
+
+#### Изменённые файлы (12 файлов):
+
+1. **ElementX/Sources/Screens/RoomScreen/RoomScreenModels.swift**
+   ```swift
+   // ViewActions
+   case toggleSearch
+   case searchNext
+   case searchPrevious
+
+   // ViewModelActions
+   case focusSearchResult(eventID: String)
+
+   // ViewState
+   var isSearchActive = false
+   var searchResultEventIDs: [String] = []
+   var currentSearchResultIndex: Int = 0
+   var searchResultCount: Int { searchResultEventIDs.count }
+
+   // Bindings
+   var searchQuery = ""
+   ```
+
+2. **ElementX/Sources/Screens/RoomScreen/View/RoomScreen.swift**
+   ```swift
+   // Кнопка в toolbar
+   ToolbarItem(placement: .primaryAction) {
+       HStack(spacing: 4) {
+           Button { context.send(viewAction: .toggleSearch) }
+           label: { CompoundIcon(\.search) }
+           ...
+       }
+   }
+
+   // Search bar overlay
+   .safeAreaInset(edge: .top) {
+       if context.viewState.isSearchActive {
+           RoomSearchBar(
+               searchQuery: $context.searchQuery,
+               resultCount: context.viewState.searchResultCount,
+               ...
+           )
+       }
+   }
+   ```
+
+3. **ElementX/Sources/Screens/RoomScreen/RoomScreenViewModel.swift**
+   - Свойство `timelineController` для доступа к timeline items
+   - `setupSearchSubscription()` — debounce 300ms
+   - `performSearch(query:)` — фильтрация по `body.localizedCaseInsensitiveContains`
+   - `toggleSearch()` — переключение состояния
+   - `navigateSearchResult(forward:)` — циклическая навигация ↑↓
+   - `activateSearch()` — активация из Room Details
+
+4. **ElementX/Sources/Screens/RoomScreen/RoomScreenViewModelProtocol.swift**
+   ```swift
+   func activateSearch()
+   ```
+
+5. **ElementX/Sources/Screens/RoomScreen/RoomScreenCoordinator.swift**
+   - Передача `timelineController` в `RoomScreenViewModel.init`
+   - Обработка `.focusSearchResult` → `timelineViewModel.focusOnEvent`
+   - Публичный метод `activateSearch()` для роутинга
+
+6. **ElementX/Sources/Screens/RoomDetailsScreen/RoomDetailsScreenModels.swift**
+   ```swift
+   // Shortcuts
+   enum RoomDetailsScreenViewShortcut {
+       case search  // NEW
+   }
+
+   var shortcuts: [RoomDetailsScreenViewShortcut] {
+       shortcuts.append(.search)  // После .call
+   }
+
+   // ViewActions
+   case processTapSearch
+
+   // ViewModelActions
+   case displayRoomSearch
+   ```
+
+7. **ElementX/Sources/Screens/RoomDetailsScreen/View/RoomDetailsScreen.swift**
+   ```swift
+   private func shortcutButton(for shortcut: ...) -> some View {
+       switch shortcut {
+       case .search:
+           Button { context.send(viewAction: .processTapSearch) }
+           label: { CompoundIcon(\.search) }
+           .buttonStyle(FormActionButtonStyle(title: L10n.actionSearch))
+       }
+   }
+   ```
+
+8. **ElementX/Sources/Screens/RoomDetailsScreen/RoomDetailsScreenViewModel.swift**
+   - Обработка `.processTapSearch` → `.displayRoomSearch`
+
+9. **ElementX/Sources/Screens/RoomDetailsScreen/RoomDetailsScreenCoordinator.swift**
+   ```swift
+   enum RoomDetailsScreenCoordinatorAction {
+       case presentRoomSearch  // NEW
+   }
+   ```
+
+10. **ElementX/Sources/FlowCoordinators/RoomFlowCoordinator.swift**
+    ```swift
+    // В presentRoomDetails coordinator actions:
+    case .presentRoomSearch:
+        navigationStackCoordinator.pop()
+        stateMachine.tryEvent(.dismissRoomDetails)
+        roomScreenCoordinator?.activateSearch()
+    ```
+
+11. **ElementX/Sources/FlowCoordinators/SpaceSettingsFlowCoordinator.swift**
+    - Добавлен `.presentRoomSearch` в fatalError (не применимо для Space)
+
+12. **ElementX.xcodeproj/project.pbxproj**
+    - Добавлен `RoomSearchBar.swift` в build phase
+
+#### Коммит для применения:
+```bash
+git cherry-pick d8fb603
+```
+
+---
+
 ## 🎯 Текущий статус
 
 **Версия Element X**: Форк на основе upstream develop
@@ -1035,8 +1192,9 @@ git cherry-pick 7bbfa2b
 - ✅ Inline titles на всех экранах (#21)
 - ✅ Навигация контакт → чат (как в Telegram) (#22)
 - ✅ Фильтр пустых комнат в контактах (#23)
+- ✅ Поиск сообщений внутри чата (как в Telegram) (#24)
 
-**Последний коммит**: `7bbfa2b` - contacts: фильтр пустых комнат, только реальные люди
+**Последний коммит**: `d8fb603` - поиск сообщений внутри чата (inline search bar)
 
 ---
 
@@ -1067,6 +1225,7 @@ git cherry-pick 7bbfa2b
 - [ ] Применить коммиты #21: Inline titles на всех экранах (`c220ddc`, `71745dc`)
 - [ ] Применить коммит #22: Навигация контакт → чат (`e49ba44`)
 - [ ] Применить коммит #23: Фильтр пустых комнат в контактах (`7bbfa2b`)
+- [ ] Применить коммит #24: Поиск сообщений внутри чата (`d8fb603`)
 - [ ] Добавить Lottie dependency в Package.swift / project.yml
 - [ ] Разрешить конфликты в UserSessionFlowCoordinator.swift
 - [ ] Проект собирается без ошибок
@@ -1080,6 +1239,7 @@ git cherry-pick 7bbfa2b
 - [ ] Dark Mode: все цвета корректны, нет hardcoded RGB
 - [ ] Навигация контакт → чат работает (назад → контакты)
 - [ ] Только реальные люди в контактах (без Empty Room)
+- [ ] Поиск внутри чата работает (inline bar, счётчик, навигация ↑↓)
 
 ---
 
