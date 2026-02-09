@@ -179,18 +179,10 @@ struct RoomScreen: View {
         
         if !ProcessInfo.processInfo.isiOSAppOnMac {
             ToolbarItem(placement: .primaryAction) {
-                HStack(spacing: 4) {
-                    Button {
-                        context.send(viewAction: .toggleSearch)
-                    } label: {
-                        CompoundIcon(\.search)
-                    }
-                    .accessibilityLabel(L10n.actionSearch)
-
-                    if context.viewState.shouldShowCallButton {
-                        callButton
-                            .disabled(!context.viewState.canJoinCall)
-                    }
+                // Только кнопка звонка (поиск убран - доступен через Room Details)
+                if context.viewState.shouldShowCallButton {
+                    callButton
+                        .disabled(!context.viewState.canJoinCall)
                 }
             }
         }
