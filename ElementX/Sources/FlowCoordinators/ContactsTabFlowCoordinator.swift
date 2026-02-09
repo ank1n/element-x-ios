@@ -10,6 +10,7 @@ import SwiftState
 
 enum ContactsTabFlowCoordinatorAction {
     case showSettings
+    case openChat(roomId: String)
 }
 
 class ContactsTabFlowCoordinator: FlowCoordinatorProtocol {
@@ -80,8 +81,7 @@ class ContactsTabFlowCoordinator: FlowCoordinatorProtocol {
             case .showSettings:
                 self.actionsSubject.send(.showSettings)
             case .openChat(let roomId):
-                // TODO: Navigate to chat
-                MXLog.info("Open chat: \(roomId)")
+                self.actionsSubject.send(.openChat(roomId: roomId))
             }
         }
         .store(in: &cancellables)
