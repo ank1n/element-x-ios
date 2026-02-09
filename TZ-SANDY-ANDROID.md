@@ -1119,8 +1119,8 @@ fun filterRealContacts(rooms: List<RoomSummary>): List<RoomSummary> {
 **Описание**: Inline search bar внутри экрана чата для поиска сообщений.
 
 **Функциональность**:
-1. **Кнопка поиска** 🔍 в toolbar (рядом с кнопкой звонка)
-2. **Inline search bar** появляется сверху при тапе
+1. ~~**Кнопка поиска** 🔍 в toolbar~~ **НЕТ** (как в Telegram - только через Room Details)
+2. **Inline search bar** появляется сверху при активации из Room Details
 3. **TextField** для ввода запроса
 4. **Счётчик результатов**: "X/Y"
 5. **Кнопки навигации**: ↑↓ для перемещения между результатами
@@ -1143,10 +1143,8 @@ fun ChatScreen(
                 TopAppBar(
                     title = { Text(viewModel.roomName) },
                     actions = {
-                        IconButton(onClick = { viewModel.toggleSearch() }) {
-                            Icon(Icons.Default.Search, contentDescription = "Поиск")
-                        }
-
+                        // Только кнопка звонка
+                        // Поиск доступен через Room Details (как в Telegram)
                         IconButton(onClick = { viewModel.startCall() }) {
                             Icon(Icons.Default.VideoCall, contentDescription = "Звонок")
                         }
