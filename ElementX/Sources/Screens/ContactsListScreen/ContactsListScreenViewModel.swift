@@ -82,10 +82,16 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
         var contacts: [ContactItem] = []
 
         for summary in summaries where summary.isDirect {
+            // Пропускаем пустые/покинутые комнаты
+            guard summary.activeMembersCount >= 2,
+                  !summary.name.hasPrefix("Empty Room") else {
+                continue
+            }
+
             let contact = ContactItem(
                 id: summary.id,
                 displayName: summary.name,
-                avatarURL: nil,
+                avatarURL: summary.avatarURL,
                 isOnline: false,
                 lastSeenDate: nil
             )
