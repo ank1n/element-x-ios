@@ -1164,6 +1164,128 @@ git cherry-pick d8fb603
 
 ---
 
+### 25. Telegram-style CallScreen UI (Native Overlay)
+
+**Дата**: 2026-02-10
+**Коммит**: `bc84215`
+
+#### Описание:
+Переделан экран звонков (CallScreen) под Telegram-style UI с native SwiftUI overlay поверх Element Call WebView. Весь UI управления звонком (кнопки, аватар, таймер) теперь нативный SwiftUI, WebView отображает только видео. **СОХРАНЕНЫ** все recording наработки (RecordingButton, RecordingIndicator, Recording API).
+
+#### Функциональность:
+- 🎨 **Telegram-style layout**:
+  - **Top**: Avatar + Name + Call Timer (native SwiftUI)
+  - **Middle**: Element Call WebView (только видео, UI скрыт через CSS)
+  - **Bottom**: Native control buttons (Mute | Speaker | Video | Hang Up)
+  - **Top-right corner**: RecordingButton + RecordingIndicator (сохранён!)
+
+- 🎛 **Native кнопки управления** (SwiftUI):
+  - **Mute** — иконка `mic.fill` / `mic.slash.fill`, синяя при активации
+  - **Speaker** — иконка `speaker.wave.2.fill` / `speaker.wave.1.fill`
+  - **Video** — иконка `video.fill` / `video.slash.fill`
+  - **Hang Up** — иконка `phone.down.fill`, красная кнопка
+
+- 🔧 **JavaScript bridge** для синхронизации состояния с Element Call:
+  - `toggleMicrophoneEnabled(true/false)` — управление микрофоном
+  - `toggleVideoEnabled(true/false)` — управление видео
+  - Команды отправляются через `javaScriptEvaluator`
+
+- 🎭 **CSS injection** для скрытия Element Call UI:
+  ```css
+  .lk-button, .lk-control-bar, .lk-participant-name,
+  .lk-call-stats, div[role="toolbar"] { display: none !important; }
+  ```
+
+- 📹 **Recording сохранён полностью**:
+  - RecordingButton в top-right corner
+  - RecordingIndicator (пульсирующий "REC")
+  - RecordingConsentView (consent sheet)
+  - Вся логика `startRecording()` / `stopRecording()`
+
+#### Созданные файлы (2 новых):
+
+1. **ElementX/Sources/Screens/CallScreen/View/CallControlButton.swift**
+   - Native SwiftUI кнопка управления звонком
+   - Круглая кнопка 64pt с иконкой
+   - Цвета: белая (inactive), синяя (active), красная (destructive)
+   - Shadow для глубины
+
+2. **ElementX/Sources/Screens/CallScreen/View/CallParticipantInfoView.swift**
+   - Avatar + Name + Timer сверху экрана
+   - AsyncImage для аватара (120x120pt, круглый)
+   - Fallback: первая буква имени на сером фоне
+   - Состояния: "Соединение...", "Звонок...", "MM:SS", "Завершён"
+   - `CallState` enum: `.connecting`, `.ringing`, `.active`, `.ended`
+
+#### Изменённые файлы (4 файла):
+
+1. **ElementX/Sources/Screens/CallScreen/View/CallScreen.swift**
+   - Новый ZStack layout с тремя слоями:
+     - Background: Element Call WebView
+     - Middle: Native overlay (CallParticipantInfoView + control buttons)
+     - Top: Recording overlay (top-right corner)
+   - CSS injection script для скрытия Element Call UI
+   - HStack с 4 кнопками внизу экрана (spacing: 32)
+   - Background: `.black.ignoresSafeArea()`
+   - Navbar: `.hidden` (полноэкранный режим)
+
+2. **ElementX/Sources/Screens/CallScreen/CallScreenModels.swift**
+   - Добавлены поля в `CallScreenViewState`:
+     ```swift
+     var participantName: String = ""
+     var participantAvatarURL: URL?
+     var callState: CallState = .connecting
+     var callDuration: TimeInterval = 0
+     var isMuted: Bool = false
+     var isSpeakerOn: Bool = false
+     var isVideoOn: Bool = true
+     ```
+   - Добавлены ViewActions:
+     ```swift
+     case toggleMute
+     case toggleSpeaker
+     case toggleVideo
+     ```
+
+3. **ElementX/Sources/Screens/CallScreen/CallScreenViewModel.swift**
+   - Реализованы методы управления кнопками:
+     ```swift
+     private func toggleMute() async
+     private func toggleSpeaker()
+     private func toggleVideo() async
+     ```
+   - JavaScript commands для Element Call:
+     - `controls.toggleMicrophoneEnabled(true/false)`
+     - `controls.toggleVideoEnabled(true/false)`
+   - Error handling с revert состояния при ошибке
+
+4. **ElementX.xcodeproj/project.pbxproj**
+   - Добавлены новые файлы через Ruby script (xcodeproj gem)
+   - `CallControlButton.swift` и `CallParticipantInfoView.swift` в группе View
+
+#### Технические детали:
+- **WKWebView** с CSS injection для скрытия Element Call UI
+- **JavaScript evaluator** для синхронизации состояния кнопок
+- **AVAudioSession** для управления speaker (native, не через WebView)
+- **CallState** определён в `CallParticipantInfoView.swift`
+- **Recording overlay** сохранён в `.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)`
+
+#### Ограничения:
+- Состояние кнопок (isMuted, isVideoOn) пока не синхронизируется **из** Element Call → нужно добавить listeners
+- CallState переключение (connecting → active) не реализовано — нужно отслеживать события WebView
+- participantName/avatarURL пока пустые — нужно заполнить из roomProxy
+
+#### Коммит для применения:
+```bash
+git cherry-pick bc84215
+```
+
+#### Скриншоты:
+- [ ] TODO: Добавить скриншот Telegram CallScreen для сравнения
+- [ ] TODO: Добавить скриншот нашего CallScreen с native overlay
+
+---
+
 ## 🎯 Текущий статус
 
 **Версия Element X**: Форк на основе upstream develop
@@ -1193,8 +1315,9 @@ git cherry-pick d8fb603
 - ✅ Навигация контакт → чат (как в Telegram) (#22)
 - ✅ Фильтр пустых комнат в контактах (#23)
 - ✅ Поиск сообщений внутри чата (как в Telegram) (#24)
+- ✅ Telegram-style CallScreen UI — native overlay поверх WebView (#25)
 
-**Последний коммит**: `d8fb603` - поиск сообщений внутри чата (inline search bar)
+**Последний коммит**: `bc84215` - Telegram-style CallScreen UI (native SwiftUI overlay + recording сохранён)
 
 ---
 
@@ -1226,6 +1349,7 @@ git cherry-pick d8fb603
 - [ ] Применить коммит #22: Навигация контакт → чат (`e49ba44`)
 - [ ] Применить коммит #23: Фильтр пустых комнат в контактах (`7bbfa2b`)
 - [ ] Применить коммит #24: Поиск сообщений внутри чата (`d8fb603`)
+- [ ] Применить коммит #25: Telegram-style CallScreen UI (`bc84215`)
 - [ ] Добавить Lottie dependency в Package.swift / project.yml
 - [ ] Разрешить конфликты в UserSessionFlowCoordinator.swift
 - [ ] Проект собирается без ошибок
@@ -1244,4 +1368,4 @@ git cherry-pick d8fb603
 ---
 
 **Дата создания**: 2026-01-28
-**Последнее обновление**: 2026-02-09
+**Последнее обновление**: 2026-02-10
