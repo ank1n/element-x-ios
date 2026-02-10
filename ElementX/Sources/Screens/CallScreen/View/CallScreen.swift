@@ -23,32 +23,21 @@ struct CallScreen: View {
                 content
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                // Recording controls overlay
-                VStack(alignment: .trailing, spacing: 8) {
-                    // Recording indicator when recording
-                    if context.viewState.recordingState.isRecording {
-                        RecordingIndicator()
-                    }
-
-                    // Recording button - always visible
-                    RecordingButton(recordingState: context.viewState.recordingState) {
-                        if context.viewState.recordingState.isRecording {
-                            context.send(viewAction: .toggleRecording)
-                        } else {
-                            showRecordingConsent = true
-                        }
-                    }
+                // Recording indicator overlay (when recording)
+                if context.viewState.recordingState.isRecording {
+                    RecordingIndicator()
+                        .padding(.top, 60)
+                        .padding(.trailing, 16)
                 }
-                .padding(.top, 60)
-                .padding(.trailing, 16)
             }
-            .background(Color.compound.bgCanvasDefault.ignoresSafeArea())
+            .background(Color.black.ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar(context.viewState.isGenericCallLink || context.viewState.isRecordingEnabled ? .visible : .hidden, for: .navigationBar)
             .toolbar { toolbar }
         }
         .alert(item: $context.alertInfo)
-        .preferredColorScheme(context.viewState.isGenericCallLink ? .dark : nil)
+        .preferredColorScheme(.dark)
         .sheet(isPresented: $showRecordingConsent) {
             RecordingConsentView(
                 onConfirm: {
@@ -74,7 +63,7 @@ struct CallScreen: View {
             CallView(url: context.viewState.url, viewModelContext: context)
                 // This URL is stable, forces view reloads if this representable is ever reused for another url
                 .id(context.viewState.url)
-                .ignoresSafeArea(edges: .bottom)
+                .ignoresSafeArea()
         }
     }
     
@@ -176,10 +165,13 @@ private struct CallView: UIViewRepresentable {
             // https://stackoverflow.com/a/77963877/730924
             webView.allowsLinkPreview = true
             
-            // Try matching Element Call colors
+            // sTalk: black background for Telegram-style call
             webView.isOpaque = false
-            webView.backgroundColor = .compound.bgCanvasDefault
-            webView.scrollView.backgroundColor = .compound.bgCanvasDefault
+            webView.backgroundColor = .black
+            webView.scrollView.backgroundColor = .black
+            webView.scrollView.showsVerticalScrollIndicator = false
+            webView.scrollView.showsHorizontalScrollIndicator = false
+            webView.scrollView.bounces = false
             
             // This button is always hidden and is only used to be programmaticaly tapped
             routePickerView = AVRoutePickerView(frame: .zero)

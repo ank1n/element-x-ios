@@ -114,66 +114,100 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
 
     // MARK: - sTalk Telegram-style CSS Injection
 
-    /// JavaScript that injects Telegram-style CSS into Element Call's DOM.
-    /// Uses CSS Module attribute selectors ([class*="..."]) to match hashed class names.
+    /// JavaScript that injects Telegram-style CSS + DOM manipulation into Element Call.
+    /// Uses CSS Module attribute selectors ([class*="..."]) to match hashed class names,
+    /// plus MutationObserver for dynamic DOM manipulation (hiding extra buttons, forcing full-screen tiles).
     private static var telegramStyleInjectionScript: String {
         """
         (function() {
             if (document.getElementById('stalk-telegram-style')) return;
+
+            // 1. Inject CSS
             var style = document.createElement('style');
             style.id = 'stalk-telegram-style';
             style.textContent = `
                 /* ===== sTalk: Telegram-style Call Screen ===== */
 
                 /* Dark background */
-                body { background: #000 !important; }
-                #root { background: #000 !important; }
-                [class*="_inRoom_110p2"] { background: #000 !important; }
+                body { background: #000 !important; margin: 0 !important; overflow: hidden !important; }
+                #root { background: #000 !important; height: 100vh !important; overflow: hidden !important; }
+                [class*="_inRoom_110p2"] { background: #000 !important; overflow: hidden !important; }
 
                 /* Hide header bar completely */
                 [class*="_header_110p2"] { display: none !important; }
                 [class*="_filler_110p2"] { display: none !important; }
-                [class*="_bar_32sbm"] {
-                    height: 0 !important;
-                    min-height: 0 !important;
-                    overflow: hidden !important;
-                }
+                [class*="_bar_32sbm"] { height: 0 !important; min-height: 0 !important; overflow: hidden !important; }
                 [class*="_bar_32sbm"] > header { display: none !important; }
 
                 /* Hide logo and layout switch in footer */
                 [class*="_logo_110p2"] { display: none !important; }
                 [class*="_layout_110p2"] { display: none !important; }
 
-                /* Full-screen tiles, no border radius */
-                [class*="_tile_31vx3"] {
-                    --media-view-border-radius: 0px !important;
-                    outline: none !important;
+                /* ALL tiles/spotlights/grids — fill screen, no gaps, no radius */
+                [class*="_spotlight"],
+                [class*="_fixedGrid_110p2"],
+                [class*="_scrollingGrid_110p2"],
+                [class*="_grid_"] {
+                    position: absolute !important;
+                    inset: 0 !important;
+                    width: 100% !important;
+                    height: 100% !important;
+                    max-width: none !important;
+                    max-height: none !important;
+                    aspect-ratio: unset !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    pointer-events: initial !important;
                 }
-                [class*="_tile_31vx3"]:hover {
-                    outline: none !important;
-                }
-                [class*="_contents_18q5h"] { border-radius: 0 !important; }
-                [class*="_tile_18q5h"][class*="_maximised_18q5h"] [class*="_contents_18q5h"] {
-                    border-radius: 0 !important;
+                [class*="_slot"] {
+                    width: 100% !important;
+                    height: 100% !important;
                 }
 
-                /* Video fills the screen */
+                [class*="_tile_110p2"] {
+                    position: absolute !important;
+                    inset: 0 !important;
+                    width: 100% !important;
+                    height: 100% !important;
+                }
+                [class*="_tile_31vx3"],
+                [class*="_tile_31vx3"] * {
+                    --media-view-border-radius: 0px !important;
+                    border-radius: 0 !important;
+                }
+                [class*="_tile_31vx3"] {
+                    outline: none !important;
+                    border: none !important;
+                }
+                [class*="_tile_31vx3"]:hover { outline: none !important; }
+                [class*="_tile_31vx3"]::before { display: none !important; }
+                [class*="_contents_18q5h"] { border-radius: 0 !important; border: none !important; }
+
                 video {
                     object-fit: cover !important;
                     border-radius: 0 !important;
+                    width: 100% !important;
+                    height: 100% !important;
                 }
 
-                /* Footer — semi-transparent gradient (Telegram-style) */
+                /* Footer — gradient overlay over video */
                 [class*="_footer_110p2"] {
-                    background: linear-gradient(to top, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.3) 60%, transparent 100%) !important;
-                    padding-block-end: 40px !important;
+                    background: linear-gradient(to top, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.3) 60%, transparent 100%) !important;
+                    padding-block-end: 44px !important;
+                    padding-block-start: 60px !important;
                     grid-template-columns: 1fr auto 1fr !important;
                     grid-template-areas: ". buttons ." !important;
+                    position: absolute !important;
+                    bottom: 0 !important;
+                    left: 0 !important;
+                    right: 0 !important;
+                    z-index: 10 !important;
+                    border: none !important;
+                    border-top: none !important;
                 }
                 [class*="_footer_110p2"][class*="_overlay_110p2"] {
-                    background: linear-gradient(to top, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.3) 60%, transparent 100%) !important;
+                    background: linear-gradient(to top, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.3) 60%, transparent 100%) !important;
                 }
-
                 @media (max-width: 660px) {
                     [class*="_footer_110p2"] {
                         grid-template-columns: 1fr auto 1fr !important;
@@ -181,20 +215,24 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                     }
                 }
 
-                /* Control buttons row — centered, Telegram spacing */
-                [class*="_controls_17lij"] {
-                    gap: 20px !important;
+                /* Buttons area — centered, Telegram spacing */
+                [class*="_buttons_110p2"] {
+                    display: flex !important;
+                    gap: 24px !important;
                     justify-content: center !important;
                     align-items: center !important;
                 }
+                /* Hide buttons 3+ (emoji, settings, share, etc.), keep last (end call) */
+                [class*="_buttons_110p2"] > :nth-child(n+3):not(:last-child) { display: none !important; }
 
                 /* All control buttons → round semi-transparent circles */
-                [class*="_controls_17lij"] button {
-                    width: 52px !important;
-                    height: 52px !important;
-                    min-width: 52px !important;
-                    min-height: 52px !important;
-                    max-width: 52px !important;
+                [class*="_buttons_110p2"] > button,
+                [class*="_buttons_110p2"] > [class*="_icon-button"] {
+                    width: 56px !important;
+                    height: 56px !important;
+                    min-width: 56px !important;
+                    min-height: 56px !important;
+                    max-width: 56px !important;
                     border-radius: 50% !important;
                     background: rgba(255,255,255,0.15) !important;
                     backdrop-filter: blur(10px) !important;
@@ -204,66 +242,132 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                     display: flex !important;
                     align-items: center !important;
                     justify-content: center !important;
-                    transition: background 0.2s ease !important;
-                }
-                [class*="_controls_17lij"] button:hover {
-                    background: rgba(255,255,255,0.25) !important;
                 }
 
-                /* Active/toggled state — solid white (like Telegram muted mic) */
-                [class*="_controls_17lij"] button[aria-pressed="true"],
-                [class*="_controls_17lij"] button[data-state="on"] {
-                    background: rgba(255,255,255,0.85) !important;
+                /* Active/toggled — solid white */
+                [class*="_buttons_110p2"] > button[aria-pressed="true"],
+                [class*="_buttons_110p2"] > button[data-state="on"],
+                [class*="_buttons_110p2"] > [class*="_icon-button"][aria-pressed="true"] {
+                    background: rgba(255,255,255,0.9) !important;
                 }
-                [class*="_controls_17lij"] button[aria-pressed="true"] svg,
-                [class*="_controls_17lij"] button[data-state="on"] svg {
+                [class*="_buttons_110p2"] > button[aria-pressed="true"] svg,
+                [class*="_buttons_110p2"] > button[data-state="on"] svg,
+                [class*="_buttons_110p2"] > [class*="_icon-button"][aria-pressed="true"] svg {
                     color: #1a1a1a !important;
                 }
 
-                /* White icons in control buttons */
-                [class*="_controls_17lij"] button svg {
+                /* White icons */
+                [class*="_buttons_110p2"] > button svg,
+                [class*="_buttons_110p2"] > [class*="_icon-button"] svg {
                     color: #ffffff !important;
-                    width: 22px !important;
-                    height: 22px !important;
+                    width: 24px !important;
+                    height: 24px !important;
                 }
 
-                /* End Call button — RED circle (Telegram-style) */
+                /* End Call — RED circle (higher specificity to override button style) */
+                [class*="_buttons_110p2"] > button[class*="_endCall"],
+                [class*="_buttons_110p2"] > [class*="_endCall"],
+                button[class*="_endCall_bwclo"],
                 [class*="_endCall_bwclo"] {
                     background: #FF3B30 !important;
-                    width: 52px !important;
-                    height: 52px !important;
-                    min-width: 52px !important;
-                    max-width: 52px !important;
+                    width: 56px !important;
+                    height: 56px !important;
+                    min-width: 56px !important;
+                    max-width: 56px !important;
                     border-radius: 50% !important;
                     backdrop-filter: none !important;
                     -webkit-backdrop-filter: none !important;
                     border: none !important;
-                    padding: 0 !important;
-                    display: flex !important;
-                    align-items: center !important;
-                    justify-content: center !important;
                 }
-                [class*="_endCall_bwclo"]:hover {
-                    background: #E5342B !important;
+                [class*="_endCall_bwclo"]:hover { background: #E5342B !important; }
+                [class*="_endCall_bwclo"] svg { color: #fff !important; }
+
+                /* Kill ALL outlines, dashed borders, scrollbars */
+                * { outline: none !important; }
+                ::-webkit-scrollbar { display: none !important; width: 0 !important; }
+                [class*="_tile"], [class*="_contents"], [class*="_spotlight"], [class*="_slot"],
+                [class*="_bar_"], [class*="_inRoom"], [class*="_header"], [class*="_filler"],
+                [class*="_footer"], [class*="_grid"], [class*="_maximised"] {
+                    border: none !important;
+                    outline: none !important;
+                    box-shadow: none !important;
+                    border-style: none !important;
                 }
-                [class*="_endCall_bwclo"] svg {
-                    color: #ffffff !important;
+                /* Nuclear: kill ALL borders on layout elements */
+                div, section, article, main, nav, aside, header, footer {
+                    border-style: none !important;
+                    border-width: 0 !important;
+                }
+                /* Kill separator lines between content and footer */
+                hr, [role="separator"] {
+                    display: none !important;
+                }
+                /* Hide the self-view name label at bottom */
+                [class*="_displayName"], [class*="_nameTag"] {
+                    display: none !important;
                 }
 
-                /* Hide tile overlay buttons (fullscreen, etc.) */
+                /* Hide stuff */
                 [class*="_bottomRightButtons_18q5h"] { display: none !important; }
                 [class*="_volumeSlider_31vx3"] { display: none !important; }
+                [class*="_muteIcon_31vx3"] { opacity: 0.4 !important; }
 
-                /* Camera switch button on tile — keep but restyle */
-                [class*="_switchCamera_31vx3"] {
-                    background: rgba(0,0,0,0.5) !important;
-                    border: none !important;
-                    border-radius: 50% !important;
-                    backdrop-filter: blur(8px) !important;
-                    -webkit-backdrop-filter: blur(8px) !important;
-                }
+                /* Elements marked hidden by JS */
+                .stalk-hidden { display: none !important; }
             `;
             document.head.appendChild(style);
+
+            // 2. DOM manipulation via MutationObserver
+            function applyTelegramLayout() {
+                // Hide extra control buttons: keep mic(0), camera(1), endCall(last)
+                // Hide everything in between (emoji, settings, share, etc.)
+                var controls = document.querySelector('[class*="_buttons_110p2"]');
+                if (controls) {
+                    var children = Array.from(controls.children);
+                    if (children.length > 3) {
+                        // Keep first 2 (mic, camera) and last (end call), hide the rest
+                        for (var i = 2; i < children.length - 1; i++) {
+                            children[i].style.setProperty('display', 'none', 'important');
+                        }
+                    }
+                }
+
+                // Force all spotlight containers to fill screen
+                document.querySelectorAll('[class*="spotlight"]').forEach(function(el) {
+                    el.style.setProperty('position', 'absolute', 'important');
+                    el.style.setProperty('inset', '0', 'important');
+                    el.style.setProperty('width', '100%', 'important');
+                    el.style.setProperty('height', '100%', 'important');
+                    el.style.setProperty('max-width', 'none', 'important');
+                    el.style.setProperty('max-height', 'none', 'important');
+                    el.style.setProperty('aspect-ratio', 'unset', 'important');
+                    el.style.setProperty('margin', '0', 'important');
+                });
+
+                // Force tiles to fill parent
+                document.querySelectorAll('[class*="_tile_110p2"], [class*="_tile_31vx3"]').forEach(function(el) {
+                    el.style.setProperty('border-radius', '0', 'important');
+                    el.style.setProperty('border', 'none', 'important');
+                    el.style.setProperty('outline', 'none', 'important');
+                });
+                document.querySelectorAll('[class*="_contents_18q5h"]').forEach(function(el) {
+                    el.style.setProperty('border-radius', '0', 'important');
+                    el.style.setProperty('border', 'none', 'important');
+                });
+            }
+
+            // Run immediately and on DOM changes
+            applyTelegramLayout();
+            var observer = new MutationObserver(function() { applyTelegramLayout(); });
+            observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
+
+            // Also run after delays (React renders asynchronously)
+            setTimeout(applyTelegramLayout, 500);
+            setTimeout(applyTelegramLayout, 1500);
+            setTimeout(applyTelegramLayout, 3000);
+            setTimeout(applyTelegramLayout, 5000);
+
+            // End of Telegram-style injection
         })();
         """
     }
