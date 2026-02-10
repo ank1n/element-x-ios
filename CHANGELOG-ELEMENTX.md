@@ -1164,125 +1164,56 @@ git cherry-pick d8fb603
 
 ---
 
-### 25. Telegram-style CallScreen UI (Native Overlay)
+### 25. Telegram-style CallScreen UI (CSS Injection)
 
 **Дата**: 2026-02-10
-**Коммит**: `bc84215`
+**Коммиты**: `883a265` (первая версия), `d0f38ce` (финальная с исправлениями)
 
 #### Описание:
-Переделан экран звонков (CallScreen) под Telegram-style UI с native SwiftUI overlay поверх Element Call WebView. Весь UI управления звонком (кнопки, аватар, таймер) теперь нативный SwiftUI, WebView отображает только видео. **СОХРАНЕНЫ** все recording наработки (RecordingButton, RecordingIndicator, Recording API).
+Экран звонков (CallScreen) стилизован под Telegram через CSS/JS инъекцию в Element Call WebView. Вместо native overlay используется модификация стилей самого Element Call — полноэкранное видео, 3 кнопки внизу (mic, camera, red end call), gradient footer. Нативные кнопки back и recording сохранены в SwiftUI toolbar.
 
 #### Функциональность:
-- 🎨 **Telegram-style layout**:
-  - **Top**: Avatar + Name + Call Timer (native SwiftUI)
-  - **Middle**: Element Call WebView (только видео, UI скрыт через CSS)
-  - **Bottom**: Native control buttons (Mute | Speaker | Video | Hang Up)
-  - **Top-right corner**: RecordingButton + RecordingIndicator (сохранён!)
+- **Полноэкранное видео** — tiles/spotlights растянуты на весь экран, без рамок и скруглений
+- **3 кнопки управления** — mic, camera, end call (лишние кнопки emoji/settings/share скрыты)
+- **Кнопки Telegram-style** — 56px круглые, rgba(255,255,255,0.15), backdrop blur
+- **End Call — красная** (#FF3B30) с повышенной CSS специфичностью
+- **Gradient footer** — linear-gradient от transparent до rgba(0,0,0,0.75)
+- **Скрыт header bar** Element Call (заменён нативным SwiftUI toolbar)
+- **MutationObserver** — динамическая манипуляция DOM для React-рендеров
+- **Recording сохранён** — нативные RecordingButton + RecordingIndicator в toolbar
 
-- 🎛 **Native кнопки управления** (SwiftUI):
-  - **Mute** — иконка `mic.fill` / `mic.slash.fill`, синяя при активации
-  - **Speaker** — иконка `speaker.wave.2.fill` / `speaker.wave.1.fill`
-  - **Video** — иконка `video.fill` / `video.slash.fill`
-  - **Hang Up** — иконка `phone.down.fill`, красная кнопка
+#### Изменённые файлы (2):
 
-- 🔧 **JavaScript bridge** для синхронизации состояния с Element Call:
-  - `toggleMicrophoneEnabled(true/false)` — управление микрофоном
-  - `toggleVideoEnabled(true/false)` — управление видео
-  - Команды отправляются через `javaScriptEvaluator`
+1. **ElementX/Sources/Screens/CallScreen/CallScreenModels.swift**
+   - `telegramStyleInjectionScript` — JavaScript IIFE, инжектирующий `<style>` + MutationObserver
+   - CSS Module attribute selectors: `[class*="_buttons_110p2"]`, `[class*="_footer_110p2"]`, `[class*="_endCall_bwclo"]` и др.
+   - JS `applyTelegramLayout()` — скрытие кнопок 3..N-1, полноэкранные spotlight-контейнеры
+   - Delayed execution (500ms, 1500ms, 3000ms, 5000ms) для React async renders
 
-- 🎭 **CSS injection** для скрытия Element Call UI:
-  ```css
-  .lk-button, .lk-control-bar, .lk-participant-name,
-  .lk-call-stats, div[role="toolbar"] { display: none !important; }
-  ```
+2. **ElementX/Sources/Screens/CallScreen/View/CallScreen.swift**
+   - `.toolbarBackground(.hidden)` — прозрачный nav bar без separator
+   - `.preferredColorScheme(.dark)` — тёмная тема
+   - `.ignoresSafeArea()` — WebView на весь экран
+   - WebView: чёрный фон, `bounces = false`, без scroll indicators
 
-- 📹 **Recording сохранён полностью**:
-  - RecordingButton в top-right corner
-  - RecordingIndicator (пульсирующий "REC")
-  - RecordingConsentView (consent sheet)
-  - Вся логика `startRecording()` / `stopRecording()`
-
-#### Созданные файлы (2 новых):
-
-1. **ElementX/Sources/Screens/CallScreen/View/CallControlButton.swift**
-   - Native SwiftUI кнопка управления звонком
-   - Круглая кнопка 64pt с иконкой
-   - Цвета: белая (inactive), синяя (active), красная (destructive)
-   - Shadow для глубины
-
-2. **ElementX/Sources/Screens/CallScreen/View/CallParticipantInfoView.swift**
-   - Avatar + Name + Timer сверху экрана
-   - AsyncImage для аватара (120x120pt, круглый)
-   - Fallback: первая буква имени на сером фоне
-   - Состояния: "Соединение...", "Звонок...", "MM:SS", "Завершён"
-   - `CallState` enum: `.connecting`, `.ringing`, `.active`, `.ended`
-
-#### Изменённые файлы (4 файла):
-
-1. **ElementX/Sources/Screens/CallScreen/View/CallScreen.swift**
-   - Новый ZStack layout с тремя слоями:
-     - Background: Element Call WebView
-     - Middle: Native overlay (CallParticipantInfoView + control buttons)
-     - Top: Recording overlay (top-right corner)
-   - CSS injection script для скрытия Element Call UI
-   - HStack с 4 кнопками внизу экрана (spacing: 32)
-   - Background: `.black.ignoresSafeArea()`
-   - Navbar: `.hidden` (полноэкранный режим)
-
-2. **ElementX/Sources/Screens/CallScreen/CallScreenModels.swift**
-   - Добавлены поля в `CallScreenViewState`:
-     ```swift
-     var participantName: String = ""
-     var participantAvatarURL: URL?
-     var callState: CallState = .connecting
-     var callDuration: TimeInterval = 0
-     var isMuted: Bool = false
-     var isSpeakerOn: Bool = false
-     var isVideoOn: Bool = true
-     ```
-   - Добавлены ViewActions:
-     ```swift
-     case toggleMute
-     case toggleSpeaker
-     case toggleVideo
-     ```
-
-3. **ElementX/Sources/Screens/CallScreen/CallScreenViewModel.swift**
-   - Реализованы методы управления кнопками:
-     ```swift
-     private func toggleMute() async
-     private func toggleSpeaker()
-     private func toggleVideo() async
-     ```
-   - JavaScript commands для Element Call:
-     - `controls.toggleMicrophoneEnabled(true/false)`
-     - `controls.toggleVideoEnabled(true/false)`
-   - Error handling с revert состояния при ошибке
-
-4. **ElementX.xcodeproj/project.pbxproj**
-   - Добавлены новые файлы через Ruby script (xcodeproj gem)
-   - `CallControlButton.swift` и `CallParticipantInfoView.swift` в группе View
-
-#### Технические детали:
-- **WKWebView** с CSS injection для скрытия Element Call UI
-- **JavaScript evaluator** для синхронизации состояния кнопок
-- **AVAudioSession** для управления speaker (native, не через WebView)
-- **CallState** определён в `CallParticipantInfoView.swift`
-- **Recording overlay** сохранён в `.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)`
-
-#### Ограничения:
-- Состояние кнопок (isMuted, isVideoOn) пока не синхронизируется **из** Element Call → нужно добавить listeners
-- CallState переключение (connecting → active) не реализовано — нужно отслеживать события WebView
-- participantName/avatarURL пока пустые — нужно заполнить из roomProxy
+#### CSS селекторы Element Call (v0.16.3):
+```
+_header_110p2 → скрыт (display: none)
+_footer_110p2 → gradient overlay, absolute positioning
+_buttons_110p2 → flex, gap 24px, centered
+_endCall_bwclo → красный круг #FF3B30
+_tile_31vx3 → без рамок/скруглений
+_spotlight, _grid → полноэкранные (position absolute, inset 0)
+_displayName, _nameTag → скрыты
+```
 
 #### Коммит для применения:
 ```bash
-git cherry-pick bc84215
+git cherry-pick d0f38ce
 ```
 
-#### Скриншоты:
-- [ ] TODO: Добавить скриншот Telegram CallScreen для сравнения
-- [ ] TODO: Добавить скриншот нашего CallScreen с native overlay
+#### Важно при обновлении:
+CSS селекторы привязаны к хэшам CSS Modules Element Call v0.16.3. При обновлении Element Call пакета нужно проверить актуальность хэшей (например `_buttons_110p2_84` может измениться). Хэши можно найти в JS бандле Element Call (`index-*.js`).
 
 ---
 
@@ -1315,9 +1246,9 @@ git cherry-pick bc84215
 - ✅ Навигация контакт → чат (как в Telegram) (#22)
 - ✅ Фильтр пустых комнат в контактах (#23)
 - ✅ Поиск сообщений внутри чата (как в Telegram) (#24)
-- ✅ Telegram-style CallScreen UI — native overlay поверх WebView (#25)
+- ✅ Telegram-style CallScreen UI — CSS injection в Element Call WebView (#25)
 
-**Последний коммит**: `bc84215` - Telegram-style CallScreen UI (native SwiftUI overlay + recording сохранён)
+**Последний коммит**: `d0f38ce` - Telegram-style CallScreen (CSS injection, red endCall, fullscreen video)
 
 ---
 
