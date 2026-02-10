@@ -1164,52 +1164,67 @@ git cherry-pick d8fb603
 
 ---
 
-### 25. Telegram-style CallScreen UI (CSS Injection)
+### 25. Telegram-style CallScreen UI (CSS Injection + Native Overlay)
 
 **Дата**: 2026-02-10
-**Коммиты**: `883a265` (первая версия), `d0f38ce` (финальная с исправлениями)
+**Коммиты**: `883a265` → `d0f38ce` → `f4a7ccf` → `7d6b575` (финальный)
 
 #### Описание:
-Экран звонков (CallScreen) стилизован под Telegram через CSS/JS инъекцию в Element Call WebView. Вместо native overlay используется модификация стилей самого Element Call — полноэкранное видео, 3 кнопки внизу (mic, camera, red end call), gradient footer. Нативные кнопки back и recording сохранены в SwiftUI toolbar.
+Экран звонков (CallScreen) стилизован под Telegram через CSS/JS инъекцию в Element Call WebView + нативные SwiftUI overlay. Полноэкранное видео, 5 кнопок управления (mic, camera, emoji, settings, end call + invite/raiseHand), gradient footer, имя собеседника, кнопка записи.
 
 #### Функциональность:
 - **Полноэкранное видео** — tiles/spotlights растянуты на весь экран, без рамок и скруглений
-- **3 кнопки управления** — mic, camera, end call (лишние кнопки emoji/settings/share скрыты)
-- **Кнопки Telegram-style** — 56px круглые, rgba(255,255,255,0.15), backdrop blur
+- **5 кнопок управления** — mic, camera, emoji, settings, end call (все видны, invite + raiseHand тоже)
+- **Кнопки Telegram-style** — 48px круглые, rgba(255,255,255,0.15), backdrop blur 10px
 - **End Call — красная** (#FF3B30) с повышенной CSS специфичностью
 - **Gradient footer** — linear-gradient от transparent до rgba(0,0,0,0.75)
 - **Скрыт header bar** Element Call (заменён нативным SwiftUI toolbar)
+- **Имя собеседника** — нативный SwiftUI Text overlay с тенью
 - **MutationObserver** — динамическая манипуляция DOM для React-рендеров
-- **Recording сохранён** — нативные RecordingButton + RecordingIndicator в toolbar
+- **Recording** — Telegram-style кнопка записи (36px, transparent circle) + RecordingIndicator (красный капсула "REC")
+- **Показаны имена участников** — displayName/nameTag видны с text-shadow
+- **Nuclear border removal** — убраны все borders/outlines/scrollbars
 
-#### Изменённые файлы (2):
+#### Изменённые файлы (4):
 
 1. **ElementX/Sources/Screens/CallScreen/CallScreenModels.swift**
-   - `telegramStyleInjectionScript` — JavaScript IIFE, инжектирующий `<style>` + MutationObserver
-   - CSS Module attribute selectors: `[class*="_buttons_110p2"]`, `[class*="_footer_110p2"]`, `[class*="_endCall_bwclo"]` и др.
-   - JS `applyTelegramLayout()` — скрытие кнопок 3..N-1, полноэкранные spotlight-контейнеры
+   - `telegramStyleInjectionScript` — JavaScript IIFE: `<style>` + MutationObserver
+   - CSS Module attribute selectors: `_buttons_110p2`, `_footer_110p2`, `_endCall_bwclo`, `_invite_110p2`, `_raiseHand_110p2`
+   - JS `applyTelegramLayout()` — force-show invite/raiseHand, fullscreen spotlights, borderless tiles
    - Delayed execution (500ms, 1500ms, 3000ms, 5000ms) для React async renders
+   - `roomDisplayName: String?` в `CallScreenViewState`
 
 2. **ElementX/Sources/Screens/CallScreen/View/CallScreen.swift**
-   - `.toolbarBackground(.hidden)` — прозрачный nav bar без separator
+   - `.toolbarBackground(.hidden)` — прозрачный nav bar
    - `.preferredColorScheme(.dark)` — тёмная тема
    - `.ignoresSafeArea()` — WebView на весь экран
    - WebView: чёрный фон, `bounces = false`, без scroll indicators
+   - Native overlay: имя собеседника вверху центра
+   - RecordingIndicator: красный капсула справа вверху
+
+3. **ElementX/Sources/Screens/CallScreen/CallScreenViewModel.swift**
+   - Извлечение `roomDisplayName` из `roomProxy.infoPublisher.value.displayName`
+
+4. **ElementX/Sources/Screens/CallScreen/View/RecordingButton.swift**
+   - Telegram-style дизайн: 36px circle, rgba(255,255,255,0.15)
+   - RecordingIndicator: красный капсула с "REC" + пульсация
+   - RecordingConsentView: русский текст "Начать запись?"
 
 #### CSS селекторы Element Call (v0.16.3):
 ```
 _header_110p2 → скрыт (display: none)
 _footer_110p2 → gradient overlay, absolute positioning
-_buttons_110p2 → flex, gap 24px, centered
-_endCall_bwclo → красный круг #FF3B30
+_buttons_110p2 → flex, gap 16px, centered, все кнопки видны
+_endCall_bwclo → красный круг #FF3B30 (высокая специфичность)
 _tile_31vx3 → без рамок/скруглений
 _spotlight, _grid → полноэкранные (position absolute, inset 0)
-_displayName, _nameTag → скрыты
+_displayName, _nameTag → видны, белый текст с text-shadow
+_invite_110p2, _raiseHand_110p2 → force display: flex
 ```
 
-#### Коммит для применения:
+#### Коммиты для применения:
 ```bash
-git cherry-pick d0f38ce
+git cherry-pick d0f38ce f4a7ccf 7d6b575
 ```
 
 #### Важно при обновлении:
@@ -1248,7 +1263,7 @@ CSS селекторы привязаны к хэшам CSS Modules Element Call
 - ✅ Поиск сообщений внутри чата (как в Telegram) (#24)
 - ✅ Telegram-style CallScreen UI — CSS injection в Element Call WebView (#25)
 
-**Последний коммит**: `d0f38ce` - Telegram-style CallScreen (CSS injection, red endCall, fullscreen video)
+**Последний коммит**: `7d6b575` - CallScreen: имя собеседника, все 5 кнопок, invite/raiseHand, Telegram-style recording
 
 ---
 
@@ -1280,7 +1295,7 @@ CSS селекторы привязаны к хэшам CSS Modules Element Call
 - [ ] Применить коммит #22: Навигация контакт → чат (`e49ba44`)
 - [ ] Применить коммит #23: Фильтр пустых комнат в контактах (`7bbfa2b`)
 - [ ] Применить коммит #24: Поиск сообщений внутри чата (`d8fb603`)
-- [ ] Применить коммит #25: Telegram-style CallScreen UI (`bc84215`)
+- [ ] Применить коммиты #25: Telegram-style CallScreen UI (`d0f38ce`, `f4a7ccf`, `7d6b575`)
 - [ ] Добавить Lottie dependency в Package.swift / project.yml
 - [ ] Разрешить конфликты в UserSessionFlowCoordinator.swift
 - [ ] Проект собирается без ошибок
