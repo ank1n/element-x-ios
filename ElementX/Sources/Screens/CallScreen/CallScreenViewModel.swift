@@ -65,9 +65,16 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             widgetDriver = roomProxy.elementCallWidgetDriver(deviceID: deviceID)
         }
         
+        // sTalk: get room display name for call header
+        var roomDisplayName: String?
+        if case .roomCall(let roomProxy, _, _, _, _, _) = configuration.kind {
+            roomDisplayName = roomProxy.infoPublisher.value.displayName
+        }
+
         super.init(initialViewState: CallScreenViewState(script: CallScreenJavaScriptMessageName.allCasesInjectionScript,
                                                          isGenericCallLink: isGenericCallLink,
-                                                         certificateValidator: appHooks.certificateValidatorHook))
+                                                         certificateValidator: appHooks.certificateValidatorHook,
+                                                         roomDisplayName: roomDisplayName))
         
         elementCallService.actions
             .receive(on: DispatchQueue.main)

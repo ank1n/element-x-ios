@@ -19,15 +19,31 @@ struct CallScreen: View {
 
     var body: some View {
         NavigationStack {
-            ZStack(alignment: .topTrailing) {
+            ZStack {
                 content
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
+                // sTalk: Call info overlay (top center)
+                VStack {
+                    if let name = context.viewState.roomDisplayName {
+                        Text(name)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                            .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 2)
+                            .padding(.top, 56)
+                    }
+                    Spacer()
+                }
+
                 // Recording indicator overlay (when recording)
                 if context.viewState.recordingState.isRecording {
-                    RecordingIndicator()
-                        .padding(.top, 60)
-                        .padding(.trailing, 16)
+                    VStack {
+                        RecordingIndicator()
+                            .padding(.top, 60)
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.trailing, 16)
                 }
             }
             .background(Color.black.ignoresSafeArea())

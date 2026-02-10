@@ -28,6 +28,9 @@ struct CallScreenViewState: BindableState {
     var recordingState: RecordingState = .idle
     var isRecordingEnabled: Bool = true
 
+    // sTalk: call participant info
+    var roomDisplayName: String?
+
     var bindings = Bindings()
 }
 
@@ -218,21 +221,24 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 /* Buttons area — centered, Telegram spacing */
                 [class*="_buttons_110p2"] {
                     display: flex !important;
-                    gap: 24px !important;
+                    gap: 16px !important;
                     justify-content: center !important;
                     align-items: center !important;
                 }
-                /* Hide buttons 3+ (emoji, settings, share, etc.), keep last (end call) */
-                [class*="_buttons_110p2"] > :nth-child(n+3):not(:last-child) { display: none !important; }
+                /* Force show invite and raiseHand buttons (Element Call hides them by default) */
+                [class*="_invite_110p2"],
+                [class*="_raiseHand_110p2"] {
+                    display: flex !important;
+                }
 
                 /* All control buttons → round semi-transparent circles */
                 [class*="_buttons_110p2"] > button,
                 [class*="_buttons_110p2"] > [class*="_icon-button"] {
-                    width: 56px !important;
-                    height: 56px !important;
-                    min-width: 56px !important;
-                    min-height: 56px !important;
-                    max-width: 56px !important;
+                    width: 48px !important;
+                    height: 48px !important;
+                    min-width: 48px !important;
+                    min-height: 48px !important;
+                    max-width: 48px !important;
                     border-radius: 50% !important;
                     background: rgba(255,255,255,0.15) !important;
                     backdrop-filter: blur(10px) !important;
@@ -270,10 +276,10 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 button[class*="_endCall_bwclo"],
                 [class*="_endCall_bwclo"] {
                     background: #FF3B30 !important;
-                    width: 56px !important;
-                    height: 56px !important;
-                    min-width: 56px !important;
-                    max-width: 56px !important;
+                    width: 48px !important;
+                    height: 48px !important;
+                    min-width: 48px !important;
+                    max-width: 48px !important;
                     border-radius: 50% !important;
                     backdrop-filter: none !important;
                     -webkit-backdrop-filter: none !important;
@@ -302,9 +308,13 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 hr, [role="separator"] {
                     display: none !important;
                 }
-                /* Hide the self-view name label at bottom */
+                /* Show participant names — Telegram style */
                 [class*="_displayName"], [class*="_nameTag"] {
-                    display: none !important;
+                    display: block !important;
+                    color: #fff !important;
+                    text-shadow: 0 1px 3px rgba(0,0,0,0.8) !important;
+                    font-size: 14px !important;
+                    font-weight: 600 !important;
                 }
 
                 /* Hide stuff */
@@ -319,18 +329,10 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
 
             // 2. DOM manipulation via MutationObserver
             function applyTelegramLayout() {
-                // Hide extra control buttons: keep mic(0), camera(1), endCall(last)
-                // Hide everything in between (emoji, settings, share, etc.)
-                var controls = document.querySelector('[class*="_buttons_110p2"]');
-                if (controls) {
-                    var children = Array.from(controls.children);
-                    if (children.length > 3) {
-                        // Keep first 2 (mic, camera) and last (end call), hide the rest
-                        for (var i = 2; i < children.length - 1; i++) {
-                            children[i].style.setProperty('display', 'none', 'important');
-                        }
-                    }
-                }
+                // Force show invite and raiseHand buttons (Element Call hides them)
+                document.querySelectorAll('[class*="_invite_110p2"], [class*="_raiseHand_110p2"]').forEach(function(el) {
+                    el.style.setProperty('display', 'flex', 'important');
+                });
 
                 // Force all spotlight containers to fill screen
                 document.querySelectorAll('[class*="spotlight"]').forEach(function(el) {
