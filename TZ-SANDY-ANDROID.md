@@ -292,6 +292,476 @@ Response:
 - **RecordingsListScreen** (список записей комнаты)
 - **AudioPlayerScreen** (плеер с интерактивным slider)
 
+#### CallScreen UI - Telegram Style (ВАЖНО)
+
+**Проблема текущего iOS подхода**:
+- iOS использует **Element Call WebView** — весь UI звонка внутри WKWebView
+- Кнопки, имя, аватар — всё это Element Call UI (JavaScript/HTML)
+- Сложно кастомизировать под Telegram-style без изменения Element Call
+
+**Решение для Android**:
+- **Native Compose UI overlay** поверх Element Call WebView
+- WebView показывает только видео, весь UI скрыт через CSS/JS injection
+- Кнопки управления (mute, speaker, video, hang up) — native Compose компоненты
+- Синхронизация состояния через JavaScript bridge
+
+**Архитектура**:
+
+```
+┌────────────────────────────────────┐
+│   Native Compose UI (Overlay)     │
+│                                    │
+│  ┌──────────────────────────────┐ │
+│  │ Avatar + Name + Timer (Top)  │ │
+│  └──────────────────────────────┘ │
+│                                    │
+│  ┌──────────────────────────────┐ │
+│  │   Element Call WebView       │ │
+│  │   (video only, UI hidden)    │ │
+│  └──────────────────────────────┘ │
+│                                    │
+│  ┌──────────────────────────────┐ │
+│  │ Mute | Speaker | Video | End │ │
+│  └──────────────────────────────┘ │
+│                                    │
+│  RecordButton (top-right corner)   │
+└────────────────────────────────────┘
+```
+
+**Layout структура** (как в Telegram):
+
+1. **Top section** (avatar, name, status, timer):
+   ```kotlin
+   Column(
+       modifier = Modifier
+           .fillMaxWidth()
+           .padding(top = 48.dp),
+       horizontalAlignment = Alignment.CenterHorizontally
+   ) {
+       // Avatar (круглый, 120dp)
+       AsyncImage(
+           model = avatarUrl,
+           modifier = Modifier
+               .size(120.dp)
+               .clip(CircleShape)
+       )
+
+       Spacer(modifier = Modifier.height(16.dp))
+
+       // Name
+       Text(
+           text = participantName,
+           style = MaterialTheme.typography.headlineMedium,
+           color = Color.White
+       )
+
+       // Status + Timer
+       Text(
+           text = when (callState) {
+               CallState.Connecting -> "Соединение..."
+               CallState.Ringing -> "Звонок..."
+               CallState.Active -> formatDuration(callDuration)
+               else -> ""
+           },
+           style = MaterialTheme.typography.bodyMedium,
+           color = Color.White.copy(alpha = 0.7f)
+       )
+   }
+   ```
+
+2. **Middle section** (Element Call WebView):
+   ```kotlin
+   Box(
+       modifier = Modifier
+           .fillMaxWidth()
+           .weight(1f)
+   ) {
+       AndroidView(
+           factory = { context ->
+               WebView(context).apply {
+                   settings.javaScriptEnabled = true
+                   settings.domStorageEnabled = true
+                   settings.mediaPlaybackRequiresUserGesture = false
+
+                   // Hide Element Call UI via CSS injection
+                   webViewClient = object : WebViewClient() {
+                       override fun onPageFinished(view: WebView?, url: String?) {
+                           view?.evaluateJavascript("""
+                               (function() {
+                                   const style = document.createElement('style');
+                                   style.innerHTML = `
+                                       /* Hide all Element Call UI */
+                                       .lk-button,
+                                       .lk-control-bar,
+                                       .lk-participant-name,
+                                       .lk-call-stats {
+                                           display: none !important;
+                                       }
+                                   `;
+                                   document.head.appendChild(style);
+                               })();
+                           """, null)
+                       }
+                   }
+
+                   // JavaScript bridge for state sync
+                   addJavascriptInterface(CallBridge(viewModel), "AndroidCallBridge")
+
+                   loadUrl(elementCallUrl)
+               }
+           },
+           modifier = Modifier.fillMaxSize()
+       )
+   }
+   ```
+
+3. **Bottom section** (control buttons):
+   ```kotlin
+   Row(
+       modifier = Modifier
+           .fillMaxWidth()
+           .padding(bottom = 48.dp, horizontal = 32.dp),
+       horizontalArrangement = Arrangement.SpaceEvenly
+   ) {
+       // Mute button
+       CallControlButton(
+           icon = if (isMuted) Icons.Filled.MicOff else Icons.Filled.Mic,
+           iconTint = if (isMuted) Color.White else Color.Black,
+           backgroundColor = if (isMuted) Color.Gray else Color.White,
+           onClick = { viewModel.toggleMute() }
+       )
+
+       // Speaker button
+       CallControlButton(
+           icon = if (isSpeakerOn) Icons.Filled.VolumeUp else Icons.Filled.VolumeDown,
+           iconTint = if (isSpeakerOn) Color.White else Color.Black,
+           backgroundColor = if (isSpeakerOn) Color.Blue else Color.White,
+           onClick = { viewModel.toggleSpeaker() }
+       )
+
+       // Video button
+       CallControlButton(
+           icon = if (isVideoOn) Icons.Filled.Videocam else Icons.Filled.VideocamOff,
+           iconTint = if (isVideoOn) Color.White else Color.Black,
+           backgroundColor = if (isVideoOn) Color.Blue else Color.White,
+           onClick = { viewModel.toggleVideo() }
+       )
+
+       // Hang up button
+       CallControlButton(
+           icon = Icons.Filled.CallEnd,
+           iconTint = Color.White,
+           backgroundColor = Color.Red,
+           onClick = { viewModel.endCall() }
+       )
+   }
+   ```
+
+4. **Recording button** (top-right corner):
+   ```kotlin
+   Box(
+       modifier = Modifier
+           .fillMaxSize()
+           .padding(top = 48.dp, end = 16.dp)
+   ) {
+       Column(
+           modifier = Modifier.align(Alignment.TopEnd),
+           horizontalAlignment = Alignment.End
+       ) {
+           if (recordingState.isRecording) {
+               RecordingIndicator()
+               Spacer(modifier = Modifier.height(8.dp))
+           }
+
+           RecordingButton(
+               recordingState = recordingState,
+               onClick = { viewModel.toggleRecording() }
+           )
+       }
+   }
+   ```
+
+**CallBridge** (JavaScript interface для синхронизации):
+
+```kotlin
+class CallBridge(private val viewModel: CallScreenViewModel) {
+    @JavascriptInterface
+    fun onMuteStateChanged(isMuted: Boolean) {
+        viewModel.updateMuteState(isMuted)
+    }
+
+    @JavascriptInterface
+    fun onVideoStateChanged(isVideoOn: Boolean) {
+        viewModel.updateVideoState(isVideoOn)
+    }
+
+    @JavascriptInterface
+    fun onParticipantJoined(participantJson: String) {
+        viewModel.handleParticipantJoined(participantJson)
+    }
+
+    @JavascriptInterface
+    fun onCallEnded() {
+        viewModel.endCall()
+    }
+}
+```
+
+**CallScreenViewModel** (управление состоянием):
+
+```kotlin
+class CallScreenViewModel : ViewModel() {
+    private val _callState = MutableStateFlow<CallState>(CallState.Connecting)
+    val callState = _callState.asStateFlow()
+
+    private val _isMuted = MutableStateFlow(false)
+    val isMuted = _isMuted.asStateFlow()
+
+    private val _isVideoOn = MutableStateFlow(true)
+    val isVideoOn = _isVideoOn.asStateFlow()
+
+    private val _callDuration = MutableStateFlow(0L)
+    val callDuration = _callDuration.asStateFlow()
+
+    private val _recordingState = MutableStateFlow(RecordingState.Idle)
+    val recordingState = _recordingState.asStateFlow()
+
+    private var durationTimer: Job? = null
+
+    init {
+        startDurationTimer()
+    }
+
+    fun toggleMute() {
+        _isMuted.value = !_isMuted.value
+        // Send command to WebView
+        webView?.evaluateJavascript("toggleMute()", null)
+    }
+
+    fun toggleVideo() {
+        _isVideoOn.value = !_isVideoOn.value
+        webView?.evaluateJavascript("toggleVideo()", null)
+    }
+
+    fun toggleSpeaker() {
+        // Native Android audio routing
+        audioManager.toggleSpeaker()
+    }
+
+    fun endCall() {
+        webView?.evaluateJavascript("endCall()", null)
+        durationTimer?.cancel()
+    }
+
+    suspend fun toggleRecording() {
+        when (recordingState.value) {
+            RecordingState.Idle -> startRecording()
+            RecordingState.Recording -> stopRecording()
+            else -> { /* ignore */ }
+        }
+    }
+
+    private suspend fun startRecording() {
+        _recordingState.value = RecordingState.Starting
+
+        try {
+            val response = recordingApi.startRecording(
+                roomId = roomId,
+                livekitRoomName = livekitRoomName
+            )
+            _recordingState.value = RecordingState.Recording(
+                id = response.recordingId,
+                startedAt = Clock.System.now()
+            )
+        } catch (e: Exception) {
+            _recordingState.value = RecordingState.Error(e.message ?: "Unknown error")
+        }
+    }
+
+    private fun startDurationTimer() {
+        durationTimer = viewModelScope.launch {
+            while (isActive) {
+                delay(1000)
+                _callDuration.value++
+            }
+        }
+    }
+}
+```
+
+**Полный пример CallScreen.kt**:
+
+```kotlin
+@Composable
+fun CallScreen(
+    roomId: String,
+    elementCallUrl: String,
+    viewModel: CallScreenViewModel = hiltViewModel()
+) {
+    val callState by viewModel.callState.collectAsState()
+    val isMuted by viewModel.isMuted.collectAsState()
+    val isSpeakerOn by viewModel.isSpeakerOn.collectAsState()
+    val isVideoOn by viewModel.isVideoOn.collectAsState()
+    val callDuration by viewModel.callDuration.collectAsState()
+    val recordingState by viewModel.recordingState.collectAsState()
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+    ) {
+        // Element Call WebView (background, video only)
+        ElementCallWebView(
+            url = elementCallUrl,
+            viewModel = viewModel,
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // Native UI Overlay
+        Column(
+            modifier = Modifier.fillMaxSize()
+        ) {
+            // Top section: Avatar + Name + Timer
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 48.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                AsyncImage(
+                    model = viewModel.participantAvatarUrl,
+                    modifier = Modifier
+                        .size(120.dp)
+                        .clip(CircleShape)
+                        .border(2.dp, Color.White.copy(alpha = 0.3f), CircleShape)
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = viewModel.participantName,
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = Color.White
+                )
+
+                Text(
+                    text = when (callState) {
+                        CallState.Connecting -> "Соединение..."
+                        CallState.Ringing -> "Звонок..."
+                        CallState.Active -> formatDuration(callDuration)
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.7f)
+                )
+            }
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            // Bottom section: Control buttons
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 48.dp, horizontal = 32.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                CallControlButton(
+                    icon = if (isMuted) Icons.Filled.MicOff else Icons.Filled.Mic,
+                    iconTint = if (isMuted) Color.White else Color.Black,
+                    backgroundColor = if (isMuted) Color.Gray else Color.White,
+                    onClick = { viewModel.toggleMute() }
+                )
+
+                CallControlButton(
+                    icon = if (isSpeakerOn) Icons.Filled.VolumeUp else Icons.Filled.VolumeDown,
+                    iconTint = if (isSpeakerOn) Color.White else Color.Black,
+                    backgroundColor = if (isSpeakerOn) Color.Blue else Color.White,
+                    onClick = { viewModel.toggleSpeaker() }
+                )
+
+                CallControlButton(
+                    icon = if (isVideoOn) Icons.Filled.Videocam else Icons.Filled.VideocamOff,
+                    iconTint = if (isVideoOn) Color.White else Color.Black,
+                    backgroundColor = if (isVideoOn) Color.Blue else Color.White,
+                    onClick = { viewModel.toggleVideo() }
+                )
+
+                CallControlButton(
+                    icon = Icons.Filled.CallEnd,
+                    iconTint = Color.White,
+                    backgroundColor = Color.Red,
+                    onClick = { viewModel.endCall() }
+                )
+            }
+        }
+
+        // Recording button (top-right corner)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = 48.dp, end = 16.dp)
+        ) {
+            Column(
+                modifier = Modifier.align(Alignment.TopEnd),
+                horizontalAlignment = Alignment.End
+            ) {
+                if (recordingState is RecordingState.Recording) {
+                    RecordingIndicator()
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                RecordingButton(
+                    recordingState = recordingState,
+                    onClick = { viewModel.toggleRecording() }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun CallControlButton(
+    icon: ImageVector,
+    iconTint: Color,
+    backgroundColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = modifier
+            .size(64.dp)
+            .background(backgroundColor, CircleShape)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = iconTint,
+            modifier = Modifier.size(32.dp)
+        )
+    }
+}
+
+private fun formatDuration(seconds: Long): String {
+    val minutes = seconds / 60
+    val remainingSeconds = seconds % 60
+    return "%02d:%02d".format(minutes, remainingSeconds)
+}
+```
+
+**Ключевые отличия от iOS**:
+- iOS: Element Call WebView делает **всё** (UI + WebRTC)
+- Android: Native Compose делает **UI**, WebView только WebRTC
+- Преимущества: полный контроль над дизайном, Material Design, лёгкая кастомизация
+- Недостатки: сложнее синхронизация состояния (требует JavaScript bridge)
+
+**Testing**:
+1. Проверить синхронизацию кнопок mute/video с WebView
+2. Проверить таймер звонка
+3. Проверить кнопку hang up (завершение звонка)
+4. Проверить запись звонка + индикатор REC
+5. Проверить layout на разных размерах экрана
+6. Проверить rotation (portrait/landscape)
+
 ---
 
 ### #5: Унифицированные фильтры
