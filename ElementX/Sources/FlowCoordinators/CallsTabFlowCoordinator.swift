@@ -73,7 +73,7 @@ class CallsTabFlowCoordinator: FlowCoordinatorProtocol {
         // Initialize CallHistoryService with Recording API endpoint (dynamic based on homeserver)
         let homeserver = userSession.clientProxy.homeserver
         let domain = URL(string: homeserver)?.host ?? "stalk.implica.ru"
-        let apiBaseURL = URL(string: "https://livekit.\(domain)/recording-api")!
+        let apiBaseURL = URL(string: "https://\(domain)/recording-api")!
         let callHistoryService = CallHistoryService(baseURL: apiBaseURL)
 
         let parameters = CallsListScreenCoordinatorParameters(

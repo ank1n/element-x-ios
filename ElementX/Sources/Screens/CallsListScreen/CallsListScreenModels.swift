@@ -165,7 +165,7 @@ struct CallHistoryAPIItem: Codable {
         // - status 2 (ENDING) с endedAt - файл уже создан, LiveKit ещё не обновил статус
         let recordingStatus = RecordingStatus(rawValue: status)
         let isPlayable = recordingStatus == .complete || (recordingStatus == .ending && endedAt != nil)
-        let baseURLString = apiBaseURL?.absoluteString ?? "https://livekit.stalk.implica.ru/recording-api"
+        let baseURLString = apiBaseURL?.absoluteString ?? "https://stalk.implica.ru/recording-api"
         let playbackURL: URL? = if isPlayable {
             URL(string: "\(baseURLString)/api/recording/play/\(egressId)")
         } else {
