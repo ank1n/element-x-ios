@@ -371,7 +371,7 @@ final class AppSettings {
     // MARK: - Recording API
 
     /// The base URL for the call recording API service
-    @UserPreference(key: UserDefaultsKeys.recordingAPIBaseURL, defaultValue: URL(string: "https://livekit.stalk.implica.ru")!, storageType: .userDefaults(store))
+    @UserPreference(key: UserDefaultsKeys.recordingAPIBaseURL, defaultValue: URL(string: "https://stalk.implica.ru")!, storageType: .userDefaults(store))
     var recordingAPIBaseURL: URL
 
     // MARK: - Users

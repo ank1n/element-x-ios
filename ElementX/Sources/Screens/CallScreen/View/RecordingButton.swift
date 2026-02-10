@@ -12,32 +12,20 @@ struct RecordingButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
-                ZStack {
-                    Circle()
-                        .fill(backgroundColor)
-                        .frame(width: 44, height: 44)
+            ZStack {
+                // Background circle — Telegram style
+                Circle()
+                    .fill(backgroundColor)
+                    .frame(width: 36, height: 36)
 
-                    if recordingState.isTransitioning {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                            .scaleEffect(0.8)
-                    } else {
-                        Image(systemName: iconName)
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundColor(.white)
-                    }
-                }
-
-                // Show duration when recording
-                if let duration = recordingState.formattedDuration {
-                    Text(duration)
-                        .font(.system(.body, design: .monospaced).weight(.semibold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color.red.opacity(0.9))
-                        .cornerRadius(8)
+                if recordingState.isTransitioning {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: iconColor))
+                        .scaleEffect(0.7)
+                } else {
+                    Image(systemName: iconName)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(iconColor)
                 }
             }
         }
@@ -56,7 +44,16 @@ struct RecordingButton: View {
         case .error:
             return .orange
         default:
-            return .gray.opacity(0.6)
+            return .white.opacity(0.15)
+        }
+    }
+
+    private var iconColor: Color {
+        switch recordingState {
+        case .recording, .error:
+            return .white
+        default:
+            return .white
         }
     }
 
@@ -90,13 +87,13 @@ struct RecordingIndicator: View {
                 .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: isAnimating)
 
             Text("REC")
-                .font(.caption.bold())
-                .foregroundColor(.red)
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .foregroundColor(.white)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(Color.black.opacity(0.6))
-        .cornerRadius(4)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Color.red.opacity(0.85))
+        .clipShape(Capsule())
         .onAppear {
             isAnimating = true
         }
@@ -111,14 +108,20 @@ struct RecordingConsentView: View {
 
     var body: some View {
         VStack(spacing: 24) {
-            Image(systemName: "record.circle")
-                .font(.system(size: 48))
-                .foregroundColor(.red)
+            // Red circle icon
+            ZStack {
+                Circle()
+                    .strokeBorder(Color.red, lineWidth: 3)
+                    .frame(width: 56, height: 56)
+                Circle()
+                    .fill(Color.red)
+                    .frame(width: 20, height: 20)
+            }
 
-            Text("Start Recording?")
+            Text("Начать запись?")
                 .font(.title2.bold())
 
-            Text("This call will be recorded. All participants will be notified that the recording has started.")
+            Text("Звонок будет записан. Все участники будут уведомлены о начале записи.")
                 .font(.body)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
@@ -126,7 +129,7 @@ struct RecordingConsentView: View {
 
             VStack(spacing: 12) {
                 Button(action: onConfirm) {
-                    Text("Start Recording")
+                    Text("Начать запись")
                         .font(.headline)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
@@ -136,12 +139,12 @@ struct RecordingConsentView: View {
                 }
 
                 Button(action: onCancel) {
-                    Text("Cancel")
+                    Text("Отмена")
                         .font(.headline)
                         .foregroundColor(.primary)
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(Color.gray.opacity(0.2))
+                        .background(Color(.systemGray5))
                         .cornerRadius(12)
                 }
             }
