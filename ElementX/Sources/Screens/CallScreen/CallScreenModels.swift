@@ -37,6 +37,10 @@ struct CallScreenViewState: BindableState {
     var participants: [CallParticipantInfo] = []
     var mediaProvider: MediaProviderProtocol?
 
+    // sTalk: native call control state
+    var isMuted: Bool = false
+    var isVideoEnabled: Bool = true
+
     var callStatusText: String {
         switch callStatus {
         case .connecting:
@@ -83,6 +87,9 @@ enum CallScreenViewAction {
     // Recording actions
     case toggleRecording
     case confirmStartRecording
+    // Native call control actions
+    case toggleMute
+    case toggleVideo
 }
 
 enum CallScreenError: Error {
@@ -241,38 +248,16 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                     height: 100% !important;
                 }
 
-                /* Footer — gradient overlay over video */
-                [class*="_footer_110p2"] {
-                    background: linear-gradient(to top, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.3) 60%, transparent 100%) !important;
-                    padding-block-end: 32px !important;
-                    padding-block-start: 60px !important;
-                    grid-template-columns: 1fr auto 1fr !important;
-                    grid-template-areas: ". buttons ." !important;
-                    position: absolute !important;
-                    bottom: 0 !important;
-                    left: 0 !important;
-                    right: 0 !important;
-                    z-index: 10 !important;
-                    border: none !important;
-                    border-top: none !important;
-                }
-                [class*="_footer_110p2"][class*="_overlay_110p2"] {
-                    background: linear-gradient(to top, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.3) 60%, transparent 100%) !important;
-                }
-                @media (max-width: 660px) {
-                    [class*="_footer_110p2"] {
-                        grid-template-columns: 1fr auto 1fr !important;
-                        grid-template-areas: ". buttons ." !important;
-                    }
+                /* Footer — completely hidden, native SwiftUI buttons used instead */
+                [class*="_footer_110p2"],
+                [class*="_footer_110p2"] * {
+                    display: none !important;
+                    height: 0 !important;
+                    min-height: 0 !important;
+                    overflow: hidden !important;
+                    visibility: hidden !important;
                 }
 
-                /* Buttons area — centered, Telegram spacing */
-                [class*="_buttons_110p2"] {
-                    display: flex !important;
-                    gap: 32px !important;
-                    justify-content: center !important;
-                    align-items: center !important;
-                }
                 /* Hide non-essential buttons (emoji, settings, invite, raiseHand, screenshare) */
                 [class*="_invite_110p2"],
                 [class*="_raiseHand_110p2"],
@@ -281,7 +266,8 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 [class*="_settings"],
                 [class*="_settingsModal"],
                 [class*="_emoji"],
-                [class*="_reaction"] {
+                [class*="_reaction"],
+                [class*="_buttons_110p2"] {
                     display: none !important;
                 }
 
@@ -303,73 +289,7 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                     outline-style: none !important;
                 }
 
-                /* All control buttons → round semi-transparent circles, column layout for labels */
-                [class*="_buttons_110p2"] button,
-                [class*="_buttons_110p2"] [class*="_icon-button"] {
-                    width: 56px !important;
-                    height: 56px !important;
-                    min-width: 56px !important;
-                    min-height: 56px !important;
-                    max-width: 56px !important;
-                    border-radius: 50% !important;
-                    background: rgba(255,255,255,0.15) !important;
-                    backdrop-filter: blur(10px) !important;
-                    -webkit-backdrop-filter: blur(10px) !important;
-                    border: none !important;
-                    padding: 0 !important;
-                    display: flex !important;
-                    align-items: center !important;
-                    justify-content: center !important;
-                }
-                /* Button wrapper — column for button + label */
-                .stalk-btn-wrap {
-                    display: flex !important;
-                    flex-direction: column !important;
-                    align-items: center !important;
-                    gap: 6px !important;
-                }
-                .stalk-label {
-                    font-size: 11px !important;
-                    color: rgba(255,255,255,0.85) !important;
-                    white-space: nowrap !important;
-                    text-align: center !important;
-                    font-family: -apple-system, BlinkMacSystemFont, sans-serif !important;
-                }
-
-                /* Active/toggled — solid white */
-                [class*="_buttons_110p2"] button[aria-pressed="true"],
-                [class*="_buttons_110p2"] button[data-state="on"] {
-                    background: rgba(255,255,255,0.9) !important;
-                }
-                [class*="_buttons_110p2"] button[aria-pressed="true"] svg,
-                [class*="_buttons_110p2"] button[data-state="on"] svg {
-                    color: #1a1a1a !important;
-                }
-
-                /* White icons */
-                [class*="_buttons_110p2"] button svg {
-                    color: #ffffff !important;
-                    width: 24px !important;
-                    height: 24px !important;
-                }
-
-                /* End Call — RED circle (higher specificity to override button style) */
-                [class*="_buttons_110p2"] button[class*="_endCall"],
-                [class*="_buttons_110p2"] [class*="_endCall"],
-                button[class*="_endCall_bwclo"],
-                [class*="_endCall_bwclo"] {
-                    background: #FF3B30 !important;
-                    width: 56px !important;
-                    height: 56px !important;
-                    min-width: 56px !important;
-                    max-width: 56px !important;
-                    border-radius: 50% !important;
-                    backdrop-filter: none !important;
-                    -webkit-backdrop-filter: none !important;
-                    border: none !important;
-                }
-                [class*="_endCall_bwclo"]:hover { background: #E5342B !important; }
-                [class*="_endCall_bwclo"] svg { color: #fff !important; }
+                /* WebView buttons hidden — native SwiftUI buttons used */
 
                 /* Kill ALL outlines, dashed borders, scrollbars */
                 * { outline: none !important; }
@@ -392,13 +312,9 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 hr, [role="separator"] {
                     display: none !important;
                 }
-                /* Show participant names — Telegram style */
+                /* Hide participant names — shown natively in toolbar */
                 [class*="_displayName"], [class*="_nameTag"] {
-                    display: block !important;
-                    color: #fff !important;
-                    text-shadow: 0 1px 3px rgba(0,0,0,0.8) !important;
-                    font-size: 14px !important;
-                    font-weight: 600 !important;
+                    display: none !important;
                 }
 
                 /* Hide stuff */
@@ -406,15 +322,9 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 [class*="_volumeSlider_31vx3"] { display: none !important; }
                 [class*="_muteIcon_31vx3"] { opacity: 0.4 !important; }
 
-                /* Elements marked hidden by JS — high specificity to override button rules */
-                .stalk-hidden,
-                [class*="_buttons_110p2"] button.stalk-hidden,
-                [class*="_buttons_110p2"] .stalk-hidden,
-                button.stalk-hidden {
+                /* Elements marked hidden by JS */
+                .stalk-hidden {
                     display: none !important;
-                    width: 0 !important;
-                    height: 0 !important;
-                    overflow: hidden !important;
                     visibility: hidden !important;
                 }
 
@@ -483,56 +393,7 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                     }
                 });
 
-                // Whitelist approach: keep ONLY mic, camera, endCall — hide everything else
-                // Use data-testid (more reliable than aria-label which is empty in embedded EC)
-                document.querySelectorAll('[class*="_buttons_110p2"] button').forEach(function(btn) {
-                    var cls = btn.className || '';
-                    var testId = (btn.dataset ? btn.dataset.testid : '') || btn.getAttribute('data-testid') || '';
-                    // Always keep endCall
-                    if (cls.match(/_endCall/)) { btn.classList.remove('stalk-hidden'); return; }
-                    // Keep mic (incall_mute) and camera (incall_videomute)
-                    if (testId === 'incall_mute' || testId === 'incall_videomute') { btn.classList.remove('stalk-hidden'); return; }
-                    // Hide everything else
-                    btn.classList.add('stalk-hidden');
-                });
-
-                // Add labels under remaining buttons
-                addButtonLabels();
-            }
-
-            function addButtonLabels() {
-                var buttonsContainer = document.querySelector('[class*="_buttons_110p2"]');
-                if (!buttonsContainer) return;
-
-                // Find all visible buttons (not hidden, not already wrapped)
-                buttonsContainer.querySelectorAll('button:not(.stalk-hidden)').forEach(function(btn) {
-                    if (btn.closest('.stalk-btn-wrap')) return;
-                    if (btn.querySelector('.stalk-label')) return;
-
-                    var label = '';
-                    var cls = btn.className || '';
-                    var testId = (btn.dataset ? btn.dataset.testid : '') || btn.getAttribute('data-testid') || '';
-
-                    if (cls.match(/_endCall/)) {
-                        label = 'завершить';
-                    } else if (testId === 'incall_mute') {
-                        label = 'звук';
-                    } else if (testId === 'incall_videomute') {
-                        label = 'видео';
-                    } else {
-                        return;
-                    }
-
-                    var wrapper = document.createElement('div');
-                    wrapper.className = 'stalk-btn-wrap';
-                    btn.parentNode.insertBefore(wrapper, btn);
-                    wrapper.appendChild(btn);
-
-                    var span = document.createElement('span');
-                    span.className = 'stalk-label';
-                    span.textContent = label;
-                    wrapper.appendChild(span);
-                });
+                // All WebView buttons hidden — native SwiftUI controls used
             }
 
             // Run immediately and on DOM changes

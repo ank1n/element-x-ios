@@ -19,6 +19,8 @@ struct CallScreenCoordinatorParameters {
     let analytics: AnalyticsService
     let recordingService: RecordingServiceProtocol?
     let mediaProvider: MediaProviderProtocol?
+    let localCallHistoryService: LocalCallHistoryServiceProtocol?
+    let currentCallID: String?
 }
 
 enum CallScreenCoordinatorAction {
@@ -52,7 +54,9 @@ final class CallScreenCoordinator: CoordinatorProtocol {
                                         appSettings: parameters.appSettings,
                                         analyticsService: parameters.analytics,
                                         recordingService: parameters.recordingService,
-                                        mediaProvider: parameters.mediaProvider)
+                                        mediaProvider: parameters.mediaProvider,
+                                        localCallHistoryService: parameters.localCallHistoryService,
+                                        currentCallID: parameters.currentCallID)
     }
     
     func start() {

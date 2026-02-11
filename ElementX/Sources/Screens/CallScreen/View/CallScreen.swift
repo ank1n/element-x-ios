@@ -30,72 +30,14 @@ struct CallScreen: View {
                         startPoint: .top,
                         endPoint: .bottom
                     )
-                    .frame(height: 90)
+                    .frame(height: 60)
                     Spacer()
                 }
                 .allowsHitTesting(false)
 
-                // sTalk: Telegram-style call header (avatars + name + status)
-                VStack(spacing: 4) {
-                    // Avatar row
-                    if !context.viewState.participants.isEmpty {
-                        if context.viewState.isDirect, let participant = context.viewState.participants.first(where: { $0.userID != context.viewState.roomDisplayName }) ?? context.viewState.participants.first {
-                            // 1:1 call — single avatar
-                            LoadableAvatarImage(url: participant.avatarURL,
-                                                name: participant.displayName,
-                                                contentID: participant.userID,
-                                                avatarSize: .custom(40),
-                                                mediaProvider: context.viewState.mediaProvider)
-                                .shadow(color: .black.opacity(0.4), radius: 4, x: 0, y: 2)
-                        } else if !context.viewState.isDirect {
-                            // Group call — stacked avatars
-                            HStack(spacing: 4) {
-                                StackedAvatarsView(overlap: 10,
-                                                   lineWidth: 2,
-                                                   shouldStackFromLast: true,
-                                                   avatars: context.viewState.stackedAvatars,
-                                                   avatarSize: .custom(28),
-                                                   mediaProvider: context.viewState.mediaProvider)
-                                if context.viewState.participantCount > 3 {
-                                    Text("+\(context.viewState.participantCount - 3)")
-                                        .font(.system(size: 12, weight: .semibold))
-                                        .foregroundColor(.white.opacity(0.8))
-                                }
-                            }
-                            .shadow(color: .black.opacity(0.4), radius: 4, x: 0, y: 2)
-                        }
-                    }
-
-                    // Name
-                    if let name = context.viewState.roomDisplayName {
-                        Text(name)
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundColor(.white)
-                            .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 2)
-                    }
-
-                    // Status
-                    Text(context.viewState.callStatusText)
-                        .font(.system(size: 14, weight: .regular))
-                        .foregroundColor(.white.opacity(0.8))
-                        .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 2)
-                    Spacer()
-                }
-                .padding(.top, 52)
-
-                // Recording indicator overlay (when recording)
-                if context.viewState.recordingState.isRecording {
-                    VStack {
-                        RecordingIndicator()
-                            .padding(.top, 100)
-                        Spacer()
-                    }
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .padding(.trailing, 16)
-                }
-
                 // sTalk: Recording button as overlay (top-right, under header)
-                if context.viewState.isRecordingEnabled, !context.viewState.recordingState.isRecording {
+                // Shows both idle (start) and recording (stop) states in one button
+                if context.viewState.isRecordingEnabled {
                     VStack {
                         RecordingButton(recordingState: context.viewState.recordingState) {
                             if context.viewState.recordingState.isRecording {
@@ -104,11 +46,34 @@ struct CallScreen: View {
                                 showRecordingConsent = true
                             }
                         }
-                        .padding(.top, 100)
+                        // Show REC indicator next to button when recording
+                        if context.viewState.recordingState.isRecording {
+                            RecordingIndicator()
+                                .padding(.top, 4)
+                        }
                         Spacer()
                     }
+                    .padding(.top, 8)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .padding(.trailing, 16)
+                }
+
+                // sTalk: Native call control buttons at bottom
+                VStack {
+                    Spacer()
+
+                    // Bottom gradient overlay
+                    LinearGradient(
+                        colors: [.clear, .black.opacity(0.3), .black.opacity(0.75)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: 140)
+                    .allowsHitTesting(false)
+                    .overlay(alignment: .bottom) {
+                        callControlButtons
+                            .padding(.bottom, 32)
+                    }
                 }
             }
             .background(Color.black.ignoresSafeArea())
@@ -148,6 +113,38 @@ struct CallScreen: View {
         }
     }
     
+    // sTalk: Native call control buttons
+    var callControlButtons: some View {
+        HStack(spacing: 32) {
+            // Mute button
+            CallControlButton(
+                icon: context.viewState.isMuted ? "mic.slash.fill" : "mic.fill",
+                label: "звук",
+                isActive: !context.viewState.isMuted
+            ) {
+                context.send(viewAction: .toggleMute)
+            }
+
+            // Video button
+            CallControlButton(
+                icon: context.viewState.isVideoEnabled ? "video.fill" : "video.slash.fill",
+                label: "видео",
+                isActive: context.viewState.isVideoEnabled
+            ) {
+                context.send(viewAction: .toggleVideo)
+            }
+
+            // End call button
+            CallControlButton(
+                icon: "phone.down.fill",
+                label: "завершить",
+                style: .destructive
+            ) {
+                context.send(viewAction: .endCall)
+            }
+        }
+    }
+
     @ToolbarContentBuilder
     var toolbar: some ToolbarContent {
         ToolbarItem(placement: .cancellationAction) {
@@ -159,6 +156,71 @@ struct CallScreen: View {
                         .font(.system(size: 16))
                 }
             }
+        }
+
+        // sTalk: Compact name + status in toolbar center
+        ToolbarItem(placement: .principal) {
+            VStack(spacing: 1) {
+                if let name = context.viewState.roomDisplayName {
+                    Text(name)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                }
+                Text(context.viewState.callStatusText)
+                    .font(.system(size: 12))
+                    .foregroundColor(.white.opacity(0.7))
+            }
+        }
+    }
+}
+
+// MARK: - sTalk Native Call Control Button
+
+private struct CallControlButton: View {
+    enum Style {
+        case normal
+        case destructive
+    }
+
+    let icon: String
+    let label: String
+    var isActive: Bool = true
+    var style: Style = .normal
+    let action: () -> Void
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Button(action: action) {
+                Image(systemName: icon)
+                    .font(.system(size: 22))
+                    .foregroundColor(foregroundColor)
+                    .frame(width: 56, height: 56)
+                    .background(backgroundColor)
+                    .clipShape(Circle())
+            }
+
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundColor(.white.opacity(0.85))
+        }
+    }
+
+    private var backgroundColor: Color {
+        switch style {
+        case .destructive:
+            return Color(red: 1.0, green: 0.23, blue: 0.19) // #FF3B30
+        case .normal:
+            return isActive ? .white.opacity(0.15) : .white.opacity(0.9)
+        }
+    }
+
+    private var foregroundColor: Color {
+        switch style {
+        case .destructive:
+            return .white
+        case .normal:
+            return isActive ? .white : Color(red: 0.1, green: 0.1, blue: 0.1)
         }
     }
 }

@@ -20,6 +20,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     private let appSettings: AppSettings
     private let analyticsService: AnalyticsService
     private let recordingService: RecordingServiceProtocol?
+    private let localCallHistoryService: LocalCallHistoryServiceProtocol?
+    private let currentCallID: String?
 
     private let widgetDriver: ElementCallWidgetDriverProtocol
     
@@ -48,12 +50,16 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
          appSettings: AppSettings,
          analyticsService: AnalyticsService,
          recordingService: RecordingServiceProtocol? = nil,
-         mediaProvider: MediaProviderProtocol? = nil) {
+         mediaProvider: MediaProviderProtocol? = nil,
+         localCallHistoryService: LocalCallHistoryServiceProtocol? = nil,
+         currentCallID: String? = nil) {
         self.elementCallService = elementCallService
         self.configuration = configuration
         self.appSettings = appSettings
         self.analyticsService = analyticsService
         self.recordingService = recordingService
+        self.localCallHistoryService = localCallHistoryService
+        self.currentCallID = currentCallID
         isPictureInPictureAllowed = allowPictureInPicture
 
         // Сбрасываем состояние записи от предыдущего звонка
@@ -128,8 +134,11 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 switch action {
                 case .callEnded:
                     actionsSubject.send(.dismiss)
-                case .mediaStateChanged(let audioEnabled, _):
+                case .mediaStateChanged(let audioEnabled, let videoEnabled):
                     elementCallService.setAudioEnabled(audioEnabled, roomID: configuration.callRoomID)
+                    // sTalk: Sync native button state with WebView state
+                    self.state.isMuted = !audioEnabled
+                    self.state.isVideoEnabled = videoEnabled
                 }
             }
             .store(in: &cancellables)
@@ -171,6 +180,10 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             handleToggleRecording()
         case .confirmStartRecording:
             Task { await startRecording() }
+        case .toggleMute:
+            Task { await toggleMute() }
+        case .toggleVideo:
+            Task { await toggleVideo() }
         }
     }
     
@@ -180,9 +193,11 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             // ВАЖНО: Сначала останавливаем запись, потом закрываем звонок
             // Иначе LiveKit уничтожит комнату и запись будет прервана (ABORTED)
             if let recordingService, recordingService.state.isRecording {
+                let duration = recordingService.state.recordingDuration ?? 0
                 do {
                     try await recordingService.stopRecording()
                     MXLog.info("Recording stopped on call end")
+                    await sendRecordingInfoMessage(duration: duration)
                 } catch {
                     // If recording already stopped (e.g. EGRESS_COMPLETE), this is handled gracefully
                     MXLog.info("Recording cleanup on call end: \(error.localizedDescription)")
@@ -368,6 +383,24 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         }
     }
 
+    // MARK: - Native Call Controls
+
+    private func toggleMute() async {
+        let newMuted = !state.isMuted
+        state.isMuted = newMuted
+        await setAudioEnabled(!newMuted)
+    }
+
+    private func toggleVideo() async {
+        let newVideoEnabled = !state.isVideoEnabled
+        state.isVideoEnabled = newVideoEnabled
+        let message = ElementCallWidgetMessage(direction: .toWidget,
+                                               action: .mediaState,
+                                               data: .init(videoEnabled: newVideoEnabled),
+                                               widgetId: widgetDriver.widgetID)
+        await postMessageToWidget(message)
+    }
+
     // MARK: - Recording
 
     private func setupRecordingObserver() {
@@ -429,6 +462,11 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 initiatedBy: initiatedBy
             )
             MXLog.info("Recording started with egress ID: \(egressId)")
+
+            // sTalk: Link recording to call history
+            if let currentCallID {
+                localCallHistoryService?.linkRecording(callID: currentCallID, egressId: egressId)
+            }
         } catch {
             MXLog.error("Failed to start recording: \(error)")
             state.bindings.alertInfo = .init(id: UUID(),
@@ -441,15 +479,41 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     private func stopRecording() async {
         guard let recordingService else { return }
 
+        // Get recording duration before stopping
+        let recordingDuration = recordingService.state.recordingDuration ?? 0
+
         do {
             try await recordingService.stopRecording()
             MXLog.info("Recording stopped")
+
+            // sTalk: Send recording info message to the room chat
+            await sendRecordingInfoMessage(duration: recordingDuration)
         } catch {
             MXLog.error("Failed to stop recording: \(error)")
             state.bindings.alertInfo = .init(id: UUID(),
                                              title: L10n.commonError,
                                              message: error.localizedDescription,
                                              primaryButton: .init(title: L10n.actionOk, action: nil))
+        }
+    }
+
+    private func sendRecordingInfoMessage(duration: TimeInterval) async {
+        guard case .roomCall(let roomProxy, _, _, _, _, _) = configuration.kind else { return }
+
+        let minutes = Int(duration) / 60
+        let seconds = Int(duration) % 60
+        let durationText = String(format: "%d:%02d", minutes, seconds)
+        let message = "Запись звонка завершена (длительность: \(durationText))"
+
+        let result = await roomProxy.timeline.sendMessage(message,
+                                                          html: nil,
+                                                          inReplyToEventID: nil,
+                                                          intentionalMentions: .empty)
+        switch result {
+        case .success:
+            MXLog.info("Recording info message sent to room")
+        case .failure(let error):
+            MXLog.error("Failed to send recording info message: \(error)")
         }
     }
 

@@ -472,6 +472,20 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
             return
         }
         
+        // sTalk: Register call in local history
+        let callHistoryService = ServiceLocator.shared.localCallHistoryService
+        var currentCallID: String?
+        if let callHistoryService {
+            let roomID: String
+            switch configuration.kind {
+            case .genericCallLink:
+                roomID = "generic-call"
+            case .roomCall(let roomProxy, _, _, _, _, _):
+                roomID = roomProxy.id
+            }
+            currentCallID = callHistoryService.startCall(roomID: roomID, direction: .outgoing)
+        }
+
         let callScreenCoordinator = CallScreenCoordinator(parameters: .init(elementCallService: flowParameters.elementCallService,
                                                                             configuration: configuration,
                                                                             allowPictureInPicture: true,
@@ -479,7 +493,9 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                                                                             appHooks: flowParameters.appHooks,
                                                                             analytics: flowParameters.analytics,
                                                                             recordingService: ServiceLocator.shared.recordingService,
-                                                                            mediaProvider: userSession.mediaProvider))
+                                                                            mediaProvider: userSession.mediaProvider,
+                                                                            localCallHistoryService: callHistoryService,
+                                                                            currentCallID: currentCallID))
         
         callScreenCoordinator.actions
             .sink { [weak self] action in
@@ -494,6 +510,10 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                     MXLog.info("Restoring call after PiP presentation.")
                     navigationTabCoordinator.setOverlayPresentationMode(.fullScreen)
                 case .dismiss:
+                    // sTalk: End call in local history
+                    if let currentCallID {
+                        callHistoryService?.endCall(id: currentCallID, missed: false)
+                    }
                     callScreenPictureInPictureController = nil
                     navigationTabCoordinator.setOverlayCoordinator(nil)
                 }
