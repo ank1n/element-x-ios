@@ -98,7 +98,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                                                          isDirect: isDirect,
                                                          totalMembersCount: totalMembersCount,
                                                          callParticipantsCount: callParticipantsCount,
-                                                         mediaProvider: mediaProvider))
+                                                         mediaProvider: mediaProvider,
+                                                         isVideoEnabled: startWithVideoEnabled))
         
         elementCallService.actions
             .receive(on: DispatchQueue.main)
@@ -144,7 +145,10 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                     elementCallService.setAudioEnabled(audioEnabled, roomID: configuration.callRoomID)
                     // sTalk: Sync native button state with WebView state
                     self.state.isMuted = !audioEnabled
-                    self.state.isVideoEnabled = videoEnabled
+                    // Don't let WebView override video state for voice calls before our explicit disable
+                    if self.startWithVideoEnabled || self.state.wasConnected {
+                        self.state.isVideoEnabled = videoEnabled
+                    }
                 }
             }
             .store(in: &cancellables)
@@ -190,7 +194,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         case .pictureInPictureWillStop:
             actionsSubject.send(.pictureInPictureStopped)
         case .endCall:
-            actionsSubject.send(.dismiss)
+            Task { await endCall() }
         case .mediaCapturePermissionGranted:
             state.callStatus = .connected
             state.wasConnected = true
@@ -201,9 +205,16 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 let bodyClass = self.state.isDirect ? "stalk-direct" : "stalk-group"
                 _ = try? await self.state.bindings.javaScriptEvaluator?("document.body.classList.add('\(bodyClass)')")
             }
-            // sTalk: If voice call, disable camera after WebView grants permission
+            // sTalk: If voice call, explicitly disable camera in WebView
+            // (don't use toggleVideo() — it inverts current state which is already false)
             if !startWithVideoEnabled {
-                Task { await toggleVideo() }
+                Task {
+                    let message = ElementCallWidgetMessage(direction: .toWidget,
+                                                           action: .mediaState,
+                                                           data: .init(videoEnabled: false),
+                                                           widgetId: self.widgetDriver.widgetID)
+                    await self.postMessageToWidget(message)
+                }
             }
         case .outputDeviceSelected(deviceID: let deviceID):
             handleOutputDeviceSelected(deviceID: deviceID)
@@ -436,6 +447,14 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                                                data: .init(videoEnabled: newVideoEnabled),
                                                widgetId: widgetDriver.widgetID)
         await postMessageToWidget(message)
+    }
+
+    private func endCall() async {
+        // sTalk: Send hangup to WebView BEFORE dismissing, so the message reaches Element Call
+        await hangup()
+        // Small delay to ensure the hangup message is processed by the WebView
+        try? await Task.sleep(for: .milliseconds(300))
+        actionsSubject.send(.dismiss)
     }
 
     private func toggleHandRaise() async {

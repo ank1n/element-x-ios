@@ -84,7 +84,7 @@ struct CallScreen: View {
             .toolbar { toolbar }
         }
         .alert(item: $context.alertInfo)
-        .preferredColorScheme(.dark)
+        .environment(\.colorScheme, .dark)
         .sheet(isPresented: $showRecordingConsent) {
             RecordingConsentView(
                 onConfirm: {
