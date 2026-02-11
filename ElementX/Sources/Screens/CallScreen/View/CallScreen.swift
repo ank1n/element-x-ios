@@ -23,23 +23,44 @@ struct CallScreen: View {
                 content
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                // sTalk: Call info overlay (top center)
-                VStack {
+                // sTalk: Telegram-style call header (name + status)
+                VStack(spacing: 2) {
                     if let name = context.viewState.roomDisplayName {
                         Text(name)
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.system(size: 20, weight: .semibold))
                             .foregroundColor(.white)
                             .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 2)
-                            .padding(.top, 56)
                     }
+                    Text(context.viewState.callStatusText)
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundColor(.white.opacity(0.8))
+                        .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 2)
                     Spacer()
                 }
+                .padding(.top, 56)
 
                 // Recording indicator overlay (when recording)
                 if context.viewState.recordingState.isRecording {
                     VStack {
                         RecordingIndicator()
-                            .padding(.top, 60)
+                            .padding(.top, 100)
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.trailing, 16)
+                }
+
+                // sTalk: Recording button as overlay (top-right, under header)
+                if context.viewState.isRecordingEnabled, !context.viewState.recordingState.isRecording {
+                    VStack {
+                        RecordingButton(recordingState: context.viewState.recordingState) {
+                            if context.viewState.recordingState.isRecording {
+                                context.send(viewAction: .toggleRecording)
+                            } else {
+                                showRecordingConsent = true
+                            }
+                        }
+                        .padding(.top, 100)
                         Spacer()
                     }
                     .frame(maxWidth: .infinity, alignment: .trailing)
@@ -49,7 +70,7 @@ struct CallScreen: View {
             .background(Color.black.ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
-            .toolbar(context.viewState.isGenericCallLink || context.viewState.isRecordingEnabled ? .visible : .hidden, for: .navigationBar)
+            .toolbar(.visible, for: .navigationBar)
             .toolbar { toolbar }
         }
         .alert(item: $context.alertInfo)
@@ -87,19 +108,11 @@ struct CallScreen: View {
     var toolbar: some ToolbarContent {
         ToolbarItem(placement: .cancellationAction) {
             Button { context.send(viewAction: .navigateBack) } label: {
-                Image(systemSymbol: .chevronBackward)
-                    .fontWeight(.semibold)
-            }
-        }
-
-        if context.viewState.isRecordingEnabled {
-            ToolbarItem(placement: .primaryAction) {
-                RecordingButton(recordingState: context.viewState.recordingState) {
-                    if context.viewState.recordingState.isRecording {
-                        context.send(viewAction: .toggleRecording)
-                    } else {
-                        showRecordingConsent = true
-                    }
+                HStack(spacing: 4) {
+                    Image(systemSymbol: .chevronBackward)
+                        .fontWeight(.semibold)
+                    Text("Назад")
+                        .font(.system(size: 16))
                 }
             }
         }

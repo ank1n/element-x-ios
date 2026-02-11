@@ -16,15 +16,15 @@ struct RecordingButton: View {
                 // Background circle — Telegram style
                 Circle()
                     .fill(backgroundColor)
-                    .frame(width: 36, height: 36)
+                    .frame(width: 44, height: 44)
 
                 if recordingState.isTransitioning {
                     ProgressView()
                         .progressViewStyle(CircularProgressViewStyle(tint: iconColor))
-                        .scaleEffect(0.7)
+                        .scaleEffect(0.8)
                 } else {
                     Image(systemName: iconName)
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: 18, weight: .semibold))
                         .foregroundColor(iconColor)
                 }
             }

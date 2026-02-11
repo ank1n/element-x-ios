@@ -30,6 +30,23 @@ struct CallScreenViewState: BindableState {
 
     // sTalk: call participant info
     var roomDisplayName: String?
+    var callStatus: CallStatus = .connecting
+    var callElapsedTime: TimeInterval = 0
+    var isDirect: Bool = false
+    var participantCount: Int = 0
+
+    var callStatusText: String {
+        switch callStatus {
+        case .connecting:
+            return "Вызов..."
+        case .connected:
+            let m = Int(callElapsedTime) / 60
+            let s = Int(callElapsedTime) % 60
+            return String(format: "%d:%02d", m, s)
+        case .reconnecting:
+            return "Переподключение..."
+        }
+    }
 
     var bindings = Bindings()
 }
@@ -57,6 +74,14 @@ enum CallScreenViewAction {
 
 enum CallScreenError: Error {
     case pictureInPictureNotAvailable
+}
+
+// MARK: - sTalk Call Status
+
+enum CallStatus: Equatable {
+    case connecting
+    case connected
+    case reconnecting
 }
 
 /// Identifies each event handler used by the CallScreen webview
@@ -196,7 +221,7 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 /* Footer — gradient overlay over video */
                 [class*="_footer_110p2"] {
                     background: linear-gradient(to top, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.3) 60%, transparent 100%) !important;
-                    padding-block-end: 44px !important;
+                    padding-block-end: 32px !important;
                     padding-block-start: 60px !important;
                     grid-template-columns: 1fr auto 1fr !important;
                     grid-template-areas: ". buttons ." !important;
@@ -221,24 +246,27 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 /* Buttons area — centered, Telegram spacing */
                 [class*="_buttons_110p2"] {
                     display: flex !important;
-                    gap: 16px !important;
+                    gap: 32px !important;
                     justify-content: center !important;
                     align-items: center !important;
                 }
-                /* Force show invite and raiseHand buttons (Element Call hides them by default) */
+                /* Hide non-essential buttons (emoji, settings, invite, raiseHand, screenshare) */
                 [class*="_invite_110p2"],
-                [class*="_raiseHand_110p2"] {
-                    display: flex !important;
+                [class*="_raiseHand_110p2"],
+                [class*="_screenshare"],
+                [class*="_settings"],
+                [class*="_emoji"] {
+                    display: none !important;
                 }
 
-                /* All control buttons → round semi-transparent circles */
+                /* All control buttons → round semi-transparent circles, column layout for labels */
                 [class*="_buttons_110p2"] > button,
                 [class*="_buttons_110p2"] > [class*="_icon-button"] {
-                    width: 48px !important;
-                    height: 48px !important;
-                    min-width: 48px !important;
-                    min-height: 48px !important;
-                    max-width: 48px !important;
+                    width: 56px !important;
+                    height: 56px !important;
+                    min-width: 56px !important;
+                    min-height: 56px !important;
+                    max-width: 56px !important;
                     border-radius: 50% !important;
                     background: rgba(255,255,255,0.15) !important;
                     backdrop-filter: blur(10px) !important;
@@ -249,37 +277,48 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                     align-items: center !important;
                     justify-content: center !important;
                 }
+                /* Button wrapper — column for button + label */
+                .stalk-btn-wrap {
+                    display: flex !important;
+                    flex-direction: column !important;
+                    align-items: center !important;
+                    gap: 6px !important;
+                }
+                .stalk-label {
+                    font-size: 11px !important;
+                    color: rgba(255,255,255,0.85) !important;
+                    white-space: nowrap !important;
+                    text-align: center !important;
+                    font-family: -apple-system, BlinkMacSystemFont, sans-serif !important;
+                }
 
                 /* Active/toggled — solid white */
-                [class*="_buttons_110p2"] > button[aria-pressed="true"],
-                [class*="_buttons_110p2"] > button[data-state="on"],
-                [class*="_buttons_110p2"] > [class*="_icon-button"][aria-pressed="true"] {
+                [class*="_buttons_110p2"] button[aria-pressed="true"],
+                [class*="_buttons_110p2"] button[data-state="on"] {
                     background: rgba(255,255,255,0.9) !important;
                 }
-                [class*="_buttons_110p2"] > button[aria-pressed="true"] svg,
-                [class*="_buttons_110p2"] > button[data-state="on"] svg,
-                [class*="_buttons_110p2"] > [class*="_icon-button"][aria-pressed="true"] svg {
+                [class*="_buttons_110p2"] button[aria-pressed="true"] svg,
+                [class*="_buttons_110p2"] button[data-state="on"] svg {
                     color: #1a1a1a !important;
                 }
 
                 /* White icons */
-                [class*="_buttons_110p2"] > button svg,
-                [class*="_buttons_110p2"] > [class*="_icon-button"] svg {
+                [class*="_buttons_110p2"] button svg {
                     color: #ffffff !important;
                     width: 24px !important;
                     height: 24px !important;
                 }
 
                 /* End Call — RED circle (higher specificity to override button style) */
-                [class*="_buttons_110p2"] > button[class*="_endCall"],
-                [class*="_buttons_110p2"] > [class*="_endCall"],
+                [class*="_buttons_110p2"] button[class*="_endCall"],
+                [class*="_buttons_110p2"] [class*="_endCall"],
                 button[class*="_endCall_bwclo"],
                 [class*="_endCall_bwclo"] {
                     background: #FF3B30 !important;
-                    width: 48px !important;
-                    height: 48px !important;
-                    min-width: 48px !important;
-                    max-width: 48px !important;
+                    width: 56px !important;
+                    height: 56px !important;
+                    min-width: 56px !important;
+                    max-width: 56px !important;
                     border-radius: 50% !important;
                     backdrop-filter: none !important;
                     -webkit-backdrop-filter: none !important;
@@ -329,11 +368,6 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
 
             // 2. DOM manipulation via MutationObserver
             function applyTelegramLayout() {
-                // Force show invite and raiseHand buttons (Element Call hides them)
-                document.querySelectorAll('[class*="_invite_110p2"], [class*="_raiseHand_110p2"]').forEach(function(el) {
-                    el.style.setProperty('display', 'flex', 'important');
-                });
-
                 // Force all spotlight containers to fill screen
                 document.querySelectorAll('[class*="spotlight"]').forEach(function(el) {
                     el.style.setProperty('position', 'absolute', 'important');
@@ -356,6 +390,64 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                     el.style.setProperty('border-radius', '0', 'important');
                     el.style.setProperty('border', 'none', 'important');
                 });
+
+                // Hide non-essential buttons by aria-label
+                var hideLabels = ['Emoji', 'Settings', 'Screenshare', 'Invite', 'Raise hand', 'Share screen'];
+                document.querySelectorAll('[class*="_buttons_110p2"] > button, [class*="_buttons_110p2"] > [class*="_icon-button"]').forEach(function(btn) {
+                    var label = (btn.getAttribute('aria-label') || '').toLowerCase();
+                    var cls = btn.className || '';
+                    for (var i = 0; i < hideLabels.length; i++) {
+                        if (label.indexOf(hideLabels[i].toLowerCase()) !== -1) {
+                            btn.classList.add('stalk-hidden');
+                            return;
+                        }
+                    }
+                    // Also hide by class pattern
+                    if (cls.match(/_screenshare|_settings|_emoji|_invite_|_raiseHand_/)) {
+                        btn.classList.add('stalk-hidden');
+                        return;
+                    }
+                });
+
+                // Add labels under remaining buttons
+                addButtonLabels();
+            }
+
+            function addButtonLabels() {
+                var buttonsContainer = document.querySelector('[class*="_buttons_110p2"]');
+                if (!buttonsContainer || buttonsContainer.dataset.stalkLabeled) return;
+
+                var buttons = buttonsContainer.querySelectorAll(':scope > button:not(.stalk-hidden), :scope > [class*="_icon-button"]:not(.stalk-hidden)');
+                buttons.forEach(function(btn) {
+                    if (btn.parentElement.classList.contains('stalk-btn-wrap')) return;
+
+                    var label = '';
+                    var ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
+                    var cls = btn.className || '';
+
+                    if (cls.match(/_endCall/)) {
+                        label = 'завершить';
+                    } else if (ariaLabel.indexOf('microphone') !== -1 || ariaLabel.indexOf('mute') !== -1 || ariaLabel.indexOf('mic') !== -1) {
+                        label = 'звук';
+                    } else if (ariaLabel.indexOf('camera') !== -1 || ariaLabel.indexOf('video') !== -1) {
+                        label = 'видео';
+                    } else {
+                        // Skip unknown buttons
+                        return;
+                    }
+
+                    var wrapper = document.createElement('div');
+                    wrapper.className = 'stalk-btn-wrap';
+                    btn.parentNode.insertBefore(wrapper, btn);
+                    wrapper.appendChild(btn);
+
+                    var span = document.createElement('span');
+                    span.className = 'stalk-label';
+                    span.textContent = label;
+                    wrapper.appendChild(span);
+                });
+
+                buttonsContainer.dataset.stalkLabeled = 'true';
             }
 
             // Run immediately and on DOM changes

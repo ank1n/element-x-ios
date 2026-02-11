@@ -30,6 +30,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     
     @CancellableTask
     private var timeoutTask: Task<Void, Never>?
+
+    @CancellableTask
+    private var callTimerTask: Task<Void, Never>?
         
     /// Designated initialiser
     /// - Parameters:
@@ -65,16 +68,23 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             widgetDriver = roomProxy.elementCallWidgetDriver(deviceID: deviceID)
         }
         
-        // sTalk: get room display name for call header
+        // sTalk: get room display name and info for call header
         var roomDisplayName: String?
+        var isDirect = false
+        var participantCount = 0
         if case .roomCall(let roomProxy, _, _, _, _, _) = configuration.kind {
-            roomDisplayName = roomProxy.infoPublisher.value.displayName
+            let roomInfo = roomProxy.infoPublisher.value
+            roomDisplayName = roomInfo.displayName
+            isDirect = roomInfo.isDirect
+            participantCount = roomInfo.activeMembersCount
         }
 
         super.init(initialViewState: CallScreenViewState(script: CallScreenJavaScriptMessageName.allCasesInjectionScript,
                                                          isGenericCallLink: isGenericCallLink,
                                                          certificateValidator: appHooks.certificateValidatorHook,
-                                                         roomDisplayName: roomDisplayName))
+                                                         roomDisplayName: roomDisplayName,
+                                                         isDirect: isDirect,
+                                                         participantCount: participantCount))
         
         elementCallService.actions
             .receive(on: DispatchQueue.main)
@@ -147,6 +157,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         case .endCall:
             actionsSubject.send(.dismiss)
         case .mediaCapturePermissionGranted:
+            state.callStatus = .connected
+            startCallTimer()
             Task { await updateOutputsListOnWeb() }
         case .outputDeviceSelected(deviceID: let deviceID):
             handleOutputDeviceSelected(deviceID: deviceID)
@@ -160,6 +172,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     }
     
     func stop() {
+        callTimerTask = nil
         Task {
             // ВАЖНО: Сначала останавливаем запись, потом закрываем звонок
             // Иначе LiveKit уничтожит комнату и запись будет прервана (ABORTED)
@@ -434,6 +447,20 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                                              title: L10n.commonError,
                                              message: error.localizedDescription,
                                              primaryButton: .init(title: L10n.actionOk, action: nil))
+        }
+    }
+
+    // MARK: - Call Timer
+
+    private func startCallTimer() {
+        callTimerTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled, let self else { return }
+                await MainActor.run {
+                    self.state.callElapsedTime += 1
+                }
+            }
         }
     }
 }
