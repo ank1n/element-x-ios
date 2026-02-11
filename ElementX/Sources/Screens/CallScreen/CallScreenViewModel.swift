@@ -81,12 +81,14 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         // sTalk: get room display name and info for call header
         var roomDisplayName: String?
         var isDirect = false
-        var participantCount = 0
+        var totalMembersCount = 0
+        var callParticipantsCount = 0
         if case .roomCall(let roomProxy, _, _, _, _, _) = configuration.kind {
             let roomInfo = roomProxy.infoPublisher.value
             roomDisplayName = roomInfo.displayName
             isDirect = roomInfo.isDirect
-            participantCount = roomInfo.activeMembersCount
+            totalMembersCount = roomInfo.activeMembersCount
+            callParticipantsCount = roomInfo.activeRoomCallParticipants.count
         }
 
         super.init(initialViewState: CallScreenViewState(script: CallScreenJavaScriptMessageName.allCasesInjectionScript,
@@ -94,7 +96,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                                                          certificateValidator: appHooks.certificateValidatorHook,
                                                          roomDisplayName: roomDisplayName,
                                                          isDirect: isDirect,
-                                                         participantCount: participantCount,
+                                                         totalMembersCount: totalMembersCount,
+                                                         callParticipantsCount: callParticipantsCount,
                                                          mediaProvider: mediaProvider))
         
         elementCallService.actions
@@ -149,9 +152,26 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         NotificationCenter.default
             .publisher(for: AVAudioSession.routeChangeNotification)
             .sink { [weak self] _ in
-                Task { await self?.updateOutputsListOnWeb() }
+                guard let self else { return }
+                // sTalk: Update speaker button state
+                let isSpeaker = AVAudioSession.sharedInstance().currentRoute.outputs.first?.portType == .builtInSpeaker
+                Task { @MainActor in
+                    self.state.isSpeakerOn = isSpeaker
+                }
+                Task { await self.updateOutputsListOnWeb() }
             }
             .store(in: &cancellables)
+
+        // sTalk: Subscribe to room info for live participant count updates
+        if case .roomCall(let roomProxy, _, _, _, _, _) = configuration.kind {
+            roomProxy.infoPublisher
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] roomInfo in
+                    self?.state.totalMembersCount = roomInfo.activeMembersCount
+                    self?.state.callParticipantsCount = roomInfo.activeRoomCallParticipants.count
+                }
+                .store(in: &cancellables)
+        }
 
         setupRecordingObserver()
         setupCall()
@@ -176,6 +196,11 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             state.wasConnected = true
             startCallTimer()
             Task { await updateOutputsListOnWeb() }
+            // sTalk: Set body class for conditional CSS (direct vs group)
+            Task {
+                let bodyClass = self.state.isDirect ? "stalk-direct" : "stalk-group"
+                _ = try? await self.state.bindings.javaScriptEvaluator?("document.body.classList.add('\(bodyClass)')")
+            }
             // sTalk: If voice call, disable camera after WebView grants permission
             if !startWithVideoEnabled {
                 Task { await toggleVideo() }
@@ -192,6 +217,12 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             Task { await toggleMute() }
         case .toggleVideo:
             Task { await toggleVideo() }
+        case .showSpeakerPicker:
+            state.bindings.showSpeakerPickerHandler?()
+        case .toggleHandRaise:
+            Task { await toggleHandRaise() }
+        case .handRaiseStateChanged(let raised):
+            state.isHandRaised = raised
         }
     }
     
@@ -407,6 +438,14 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         await postMessageToWidget(message)
     }
 
+    private func toggleHandRaise() async {
+        do {
+            _ = try await state.bindings.javaScriptEvaluator?("window.stalkToggleHandRaise()")
+        } catch {
+            MXLog.error("Failed to toggle hand raise: \(error)")
+        }
+    }
+
     // MARK: - Recording
 
     private func setupRecordingObserver() {
@@ -538,7 +577,6 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
 
             await MainActor.run {
                 self.state.participants = participants
-                self.state.participantCount = participants.count
             }
         }
     }

@@ -34,13 +34,16 @@ struct CallScreenViewState: BindableState {
     var callStatus: CallStatus = .connecting
     var callElapsedTime: TimeInterval = 0
     var isDirect: Bool = false
-    var participantCount: Int = 0
+    var totalMembersCount: Int = 0
+    var callParticipantsCount: Int = 0
     var participants: [CallParticipantInfo] = []
     var mediaProvider: MediaProviderProtocol?
 
     // sTalk: native call control state
     var isMuted: Bool = false
     var isVideoEnabled: Bool = true
+    var isSpeakerOn: Bool = true
+    var isHandRaised: Bool = false
     var wasConnected: Bool = false
 
     var callStatusText: String {
@@ -50,10 +53,11 @@ struct CallScreenViewState: BindableState {
         case .connected:
             let m = Int(callElapsedTime) / 60
             let s = Int(callElapsedTime) % 60
+            let timeStr = String(format: "%d:%02d", m, s)
             if isDirect {
-                return String(format: "%d:%02d", m, s)
+                return timeStr
             } else {
-                return "\(participantCount) участн. · " + String(format: "%d:%02d", m, s)
+                return "\(timeStr) · \(callParticipantsCount) из \(totalMembersCount) участников"
             }
         case .reconnecting:
             return "Переподключение..."
@@ -73,7 +77,8 @@ struct CallScreenViewState: BindableState {
 struct Bindings {
     var javaScriptEvaluator: ((String) async throws -> Any)?
     var requestPictureInPictureHandler: (() async -> Result<Void, CallScreenError>)?
-    
+    var showSpeakerPickerHandler: (() -> Void)?
+
     var alertInfo: AlertInfo<UUID>?
 }
 
@@ -92,6 +97,9 @@ enum CallScreenViewAction {
     // Native call control actions
     case toggleMute
     case toggleVideo
+    case showSpeakerPicker
+    case toggleHandRaise
+    case handRaiseStateChanged(raised: Bool)
 }
 
 enum CallScreenError: Error {
@@ -130,6 +138,8 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
     case onBackButtonPressed
     /// sTalk: Used to detect when Element Call returns to lobby (remote hangup)
     case onLobbyDetected
+    /// sTalk: Used to detect hand raise state changes from WebView
+    case onHandRaiseStateChanged
     
     private var postMessageScript: String {
         switch self {
@@ -191,6 +201,32 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 setInterval(checkForLobby, 2000);
             })();
             """
+        case .onHandRaiseStateChanged:
+            """
+            // sTalk: Toggle hand raise via DOM click and observe state changes
+            window.stalkToggleHandRaise = function() {
+                var btn = document.querySelector('[class*="_raiseHand"] button');
+                if (!btn) btn = document.querySelector('[class*="_raiseHand"]');
+                if (btn) btn.click();
+                return !!btn;
+            };
+            // Observe hand raise state: Element Call toggles aria-pressed or a CSS class on the button
+            (function() {
+                var lastState = false;
+                function checkHandRaise() {
+                    var btn = document.querySelector('[class*="_raiseHand"] button');
+                    if (!btn) return;
+                    var raised = btn.getAttribute('aria-pressed') === 'true' || btn.classList.contains('active');
+                    if (raised !== lastState) {
+                        lastState = raised;
+                        window.webkit.messageHandlers.\(rawValue).postMessage(raised ? "raised" : "lowered");
+                    }
+                }
+                var hrObserver = new MutationObserver(function() { checkHandRaise(); });
+                hrObserver.observe(document.body || document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-pressed', 'class'] });
+                setInterval(checkHandRaise, 1000);
+            })();
+            """
         }
     }
     
@@ -233,13 +269,62 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                     flex-direction: column !important;
                 }
 
-                /* ===== HIDE: header, footer, scrollingGrid ===== */
+                /* ===== HIDE: header, footer ===== */
                 [class*="_header_110p2"], [class*="_header_"] { display: none !important; }
                 [class*="_filler_110p2"], [class*="_filler_"] { display: none !important; }
                 [class*="_footer_110p2"], [class*="_footer_110p2"] * { display: none !important; visibility: hidden !important; }
-                [class*="_scrollingGrid"] { display: none !important; }
                 [class*="_bar_32sbm"], [class*="_bar_32sbm"] * { display: none !important; }
                 [class*="_logo_110p2"], [class*="_layout_110p2"] { display: none !important; }
+
+                /* ===== 1:1 (direct): hide scrollingGrid, show spotlight fullscreen ===== */
+                body.stalk-direct [class*="_scrollingGrid"] { display: none !important; }
+                body.stalk-direct [class*="_spotlight"] { display: block !important; }
+
+                /* ===== Group: hide spotlight, show scrollingGrid as grid ===== */
+                body.stalk-group [class*="_spotlight"] { display: none !important; }
+                body.stalk-group [class*="_scrollingGrid"] {
+                    display: grid !important;
+                    grid-template-columns: repeat(2, 1fr) !important;
+                    gap: 4px !important;
+                    padding: 4px !important;
+                    position: absolute !important;
+                    inset: 0 !important;
+                    width: 100% !important;
+                    height: 100% !important;
+                    overflow: hidden !important;
+                }
+
+                /* Group tile: rounded, dark background */
+                body.stalk-group [class*="_scrollingGrid"] [class*="_tile"] {
+                    border-radius: 12px !important;
+                    overflow: hidden !important;
+                    background: #1a1a1a !important;
+                    position: relative !important;
+                }
+
+                /* Group tile video: cover */
+                body.stalk-group [class*="_scrollingGrid"] video {
+                    object-fit: cover !important;
+                    width: 100% !important;
+                    height: 100% !important;
+                    border-radius: 12px !important;
+                }
+
+                /* Group: show name tags on tiles */
+                body.stalk-group [class*="_scrollingGrid"] [class*="_nameTag"],
+                body.stalk-group [class*="_scrollingGrid"] [class*="_displayName"] {
+                    display: block !important;
+                    position: absolute !important;
+                    bottom: 8px !important;
+                    left: 8px !important;
+                    color: white !important;
+                    font-size: 13px !important;
+                    text-shadow: 0 1px 3px rgba(0,0,0,0.8) !important;
+                    z-index: 10 !important;
+                }
+
+                /* Default: hide scrollingGrid until body class is set */
+                [class*="_scrollingGrid"] { display: none !important; }
 
                 /* ===== fixedGrid: fill entire _inRoom ===== */
                 [class*="_fixedGrid"] {
@@ -333,15 +418,26 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 [class*="_settingsModal"],
                 [class*="_emoji"],
                 [class*="_reaction"],
-                [class*="_raiseHand"],
                 [class*="_buttons_110p2"],
-                [class*="_displayName"],
-                [class*="_nameTag"],
                 [class*="_bottomRightButtons"],
                 [class*="_volumeSlider"],
                 [class*="_switchCamera"],
                 [class*="_debug"], [class*="_stats"],
                 pre, code { display: none !important; }
+
+                /* _raiseHand: off-screen but clickable for JS DOM click */
+                [class*="_raiseHand"] {
+                    position: fixed !important;
+                    left: -9999px !important;
+                    opacity: 0 !important;
+                    pointer-events: auto !important;
+                }
+
+                /* _displayName, _nameTag: hidden by default, shown in group grid via body.stalk-group */
+                body:not(.stalk-group) [class*="_displayName"],
+                body:not(.stalk-group) [class*="_nameTag"] {
+                    display: none !important;
+                }
 
                 /* mute icon: semi-transparent */
                 [class*="_muteIcon_31vx3"] { opacity: 0.4 !important; }

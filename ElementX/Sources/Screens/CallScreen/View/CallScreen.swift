@@ -114,28 +114,48 @@ struct CallScreen: View {
         }
     }
     
-    // sTalk: Native call control buttons
+    // sTalk: Native call control buttons (5 for group, 4 for direct)
     var callControlButtons: some View {
-        HStack(spacing: 32) {
-            // Mute button
-            CallControlButton(
-                icon: context.viewState.isMuted ? "mic.slash.fill" : "mic.fill",
-                label: "звук",
-                isActive: !context.viewState.isMuted
-            ) {
-                context.send(viewAction: .toggleMute)
+        HStack(spacing: 20) {
+            // Hand raise (group only)
+            if !context.viewState.isDirect {
+                CallControlButton(
+                    icon: "hand.raised.fill",
+                    label: "рука",
+                    isActive: context.viewState.isHandRaised
+                ) {
+                    context.send(viewAction: .toggleHandRaise)
+                }
             }
 
-            // Video button
+            // Camera
             CallControlButton(
                 icon: context.viewState.isVideoEnabled ? "video.fill" : "video.slash.fill",
-                label: "видео",
+                label: "камера",
                 isActive: context.viewState.isVideoEnabled
             ) {
                 context.send(viewAction: .toggleVideo)
             }
 
-            // End call button
+            // Microphone
+            CallControlButton(
+                icon: context.viewState.isMuted ? "mic.slash.fill" : "mic.fill",
+                label: "микрофон",
+                isActive: !context.viewState.isMuted
+            ) {
+                context.send(viewAction: .toggleMute)
+            }
+
+            // Speaker
+            CallControlButton(
+                icon: context.viewState.isSpeakerOn ? "speaker.wave.3.fill" : "speaker.fill",
+                label: "динамик",
+                isActive: context.viewState.isSpeakerOn
+            ) {
+                context.send(viewAction: .showSpeakerPicker)
+            }
+
+            // End call
             CallControlButton(
                 icon: "phone.down.fill",
                 label: "завершить",
@@ -273,6 +293,7 @@ private struct CallView: UIViewRepresentable {
             DispatchQueue.main.async { // Avoid `Publishing changes from within view update` warnings
                 viewModelContext.javaScriptEvaluator = self.evaluateJavaScript
                 viewModelContext.requestPictureInPictureHandler = self.requestPictureInPicture
+                viewModelContext.showSpeakerPickerHandler = self.tapRoutePickerView
             }
             
             let configuration = WKWebViewConfiguration()
@@ -375,6 +396,11 @@ private struct CallView: UIViewRepresentable {
                 // Only dismiss if call was previously connected (skip initial lobby during load)
                 if viewModelContext?.viewState.wasConnected == true {
                     viewModelContext?.send(viewAction: .endCall)
+                }
+            case .onHandRaiseStateChanged:
+                // sTalk: Update hand raise state from WebView observer
+                if let stateStr = message.body as? String {
+                    viewModelContext?.send(viewAction: .handRaiseStateChanged(raised: stateStr == "raised"))
                 }
             }
         }
