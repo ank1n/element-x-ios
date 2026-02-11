@@ -23,6 +23,18 @@ struct CallScreen: View {
                 content
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
+                // sTalk: Top gradient to mask WebView header/dashed border
+                VStack {
+                    LinearGradient(
+                        colors: [.black, .black, .black.opacity(0.85), .clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: 90)
+                    Spacer()
+                }
+                .allowsHitTesting(false)
+
                 // sTalk: Telegram-style call header (avatars + name + status)
                 VStack(spacing: 4) {
                     // Avatar row

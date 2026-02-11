@@ -187,8 +187,8 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 /* Hide header bar completely */
                 [class*="_header_110p2"] { display: none !important; }
                 [class*="_filler_110p2"] { display: none !important; }
-                [class*="_bar_32sbm"] { height: 0 !important; min-height: 0 !important; overflow: hidden !important; }
-                [class*="_bar_32sbm"] > header { display: none !important; }
+                [class*="_bar_32sbm"],
+                [class*="_bar_32sbm"] * { display: none !important; height: 0 !important; min-height: 0 !important; overflow: hidden !important; border: none !important; }
 
                 /* Hide logo and layout switch in footer */
                 [class*="_logo_110p2"] { display: none !important; }
@@ -276,15 +276,36 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 /* Hide non-essential buttons (emoji, settings, invite, raiseHand, screenshare) */
                 [class*="_invite_110p2"],
                 [class*="_raiseHand_110p2"],
+                [class*="_shareScreen"],
                 [class*="_screenshare"],
                 [class*="_settings"],
-                [class*="_emoji"] {
+                [class*="_settingsModal"],
+                [class*="_emoji"],
+                [class*="_reaction"] {
                     display: none !important;
                 }
 
+                /* Kill ALL dashed borders on layout containers */
+                [class*="_inRoom"], [class*="_inRoom"] *,
+                [class*="_spotlight"], [class*="_spotlight"] *,
+                [class*="_grid"], [class*="_grid"] *,
+                [class*="_tile"], [class*="_tile"] *,
+                [class*="_slot"], [class*="_slot"] *,
+                [class*="_footer"], [class*="_footer"] *,
+                [class*="_bar_"], [class*="_bar_"] *,
+                [class*="_maximised"], [class*="_maximised"] *,
+                #root, #root > * {
+                    border: 0 none !important;
+                    border-style: none !important;
+                    border-image: none !important;
+                    border-width: 0 !important;
+                    outline: 0 none !important;
+                    outline-style: none !important;
+                }
+
                 /* All control buttons → round semi-transparent circles, column layout for labels */
-                [class*="_buttons_110p2"] > button,
-                [class*="_buttons_110p2"] > [class*="_icon-button"] {
+                [class*="_buttons_110p2"] button,
+                [class*="_buttons_110p2"] [class*="_icon-button"] {
                     width: 56px !important;
                     height: 56px !important;
                     min-width: 56px !important;
@@ -361,10 +382,11 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                     box-shadow: none !important;
                     border-style: none !important;
                 }
-                /* Nuclear: kill ALL borders on layout elements */
-                div, section, article, main, nav, aside, header, footer {
+                /* Nuclear: kill ALL borders on ALL elements */
+                *, *::before, *::after {
                     border-style: none !important;
                     border-width: 0 !important;
+                    border-image: none !important;
                 }
                 /* Kill separator lines between content and footer */
                 hr, [role="separator"] {
@@ -384,8 +406,35 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 [class*="_volumeSlider_31vx3"] { display: none !important; }
                 [class*="_muteIcon_31vx3"] { opacity: 0.4 !important; }
 
-                /* Elements marked hidden by JS */
-                .stalk-hidden { display: none !important; }
+                /* Elements marked hidden by JS — high specificity to override button rules */
+                .stalk-hidden,
+                [class*="_buttons_110p2"] button.stalk-hidden,
+                [class*="_buttons_110p2"] .stalk-hidden,
+                button.stalk-hidden {
+                    display: none !important;
+                    width: 0 !important;
+                    height: 0 !important;
+                    overflow: hidden !important;
+                    visibility: hidden !important;
+                }
+
+                /* Hide debug overlay text, stats, WebRTC info */
+                [class*="_debug"], [class*="_stats"], [class*="_debugInfo"],
+                [class*="_framerate"], [class*="_resolution"],
+                [class*="_statsOverlay"], [class*="_connectionStats"],
+                [class*="_mediaInfo"], [class*="_videoInfo"],
+                pre, code { display: none !important; visibility: hidden !important; opacity: 0 !important; }
+                /* Hide ALL non-essential elements inside media tiles (stats overlays, debug text) */
+                [class*="_tile_31vx3"] > div:not([class*="_contents"]),
+                [class*="_tile"] [class*="_info"],
+                [class*="_tile"] [class*="_stat"],
+                [class*="_tile"] pre,
+                [class*="_tile"] code,
+                [class*="_tile"] [class*="_debug"],
+                [class*="_mediaView"] > :not(video):not(canvas):not([class*="_avatar"]):not([class*="_displayName"]):not([class*="_nameTag"]) {
+                    display: none !important;
+                    visibility: hidden !important;
+                }
             `;
             document.head.appendChild(style);
 
@@ -414,22 +463,37 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                     el.style.setProperty('border', 'none', 'important');
                 });
 
-                // Hide non-essential buttons by aria-label
-                var hideLabels = ['Emoji', 'Settings', 'Screenshare', 'Invite', 'Raise hand', 'Share screen'];
-                document.querySelectorAll('[class*="_buttons_110p2"] > button, [class*="_buttons_110p2"] > [class*="_icon-button"]').forEach(function(btn) {
-                    var label = (btn.getAttribute('aria-label') || '').toLowerCase();
+                // Kill ALL dashed/dotted borders via inline styles (highest priority)
+                document.querySelectorAll('*').forEach(function(el) {
+                    var cs = getComputedStyle(el);
+                    if (cs.borderTopStyle === 'dashed' || cs.borderTopStyle === 'dotted' ||
+                        cs.borderBottomStyle === 'dashed' || cs.borderBottomStyle === 'dotted' ||
+                        cs.outlineStyle === 'dashed' || cs.outlineStyle === 'dotted') {
+                        el.style.setProperty('border', 'none', 'important');
+                        el.style.setProperty('border-style', 'none', 'important');
+                        el.style.setProperty('outline', 'none', 'important');
+                    }
+                });
+
+                // Hide WebRTC stats overlays (text with "frame", "Size:", "fps")
+                document.querySelectorAll('[class*="_tile"] div, [class*="_tile"] span, [class*="_tile"] p').forEach(function(el) {
+                    var txt = el.textContent || '';
+                    if (txt.match(/frame|Size:|fps|bitrate|resolution|codec|Observed|Requested/i) && !el.querySelector('video') && !el.querySelector('canvas')) {
+                        el.style.setProperty('display', 'none', 'important');
+                    }
+                });
+
+                // Whitelist approach: keep ONLY mic, camera, endCall — hide everything else
+                // Use data-testid (more reliable than aria-label which is empty in embedded EC)
+                document.querySelectorAll('[class*="_buttons_110p2"] button').forEach(function(btn) {
                     var cls = btn.className || '';
-                    for (var i = 0; i < hideLabels.length; i++) {
-                        if (label.indexOf(hideLabels[i].toLowerCase()) !== -1) {
-                            btn.classList.add('stalk-hidden');
-                            return;
-                        }
-                    }
-                    // Also hide by class pattern
-                    if (cls.match(/_screenshare|_settings|_emoji|_invite_|_raiseHand_/)) {
-                        btn.classList.add('stalk-hidden');
-                        return;
-                    }
+                    var testId = (btn.dataset ? btn.dataset.testid : '') || btn.getAttribute('data-testid') || '';
+                    // Always keep endCall
+                    if (cls.match(/_endCall/)) { btn.classList.remove('stalk-hidden'); return; }
+                    // Keep mic (incall_mute) and camera (incall_videomute)
+                    if (testId === 'incall_mute' || testId === 'incall_videomute') { btn.classList.remove('stalk-hidden'); return; }
+                    // Hide everything else
+                    btn.classList.add('stalk-hidden');
                 });
 
                 // Add labels under remaining buttons
@@ -438,24 +502,24 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
 
             function addButtonLabels() {
                 var buttonsContainer = document.querySelector('[class*="_buttons_110p2"]');
-                if (!buttonsContainer || buttonsContainer.dataset.stalkLabeled) return;
+                if (!buttonsContainer) return;
 
-                var buttons = buttonsContainer.querySelectorAll(':scope > button:not(.stalk-hidden), :scope > [class*="_icon-button"]:not(.stalk-hidden)');
-                buttons.forEach(function(btn) {
-                    if (btn.parentElement.classList.contains('stalk-btn-wrap')) return;
+                // Find all visible buttons (not hidden, not already wrapped)
+                buttonsContainer.querySelectorAll('button:not(.stalk-hidden)').forEach(function(btn) {
+                    if (btn.closest('.stalk-btn-wrap')) return;
+                    if (btn.querySelector('.stalk-label')) return;
 
                     var label = '';
-                    var ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
                     var cls = btn.className || '';
+                    var testId = (btn.dataset ? btn.dataset.testid : '') || btn.getAttribute('data-testid') || '';
 
                     if (cls.match(/_endCall/)) {
                         label = 'завершить';
-                    } else if (ariaLabel.indexOf('microphone') !== -1 || ariaLabel.indexOf('mute') !== -1 || ariaLabel.indexOf('mic') !== -1) {
+                    } else if (testId === 'incall_mute') {
                         label = 'звук';
-                    } else if (ariaLabel.indexOf('camera') !== -1 || ariaLabel.indexOf('video') !== -1) {
+                    } else if (testId === 'incall_videomute') {
                         label = 'видео';
                     } else {
-                        // Skip unknown buttons
                         return;
                     }
 
@@ -469,8 +533,6 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                     span.textContent = label;
                     wrapper.appendChild(span);
                 });
-
-                buttonsContainer.dataset.stalkLabeled = 'true';
             }
 
             // Run immediately and on DOM changes
