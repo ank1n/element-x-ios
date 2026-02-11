@@ -115,7 +115,7 @@ struct CallScreen: View {
     
     // sTalk: Native call control buttons
     var callControlButtons: some View {
-        HStack(spacing: 32) {
+        HStack(spacing: 24) {
             // Mute button
             CallControlButton(
                 icon: context.viewState.isMuted ? "mic.slash.fill" : "mic.fill",
@@ -132,6 +132,15 @@ struct CallScreen: View {
                 isActive: context.viewState.isVideoEnabled
             ) {
                 context.send(viewAction: .toggleVideo)
+            }
+
+            // Raise hand button
+            CallControlButton(
+                icon: "hand.raised.fill",
+                label: "рука",
+                isActive: context.viewState.isHandRaised
+            ) {
+                context.send(viewAction: .toggleRaiseHand)
             }
 
             // End call button
@@ -369,6 +378,12 @@ private struct CallView: UIViewRepresentable {
                 viewModelContext?.send(viewAction: .outputDeviceSelected(deviceID: deviceID))
             case .onBackButtonPressed:
                 viewModelContext?.send(viewAction: .navigateBack)
+            case .onLobbyDetected:
+                // sTalk: Remote party hung up, Element Call returned to lobby — auto-dismiss
+                // Only dismiss if call was previously connected (skip initial lobby during load)
+                if viewModelContext?.viewState.wasConnected == true {
+                    viewModelContext?.send(viewAction: .endCall)
+                }
             }
         }
         

@@ -40,6 +40,8 @@ struct CallScreenViewState: BindableState {
     // sTalk: native call control state
     var isMuted: Bool = false
     var isVideoEnabled: Bool = true
+    var isHandRaised: Bool = false
+    var wasConnected: Bool = false
 
     var callStatusText: String {
         switch callStatus {
@@ -90,6 +92,7 @@ enum CallScreenViewAction {
     // Native call control actions
     case toggleMute
     case toggleVideo
+    case toggleRaiseHand
 }
 
 enum CallScreenError: Error {
@@ -126,6 +129,8 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
     case onOutputDeviceSelect
     /// Used to handle the webview back button
     case onBackButtonPressed
+    /// sTalk: Used to detect when Element Call returns to lobby (remote hangup)
+    case onLobbyDetected
     
     private var postMessageScript: String {
         switch self {
@@ -163,6 +168,30 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 window.webkit.messageHandlers.\(rawValue).postMessage("");
             }
             """
+        case .onLobbyDetected:
+            """
+            // sTalk: Detect lobby state (remote hangup) via MutationObserver
+            (function() {
+                var lobbyNotified = false;
+                function checkForLobby() {
+                    if (lobbyNotified) return;
+                    // Element Call lobby has a "Join" or "Join call" button
+                    var joinBtn = document.querySelector('[data-testid="lobby_joinCall"]');
+                    if (!joinBtn) {
+                        // Fallback: look for lobby container class
+                        joinBtn = document.querySelector('[class*="_lobby"]');
+                    }
+                    if (joinBtn) {
+                        lobbyNotified = true;
+                        window.webkit.messageHandlers.\(rawValue).postMessage("lobby");
+                    }
+                }
+                var lobbyObserver = new MutationObserver(function() { checkForLobby(); });
+                lobbyObserver.observe(document.body || document.documentElement, { childList: true, subtree: true });
+                // Also check periodically
+                setInterval(checkForLobby, 2000);
+            })();
+            """
         }
     }
     
@@ -186,16 +215,17 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
             style.textContent = `
                 /* ===== sTalk: Telegram-style Call Screen ===== */
 
-                /* Dark background */
-                body { background: #000 !important; margin: 0 !important; overflow: hidden !important; }
-                #root { background: #000 !important; height: 100vh !important; overflow: hidden !important; }
-                [class*="_inRoom_110p2"] { background: #000 !important; overflow: hidden !important; }
+                /* Dark background — full viewport coverage */
+                body { background: #000 !important; margin: 0 !important; padding: 0 !important; overflow: hidden !important; }
+                #root { background: #000 !important; position: fixed !important; inset: 0 !important; width: 100% !important; height: 100% !important; overflow: hidden !important; }
+                #root > * { position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; }
+                [class*="_inRoom_110p2"] { background: #000 !important; overflow: hidden !important; position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; }
 
-                /* Hide header bar completely */
-                [class*="_header_110p2"] { display: none !important; }
-                [class*="_filler_110p2"] { display: none !important; }
+                /* Hide header bar completely — zero height to avoid layout offset */
+                [class*="_header_110p2"] { display: none !important; height: 0 !important; min-height: 0 !important; max-height: 0 !important; }
+                [class*="_filler_110p2"] { display: none !important; height: 0 !important; min-height: 0 !important; max-height: 0 !important; }
                 [class*="_bar_32sbm"],
-                [class*="_bar_32sbm"] * { display: none !important; height: 0 !important; min-height: 0 !important; overflow: hidden !important; border: none !important; }
+                [class*="_bar_32sbm"] * { display: none !important; height: 0 !important; min-height: 0 !important; max-height: 0 !important; overflow: hidden !important; border: none !important; }
 
                 /* Hide logo and layout switch in footer */
                 [class*="_logo_110p2"] { display: none !important; }
@@ -258,9 +288,8 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                     visibility: hidden !important;
                 }
 
-                /* Hide non-essential buttons (emoji, settings, invite, raiseHand, screenshare) */
+                /* Hide non-essential buttons (emoji, settings, invite, screenshare) */
                 [class*="_invite_110p2"],
-                [class*="_raiseHand_110p2"],
                 [class*="_shareScreen"],
                 [class*="_screenshare"],
                 [class*="_settings"],
@@ -269,6 +298,16 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 [class*="_reaction"],
                 [class*="_buttons_110p2"] {
                     display: none !important;
+                }
+                /* raiseHand: hidden visually but kept in DOM for JS click */
+                [class*="_raiseHand_110p2"] {
+                    position: fixed !important;
+                    top: -9999px !important;
+                    left: -9999px !important;
+                    opacity: 0 !important;
+                    pointer-events: none !important;
+                    width: 1px !important;
+                    height: 1px !important;
                 }
 
                 /* Kill ALL dashed borders on layout containers */

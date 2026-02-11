@@ -170,6 +170,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             actionsSubject.send(.dismiss)
         case .mediaCapturePermissionGranted:
             state.callStatus = .connected
+            state.wasConnected = true
             startCallTimer()
             Task { await updateOutputsListOnWeb() }
         case .outputDeviceSelected(deviceID: let deviceID):
@@ -184,6 +185,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             Task { await toggleMute() }
         case .toggleVideo:
             Task { await toggleVideo() }
+        case .toggleRaiseHand:
+            Task { await toggleRaiseHand() }
         }
     }
     
@@ -399,6 +402,25 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                                                data: .init(videoEnabled: newVideoEnabled),
                                                widgetId: widgetDriver.widgetID)
         await postMessageToWidget(message)
+    }
+
+    private func toggleRaiseHand() async {
+        // Click the hidden raiseHand button in Element Call WebView
+        let js = """
+        (function() {
+            var btn = document.querySelector('[class*="_raiseHand"]');
+            if (btn) { btn.click(); return 'clicked'; }
+            return 'not_found';
+        })()
+        """
+        do {
+            let result = try await state.bindings.javaScriptEvaluator?(js)
+            let newState = !state.isHandRaised
+            state.isHandRaised = newState
+            MXLog.info("Raise hand toggled: \(newState), JS result: \(String(describing: result))")
+        } catch {
+            MXLog.error("Failed to toggle raise hand: \(error)")
+        }
     }
 
     // MARK: - Recording

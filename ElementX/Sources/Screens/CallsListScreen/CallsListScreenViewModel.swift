@@ -105,8 +105,12 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
                 if let serverRecording = serverRecordings.first(where: { $0.id == egressId }),
                    serverRecording.recordingURL != nil {
                     recordingURL = serverRecording.recordingURL
+                } else {
+                    // Fallback: формируем URL напрямую — запись может быть ещё не обновлена на сервере
+                    let homeserver = userSession.clientProxy.homeserver
+                    let domain = URL(string: homeserver)?.host ?? "stalk.implica.ru"
+                    recordingURL = URL(string: "https://\(domain)/recording-api/api/recording/play/\(egressId)")
                 }
-                // Если запись не найдена или не завершена - не показываем кнопку воспроизведения
             } else {
                 // Попробуем найти запись по roomID и близкому времени
                 if let matchingRecording = findMatchingRecording(for: local) {
