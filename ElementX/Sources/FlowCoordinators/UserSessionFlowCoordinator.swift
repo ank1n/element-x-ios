@@ -478,7 +478,8 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                                                                             appSettings: flowParameters.appSettings,
                                                                             appHooks: flowParameters.appHooks,
                                                                             analytics: flowParameters.analytics,
-                                                                            recordingService: ServiceLocator.shared.recordingService))
+                                                                            recordingService: ServiceLocator.shared.recordingService,
+                                                                            mediaProvider: userSession.mediaProvider))
         
         callScreenCoordinator.actions
             .sink { [weak self] action in

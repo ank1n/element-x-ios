@@ -23,21 +23,53 @@ struct CallScreen: View {
                 content
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                // sTalk: Telegram-style call header (name + status)
-                VStack(spacing: 2) {
+                // sTalk: Telegram-style call header (avatars + name + status)
+                VStack(spacing: 4) {
+                    // Avatar row
+                    if !context.viewState.participants.isEmpty {
+                        if context.viewState.isDirect, let participant = context.viewState.participants.first(where: { $0.userID != context.viewState.roomDisplayName }) ?? context.viewState.participants.first {
+                            // 1:1 call — single avatar
+                            LoadableAvatarImage(url: participant.avatarURL,
+                                                name: participant.displayName,
+                                                contentID: participant.userID,
+                                                avatarSize: .custom(40),
+                                                mediaProvider: context.viewState.mediaProvider)
+                                .shadow(color: .black.opacity(0.4), radius: 4, x: 0, y: 2)
+                        } else if !context.viewState.isDirect {
+                            // Group call — stacked avatars
+                            HStack(spacing: 4) {
+                                StackedAvatarsView(overlap: 10,
+                                                   lineWidth: 2,
+                                                   shouldStackFromLast: true,
+                                                   avatars: context.viewState.stackedAvatars,
+                                                   avatarSize: .custom(28),
+                                                   mediaProvider: context.viewState.mediaProvider)
+                                if context.viewState.participantCount > 3 {
+                                    Text("+\(context.viewState.participantCount - 3)")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundColor(.white.opacity(0.8))
+                                }
+                            }
+                            .shadow(color: .black.opacity(0.4), radius: 4, x: 0, y: 2)
+                        }
+                    }
+
+                    // Name
                     if let name = context.viewState.roomDisplayName {
                         Text(name)
                             .font(.system(size: 20, weight: .semibold))
                             .foregroundColor(.white)
                             .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 2)
                     }
+
+                    // Status
                     Text(context.viewState.callStatusText)
                         .font(.system(size: 14, weight: .regular))
                         .foregroundColor(.white.opacity(0.8))
                         .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 2)
                     Spacer()
                 }
-                .padding(.top, 56)
+                .padding(.top, 52)
 
                 // Recording indicator overlay (when recording)
                 if context.viewState.recordingState.isRecording {

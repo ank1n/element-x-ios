@@ -18,6 +18,7 @@ struct CallScreenCoordinatorParameters {
     let appHooks: AppHooks
     let analytics: AnalyticsService
     let recordingService: RecordingServiceProtocol?
+    let mediaProvider: MediaProviderProtocol?
 }
 
 enum CallScreenCoordinatorAction {
@@ -50,7 +51,8 @@ final class CallScreenCoordinator: CoordinatorProtocol {
                                         appHooks: parameters.appHooks,
                                         appSettings: parameters.appSettings,
                                         analyticsService: parameters.analytics,
-                                        recordingService: parameters.recordingService)
+                                        recordingService: parameters.recordingService,
+                                        mediaProvider: parameters.mediaProvider)
     }
     
     func start() {

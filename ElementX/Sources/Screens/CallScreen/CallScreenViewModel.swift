@@ -47,7 +47,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
          appHooks: AppHooks,
          appSettings: AppSettings,
          analyticsService: AnalyticsService,
-         recordingService: RecordingServiceProtocol? = nil) {
+         recordingService: RecordingServiceProtocol? = nil,
+         mediaProvider: MediaProviderProtocol? = nil) {
         self.elementCallService = elementCallService
         self.configuration = configuration
         self.appSettings = appSettings
@@ -84,7 +85,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                                                          certificateValidator: appHooks.certificateValidatorHook,
                                                          roomDisplayName: roomDisplayName,
                                                          isDirect: isDirect,
-                                                         participantCount: participantCount))
+                                                         participantCount: participantCount,
+                                                         mediaProvider: mediaProvider))
         
         elementCallService.actions
             .receive(on: DispatchQueue.main)
@@ -141,6 +143,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
 
         setupRecordingObserver()
         setupCall()
+        loadParticipants()
     }
     
     override func process(viewAction: CallScreenViewAction) {
@@ -447,6 +450,26 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                                              title: L10n.commonError,
                                              message: error.localizedDescription,
                                              primaryButton: .init(title: L10n.actionOk, action: nil))
+        }
+    }
+
+    // MARK: - Participants
+
+    private func loadParticipants() {
+        guard case .roomCall(let roomProxy, _, _, _, _, _) = configuration.kind else { return }
+
+        Task { [weak self] in
+            guard let members = await roomProxy.members() else { return }
+            guard let self else { return }
+
+            let participants = members
+                .filter { $0.isActive }
+                .map { CallParticipantInfo(userID: $0.userID, displayName: $0.displayName, avatarURL: $0.avatarURL) }
+
+            await MainActor.run {
+                self.state.participants = participants
+                self.state.participantCount = participants.count
+            }
         }
     }
 

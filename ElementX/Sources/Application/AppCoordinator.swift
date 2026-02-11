@@ -842,7 +842,8 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
                                                                             appSettings: appSettings,
                                                                             appHooks: appHooks,
                                                                             analytics: ServiceLocator.shared.analytics,
-                                                                            recordingService: ServiceLocator.shared.recordingService))
+                                                                            recordingService: ServiceLocator.shared.recordingService,
+                                                                            mediaProvider: userSession?.mediaProvider))
         
         callScreenCoordinator.actions
             .sink { [weak self] action in

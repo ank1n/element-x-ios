@@ -34,6 +34,8 @@ struct CallScreenViewState: BindableState {
     var callElapsedTime: TimeInterval = 0
     var isDirect: Bool = false
     var participantCount: Int = 0
+    var participants: [CallParticipantInfo] = []
+    var mediaProvider: MediaProviderProtocol?
 
     var callStatusText: String {
         switch callStatus {
@@ -42,9 +44,20 @@ struct CallScreenViewState: BindableState {
         case .connected:
             let m = Int(callElapsedTime) / 60
             let s = Int(callElapsedTime) % 60
-            return String(format: "%d:%02d", m, s)
+            if isDirect {
+                return String(format: "%d:%02d", m, s)
+            } else {
+                return "\(participantCount) участн. · " + String(format: "%d:%02d", m, s)
+            }
         case .reconnecting:
             return "Переподключение..."
+        }
+    }
+
+    /// Stacked avatar info for StackedAvatarsView
+    var stackedAvatars: [StackedAvatarInfo] {
+        participants.prefix(3).map {
+            StackedAvatarInfo(url: $0.avatarURL, name: $0.displayName, contentID: $0.userID)
         }
     }
 
@@ -82,6 +95,16 @@ enum CallStatus: Equatable {
     case connecting
     case connected
     case reconnecting
+}
+
+// MARK: - sTalk Call Participant Info
+
+struct CallParticipantInfo: Identifiable {
+    let userID: String
+    let displayName: String?
+    let avatarURL: URL?
+
+    var id: String { userID }
 }
 
 /// Identifies each event handler used by the CallScreen webview
