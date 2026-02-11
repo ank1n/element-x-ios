@@ -43,7 +43,7 @@ enum RoomScreenCoordinatorAction {
     case presentEmojiPicker(itemID: TimelineItemIdentifier, selectedEmojis: Set<String>)
     case presentRoomMemberDetails(userID: String)
     case presentMessageForwarding(forwardingItem: MessageForwardingItem)
-    case presentCallScreen
+    case presentCallScreen(videoEnabled: Bool)
     case presentPinnedEventsTimeline
     case presentResolveSendFailure(failure: TimelineItemSendFailure.VerifiedUser, sendHandle: SendHandleProxy)
     case presentKnockRequestsList
@@ -179,7 +179,9 @@ final class RoomScreenCoordinator: CoordinatorProtocol {
                 case .displayRoomDetails:
                     actionsSubject.send(.presentRoomDetails)
                 case .displayCall:
-                    actionsSubject.send(.presentCallScreen)
+                    actionsSubject.send(.presentCallScreen(videoEnabled: true))
+                case .displayVoiceCall:
+                    actionsSubject.send(.presentCallScreen(videoEnabled: false))
                 case .removeComposerFocus:
                     composerViewModel.process(timelineAction: .removeFocus)
                 case .displayKnockRequests:

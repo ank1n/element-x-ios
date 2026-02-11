@@ -21,6 +21,7 @@ struct CallScreenCoordinatorParameters {
     let mediaProvider: MediaProviderProtocol?
     let localCallHistoryService: LocalCallHistoryServiceProtocol?
     let currentCallID: String?
+    var startWithVideoEnabled: Bool = true
 }
 
 enum CallScreenCoordinatorAction {
@@ -33,6 +34,8 @@ enum CallScreenCoordinatorAction {
     case pictureInPictureStarted
     /// The call is hidden and the user wishes to return to it.
     case pictureInPictureStopped
+    /// The user pressed back but PiP is not available; minimize to overlay instead.
+    case minimizeCall
     /// The call is finished and the screen is done with.
     case dismiss
 }
@@ -56,7 +59,8 @@ final class CallScreenCoordinator: CoordinatorProtocol {
                                         recordingService: parameters.recordingService,
                                         mediaProvider: parameters.mediaProvider,
                                         localCallHistoryService: parameters.localCallHistoryService,
-                                        currentCallID: parameters.currentCallID)
+                                        currentCallID: parameters.currentCallID,
+                                        startWithVideoEnabled: parameters.startWithVideoEnabled)
     }
     
     func start() {
@@ -70,6 +74,8 @@ final class CallScreenCoordinator: CoordinatorProtocol {
                 actionsSubject.send(.pictureInPictureStarted)
             case .pictureInPictureStopped:
                 actionsSubject.send(.pictureInPictureStopped)
+            case .minimizeCall:
+                actionsSubject.send(.minimizeCall)
             case .dismiss:
                 actionsSubject.send(.dismiss)
             case .showRecordingConsent:

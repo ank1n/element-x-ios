@@ -13,6 +13,7 @@ enum CallScreenViewModelAction {
     case pictureInPictureIsAvailable(AVPictureInPictureController)
     case pictureInPictureStarted
     case pictureInPictureStopped
+    case minimizeCall
     case dismiss
     case showRecordingConsent
 }
@@ -213,105 +214,118 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
             style.textContent = `
                 /* ===== sTalk: Telegram-style Call Screen ===== */
 
-                /* Dark background — full viewport coverage */
+                /* ===== LAYOUT: Full-viewport video ===== */
+
+                /* Body + #root: fixed fullscreen */
                 body { background: #000 !important; margin: 0 !important; padding: 0 !important; overflow: hidden !important; }
                 #root { background: #000 !important; position: fixed !important; inset: 0 !important; width: 100% !important; height: 100% !important; overflow: hidden !important; }
                 #root > * { position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; }
 
-                /* _inRoom: override CSS Grid to single cell filling entire viewport */
+                /* _inRoom: flex column → override to fill viewport */
                 [class*="_inRoom"] {
                     background: #000 !important;
                     overflow: hidden !important;
                     position: fixed !important;
                     inset: 0 !important;
-                    width: 100vw !important;
-                    height: 100vh !important;
-                    display: grid !important;
-                    grid-template-rows: 1fr !important;
-                    grid-template-columns: 1fr !important;
-                }
-                /* All children of _inRoom collapse into the single grid cell */
-                [class*="_inRoom"] > * {
-                    grid-row: 1 / -1 !important;
-                    grid-column: 1 / -1 !important;
-                }
-
-                /* Hide header bar completely */
-                [class*="_header_110p2"], [class*="_header_"] { display: none !important; height: 0 !important; min-height: 0 !important; max-height: 0 !important; visibility: hidden !important; }
-                [class*="_filler_110p2"], [class*="_filler_"] { display: none !important; height: 0 !important; min-height: 0 !important; max-height: 0 !important; visibility: hidden !important; }
-                [class*="_bar_32sbm"],
-                [class*="_bar_32sbm"] * { display: none !important; height: 0 !important; min-height: 0 !important; max-height: 0 !important; overflow: hidden !important; border: none !important; visibility: hidden !important; }
-
-                /* Hide logo and layout switch in footer */
-                [class*="_logo_110p2"] { display: none !important; }
-                [class*="_layout_110p2"] { display: none !important; }
-
-                /* ALL tiles/spotlights/grids — fill screen, no gaps, no radius */
-                [class*="_spotlight"],
-                [class*="_fixedGrid"],
-                [class*="_scrollingGrid"],
-                [class*="_grid_"] {
-                    position: fixed !important;
-                    inset: 0 !important;
-                    width: 100vw !important;
-                    height: 100vh !important;
-                    max-width: none !important;
-                    max-height: none !important;
-                    aspect-ratio: unset !important;
-                    margin: 0 !important;
-                    padding: 0 !important;
-                    pointer-events: initial !important;
-                }
-                [class*="_slot"],
-                [class*="_slot"] > * {
                     width: 100% !important;
                     height: 100% !important;
-                    max-width: none !important;
-                    max-height: none !important;
+                    display: flex !important;
+                    flex-direction: column !important;
                 }
 
-                [class*="_tile_110p2"],
-                [class*="_tile_31vx3"] {
+                /* ===== HIDE: header, footer, scrollingGrid ===== */
+                [class*="_header_110p2"], [class*="_header_"] { display: none !important; }
+                [class*="_filler_110p2"], [class*="_filler_"] { display: none !important; }
+                [class*="_footer_110p2"], [class*="_footer_110p2"] * { display: none !important; visibility: hidden !important; }
+                [class*="_scrollingGrid"] { display: none !important; }
+                [class*="_bar_32sbm"], [class*="_bar_32sbm"] * { display: none !important; }
+                [class*="_logo_110p2"], [class*="_layout_110p2"] { display: none !important; }
+
+                /* ===== fixedGrid: fill entire _inRoom ===== */
+                [class*="_fixedGrid"] {
+                    position: absolute !important;
+                    inset: 0 !important;
+                    width: 100% !important;
+                    height: 100% !important;
+                }
+
+                /* ===== CRITICAL: spotlight — remove grid/aspect-ratio 16/9, fill parent ===== */
+                [class*="_spotlight"] {
+                    display: block !important;
                     position: absolute !important;
                     inset: 0 !important;
                     width: 100% !important;
                     height: 100% !important;
                     max-width: none !important;
                     max-height: none !important;
+                    aspect-ratio: unset !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    container-type: normal !important;
                 }
+
+                /* slot: fill spotlight */
+                [class*="_slot"] {
+                    width: 100% !important;
+                    height: 100% !important;
+                    inline-size: 100% !important;
+                    block-size: 100% !important;
+                    max-width: none !important;
+                    max-height: none !important;
+                }
+
+                /* tile: fill slot */
+                [class*="_tile_110p2"],
+                [class*="_tile_110p2"][class*="_maximised"] {
+                    position: absolute !important;
+                    inset: 0 !important;
+                    width: 100% !important;
+                    height: 100% !important;
+                    flex-grow: 1 !important;
+                }
+
+                /* media tile: fill parent, no radius */
                 [class*="_tile_31vx3"],
                 [class*="_tile_31vx3"] * {
                     --media-view-border-radius: 0px !important;
                     border-radius: 0 !important;
                 }
                 [class*="_tile_31vx3"] {
+                    position: absolute !important;
+                    inset: 0 !important;
+                    width: 100% !important;
+                    height: 100% !important;
                     outline: none !important;
                     border: none !important;
                 }
-                [class*="_tile_31vx3"]:hover { outline: none !important; }
-                [class*="_tile_31vx3"]::before { display: none !important; }
-                [class*="_contents_18q5h"] { border-radius: 0 !important; border: none !important; }
 
+                /* contents wrapper: fill tile */
+                [class*="_contents_18q5h"] {
+                    width: 100% !important;
+                    height: 100% !important;
+                    border-radius: 0 !important;
+                    border: none !important;
+                }
+
+                /* media view: fill contents */
+                [class*="_media_1yzvo"],
+                [class*="_media"] {
+                    width: 100% !important;
+                    height: 100% !important;
+                    border-radius: 0 !important;
+                    container-type: normal !important;
+                }
+
+                /* video element: cover entire area */
                 video {
                     object-fit: cover !important;
+                    object-position: center center !important;
                     border-radius: 0 !important;
-                    width: 100vw !important;
-                    height: 100vh !important;
-                    position: fixed !important;
-                    inset: 0 !important;
+                    width: 100% !important;
+                    height: 100% !important;
                 }
 
-                /* Footer — completely hidden, native SwiftUI buttons used instead */
-                [class*="_footer_110p2"],
-                [class*="_footer_110p2"] * {
-                    display: none !important;
-                    height: 0 !important;
-                    min-height: 0 !important;
-                    overflow: hidden !important;
-                    visibility: hidden !important;
-                }
-
-                /* Hide non-essential buttons (emoji, settings, invite, screenshare, raise hand) */
+                /* ===== HIDE: non-essential UI ===== */
                 [class*="_invite_110p2"],
                 [class*="_shareScreen"],
                 [class*="_screenshare"],
@@ -320,155 +334,97 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 [class*="_emoji"],
                 [class*="_reaction"],
                 [class*="_raiseHand"],
-                [class*="_buttons_110p2"] {
-                    display: none !important;
-                }
+                [class*="_buttons_110p2"],
+                [class*="_displayName"],
+                [class*="_nameTag"],
+                [class*="_bottomRightButtons"],
+                [class*="_volumeSlider"],
+                [class*="_switchCamera"],
+                [class*="_debug"], [class*="_stats"],
+                pre, code { display: none !important; }
 
-                /* Kill ALL dashed borders on layout containers */
-                [class*="_inRoom"], [class*="_inRoom"] *,
-                [class*="_spotlight"], [class*="_spotlight"] *,
-                [class*="_grid"], [class*="_grid"] *,
-                [class*="_tile"], [class*="_tile"] *,
-                [class*="_slot"], [class*="_slot"] *,
-                [class*="_footer"], [class*="_footer"] *,
-                [class*="_bar_"], [class*="_bar_"] *,
-                [class*="_maximised"], [class*="_maximised"] *,
-                #root, #root > * {
-                    border: 0 none !important;
-                    border-style: none !important;
-                    border-image: none !important;
-                    border-width: 0 !important;
-                    outline: 0 none !important;
-                    outline-style: none !important;
-                }
+                /* mute icon: semi-transparent */
+                [class*="_muteIcon_31vx3"] { opacity: 0.4 !important; }
 
-                /* WebView buttons hidden — native SwiftUI buttons used */
-
-                /* Kill ALL outlines, dashed borders, scrollbars */
-                * { outline: none !important; }
-                ::-webkit-scrollbar { display: none !important; width: 0 !important; }
-                [class*="_tile"], [class*="_contents"], [class*="_spotlight"], [class*="_slot"],
-                [class*="_bar_"], [class*="_inRoom"], [class*="_header"], [class*="_filler"],
-                [class*="_footer"], [class*="_grid"], [class*="_maximised"] {
-                    border: none !important;
-                    outline: none !important;
-                    box-shadow: none !important;
-                    border-style: none !important;
-                }
-                /* Nuclear: kill ALL borders on ALL elements */
+                /* ===== KILL: all borders, outlines, scrollbars ===== */
                 *, *::before, *::after {
                     border-style: none !important;
                     border-width: 0 !important;
-                    border-image: none !important;
+                    outline: none !important;
                 }
-                /* Kill separator lines between content and footer */
-                hr, [role="separator"] {
-                    display: none !important;
-                }
-                /* Hide participant names — shown natively in toolbar */
-                [class*="_displayName"], [class*="_nameTag"] {
-                    display: none !important;
-                }
+                ::-webkit-scrollbar { display: none !important; width: 0 !important; }
+                hr, [role="separator"] { display: none !important; }
 
-                /* Hide stuff */
-                [class*="_bottomRightButtons_18q5h"] { display: none !important; }
-                [class*="_volumeSlider_31vx3"] { display: none !important; }
-                [class*="_muteIcon_31vx3"] { opacity: 0.4 !important; }
-
-                /* Elements marked hidden by JS */
-                .stalk-hidden {
-                    display: none !important;
-                    visibility: hidden !important;
-                }
-
-                /* Hide debug overlay text, stats, WebRTC info */
-                [class*="_debug"], [class*="_stats"], [class*="_debugInfo"],
-                [class*="_framerate"], [class*="_resolution"],
-                [class*="_statsOverlay"], [class*="_connectionStats"],
-                [class*="_mediaInfo"], [class*="_videoInfo"],
-                pre, code { display: none !important; visibility: hidden !important; opacity: 0 !important; }
-                /* Hide ALL non-essential elements inside media tiles (stats overlays, debug text) */
-                [class*="_tile_31vx3"] > div:not([class*="_contents"]),
-                [class*="_tile"] [class*="_info"],
-                [class*="_tile"] [class*="_stat"],
-                [class*="_tile"] pre,
-                [class*="_tile"] code,
-                [class*="_tile"] [class*="_debug"],
-                [class*="_mediaView"] > :not(video):not(canvas):not([class*="_avatar"]):not([class*="_displayName"]):not([class*="_nameTag"]) {
-                    display: none !important;
-                    visibility: hidden !important;
-                }
+                .stalk-hidden { display: none !important; }
             `;
             document.head.appendChild(style);
 
             // 2. DOM manipulation via MutationObserver
             function applyTelegramLayout() {
-                // Force _inRoom grid to single row/column (override CSS Grid template)
+                // _inRoom: fill viewport
                 document.querySelectorAll('[class*="_inRoom"]').forEach(function(el) {
                     el.style.setProperty('position', 'fixed', 'important');
                     el.style.setProperty('inset', '0', 'important');
-                    el.style.setProperty('width', '100vw', 'important');
-                    el.style.setProperty('height', '100vh', 'important');
-                    el.style.setProperty('grid-template-rows', '1fr', 'important');
-                    el.style.setProperty('grid-template-columns', '1fr', 'important');
+                    el.style.setProperty('width', '100%', 'important');
+                    el.style.setProperty('height', '100%', 'important');
                     el.style.setProperty('overflow', 'hidden', 'important');
                 });
-                // All children of _inRoom into single cell
-                document.querySelectorAll('[class*="_inRoom"] > *').forEach(function(el) {
-                    el.style.setProperty('grid-row', '1 / -1', 'important');
-                    el.style.setProperty('grid-column', '1 / -1', 'important');
+
+                // fixedGrid: absolute, fill _inRoom
+                document.querySelectorAll('[class*="_fixedGrid"]').forEach(function(el) {
+                    el.style.setProperty('position', 'absolute', 'important');
+                    el.style.setProperty('inset', '0', 'important');
+                    el.style.setProperty('width', '100%', 'important');
+                    el.style.setProperty('height', '100%', 'important');
                 });
 
-                // Force all spotlight/grid containers to fill screen
-                document.querySelectorAll('[class*="spotlight"], [class*="_fixedGrid"], [class*="_scrollingGrid"], [class*="_grid_"]').forEach(function(el) {
-                    el.style.setProperty('position', 'fixed', 'important');
+                // CRITICAL: spotlight — remove grid/aspect-ratio 16/9, fill parent
+                document.querySelectorAll('[class*="_spotlight"]').forEach(function(el) {
+                    el.style.setProperty('display', 'block', 'important');
+                    el.style.setProperty('position', 'absolute', 'important');
                     el.style.setProperty('inset', '0', 'important');
-                    el.style.setProperty('width', '100vw', 'important');
-                    el.style.setProperty('height', '100vh', 'important');
+                    el.style.setProperty('width', '100%', 'important');
+                    el.style.setProperty('height', '100%', 'important');
                     el.style.setProperty('max-width', 'none', 'important');
                     el.style.setProperty('max-height', 'none', 'important');
                     el.style.setProperty('aspect-ratio', 'unset', 'important');
                     el.style.setProperty('margin', '0', 'important');
+                    el.style.setProperty('padding', '0', 'important');
+                    el.style.setProperty('container-type', 'normal', 'important');
                 });
 
-                // Force tiles to fill parent
+                // slot: fill spotlight
+                document.querySelectorAll('[class*="_slot"]').forEach(function(el) {
+                    el.style.setProperty('width', '100%', 'important');
+                    el.style.setProperty('height', '100%', 'important');
+                    el.style.setProperty('inline-size', '100%', 'important');
+                    el.style.setProperty('block-size', '100%', 'important');
+                });
+
+                // tiles: fill slot
                 document.querySelectorAll('[class*="_tile_110p2"], [class*="_tile_31vx3"]').forEach(function(el) {
                     el.style.setProperty('position', 'absolute', 'important');
                     el.style.setProperty('inset', '0', 'important');
                     el.style.setProperty('width', '100%', 'important');
                     el.style.setProperty('height', '100%', 'important');
                     el.style.setProperty('border-radius', '0', 'important');
-                    el.style.setProperty('border', 'none', 'important');
-                    el.style.setProperty('outline', 'none', 'important');
                 });
-                document.querySelectorAll('[class*="_contents_18q5h"]').forEach(function(el) {
+
+                // contents + media: fill tile
+                document.querySelectorAll('[class*="_contents_18q5h"], [class*="_media"]').forEach(function(el) {
+                    el.style.setProperty('width', '100%', 'important');
+                    el.style.setProperty('height', '100%', 'important');
                     el.style.setProperty('border-radius', '0', 'important');
-                    el.style.setProperty('border', 'none', 'important');
+                    el.style.setProperty('container-type', 'normal', 'important');
+                });
+
+                // video: cover, centered
+                document.querySelectorAll('video').forEach(function(el) {
+                    el.style.setProperty('object-fit', 'cover', 'important');
+                    el.style.setProperty('object-position', 'center center', 'important');
                     el.style.setProperty('width', '100%', 'important');
                     el.style.setProperty('height', '100%', 'important');
                 });
-
-                // Kill ALL dashed/dotted borders via inline styles (highest priority)
-                document.querySelectorAll('*').forEach(function(el) {
-                    var cs = getComputedStyle(el);
-                    if (cs.borderTopStyle === 'dashed' || cs.borderTopStyle === 'dotted' ||
-                        cs.borderBottomStyle === 'dashed' || cs.borderBottomStyle === 'dotted' ||
-                        cs.outlineStyle === 'dashed' || cs.outlineStyle === 'dotted') {
-                        el.style.setProperty('border', 'none', 'important');
-                        el.style.setProperty('border-style', 'none', 'important');
-                        el.style.setProperty('outline', 'none', 'important');
-                    }
-                });
-
-                // Hide WebRTC stats overlays (text with "frame", "Size:", "fps")
-                document.querySelectorAll('[class*="_tile"] div, [class*="_tile"] span, [class*="_tile"] p').forEach(function(el) {
-                    var txt = el.textContent || '';
-                    if (txt.match(/frame|Size:|fps|bitrate|resolution|codec|Observed|Requested/i) && !el.querySelector('video') && !el.querySelector('canvas')) {
-                        el.style.setProperty('display', 'none', 'important');
-                    }
-                });
-
-                // All WebView buttons hidden — native SwiftUI controls used
             }
 
             // Run immediately and on DOM changes

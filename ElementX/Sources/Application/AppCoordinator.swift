@@ -857,6 +857,9 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
                     // Don't allow PiP when signed out - the user could login at which point we'd
                     // need to hand over the call from here to the user session flow coordinator.
                     MXLog.error("Picture in Picture not supported before login.")
+                case .minimizeCall:
+                    // Not supported before login, treat as PiP fallback
+                    break
                 case .dismiss:
                     navigationRootCoordinator.setOverlayCoordinator(nil)
                 }

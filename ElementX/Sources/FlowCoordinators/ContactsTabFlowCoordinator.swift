@@ -10,7 +10,7 @@ import SwiftState
 
 enum ContactsTabFlowCoordinatorAction {
     case showSettings
-    case presentCallScreen(roomProxy: JoinedRoomProxyProtocol)
+    case presentCallScreen(roomProxy: JoinedRoomProxyProtocol, videoEnabled: Bool)
 }
 
 class ContactsTabFlowCoordinator: FlowCoordinatorProtocol {
@@ -101,8 +101,8 @@ class ContactsTabFlowCoordinator: FlowCoordinatorProtocol {
             guard let self else { return }
 
             switch action {
-            case .presentCallScreen(let roomProxy):
-                actionsSubject.send(.presentCallScreen(roomProxy: roomProxy))
+            case .presentCallScreen(let roomProxy, let videoEnabled):
+                actionsSubject.send(.presentCallScreen(roomProxy: roomProxy, videoEnabled: videoEnabled))
             case .finished:
                 self.roomFlowCoordinator = nil
             default:

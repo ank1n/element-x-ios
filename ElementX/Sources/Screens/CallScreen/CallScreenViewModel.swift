@@ -23,6 +23,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     private let localCallHistoryService: LocalCallHistoryServiceProtocol?
     private let currentCallID: String?
 
+    private let startWithVideoEnabled: Bool
     private let widgetDriver: ElementCallWidgetDriverProtocol
     
     private let actionsSubject: PassthroughSubject<CallScreenViewModelAction, Never> = .init()
@@ -52,7 +53,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
          recordingService: RecordingServiceProtocol? = nil,
          mediaProvider: MediaProviderProtocol? = nil,
          localCallHistoryService: LocalCallHistoryServiceProtocol? = nil,
-         currentCallID: String? = nil) {
+         currentCallID: String? = nil,
+         startWithVideoEnabled: Bool = true) {
         self.elementCallService = elementCallService
         self.configuration = configuration
         self.appSettings = appSettings
@@ -60,6 +62,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         self.recordingService = recordingService
         self.localCallHistoryService = localCallHistoryService
         self.currentCallID = currentCallID
+        self.startWithVideoEnabled = startWithVideoEnabled
         isPictureInPictureAllowed = allowPictureInPicture
 
         // Сбрасываем состояние записи от предыдущего звонка
@@ -173,6 +176,10 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             state.wasConnected = true
             startCallTimer()
             Task { await updateOutputsListOnWeb() }
+            // sTalk: If voice call, disable camera after WebView grants permission
+            if !startWithVideoEnabled {
+                Task { await toggleVideo() }
+            }
         case .outputDeviceSelected(deviceID: let deviceID):
             handleOutputDeviceSelected(deviceID: deviceID)
         case .widgetAction(let message):
@@ -300,19 +307,17 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     }
     
     private func handleBackwardsNavigation() async {
-        guard state.url != nil,
-              isPictureInPictureAllowed,
-              let requestPictureInPictureHandler = state.bindings.requestPictureInPictureHandler else {
-            actionsSubject.send(.dismiss)
-            return
+        // Try PiP first if available
+        if state.url != nil,
+           isPictureInPictureAllowed,
+           let requestPictureInPictureHandler = state.bindings.requestPictureInPictureHandler {
+            if case .success = await requestPictureInPictureHandler() {
+                actionsSubject.send(.pictureInPictureStarted)
+                return
+            }
         }
-        
-        switch await requestPictureInPictureHandler() {
-        case .success:
-            actionsSubject.send(.pictureInPictureStarted)
-        case .failure:
-            actionsSubject.send(.dismiss)
-        }
+        // Fallback: minimize overlay (call continues in mini-window)
+        actionsSubject.send(.minimizeCall)
     }
     
     private func setAudioEnabled(_ enabled: Bool) async {

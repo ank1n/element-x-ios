@@ -196,13 +196,22 @@ struct RoomScreen: View {
             }
             .accessibilityIdentifier(A11yIdentifiers.roomScreen.joinCall)
         } else {
-            Button {
-                context.send(viewAction: .displayCall)
-            } label: {
-                CompoundIcon(\.videoCallSolid)
+            HStack(spacing: 12) {
+                Button {
+                    context.send(viewAction: .displayVoiceCall)
+                } label: {
+                    Image(systemName: "phone.fill")
+                }
+                .accessibilityLabel("Голосовой вызов")
+
+                Button {
+                    context.send(viewAction: .displayCall)
+                } label: {
+                    CompoundIcon(\.videoCallSolid)
+                }
+                .accessibilityLabel(L10n.a11yStartCall)
+                .accessibilityIdentifier(A11yIdentifiers.roomScreen.joinCall)
             }
-            .accessibilityLabel(L10n.a11yStartCall)
-            .accessibilityIdentifier(A11yIdentifiers.roomScreen.joinCall)
         }
     }
 }

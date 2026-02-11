@@ -223,8 +223,8 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                     handleAppRoute(.chatBackupSettings, animated: true)
                 case .sessionVerification(let flow):
                     presentSessionVerificationScreen(flow: flow)
-                case .showCallScreen(let roomProxy):
-                    presentCallScreen(roomProxy: roomProxy)
+                case .showCallScreen(let roomProxy, let videoEnabled):
+                    presentCallScreen(roomProxy: roomProxy, videoEnabled: videoEnabled)
                 case .hideCallScreenOverlay:
                     hideCallScreenOverlay()
                 case .logout:
@@ -240,8 +240,8 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                 switch action {
                 case .showSettings:
                     navigationTabCoordinator.selectedTab = .profile
-                case .presentCallScreen(let roomProxy):
-                    self.presentCallScreen(roomProxy: roomProxy)
+                case .presentCallScreen(let roomProxy, let videoEnabled):
+                    self.presentCallScreen(roomProxy: roomProxy, videoEnabled: videoEnabled)
                 }
             }
             .store(in: &cancellables)
@@ -445,7 +445,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         presentCallScreen(roomProxy: roomProxy)
     }
     
-    private func presentCallScreen(roomProxy: JoinedRoomProxyProtocol) {
+    private func presentCallScreen(roomProxy: JoinedRoomProxyProtocol, videoEnabled: Bool = true) {
         // Если в комнате уже есть звонок И текущий пользователь НЕ участвует в нём,
         // значит пользователь присоединяется к входящему звонку
         let roomInfo = roomProxy.infoPublisher.value
@@ -461,11 +461,12 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                                                clientID: InfoPlistReader.main.bundleIdentifier,
                                                elementCallBaseURL: flowParameters.appSettings.elementCallBaseURL,
                                                elementCallBaseURLOverride: flowParameters.appSettings.elementCallBaseURLOverride,
-                                               colorScheme: colorScheme))
+                                               colorScheme: colorScheme),
+                          startWithVideoEnabled: videoEnabled)
     }
     
     private var callScreenPictureInPictureController: AVPictureInPictureController?
-    private func presentCallScreen(configuration: ElementCallConfiguration) {
+    private func presentCallScreen(configuration: ElementCallConfiguration, startWithVideoEnabled: Bool = true) {
         guard flowParameters.ongoingCallRoomIDPublisher.value != configuration.callRoomID else {
             MXLog.info("Returning to existing call.")
             callScreenPictureInPictureController?.stopPictureInPicture()
@@ -495,7 +496,8 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                                                                             recordingService: ServiceLocator.shared.recordingService,
                                                                             mediaProvider: userSession.mediaProvider,
                                                                             localCallHistoryService: callHistoryService,
-                                                                            currentCallID: currentCallID))
+                                                                            currentCallID: currentCallID,
+                                                                            startWithVideoEnabled: startWithVideoEnabled))
         
         callScreenCoordinator.actions
             .sink { [weak self] action in
@@ -509,6 +511,9 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                 case .pictureInPictureStopped:
                     MXLog.info("Restoring call after PiP presentation.")
                     navigationTabCoordinator.setOverlayPresentationMode(.fullScreen)
+                case .minimizeCall:
+                    MXLog.info("Minimizing call overlay (PiP unavailable fallback).")
+                    navigationTabCoordinator.setOverlayPresentationMode(.minimized)
                 case .dismiss:
                     // sTalk: End call in local history
                     if let currentCallID {

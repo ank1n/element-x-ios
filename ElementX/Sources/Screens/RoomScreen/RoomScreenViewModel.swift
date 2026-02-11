@@ -99,6 +99,10 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
             actionsSubject.send(.displayCall)
             actionsSubject.send(.removeComposerFocus)
             analyticsService.trackInteraction(name: .MobileRoomCallButton)
+        case .displayVoiceCall:
+            actionsSubject.send(.displayVoiceCall)
+            actionsSubject.send(.removeComposerFocus)
+            analyticsService.trackInteraction(name: .MobileRoomCallButton)
         case .footerViewAction(let action):
             switch action {
             case .resolvePinViolation(let userID):

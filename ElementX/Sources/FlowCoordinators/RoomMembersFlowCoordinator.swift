@@ -11,7 +11,7 @@ import SwiftUI
 
 enum RoomMembersFlowCoordinatorAction {
     case finished
-    case presentCallScreen(roomProxy: JoinedRoomProxyProtocol)
+    case presentCallScreen(roomProxy: JoinedRoomProxyProtocol, videoEnabled: Bool)
     case verifyUser(userID: String)
 }
 
@@ -236,7 +236,7 @@ final class RoomMembersFlowCoordinator: FlowCoordinatorProtocol {
             case .openDirectChat(let roomID):
                 stateMachine.tryEvent(.startRoomFlow(roomID: roomID, via: [], eventID: nil))
             case .startCall(let roomProxy):
-                actionsSubject.send(.presentCallScreen(roomProxy: roomProxy))
+                actionsSubject.send(.presentCallScreen(roomProxy: roomProxy, videoEnabled: true))
             case .verifyUser(let userID):
                 actionsSubject.send(.verifyUser(userID: userID))
             }
@@ -295,7 +295,7 @@ final class RoomMembersFlowCoordinator: FlowCoordinatorProtocol {
             case .openDirectChat(let roomID):
                 stateMachine.tryEvent(.startRoomFlow(roomID: roomID, via: [], eventID: nil))
             case .startCall(let roomProxy):
-                actionsSubject.send(.presentCallScreen(roomProxy: roomProxy))
+                actionsSubject.send(.presentCallScreen(roomProxy: roomProxy, videoEnabled: true))
             case .dismiss:
                 break // Not supported when pushed.
             }
@@ -322,8 +322,8 @@ final class RoomMembersFlowCoordinator: FlowCoordinatorProtocol {
                 guard let self else { return }
                 
                 switch action {
-                case .presentCallScreen(let roomProxy):
-                    actionsSubject.send(.presentCallScreen(roomProxy: roomProxy))
+                case .presentCallScreen(let roomProxy, let videoEnabled):
+                    actionsSubject.send(.presentCallScreen(roomProxy: roomProxy, videoEnabled: videoEnabled))
                 case .verifyUser(let userID):
                     actionsSubject.send(.verifyUser(userID: userID))
                 case .continueWithSpaceFlow:

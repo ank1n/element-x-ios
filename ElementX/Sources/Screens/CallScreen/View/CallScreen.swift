@@ -22,6 +22,7 @@ struct CallScreen: View {
             ZStack {
                 content
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .ignoresSafeArea(.all)
 
                 // sTalk: Top gradient to mask WebView header/dashed border
                 VStack {
