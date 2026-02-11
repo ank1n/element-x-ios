@@ -57,7 +57,7 @@ struct ServerConfirmationScreenViewState: BindableState {
         case .login:
             if homeserverAddress == "matrix.org" {
                 L10n.screenServerConfirmationMessageLoginMatrixDotOrg
-            } else if homeserverAddress == "element.io" {
+            } else if homeserverAddress == "stalk.implica.ru" {
                 L10n.screenServerConfirmationMessageLoginElementDotIo
             } else {
                 ""

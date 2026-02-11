@@ -132,7 +132,7 @@ extension JoinedRoomProxyMock {
         widgetDriver.underlyingMessagePublisher = .init()
         widgetDriver.underlyingActions = PassthroughSubject().eraseToAnyPublisher()
         
-        guard let url = URL(string: "https://call.element.io/\(UUID().uuidString)#?appPrompt=false") else {
+        guard let url = URL(string: "https://call.stalk.implica.ru/\(UUID().uuidString)#?appPrompt=false") else {
             fatalError()
         }
         

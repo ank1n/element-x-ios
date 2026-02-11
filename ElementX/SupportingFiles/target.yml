@@ -53,9 +53,9 @@ targets:
         CFBundleURLTypes: [
           {
             CFBundleTypeRole: Editor,
-            CFBundleURLName: "Element Call",
+            CFBundleURLName: "sTalk Call",
             CFBundleURLSchemes: [
-              io.element.call
+              ru.implica.stalk.call
             ]
           },
           {
@@ -94,7 +94,7 @@ targets:
           voip
         ]
         BGTaskSchedulerPermittedIdentifiers: [
-          io.element.elementx.background.refresh
+          ru.implica.stalk.background.refresh
         ]
         UTExportedTypeDeclarations:
         - UTTypeConformsTo: [public.text]
@@ -112,16 +112,10 @@ targets:
       properties:
         aps-environment: development
         com.apple.developer.associated-domains:
-        - applinks:element.io
-        - applinks:app.element.io
-        - applinks:staging.element.io
-        - applinks:develop.element.io
-        - applinks:mobile.element.io
-        - applinks:call.element.io
-        - applinks:call.element.dev
-        - applinks:matrix.to
+        - applinks:stalk.implica.ru
+        - applinks:call.stalk.implica.ru
         # - applinks:localhost?mode=developer # developer mode only works with https (but self-signed is fine).
-        - webcredentials:*.element.io
+        - webcredentials:stalk.implica.ru
         com.apple.developer.usernotifications.communication: true
         com.apple.security.app-sandbox: true
         com.apple.security.application-groups:

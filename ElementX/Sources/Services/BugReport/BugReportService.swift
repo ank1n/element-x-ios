@@ -82,13 +82,13 @@ class BugReportService: NSObject, BugReportServiceProtocol {
         }
         
         if let crashEventID = lastCrashEventID {
-            params.append(MultipartFormData(key: "crash_report", type: .text(value: "<https://sentry.tools.element.io/organizations/element/issues/?project=44&query=\(crashEventID)>")))
+            params.append(MultipartFormData(key: "crash_report", type: .text(value: "crash_event_id=\(crashEventID)")))
             bugReport.githubLabels.append("crash")
         }
         
         params.append(contentsOf: defaultParams)
         
-        if InfoPlistReader.main.baseBundleIdentifier == "io.element.elementx.nightly" {
+        if InfoPlistReader.main.baseBundleIdentifier == "ru.implica.stalk.nightly" {
             bugReport.githubLabels.append("Nightly")
         }
         

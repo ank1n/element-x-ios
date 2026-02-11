@@ -129,6 +129,34 @@ lane :config_production do
   xcodegen(spec: "project.yml")
 end
 
+lane :build_and_upload_testflight do |options|
+  # Generate the Xcode project
+  xcodegen(spec: "project.yml")
+
+  # Increment build number to timestamp
+  build_number = Time.now.strftime("%Y%m%d%H%M")
+  increment_build_number(build_number: build_number)
+
+  # Build the app
+  build_app(
+    scheme: "ElementX",
+    export_method: "app-store",
+    export_options: {
+      provisioningProfiles: {
+        "ru.implica.stalk" => "sTalk AppStore",
+        "ru.implica.stalk.nse" => "sTalk NSE AppStore",
+        "ru.implica.stalk.shareextension" => "sTalk ShareExtension AppStore"
+      }
+    }
+  )
+
+  # Upload to TestFlight
+  upload_to_testflight(
+    skip_waiting_for_build_processing: true,
+    distribute_external: false
+  )
+end
+
 lane :config_nightly do |options|
   build_number = options[:build_number]
   UI.user_error!("Invalid build number.") unless !build_number.to_s.empty?
@@ -169,9 +197,9 @@ lane :upload_dsyms_to_sentry do |options|
   begin
     sentry_upload_dif(
       auth_token: auth_token,
-      org_slug: 'element',
-      project_slug: 'element-x-ios',
-      url: 'https://sentry.tools.element.io/',
+      org_slug: 'implica',
+      project_slug: 'stalk-ios',
+      url: 'https://sentry.implica.ru/',
       path: dsym_path,
     )
   rescue => exception
@@ -193,7 +221,7 @@ lane :release_to_github do
   release_version = get_version_number(target: "ElementX")
 
   github_release = set_github_release(
-    repository_name: "element-hq/element-x-ios",
+    repository_name: "ank1n/element-x-ios",
     api_token: api_token,
     name: release_version,
     tag_name: "release/#{release_version}",
@@ -284,8 +312,8 @@ lane :tag_nightly do |options|
 end
 
 private_lane :setup_git do
-  sh("git config --global user.name 'Element CI'")
-  sh("git config --global user.email 'ci@element.io'")
+  sh("git config --global user.name 'sTalk CI'")
+  sh("git config --global user.email 'ci@implica.ru'")
 end
 
 private_lane :git_push do |options|

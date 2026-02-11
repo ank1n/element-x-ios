@@ -91,7 +91,7 @@ final class AppSettings {
         #if DEBUG
         true
         #else
-        let apps = ["io.element.elementx.nightly", "io.element.elementx.pr"]
+        let apps = ["ru.implica.stalk.nightly", "ru.implica.stalk.pr"]
         return apps.contains(InfoPlistReader.main.baseBundleIdentifier)
         #endif
     }()
@@ -200,32 +200,32 @@ final class AppSettings {
     private(set) var hideBrandChrome = false
     
     /// The task identifier used for background app refresh. Also used in main target's the Info.plist
-    let backgroundAppRefreshTaskIdentifier = "io.element.elementx.background.refresh"
+    let backgroundAppRefreshTaskIdentifier = "ru.implica.stalk.background.refresh"
 
     /// A URL where users can go read more about the app.
-    private(set) var websiteURL: URL = "https://element.io"
+    private(set) var websiteURL: URL = "https://stalk.implica.ru"
     /// A URL that contains the app's logo that may be used when showing content in a web view.
-    private(set) var logoURL: URL = "https://element.io/mobile-icon.png"
+    private(set) var logoURL: URL = "https://stalk.implica.ru/mobile-icon.png"
     /// A URL that contains that app's copyright notice.
-    private(set) var copyrightURL: URL = "https://element.io/copyright"
+    private(set) var copyrightURL: URL = "https://stalk.implica.ru"
     /// A URL that contains the app's Terms of use.
-    private(set) var acceptableUseURL: URL = "https://element.io/acceptable-use-policy-terms"
+    private(set) var acceptableUseURL: URL = "https://stalk.implica.ru"
     /// A URL that contains the app's Privacy Policy.
-    private(set) var privacyURL: URL = "https://element.io/privacy"
+    private(set) var privacyURL: URL = "https://stalk.implica.ru"
     /// A URL where users can go read more about encryption in general.
-    private(set) var encryptionURL: URL = "https://element.io/help#encryption"
+    private(set) var encryptionURL: URL = "https://stalk.implica.ru"
     /// A URL where users can go read more about device verification..
-    private(set) var deviceVerificationURL: URL = "https://element.io/help#encryption-device-verification"
+    private(set) var deviceVerificationURL: URL = "https://stalk.implica.ru"
     /// A URL where users can go read more about the chat backup.
-    private(set) var chatBackupDetailsURL: URL = "https://element.io/help#encryption5"
+    private(set) var chatBackupDetailsURL: URL = "https://stalk.implica.ru"
     /// A URL where users can go read more about identity pinning violations
-    private(set) var identityPinningViolationDetailsURL: URL = "https://element.io/help#encryption18"
+    private(set) var identityPinningViolationDetailsURL: URL = "https://stalk.implica.ru"
     /// A URL describing how history sharing works
-    private(set) var historySharingDetailsURL: URL = "https://element.io/en/help#e2ee-history-sharing"
-    /// Any domains that Element web may be hosted on - used for handling links.
-    private(set) var elementWebHosts = ["app.element.io", "staging.element.io", "develop.element.io"]
+    private(set) var historySharingDetailsURL: URL = "https://stalk.implica.ru"
+    /// Any domains that sTalk web may be hosted on - used for handling links.
+    private(set) var elementWebHosts = ["stalk.implica.ru"]
     /// The domain that account provisioning links will be hosted on - used for handling the links.
-    private(set) var accountProvisioningHost = "mobile.element.io"
+    private(set) var accountProvisioningHost = "stalk.implica.ru"
     /// The App Store URL for Element Pro, shown to the user when a homeserver requires that app.
     /// **Note:** This property isn't overridable as it in unexpected for forks to come across the error (or to even have a "Pro" app).
     let elementProAppStoreURL: URL = "https://apps.apple.com/app/element-pro-for-work/id6502951615"
@@ -250,7 +250,7 @@ final class AppSettings {
     /// Any pre-defined static client registrations for OIDC issuers.
     let oidcStaticRegistrations: [URL: String] = ["https://id.thirdroom.io/realms/thirdroom": "elementx"]
     /// The redirect URL used for OIDC. This no longer uses universal links so we don't need the bundle ID to avoid conflicts between Element X, Nightly and PR builds.
-    private(set) var oidcRedirectURL: URL = "https://element.io/oidc/login"
+    private(set) var oidcRedirectURL: URL = "https://stalk.implica.ru/oidc/login"
     
     private(set) lazy var oidcConfiguration = OIDCConfiguration(clientName: InfoPlistReader.main.bundleDisplayName,
                                                                 redirectURI: oidcRedirectURL,
@@ -360,10 +360,10 @@ final class AppSettings {
     let elementCallBaseURL: URL = EmbeddedElementCall.appURL!
     #endif
     
-    // These are publicly availble on https://call.element.io so we don't neeed to treat them as secrets
-    let elementCallPosthogAPIHost = "https://posthog-element-call.element.io"
-    let elementCallPosthogAPIKey = "phc_rXGHx9vDmyEvyRxPziYtdVIv0ahEv8A9uLWFcCi1WcU"
-    let elementCallPosthogSentryDSN = "https://3bd2f95ba5554d4497da7153b552ffb5@sentry.tools.element.io/41"
+    // Analytics disabled for sTalk fork
+    let elementCallPosthogAPIHost = ""
+    let elementCallPosthogAPIKey = ""
+    let elementCallPosthogSentryDSN = ""
     
     @UserPreference(key: UserDefaultsKeys.elementCallBaseURLOverride, defaultValue: nil, storageType: .userDefaults(store))
     var elementCallBaseURLOverride: URL?

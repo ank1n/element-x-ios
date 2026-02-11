@@ -59,7 +59,7 @@ protocol LocalCallHistoryServiceProtocol: AnyObject {
 /// Local storage for call history using UserDefaults (simple implementation)
 /// For production, consider using Core Data or SQLite
 class LocalCallHistoryService: LocalCallHistoryServiceProtocol {
-    private let storageKey = "io.element.elementx.callHistory"
+    private let storageKey = "ru.implica.stalk.callHistory"
     private let userDefaults: UserDefaults
     private let maxHistoryItems = 100
 

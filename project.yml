@@ -1,7 +1,7 @@
 ---
-name: ElementX
+name: sTalk
 attributes:
-  ORGANIZATIONNAME: Element
+  ORGANIZATIONNAME: Implica
 
 fileGroups:
 - project.yml
@@ -50,7 +50,7 @@ options:
 settings:
   CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED: true
   ENABLE_BITCODE: false
-  APP_NAME: ElementX
+  APP_NAME: sTalk
   KEYCHAIN_ACCESS_GROUP_IDENTIFIER: "$(DEVELOPMENT_TEAM).$(BASE_BUNDLE_IDENTIFIER)"
   MARKETING_VERSION: 26.01.1
   CURRENT_PROJECT_VERSION: 1
