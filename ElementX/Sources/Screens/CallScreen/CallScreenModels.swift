@@ -40,7 +40,6 @@ struct CallScreenViewState: BindableState {
     // sTalk: native call control state
     var isMuted: Bool = false
     var isVideoEnabled: Bool = true
-    var isHandRaised: Bool = false
     var wasConnected: Bool = false
 
     var callStatusText: String {
@@ -92,7 +91,6 @@ enum CallScreenViewAction {
     // Native call control actions
     case toggleMute
     case toggleVideo
-    case toggleRaiseHand
 }
 
 enum CallScreenError: Error {
@@ -219,13 +217,30 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 body { background: #000 !important; margin: 0 !important; padding: 0 !important; overflow: hidden !important; }
                 #root { background: #000 !important; position: fixed !important; inset: 0 !important; width: 100% !important; height: 100% !important; overflow: hidden !important; }
                 #root > * { position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; }
-                [class*="_inRoom_110p2"] { background: #000 !important; overflow: hidden !important; position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; }
 
-                /* Hide header bar completely — zero height to avoid layout offset */
-                [class*="_header_110p2"] { display: none !important; height: 0 !important; min-height: 0 !important; max-height: 0 !important; }
-                [class*="_filler_110p2"] { display: none !important; height: 0 !important; min-height: 0 !important; max-height: 0 !important; }
+                /* _inRoom: override CSS Grid to single cell filling entire viewport */
+                [class*="_inRoom"] {
+                    background: #000 !important;
+                    overflow: hidden !important;
+                    position: fixed !important;
+                    inset: 0 !important;
+                    width: 100vw !important;
+                    height: 100vh !important;
+                    display: grid !important;
+                    grid-template-rows: 1fr !important;
+                    grid-template-columns: 1fr !important;
+                }
+                /* All children of _inRoom collapse into the single grid cell */
+                [class*="_inRoom"] > * {
+                    grid-row: 1 / -1 !important;
+                    grid-column: 1 / -1 !important;
+                }
+
+                /* Hide header bar completely */
+                [class*="_header_110p2"], [class*="_header_"] { display: none !important; height: 0 !important; min-height: 0 !important; max-height: 0 !important; visibility: hidden !important; }
+                [class*="_filler_110p2"], [class*="_filler_"] { display: none !important; height: 0 !important; min-height: 0 !important; max-height: 0 !important; visibility: hidden !important; }
                 [class*="_bar_32sbm"],
-                [class*="_bar_32sbm"] * { display: none !important; height: 0 !important; min-height: 0 !important; max-height: 0 !important; overflow: hidden !important; border: none !important; }
+                [class*="_bar_32sbm"] * { display: none !important; height: 0 !important; min-height: 0 !important; max-height: 0 !important; overflow: hidden !important; border: none !important; visibility: hidden !important; }
 
                 /* Hide logo and layout switch in footer */
                 [class*="_logo_110p2"] { display: none !important; }
@@ -233,13 +248,13 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
 
                 /* ALL tiles/spotlights/grids — fill screen, no gaps, no radius */
                 [class*="_spotlight"],
-                [class*="_fixedGrid_110p2"],
-                [class*="_scrollingGrid_110p2"],
+                [class*="_fixedGrid"],
+                [class*="_scrollingGrid"],
                 [class*="_grid_"] {
-                    position: absolute !important;
+                    position: fixed !important;
                     inset: 0 !important;
-                    width: 100% !important;
-                    height: 100% !important;
+                    width: 100vw !important;
+                    height: 100vh !important;
                     max-width: none !important;
                     max-height: none !important;
                     aspect-ratio: unset !important;
@@ -247,16 +262,22 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                     padding: 0 !important;
                     pointer-events: initial !important;
                 }
-                [class*="_slot"] {
+                [class*="_slot"],
+                [class*="_slot"] > * {
                     width: 100% !important;
                     height: 100% !important;
+                    max-width: none !important;
+                    max-height: none !important;
                 }
 
-                [class*="_tile_110p2"] {
+                [class*="_tile_110p2"],
+                [class*="_tile_31vx3"] {
                     position: absolute !important;
                     inset: 0 !important;
                     width: 100% !important;
                     height: 100% !important;
+                    max-width: none !important;
+                    max-height: none !important;
                 }
                 [class*="_tile_31vx3"],
                 [class*="_tile_31vx3"] * {
@@ -274,8 +295,10 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 video {
                     object-fit: cover !important;
                     border-radius: 0 !important;
-                    width: 100% !important;
-                    height: 100% !important;
+                    width: 100vw !important;
+                    height: 100vh !important;
+                    position: fixed !important;
+                    inset: 0 !important;
                 }
 
                 /* Footer — completely hidden, native SwiftUI buttons used instead */
@@ -288,7 +311,7 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                     visibility: hidden !important;
                 }
 
-                /* Hide non-essential buttons (emoji, settings, invite, screenshare) */
+                /* Hide non-essential buttons (emoji, settings, invite, screenshare, raise hand) */
                 [class*="_invite_110p2"],
                 [class*="_shareScreen"],
                 [class*="_screenshare"],
@@ -296,18 +319,9 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 [class*="_settingsModal"],
                 [class*="_emoji"],
                 [class*="_reaction"],
+                [class*="_raiseHand"],
                 [class*="_buttons_110p2"] {
                     display: none !important;
-                }
-                /* raiseHand: hidden visually but kept in DOM for JS click */
-                [class*="_raiseHand_110p2"] {
-                    position: fixed !important;
-                    top: -9999px !important;
-                    left: -9999px !important;
-                    opacity: 0 !important;
-                    pointer-events: none !important;
-                    width: 1px !important;
-                    height: 1px !important;
                 }
 
                 /* Kill ALL dashed borders on layout containers */
@@ -389,12 +403,28 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
 
             // 2. DOM manipulation via MutationObserver
             function applyTelegramLayout() {
-                // Force all spotlight containers to fill screen
-                document.querySelectorAll('[class*="spotlight"]').forEach(function(el) {
-                    el.style.setProperty('position', 'absolute', 'important');
+                // Force _inRoom grid to single row/column (override CSS Grid template)
+                document.querySelectorAll('[class*="_inRoom"]').forEach(function(el) {
+                    el.style.setProperty('position', 'fixed', 'important');
                     el.style.setProperty('inset', '0', 'important');
-                    el.style.setProperty('width', '100%', 'important');
-                    el.style.setProperty('height', '100%', 'important');
+                    el.style.setProperty('width', '100vw', 'important');
+                    el.style.setProperty('height', '100vh', 'important');
+                    el.style.setProperty('grid-template-rows', '1fr', 'important');
+                    el.style.setProperty('grid-template-columns', '1fr', 'important');
+                    el.style.setProperty('overflow', 'hidden', 'important');
+                });
+                // All children of _inRoom into single cell
+                document.querySelectorAll('[class*="_inRoom"] > *').forEach(function(el) {
+                    el.style.setProperty('grid-row', '1 / -1', 'important');
+                    el.style.setProperty('grid-column', '1 / -1', 'important');
+                });
+
+                // Force all spotlight/grid containers to fill screen
+                document.querySelectorAll('[class*="spotlight"], [class*="_fixedGrid"], [class*="_scrollingGrid"], [class*="_grid_"]').forEach(function(el) {
+                    el.style.setProperty('position', 'fixed', 'important');
+                    el.style.setProperty('inset', '0', 'important');
+                    el.style.setProperty('width', '100vw', 'important');
+                    el.style.setProperty('height', '100vh', 'important');
                     el.style.setProperty('max-width', 'none', 'important');
                     el.style.setProperty('max-height', 'none', 'important');
                     el.style.setProperty('aspect-ratio', 'unset', 'important');
@@ -403,6 +433,10 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
 
                 // Force tiles to fill parent
                 document.querySelectorAll('[class*="_tile_110p2"], [class*="_tile_31vx3"]').forEach(function(el) {
+                    el.style.setProperty('position', 'absolute', 'important');
+                    el.style.setProperty('inset', '0', 'important');
+                    el.style.setProperty('width', '100%', 'important');
+                    el.style.setProperty('height', '100%', 'important');
                     el.style.setProperty('border-radius', '0', 'important');
                     el.style.setProperty('border', 'none', 'important');
                     el.style.setProperty('outline', 'none', 'important');
@@ -410,6 +444,8 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 document.querySelectorAll('[class*="_contents_18q5h"]').forEach(function(el) {
                     el.style.setProperty('border-radius', '0', 'important');
                     el.style.setProperty('border', 'none', 'important');
+                    el.style.setProperty('width', '100%', 'important');
+                    el.style.setProperty('height', '100%', 'important');
                 });
 
                 // Kill ALL dashed/dotted borders via inline styles (highest priority)

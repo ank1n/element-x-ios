@@ -115,7 +115,7 @@ struct CallScreen: View {
     
     // sTalk: Native call control buttons
     var callControlButtons: some View {
-        HStack(spacing: 24) {
+        HStack(spacing: 32) {
             // Mute button
             CallControlButton(
                 icon: context.viewState.isMuted ? "mic.slash.fill" : "mic.fill",
@@ -132,15 +132,6 @@ struct CallScreen: View {
                 isActive: context.viewState.isVideoEnabled
             ) {
                 context.send(viewAction: .toggleVideo)
-            }
-
-            // Raise hand button
-            CallControlButton(
-                icon: "hand.raised.fill",
-                label: "рука",
-                isActive: context.viewState.isHandRaised
-            ) {
-                context.send(viewAction: .toggleRaiseHand)
             }
 
             // End call button
