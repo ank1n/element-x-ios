@@ -154,12 +154,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                     if self.startWithVideoEnabled || self.state.wasConnected {
                         self.state.isVideoEnabled = videoEnabled
                     }
-                    // sTalk: First mediaStateChanged = call actually connected
-                    if !self.state.wasConnected {
-                        self.state.wasConnected = true
-                        self.state.callStatus = .connected
-                        self.startCallTimer()
-                    }
+                    // sTalk: Mark media as ready (for video state sync),
+                    // but DON'T start timer or set connected — wait for remote to join via infoPublisher.
+                    self.state.wasConnected = true
                 }
             }
             .store(in: &cancellables)
@@ -184,18 +181,34 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 .sink { [weak self] roomInfo in
                     guard let self else { return }
                     self.state.totalMembersCount = roomInfo.activeMembersCount
-                    self.state.callParticipantsCount = roomInfo.activeRoomCallParticipants.count
+                    let callParticipants = roomInfo.activeRoomCallParticipants
+                    self.state.callParticipantsCount = callParticipants.count
+
+                    // sTalk: For 1:1 — start timer only when BOTH participants are in the call.
+                    // This prevents the timer from running during the lobby/connecting phase.
+                    if self.state.isDirect,
+                       self.state.callStatus != .connected,
+                       callParticipants.count >= 2 {
+                        self.state.callStatus = .connected
+                        self.startCallTimer()
+                        MXLog.info("sTalk: 1:1 call connected — both participants present")
+                    }
+
+                    // sTalk: For group — start timer when we see ourselves in call
+                    if !self.state.isDirect,
+                       self.state.callStatus != .connected,
+                       callParticipants.contains(roomProxy.ownUserID) {
+                        self.state.callStatus = .connected
+                        self.startCallTimer()
+                    }
 
                     // sTalk: Auto-end 1:1 call when remote party leaves.
-                    // Grace period: wait 5+ seconds after connection to avoid false trigger
-                    // (infoPublisher may fire before remote participant is reflected).
+                    // Grace period: 5+ seconds after connection to avoid race conditions.
                     if self.state.isDirect,
-                       self.state.wasConnected,
+                       self.state.callStatus == .connected,
                        self.state.callElapsedTime > 5 {
-                        let remaining = roomInfo.activeRoomCallParticipants
-                        // 0 participants = everyone left, 1 = only us
-                        if remaining.isEmpty ||
-                           (remaining.count == 1 && remaining.contains(roomProxy.ownUserID)) {
+                        if callParticipants.isEmpty ||
+                           (callParticipants.count == 1 && callParticipants.contains(roomProxy.ownUserID)) {
                             MXLog.info("sTalk: Remote party left 1:1 call — auto-ending")
                             Task { await self.endCall() }
                         }

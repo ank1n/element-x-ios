@@ -446,8 +446,11 @@ private struct CallView: UIViewRepresentable {
                 viewModelContext?.send(viewAction: .navigateBack)
             case .onLobbyDetected:
                 // sTalk: Remote party hung up, Element Call returned to lobby — auto-dismiss.
-                // JS hasLeftLobby pattern ensures this only fires on return-to-lobby, not initial load.
-                viewModelContext?.send(viewAction: .endCall)
+                // Safety: only trigger after 5+ seconds of connected call to avoid false positives.
+                if let elapsed = viewModelContext?.viewState.callElapsedTime,
+                   elapsed > 5 {
+                    viewModelContext?.send(viewAction: .endCall)
+                }
             case .onHandRaiseStateChanged:
                 // sTalk: Update hand raise state from WebView observer
                 if let stateStr = message.body as? String {
