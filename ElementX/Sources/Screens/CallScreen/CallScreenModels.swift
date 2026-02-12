@@ -183,28 +183,63 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
             """
         case .onLobbyDetected:
             """
-            // sTalk: Detect return-to-lobby (remote hangup) via hasLeftLobby pattern.
-            // Initial lobby during load is ignored. Only triggers when lobby RE-appears after leaving.
+            // sTalk: Detect remote hangup via 3 methods:
+            // 1. Lobby "Join" button appears (data-testid, dynamically added/removed by EC)
+            // 2. All video MediaStreams die (srcObject.active becomes false)
+            // 3. Number of video elements drops to 0 after having 1+
+            // NOTE: [class*="_lobby"] fallback REMOVED — it stays in DOM permanently, breaking hasLeftLobby.
             (function() {
                 var hasLeftLobby = false;
-                function checkForLobby() {
-                    var lobbyEl = document.querySelector('[data-testid="lobby_joinCall"]');
-                    if (!lobbyEl) lobbyEl = document.querySelector('[class*="_lobby"]');
+                var hadActiveMedia = false;
+                var hadVideoElements = false;
+                var notified = false;
 
-                    if (lobbyEl) {
-                        // Lobby is visible
+                function notifyCallEnded(reason) {
+                    if (notified) return;
+                    notified = true;
+                    window.webkit.messageHandlers.\(rawValue).postMessage(reason);
+                }
+
+                function checkForCallEnd() {
+                    // Method 1: Lobby "Join" button (only exists when EC is in lobby state)
+                    var joinBtn = document.querySelector('[data-testid="lobby_joinCall"]');
+                    if (joinBtn) {
                         if (hasLeftLobby) {
-                            // Was in call, now back to lobby = remote hangup
-                            window.webkit.messageHandlers.\(rawValue).postMessage("lobby");
+                            notifyCallEnded("lobby");
+                            return;
                         }
                     } else {
-                        // Lobby gone = call has connected
-                        if (!hasLeftLobby) hasLeftLobby = true;
+                        hasLeftLobby = true;
+                    }
+
+                    // Method 2: Video MediaStream died
+                    var videos = document.querySelectorAll('video');
+                    var activeStreamCount = 0;
+                    videos.forEach(function(v) {
+                        if (v.srcObject && v.srcObject.active) {
+                            activeStreamCount++;
+                        }
+                    });
+
+                    if (activeStreamCount > 0) {
+                        hadActiveMedia = true;
+                    } else if (hadActiveMedia && hasLeftLobby) {
+                        notifyCallEnded("mediaEnded");
+                        return;
+                    }
+
+                    // Method 3: Video elements removed from DOM
+                    if (videos.length > 0) {
+                        hadVideoElements = true;
+                    } else if (hadVideoElements && hasLeftLobby) {
+                        notifyCallEnded("videoRemoved");
+                        return;
                     }
                 }
-                var lobbyObserver = new MutationObserver(function() { checkForLobby(); });
+
+                var lobbyObserver = new MutationObserver(function() { checkForCallEnd(); });
                 lobbyObserver.observe(document.body || document.documentElement, { childList: true, subtree: true });
-                setInterval(checkForLobby, 2000);
+                setInterval(checkForCallEnd, 1500);
             })();
             """
         case .onHandRaiseStateChanged:
