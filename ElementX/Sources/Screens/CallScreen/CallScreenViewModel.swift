@@ -299,22 +299,24 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 }
             }
 
-            // sTalk: Send .close DIRECTLY to widget driver (bypasses WebView which may be destroyed).
-            // .close is the correct action to end MatrixRTC — it tells Rust SDK to remove state events.
-            let closeMessage = ElementCallWidgetMessage(direction: .fromWidget,
-                                                         action: .close,
-                                                         widgetId: widgetDriver.widgetID)
-            if let data = try? JSONEncoder().encode(closeMessage),
-               let json = String(data: data, encoding: .utf8) {
-                await widgetDriver.handleMessage(json)
-                MXLog.info("sTalk: .close sent to widget driver in stop()")
+            // sTalk: Click Element Call's own hangup button — natural close path.
+            // This triggers EC's disconnect → io.element.close → Rust SDK cleans up MatrixRTC.
+            let clicked = await clickElementCallHangup()
+
+            if !clicked {
+                // Fallback: send .close directly (may fail if WebView already destroyed)
+                MXLog.info("sTalk: EC button not found in stop(), sending .close directly")
+                let closeMessage = ElementCallWidgetMessage(direction: .fromWidget,
+                                                             action: .close,
+                                                             widgetId: widgetDriver.widgetID)
+                if let data = try? JSONEncoder().encode(closeMessage),
+                   let json = String(data: data, encoding: .utf8) {
+                    await widgetDriver.handleMessage(json)
+                }
             }
 
-            // Also try WebView hangup (may fail if WebView already destroyed, that's OK)
-            await hangup()
-
-            // Give Rust SDK time to process .close and clean up MatrixRTC state events
-            try? await Task.sleep(for: .milliseconds(500))
+            // Give Rust SDK / EC time to process and clean up MatrixRTC state events
+            try? await Task.sleep(for: .seconds(1))
 
             await MainActor.run {
                 elementCallService.tearDownCallSession()
@@ -515,23 +517,49 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     }
 
     private func endCall() async {
-        // sTalk: Send hangup via WebView (while still alive) for Element Call UI
-        await hangup()
+        // sTalk: Click Element Call's own hangup button via JS DOM click.
+        // This triggers EC's natural close flow: leave LiveKit → send io.element.close
+        // → Rust SDK processes it → removes m.call.member state events → run() exits.
+        // DOM .click() works even on display:none elements (React event delegation).
+        let clicked = await clickElementCallHangup()
 
-        // sTalk: Send .close directly to widget driver — this is the CORRECT way to end MatrixRTC.
-        // .hangup only signals the WebView; .close tells the Rust SDK to clean up state events.
-        let closeMsg = ElementCallWidgetMessage(direction: .fromWidget,
-                                                 action: .close,
-                                                 widgetId: widgetDriver.widgetID)
-        if let data = try? JSONEncoder().encode(closeMsg),
-           let json = String(data: data, encoding: .utf8) {
-            await widgetDriver.handleMessage(json)
-            MXLog.info("sTalk: .close sent to widget driver — MatrixRTC session ending")
+        if clicked {
+            // EC will process hangup and send io.element.close through Widget API.
+            // Wait for EC to finish — the .callEnded action will trigger auto-dismiss.
+            try? await Task.sleep(for: .seconds(2))
         }
 
-        // Delay for Rust SDK to process .close and clean up MatrixRTC state events
-        try? await Task.sleep(for: .milliseconds(500))
+        // Fallback: if EC button wasn't found, send .close directly to widget driver
+        if !clicked {
+            MXLog.info("sTalk: EC hangup button not found, sending .close directly")
+            let closeMsg = ElementCallWidgetMessage(direction: .fromWidget,
+                                                     action: .close,
+                                                     widgetId: widgetDriver.widgetID)
+            if let data = try? JSONEncoder().encode(closeMsg),
+               let json = String(data: data, encoding: .utf8) {
+                await widgetDriver.handleMessage(json)
+            }
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+
         actionsSubject.send(.dismiss)
+    }
+
+    /// sTalk: Click Element Call's hangup button in the WebView DOM.
+    /// Returns true if button was found and clicked.
+    private func clickElementCallHangup() async -> Bool {
+        let js = """
+        (function() {
+            var btn = document.querySelector('[data-testid="incall_leave"]')
+                   || document.querySelector('button[class*="_endCall"]');
+            if (btn) { btn.click(); return true; }
+            return false;
+        })()
+        """
+        let result = try? await state.bindings.javaScriptEvaluator?(js)
+        let clicked = (result as? Bool) == true
+        MXLog.info("sTalk: clickElementCallHangup — clicked: \(clicked)")
+        return clicked
     }
 
     private func toggleHandRaise() async {
