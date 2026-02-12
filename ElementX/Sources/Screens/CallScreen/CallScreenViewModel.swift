@@ -299,7 +299,22 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 }
             }
 
+            // sTalk: Send hangup DIRECTLY to widget driver (bypasses WebView which may be destroyed).
+            // This ensures the Rust SDK receives the hangup and properly cleans up the MatrixRTC session.
+            let hangupMessage = ElementCallWidgetMessage(direction: .fromWidget,
+                                                          action: .hangup,
+                                                          widgetId: widgetDriver.widgetID)
+            if let data = try? JSONEncoder().encode(hangupMessage),
+               let json = String(data: data, encoding: .utf8) {
+                await widgetDriver.handleMessage(json)
+                MXLog.info("sTalk: Hangup sent directly to widget driver")
+            }
+
+            // Also try WebView hangup (may fail if WebView already destroyed, that's OK)
             await hangup()
+
+            // Give widget driver time to process hangup and clean up MatrixRTC state
+            try? await Task.sleep(for: .milliseconds(500))
 
             await MainActor.run {
                 elementCallService.tearDownCallSession()
@@ -500,10 +515,20 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     }
 
     private func endCall() async {
-        // sTalk: Send hangup to WebView BEFORE dismissing, so the message reaches Element Call
+        // sTalk: Send hangup via WebView (while still alive)
         await hangup()
-        // Small delay to ensure the hangup message is processed by the WebView
-        try? await Task.sleep(for: .milliseconds(300))
+
+        // sTalk: Also send hangup directly to widget driver (reliable — doesn't need WebView)
+        let hangupMsg = ElementCallWidgetMessage(direction: .fromWidget,
+                                                  action: .hangup,
+                                                  widgetId: widgetDriver.widgetID)
+        if let data = try? JSONEncoder().encode(hangupMsg),
+           let json = String(data: data, encoding: .utf8) {
+            await widgetDriver.handleMessage(json)
+        }
+
+        // Delay for widget driver to process hangup and clean up MatrixRTC
+        try? await Task.sleep(for: .milliseconds(500))
         actionsSubject.send(.dismiss)
     }
 
