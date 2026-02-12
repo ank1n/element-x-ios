@@ -261,7 +261,7 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 #root { background: #000 !important; position: fixed !important; inset: 0 !important; width: 100% !important; height: 100% !important; overflow: hidden !important; }
                 #root > * { position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; }
 
-                /* _inRoom: flex column → override to fill viewport */
+                /* _inRoom: block (not flex!) so hidden children leave no gaps */
                 [class*="_inRoom"] {
                     background: #000 !important;
                     overflow: hidden !important;
@@ -269,16 +269,16 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                     inset: 0 !important;
                     width: 100% !important;
                     height: 100% !important;
-                    display: flex !important;
-                    flex-direction: column !important;
+                    display: block !important;
                 }
 
-                /* ===== HIDE: header, footer ===== */
-                [class*="_header_110p2"], [class*="_header_"] { display: none !important; }
-                [class*="_filler_110p2"], [class*="_filler_"] { display: none !important; }
-                [class*="_footer_110p2"], [class*="_footer_110p2"] * { display: none !important; visibility: hidden !important; }
-                [class*="_bar_32sbm"], [class*="_bar_32sbm"] * { display: none !important; }
-                [class*="_logo_110p2"], [class*="_layout_110p2"] { display: none !important; }
+                /* ===== HIDE: header, footer, lobby and ALL non-video containers ===== */
+                [class*="_header_"], [class*="_header_"] * { display: none !important; height: 0 !important; overflow: hidden !important; }
+                [class*="_filler_"], [class*="_filler_"] * { display: none !important; height: 0 !important; }
+                [class*="_footer_"], [class*="_footer_"] * { display: none !important; height: 0 !important; visibility: hidden !important; }
+                [class*="_bar_"], [class*="_bar_"] * { display: none !important; height: 0 !important; }
+                [class*="_logo_"], [class*="_layout_"] { display: none !important; height: 0 !important; }
+                [class*="_lobby"] { display: none !important; }
 
                 /* ===== 1:1 (direct): hide scrollingGrid, show spotlight fullscreen ===== */
                 body.stalk-direct [class*="_scrollingGrid"] { display: none !important; }
@@ -546,6 +546,41 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                     el.style.setProperty('width', '100%', 'important');
                     el.style.setProperty('height', '100%', 'important');
                 });
+
+                // sTalk: Walk up from <video> element — definitive fix for avatar/whitespace/position
+                ensureVideoFullscreen();
+            }
+
+            // sTalk: For 1:1 calls — walk up from <video>, hide non-video siblings,
+            // make each ancestor absolutely fill its parent with black background.
+            // This definitively fixes: avatar-at-top, white stripes, video position.
+            function ensureVideoFullscreen() {
+                if (!document.body.classList.contains('stalk-direct')) return;
+                var video = document.querySelector('video');
+                if (!video) return;
+                var current = video;
+                while (current.parentElement && current.parentElement !== document.body && current.parentElement !== document.documentElement) {
+                    var parent = current.parentElement;
+                    // Each container in the chain: absolute, fill parent, black bg
+                    if (current !== video) {
+                        current.style.setProperty('position', 'absolute', 'important');
+                        current.style.setProperty('inset', '0', 'important');
+                        current.style.setProperty('width', '100%', 'important');
+                        current.style.setProperty('height', '100%', 'important');
+                        current.style.setProperty('overflow', 'hidden', 'important');
+                        current.style.setProperty('background', '#000', 'important');
+                        current.style.setProperty('margin', '0', 'important');
+                        current.style.setProperty('padding', '0', 'important');
+                        current.style.setProperty('container-type', 'normal', 'important');
+                    }
+                    // Hide all siblings that are NOT on the path to video
+                    Array.from(parent.children).forEach(function(child) {
+                        if (child !== current && child.tagName !== 'STYLE' && child.tagName !== 'SCRIPT') {
+                            child.style.setProperty('display', 'none', 'important');
+                        }
+                    });
+                    current = parent;
+                }
             }
 
             // Run immediately and on DOM changes

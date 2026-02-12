@@ -184,8 +184,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                     // In a direct call, if we were connected and now only we remain
                     // (or no participants at all), end the call automatically.
                     if self.state.isDirect,
-                       self.state.wasConnected,
-                       !self.isMinimized {
+                       self.state.wasConnected {
                         let remaining = roomInfo.activeRoomCallParticipants
                         // 0 participants = everyone left, 1 = only us
                         if remaining.isEmpty ||
