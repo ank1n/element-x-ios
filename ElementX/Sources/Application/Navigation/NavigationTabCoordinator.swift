@@ -253,12 +253,17 @@ import SwiftUI
                                presentationMode: OverlayPresentationMode = .fullScreen,
                                animated: Bool = true,
                                dismissalCallback: (() -> Void)? = nil) {
+        // sTalk: Always tear down the old overlay coordinator before replacing.
+        // This ensures stop() → hangup() → tearDownCallSession() is called,
+        // properly ending the MatrixRTC session.
+        overlayModule?.tearDown()
+
         guard let coordinator else {
             overlayModule = nil
             isCallMinimized = false
             return
         }
-        
+
         if overlayModule?.coordinator === coordinator {
             fatalError("Cannot use the same coordinator more than once")
         }
