@@ -196,11 +196,12 @@ struct RoomScreen: View {
             }
             .accessibilityIdentifier(A11yIdentifiers.roomScreen.joinCall)
         } else {
-            HStack(spacing: 12) {
+            HStack(spacing: 20) {
                 Button {
                     context.send(viewAction: .displayVoiceCall)
                 } label: {
                     Image(systemName: "phone.fill")
+                        .frame(minWidth: 32, minHeight: 32)
                 }
                 .accessibilityLabel("Голосовой вызов")
 
@@ -208,6 +209,7 @@ struct RoomScreen: View {
                     context.send(viewAction: .displayCall)
                 } label: {
                     CompoundIcon(\.videoCallSolid)
+                        .frame(minWidth: 32, minHeight: 32)
                 }
                 .accessibilityLabel(L10n.a11yStartCall)
                 .accessibilityIdentifier(A11yIdentifiers.roomScreen.joinCall)

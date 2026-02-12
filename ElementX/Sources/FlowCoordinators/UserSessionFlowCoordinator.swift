@@ -507,12 +507,20 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                     callScreenPictureInPictureController = controller
                 case .pictureInPictureStarted:
                     MXLog.info("Hiding call for PiP presentation.")
+                    // sTalk: Set display name for minimized call bar (PiP path)
+                    if case .roomCall(let roomProxy, _, _, _, _, _) = configuration.kind {
+                        self.navigationTabCoordinator.minimizedCallDisplayName = roomProxy.infoPublisher.value.displayName ?? "Звонок"
+                    }
                     navigationTabCoordinator.setOverlayPresentationMode(.minimized)
                 case .pictureInPictureStopped:
                     MXLog.info("Restoring call after PiP presentation.")
                     navigationTabCoordinator.setOverlayPresentationMode(.fullScreen)
                 case .minimizeCall:
-                    MXLog.info("Minimizing call overlay (PiP unavailable fallback).")
+                    MXLog.info("sTalk: minimizeCall received — setting minimized mode")
+                    // sTalk: Set display name for minimized call bar
+                    if case .roomCall(let roomProxy, _, _, _, _, _) = configuration.kind {
+                        self.navigationTabCoordinator.minimizedCallDisplayName = roomProxy.infoPublisher.value.displayName ?? "Звонок"
+                    }
                     navigationTabCoordinator.setOverlayPresentationMode(.minimized)
                 case .dismiss:
                     // sTalk: End call in local history
@@ -520,6 +528,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                         callHistoryService?.endCall(id: currentCallID, missed: false)
                     }
                     callScreenPictureInPictureController = nil
+                    self.navigationTabCoordinator.minimizedCallDisplayName = nil
                     navigationTabCoordinator.setOverlayCoordinator(nil)
                 }
             }

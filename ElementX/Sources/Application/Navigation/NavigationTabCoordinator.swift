@@ -236,6 +236,12 @@ import SwiftUI
     
     enum OverlayPresentationMode { case fullScreen, minimized }
     fileprivate var overlayPresentationMode: OverlayPresentationMode = .minimized
+
+    /// sTalk: Display name shown in the minimized call indicator
+    var minimizedCallDisplayName: String?
+
+    /// sTalk: Explicitly tracks whether a call is minimized (shown as floating bar)
+    var isCallMinimized = false
     
     /// Present an overlay on top of the tab view
     /// - Parameters:
@@ -249,6 +255,7 @@ import SwiftUI
                                dismissalCallback: (() -> Void)? = nil) {
         guard let coordinator else {
             overlayModule = nil
+            isCallMinimized = false
             return
         }
         
@@ -272,9 +279,10 @@ import SwiftUI
     func setOverlayPresentationMode(_ mode: OverlayPresentationMode, animated: Bool = true) {
         var transaction = Transaction()
         transaction.disablesAnimations = !animated
-        
+
         withTransaction(transaction) {
             overlayPresentationMode = mode
+            isCallMinimized = (mode == .minimized)
         }
     }
     
@@ -378,16 +386,26 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
         }
         .accessibilityHidden(navigationTabCoordinator.overlayModule?.coordinator != nil && navigationTabCoordinator.overlayPresentationMode == .fullScreen)
         .overlay {
-            Group {
-                if let coordinator = navigationTabCoordinator.overlayModule?.coordinator {
-                    coordinator.toPresentable()
-                        .opacity(navigationTabCoordinator.overlayPresentationMode == .minimized ? 0 : 1)
-                        .transition(.opacity)
-                }
+            if let coordinator = navigationTabCoordinator.overlayModule?.coordinator {
+                coordinator.toPresentable()
+                    .opacity(navigationTabCoordinator.overlayPresentationMode == .minimized ? 0 : 1)
+                    .transition(.opacity)
             }
-            .animation(.elementDefault, value: navigationTabCoordinator.overlayPresentationMode)
-            .animation(.elementDefault, value: navigationTabCoordinator.overlayModule)
         }
+        .overlay(alignment: .bottom) {
+            // sTalk: Floating call indicator when call is minimized
+            if navigationTabCoordinator.isCallMinimized {
+                MinimizedCallBar(
+                    displayName: navigationTabCoordinator.minimizedCallDisplayName ?? "Звонок"
+                ) {
+                    navigationTabCoordinator.isCallMinimized = false
+                    navigationTabCoordinator.setOverlayPresentationMode(.fullScreen)
+                }
+                .padding(.bottom, 90) // Above tab bar
+                .padding(.horizontal, 16)
+            }
+        }
+        .animation(.elementDefault, value: navigationTabCoordinator.overlayModule)
     }
 
     // MARK: - Standard Tab Bar (fallback)
@@ -421,16 +439,26 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
         }
         .accessibilityHidden(navigationTabCoordinator.overlayModule?.coordinator != nil && navigationTabCoordinator.overlayPresentationMode == .fullScreen)
         .overlay {
-            Group {
-                if let coordinator = navigationTabCoordinator.overlayModule?.coordinator {
-                    coordinator.toPresentable()
-                        .opacity(navigationTabCoordinator.overlayPresentationMode == .minimized ? 0 : 1)
-                        .transition(.opacity)
-                }
+            if let coordinator = navigationTabCoordinator.overlayModule?.coordinator {
+                coordinator.toPresentable()
+                    .opacity(navigationTabCoordinator.overlayPresentationMode == .minimized ? 0 : 1)
+                    .transition(.opacity)
             }
-            .animation(.elementDefault, value: navigationTabCoordinator.overlayPresentationMode)
-            .animation(.elementDefault, value: navigationTabCoordinator.overlayModule)
         }
+        .overlay(alignment: .bottom) {
+            // sTalk: Floating call indicator when call is minimized
+            if navigationTabCoordinator.isCallMinimized {
+                MinimizedCallBar(
+                    displayName: navigationTabCoordinator.minimizedCallDisplayName ?? "Звонок"
+                ) {
+                    navigationTabCoordinator.isCallMinimized = false
+                    navigationTabCoordinator.setOverlayPresentationMode(.fullScreen)
+                }
+                .padding(.bottom, 90) // Above tab bar
+                .padding(.horizontal, 16)
+            }
+        }
+        .animation(.elementDefault, value: navigationTabCoordinator.overlayModule)
     }
 
     private func configureAppearance(_ tabBarController: UITabBarController) {
@@ -439,5 +467,56 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
         standardAppearance.compactInlineLayoutAppearance.normal.badgeBackgroundColor = .compound.iconAccentPrimary
         standardAppearance.inlineLayoutAppearance.normal.badgeBackgroundColor = .compound.iconAccentPrimary
         tabBarController.tabBar.standardAppearance = standardAppearance
+    }
+}
+
+// MARK: - sTalk Minimized Call Bar
+
+/// Floating capsule indicator shown when a call is minimized.
+/// Tap to return to the full-screen call.
+private struct MinimizedCallBar: View {
+    let displayName: String
+    let action: () -> Void
+
+    @State private var isPulsing = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                // Green pulsing dot
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 10, height: 10)
+                    .opacity(isPulsing ? 0.4 : 1.0)
+                    .animation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: isPulsing)
+
+                Image(systemName: "phone.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.white)
+
+                Text(displayName)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+
+                Spacer()
+
+                Text("Вернуться")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.85))
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.6))
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(
+                Capsule()
+                    .fill(Color.green.opacity(0.85))
+                    .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 4)
+            )
+        }
+        .onAppear { isPulsing = true }
     }
 }

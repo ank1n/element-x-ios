@@ -36,29 +36,6 @@ struct CallScreen: View {
                 }
                 .allowsHitTesting(false)
 
-                // sTalk: Recording button as overlay (top-right, under header)
-                // Shows both idle (start) and recording (stop) states in one button
-                if context.viewState.isRecordingEnabled {
-                    VStack {
-                        RecordingButton(recordingState: context.viewState.recordingState) {
-                            if context.viewState.recordingState.isRecording {
-                                context.send(viewAction: .toggleRecording)
-                            } else {
-                                showRecordingConsent = true
-                            }
-                        }
-                        // Show REC indicator next to button when recording
-                        if context.viewState.recordingState.isRecording {
-                            RecordingIndicator()
-                                .padding(.top, 4)
-                        }
-                        Spacer()
-                    }
-                    .padding(.top, 8)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .padding(.trailing, 16)
-                }
-
                 // sTalk: Native call control buttons at bottom
                 VStack {
                     Spacer()
@@ -191,6 +168,24 @@ struct CallScreen: View {
                 Text(context.viewState.callStatusText)
                     .font(.system(size: 12))
                     .foregroundColor(.white.opacity(0.7))
+            }
+        }
+
+        // sTalk: Recording button in toolbar (top-right, same level as "Назад")
+        if context.viewState.isRecordingEnabled {
+            ToolbarItem(placement: .topBarTrailing) {
+                HStack(spacing: 6) {
+                    if context.viewState.recordingState.isRecording {
+                        RecordingIndicator()
+                    }
+                    RecordingButton(recordingState: context.viewState.recordingState) {
+                        if context.viewState.recordingState.isRecording {
+                            context.send(viewAction: .toggleRecording)
+                        } else {
+                            showRecordingConsent = true
+                        }
+                    }
+                }
             }
         }
     }

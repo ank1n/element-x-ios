@@ -25,7 +25,10 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
 
     private let startWithVideoEnabled: Bool
     private let widgetDriver: ElementCallWidgetDriverProtocol
-    
+
+    /// sTalk: Tracks whether the call is currently minimized (prevents spurious dismiss on opacity:0)
+    private(set) var isMinimized = false
+
     private let actionsSubject: PassthroughSubject<CallScreenViewModelAction, Never> = .init()
     var actions: AnyPublisher<CallScreenViewModelAction, Never> {
         actionsSubject.eraseToAnyPublisher()
@@ -140,7 +143,11 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 
                 switch action {
                 case .callEnded:
-                    actionsSubject.send(.dismiss)
+                    // sTalk: Don't dismiss if the call is minimized — the WebView may fire callEnded
+                    // when it loses visibility. Only dismiss if we're not in minimized state.
+                    if !self.isMinimized {
+                        actionsSubject.send(.dismiss)
+                    }
                 case .mediaStateChanged(let audioEnabled, let videoEnabled):
                     elementCallService.setAudioEnabled(audioEnabled, roomID: configuration.callRoomID)
                     // sTalk: Sync native button state with WebView state
@@ -192,6 +199,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         case .navigateBack:
             Task { await handleBackwardsNavigation() }
         case .pictureInPictureWillStop:
+            isMinimized = false
             actionsSubject.send(.pictureInPictureStopped)
         case .endCall:
             Task { await endCall() }
@@ -353,12 +361,15 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         if state.url != nil,
            isPictureInPictureAllowed,
            let requestPictureInPictureHandler = state.bindings.requestPictureInPictureHandler {
-            if case .success = await requestPictureInPictureHandler() {
+            let result = await requestPictureInPictureHandler()
+            if case .success = result {
+                isMinimized = true
                 actionsSubject.send(.pictureInPictureStarted)
                 return
             }
         }
         // Fallback: minimize overlay (call continues in mini-window)
+        isMinimized = true
         actionsSubject.send(.minimizeCall)
     }
     
