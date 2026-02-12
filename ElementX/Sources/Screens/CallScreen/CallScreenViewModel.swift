@@ -187,10 +187,11 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                     self.state.callParticipantsCount = roomInfo.activeRoomCallParticipants.count
 
                     // sTalk: Auto-end 1:1 call when remote party leaves.
-                    // In a direct call, if we were connected and now only we remain
-                    // (or no participants at all), end the call automatically.
+                    // Grace period: wait 5+ seconds after connection to avoid false trigger
+                    // (infoPublisher may fire before remote participant is reflected).
                     if self.state.isDirect,
-                       self.state.wasConnected {
+                       self.state.wasConnected,
+                       self.state.callElapsedTime > 5 {
                         let remaining = roomInfo.activeRoomCallParticipants
                         // 0 participants = everyone left, 1 = only us
                         if remaining.isEmpty ||
