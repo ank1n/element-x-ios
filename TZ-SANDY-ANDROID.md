@@ -1803,6 +1803,450 @@ class ChatViewModel : ViewModel() {
 - Пользователь должен иметь возможность ввести любой Matrix homeserver
 - Но по умолчанию показывайте `stalk.implica.ru`
 
+### Упрощение авторизации — Экран сохранённых аккаунтов
+
+**ВАЖНО**: Это ключевое отличие от стандартного Element X. Вместо стандартного стартового экрана с QR-кодом и выбором сервера, приложение показывает **экран сохранённых аккаунтов** для быстрого входа.
+
+**Референс iOS**: `CUSTOM-CHANGES.md` изменения #1-3
+
+#### Экран сохранённых аккаунтов (SavedAccountsScreen)
+
+**Первый запуск** (нет сохранённых аккаунтов):
+- Показать пустое состояние: "Нет сохранённых аккаунтов" + "Добавьте сервер для входа"
+- Кнопка "Добавить новый сервер" → переход на стандартный ввод homeserver
+
+**Повторный запуск** (есть сохранённые аккаунты):
+- Список сохранённых пар: `(serverURL, userId, displayName, lastUsedAt)`
+- Сортировка по `lastUsedAt` (последний использованный — первый)
+- Swipe-to-delete для удаления аккаунта
+- Тап на аккаунт → автоматический вход (без ввода сервера, сразу OIDC)
+- Кнопка "Добавить новый сервер" внизу списка
+
+**Хранение**:
+```kotlin
+// SharedPreferences или DataStore
+data class SavedAccount(
+    val serverURL: String,       // "stalk.implica.ru"
+    val userId: String,          // "@ankin:stalk.implica.ru"
+    val displayName: String?,    // "Ankin"
+    val lastUsedAt: Long         // timestamp
+)
+```
+
+**Автосохранение**: После успешного логина (любым способом) — автоматически сохранить аккаунт в список.
+
+#### Ephemeral Session для новых серверов
+
+**Проблема**: При удалении сохранённого аккаунта и добавлении того же сервера заново, Keycloak показывает сохранённую сессию из cookies WebView и позволяет войти без пароля. Это нежелательно — пользователь удалил аккаунт, значит хочет ввести другие credentials.
+
+**Решение**:
+- **Выбор сохранённого аккаунта** → обычная сессия WebView (cookies сохраняются) — быстрый вход
+- **Добавление нового сервера** → ephemeral/incognito сессия WebView (без cookies) — всегда требует ввод пароля
+
+```kotlin
+// При открытии Chrome Custom Tab / WebView для OIDC:
+if (isNewServer) {
+    // Ephemeral: CustomTabsIntent без сохранения cookies
+    // Или WebView с incognito mode
+    // Android: CustomTabsSession с EXTRA_ENABLE_INSTANT_APPS = false
+    // Или использовать WebView с отключенным cookie persistence
+} else {
+    // Обычная сессия — cookies позволяют автовход
+}
+```
+
+**На Android**: Используйте `CustomTabsIntent` с разными настройками, или `WebView` с `CookieManager.getInstance().removeAllCookies()` перед открытием для ephemeral режима.
+
+#### Русская локализация экрана входа
+
+Все тексты авторизации должны быть на русском:
+- "Войти" (вместо "Sign in")
+- "Сохранённые аккаунты"
+- "Нет сохранённых аккаунтов"
+- "Добавьте сервер для входа"
+- "Добавить новый сервер"
+
+#### Архитектура (файлы для создания)
+
+```
+features/auth/
+├── SavedAccountsScreen.kt        — Compose UI списка аккаунтов
+├── SavedAccountsViewModel.kt     — логика загрузки/удаления аккаунтов
+├── SavedAccountsRepository.kt    — DataStore/SharedPreferences persistence
+└── model/
+    └── SavedAccount.kt           — data class
+```
+
+#### Flow авторизации (полный)
+
+```
+Запуск приложения
+    │
+    ▼
+Есть активная сессия? ──yes──► Главный экран (5 табов)
+    │no
+    ▼
+SavedAccountsScreen
+    │
+    ├── Тап на аккаунт ──► OIDC (обычная сессия) ──► Главный экран
+    │                                                  + автосохранение
+    ├── "Добавить сервер" ──► Ввод homeserver ──► OIDC (ephemeral) ──► Главный экран
+    │                                                                   + автосохранение
+    └── Swipe удалить ──► удалить из DataStore
+```
+
+#### Последовательность экранов (повторить 1:1 с iOS)
+
+Ниже — точные экраны из iOS версии с указанием всех UI элементов. Повтори их на Android с использованием Jetpack Compose.
+
+---
+
+##### ЭКРАН 1: Стартовый экран (AuthenticationStartScreen)
+
+```
+┌──────────────────────────────┐
+│                              │
+│      [Element Logo]          │
+│                              │
+│   Чувствуйте себя как дома   │
+│         с Element            │
+│                              │
+│  Добро пожаловать в самый    │
+│  быстрый клиент. Ориентирован│
+│  на скорость и простоту.     │
+│                              │
+│                              │
+│                              │
+│  ┌────────────────────────┐  │
+│  │   Войти QR-кодом       │  │ ← tertiary button (опционально)
+│  └────────────────────────┘  │
+│  ┌────────────────────────┐  │
+│  │       Войти             │  │ ← PRIMARY зелёная кнопка
+│  └────────────────────────┘  │
+│  ┌────────────────────────┐  │
+│  │  Создать учётную запись │  │ ← tertiary (если поддерживается)
+│  └────────────────────────┘  │
+│                              │
+│          v0.0.0              │
+└──────────────────────────────┘
+```
+
+**Действия:**
+- "Войти" → переход на **ЭКРАН 2** (SavedAccountsScreen)
+- "Войти QR-кодом" → QR сканер (опционально, можно не делать в MVP)
+
+---
+
+##### ЭКРАН 2А: Сохранённые аккаунты — ПУСТОЕ СОСТОЯНИЕ (первый запуск)
+
+```
+┌──────────────────────────────┐
+│ ← Назад          Вход       │ ← inline toolbar
+├──────────────────────────────┤
+│                              │
+│                              │
+│                              │
+│       👤+                    │ ← иконка person.crop.circle.badge.plus
+│                              │
+│  Нет сохранённых аккаунтов   │ ← заголовок (серый)
+│  Добавьте сервер для входа   │ ← подзаголовок (мелкий серый)
+│                              │
+│  ┌────────────────────────┐  │
+│  │   Добавить сервер       │  │ ← PRIMARY кнопка
+│  └────────────────────────┘  │
+│                              │
+│                              │
+└──────────────────────────────┘
+```
+
+**Действия:**
+- "Добавить сервер" → переход на **ЭКРАН 3** (ServerSelectionScreen)
+- "← Назад" → возврат на **ЭКРАН 1**
+
+---
+
+##### ЭКРАН 2Б: Сохранённые аккаунты — ЕСТЬ АККАУНТЫ (повторный вход)
+
+```
+┌──────────────────────────────┐
+│ ← Назад          Вход       │ ← inline toolbar
+├──────────────────────────────┤
+│                              │
+│ СОХРАНЁННЫЕ АККАУНТЫ         │ ← section header (caps, серый)
+│ ┌──────────────────────────┐ │
+│ │ 👤  Ankin                │ │
+│ │     stalk.implica.ru   > │ │ ← тап = вход через OIDC
+│ ├──────────────────────────┤ │   (swipe влево = удалить)
+│ │ 👤  TestUser             │ │
+│ │     matrix.org         > │ │
+│ └──────────────────────────┘ │
+│                              │
+│ ┌──────────────────────────┐ │
+│ │ +  Добавить сервер     > │ │ ← отдельная секция
+│ └──────────────────────────┘ │
+│                              │
+└──────────────────────────────┘
+```
+
+**Каждая строка аккаунта содержит:**
+- Иконка `person.circle` (круглый аватар)
+- **Жирное** имя (displayName или userId)
+- Серый текст — URL сервера (serverURL)
+- Chevron справа `>`
+- Swipe влево → красная кнопка "Удалить"
+
+**Действия:**
+- Тап на аккаунт → **ЭКРАН 4** (OIDC WebView, обычная сессия, `useEphemeral: false`)
+  - Передаётся `loginHint: userId` — Keycloak подставляет имя пользователя
+- "Добавить сервер" → **ЭКРАН 3**
+- "← Назад" → **ЭКРАН 1**
+
+---
+
+##### ЭКРАН 3: Выбор сервера (ServerSelectionScreen)
+
+```
+┌──────────────────────────────┐
+│ Отмена                       │ ← toolbar
+├──────────────────────────────┤
+│                              │
+│         🖥️                   │ ← иконка сервера
+│                              │
+│   Выберите свой сервер       │ ← заголовок
+│   Какой адрес у вашего       │
+│        сервера?              │ ← подзаголовок
+│                              │
+│ URL-адрес домашнего сервера  │ ← label поля
+│ ┌──────────────────────────┐ │
+│ │ stalk.implica.ru     [x] │ │ ← текстовое поле (clearable)
+│ └──────────────────────────┘ │
+│ Введите адрес домена.        │ ← подсказка (или ошибка красным)
+│                              │
+│  ┌────────────────────────┐  │
+│  │     Продолжить          │  │ ← PRIMARY кнопка (disabled пока поле пустое)
+│  └────────────────────────┘  │
+│                              │
+└──────────────────────────────┘
+```
+
+**Валидация:**
+- Поле не может быть пустым
+- Проверка формата URL
+- При ошибке — красный текст под полем вместо "Введите адрес домена."
+
+**Действия:**
+- "Продолжить" → приложение проверяет сервер (`.well-known/matrix/client`), если OIDC поддерживается → **ЭКРАН 4** (OIDC WebView, `useEphemeral: true`)
+- "Отмена" → возврат на **ЭКРАН 2**
+
+---
+
+##### ЭКРАН 4: OIDC авторизация (Keycloak WebView)
+
+```
+┌──────────────────────────────┐
+│ ← Закрыть                   │
+├──────────────────────────────┤
+│                              │
+│   ┌──────────────────────┐   │
+│   │  [Keycloak Logo]     │   │
+│   │                      │   │
+│   │  Имя пользователя:  │   │
+│   │  ┌────────────────┐  │   │
+│   │  │ ankin           │  │   │ ← login hint подставлен
+│   │  └────────────────┘  │   │
+│   │                      │   │
+│   │  Пароль:             │   │
+│   │  ┌────────────────┐  │   │
+│   │  │ ••••••••       │  │   │
+│   │  └────────────────┘  │   │
+│   │                      │   │
+│   │  [  Войти  ]         │   │
+│   │                      │   │
+│   └──────────────────────┘   │
+│                              │
+└──────────────────────────────┘
+```
+
+**Это НЕ наш экран** — это Keycloak WebView (auth.trackit.implica.ru). Мы его не кастомизируем.
+
+**Два режима:**
+1. **Обычная сессия** (`useEphemeral: false`) — когда тап на сохранённый аккаунт:
+   - Cookies сохраняются → при повторном входе Keycloak может пустить без пароля
+   - `loginHint` передаёт userId → поле "Имя пользователя" заполнено
+   - На Android: обычный `CustomTabsIntent` или `WebView` с cookies
+
+2. **Ephemeral сессия** (`useEphemeral: true`) — когда добавление нового сервера:
+   - Cookies НЕ сохраняются → всегда требует ввод пароля
+   - Нет `loginHint` → пустые поля
+   - На Android: `WebView` с `CookieManager.removeAllCookies()` перед загрузкой, или `CustomTabsIntent` в incognito
+
+**После успешного входа:**
+- Keycloak возвращает `auth code` → обмен на `access_token`
+- Аккаунт автоматически сохраняется в список (SavedAccountsStore)
+- Переход на **ЭКРАН 5** (Главный экран)
+
+---
+
+##### ЭКРАН 5: Главный экран (5 табов) — ФИНАЛ
+
+```
+┌──────────────────────────────┐
+│ Чаты                    🔍  │ ← inline toolbar
+├──────────────────────────────┤
+│ Все  Непрочит.  Важные       │ ← underline фильтры
+├──────────────────────────────┤
+│                              │
+│ 👤 Ankin        15:42    🟢 │
+│    Привет!              (2) │
+│                              │
+│ 👤 Sandy        14:30       │
+│    Сделала задачу            │
+│                              │
+│ 👥 Команда      12:00    🔴 │
+│    @ankin нужна помощь  (1) │
+│                              │
+├──────────────────────────────┤
+│ 👤    📞    💬    ▦    ⚙️   │ ← tab bar (5 вкладок)
+│ Конт. Звонки Чаты Прил. Наст│
+└──────────────────────────────┘
+```
+
+---
+
+##### Полная state machine переходов
+
+```
+[1. Стартовый] ─── "Войти" ───► [2. Сохранённые аккаунты]
+      │                              │            │
+      │                     тап аккаунт    "Добавить сервер"
+      │                              │            │
+      │                              ▼            ▼
+      │                    [4. OIDC обычн.]  [3. Выбор сервера]
+      │                              │            │
+      │                              │       "Продолжить"
+      │                              │            │
+      │                              │            ▼
+      │                              │   [4. OIDC ephemeral]
+      │                              │            │
+      │                              ▼            ▼
+      │                        [5. Главный экран (5 табов)]
+      │                              ▲
+      └── "Войти QR-кодом" ──────────┘ (опционально)
+```
+
+---
+
+##### Kotlin: SavedAccountsScreen.kt (шаблон)
+
+```kotlin
+@Composable
+fun SavedAccountsScreen(
+    accounts: List<SavedAccount>,
+    onAccountSelected: (SavedAccount) -> Unit,
+    onAddServer: () -> Unit,
+    onDeleteAccount: (SavedAccount) -> Unit,
+    onBack: () -> Unit
+) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Вход") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад")
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        if (accounts.isEmpty()) {
+            // ПУСТОЕ СОСТОЯНИЕ
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(
+                    Icons.Default.PersonAddAlt,
+                    contentDescription = null,
+                    modifier = Modifier.size(64.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    "Нет сохранённых аккаунтов",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    "Добавьте сервер для входа",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
+                Spacer(Modifier.height(24.dp))
+                Button(onClick = onAddServer) {
+                    Text("Добавить сервер")
+                }
+            }
+        } else {
+            // СПИСОК АККАУНТОВ
+            LazyColumn(modifier = Modifier.padding(padding)) {
+                // Секция "Сохранённые аккаунты"
+                item {
+                    Text(
+                        "СОХРАНЁННЫЕ АККАУНТЫ",
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                items(accounts, key = { it.userId }) { account ->
+                    SwipeToDismissBox(
+                        onDismissed = { onDeleteAccount(account) }
+                    ) {
+                        ListItem(
+                            headlineContent = {
+                                Text(
+                                    account.displayName ?: account.userId,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            },
+                            supportingContent = { Text(account.serverURL) },
+                            leadingContent = {
+                                Icon(Icons.Default.AccountCircle, null,
+                                    modifier = Modifier.size(40.dp))
+                            },
+                            trailingContent = {
+                                Icon(Icons.Default.ChevronRight, null)
+                            },
+                            modifier = Modifier.clickable {
+                                onAccountSelected(account)
+                            }
+                        )
+                    }
+                }
+                // Секция "Добавить сервер"
+                item {
+                    Divider()
+                    ListItem(
+                        headlineContent = { Text("Добавить сервер") },
+                        leadingContent = {
+                            Icon(Icons.Default.Add, null)
+                        },
+                        trailingContent = {
+                            Icon(Icons.Default.ChevronRight, null)
+                        },
+                        modifier = Modifier.clickable { onAddServer() }
+                    )
+                }
+            }
+        }
+    }
+}
+```
+
 ---
 
 ## 📐 Архитектура приложения
