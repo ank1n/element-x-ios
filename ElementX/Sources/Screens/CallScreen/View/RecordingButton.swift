@@ -13,18 +13,18 @@ struct RecordingButton: View {
     var body: some View {
         Button(action: action) {
             ZStack {
-                // Background circle — Telegram style
+                // Background circle — Telegram style (32x32 for toolbar, fits without clipping)
                 Circle()
                     .fill(backgroundColor)
-                    .frame(width: 44, height: 44)
+                    .frame(width: 32, height: 32)
 
                 if recordingState.isTransitioning {
                     ProgressView()
                         .progressViewStyle(CircularProgressViewStyle(tint: iconColor))
-                        .scaleEffect(0.8)
+                        .scaleEffect(0.6)
                 } else {
                     Image(systemName: iconName)
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(iconColor)
                 }
             }

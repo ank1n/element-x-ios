@@ -18,6 +18,17 @@ struct CallScreen: View {
     @State private var showRecordingConsent = false
 
     var body: some View {
+        if context.viewState.isMinimized {
+            // sTalk: Minimized mode — just the video, no chrome
+            miniContent
+        } else {
+            // sTalk: Full-screen mode — toolbar, gradients, controls
+            fullScreenContent
+        }
+    }
+
+    /// Full-screen call view with toolbar, gradients and controls
+    private var fullScreenContent: some View {
         NavigationStack {
             ZStack {
                 content
@@ -50,7 +61,7 @@ struct CallScreen: View {
                     .allowsHitTesting(false)
                     .overlay(alignment: .bottom) {
                         callControlButtons
-                            .padding(.bottom, 32)
+                            .padding(.bottom, 48)
                     }
                 }
             }
@@ -77,6 +88,61 @@ struct CallScreen: View {
         .onReceive(context.$viewState) { _ in
             // This will be triggered by coordinator for showing consent
         }
+    }
+
+    /// Minimized content — just the video for the floating mini-window
+    private var miniContent: some View {
+        ZStack {
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            // Semi-transparent bottom bar with mini controls
+            VStack {
+                Spacer()
+                HStack(spacing: 16) {
+                    // Mic toggle
+                    Button {
+                        context.send(viewAction: .toggleMute)
+                    } label: {
+                        Image(systemName: context.viewState.isMuted ? "mic.slash.fill" : "mic.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 32, height: 32)
+                            .background(context.viewState.isMuted ? Color.white.opacity(0.9) : Color.white.opacity(0.15))
+                            .clipShape(Circle())
+                    }
+
+                    // Expand back to fullscreen
+                    Button {
+                        context.send(viewAction: .restoreFromMinimized)
+                    } label: {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 32, height: 32)
+                            .background(Color.white.opacity(0.15))
+                            .clipShape(Circle())
+                    }
+
+                    // Hangup
+                    Button {
+                        context.send(viewAction: .endCall)
+                    } label: {
+                        Image(systemName: "phone.down.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 32, height: 32)
+                            .background(Color(red: 1.0, green: 0.23, blue: 0.19))
+                            .clipShape(Circle())
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(Color.black.opacity(0.6))
+            }
+        }
+        .background(Color.black)
+        .environment(\.colorScheme, .dark)
     }
     
     @ViewBuilder

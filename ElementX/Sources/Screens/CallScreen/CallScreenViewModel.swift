@@ -178,8 +178,24 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             roomProxy.infoPublisher
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] roomInfo in
-                    self?.state.totalMembersCount = roomInfo.activeMembersCount
-                    self?.state.callParticipantsCount = roomInfo.activeRoomCallParticipants.count
+                    guard let self else { return }
+                    self.state.totalMembersCount = roomInfo.activeMembersCount
+                    self.state.callParticipantsCount = roomInfo.activeRoomCallParticipants.count
+
+                    // sTalk: Auto-end 1:1 call when remote party leaves.
+                    // In a direct call, if we were connected and now only we remain
+                    // (or no participants at all), end the call automatically.
+                    if self.state.isDirect,
+                       self.state.wasConnected,
+                       !self.isMinimized {
+                        let remaining = roomInfo.activeRoomCallParticipants
+                        // 0 participants = everyone left, 1 = only us
+                        if remaining.isEmpty ||
+                           (remaining.count == 1 && remaining.contains(roomProxy.ownUserID)) {
+                            MXLog.info("sTalk: Remote party left 1:1 call — auto-ending")
+                            Task { await self.endCall() }
+                        }
+                    }
                 }
                 .store(in: &cancellables)
         }
@@ -200,6 +216,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             Task { await handleBackwardsNavigation() }
         case .pictureInPictureWillStop:
             isMinimized = false
+            state.isMinimized = false
             actionsSubject.send(.pictureInPictureStopped)
         case .endCall:
             Task { await endCall() }
@@ -242,6 +259,10 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             Task { await toggleHandRaise() }
         case .handRaiseStateChanged(let raised):
             state.isHandRaised = raised
+        case .restoreFromMinimized:
+            isMinimized = false
+            state.isMinimized = false
+            actionsSubject.send(.pictureInPictureStopped)
         }
     }
     
@@ -364,12 +385,14 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             let result = await requestPictureInPictureHandler()
             if case .success = result {
                 isMinimized = true
+                state.isMinimized = true
                 actionsSubject.send(.pictureInPictureStarted)
                 return
             }
         }
         // Fallback: minimize overlay (call continues in mini-window)
         isMinimized = true
+        state.isMinimized = true
         actionsSubject.send(.minimizeCall)
     }
     

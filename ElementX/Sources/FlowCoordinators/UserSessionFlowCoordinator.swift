@@ -455,6 +455,11 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
             flowParameters.elementCallService.markNextCallAsIncoming()
         }
 
+        // sTalk: For incoming calls, default to video OFF (user can enable manually).
+        // The caller decides their own video state, but receiver should start without video
+        // to match standard telephony behavior.
+        let effectiveVideoEnabled = isJoiningExistingCall ? false : videoEnabled
+
         let colorScheme: ColorScheme = flowParameters.windowManager.mainWindow.traitCollection.userInterfaceStyle == .light ? .light : .dark
         presentCallScreen(configuration: .init(roomProxy: roomProxy,
                                                clientProxy: userSession.clientProxy,
@@ -462,7 +467,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                                                elementCallBaseURL: flowParameters.appSettings.elementCallBaseURL,
                                                elementCallBaseURLOverride: flowParameters.appSettings.elementCallBaseURLOverride,
                                                colorScheme: colorScheme),
-                          startWithVideoEnabled: videoEnabled)
+                          startWithVideoEnabled: effectiveVideoEnabled)
     }
     
     private var callScreenPictureInPictureController: AVPictureInPictureController?
