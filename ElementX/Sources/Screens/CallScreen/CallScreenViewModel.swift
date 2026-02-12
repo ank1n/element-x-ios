@@ -143,11 +143,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 
                 switch action {
                 case .callEnded:
-                    // sTalk: Don't dismiss if the call is minimized — the WebView may fire callEnded
-                    // when it loses visibility. Only dismiss if we're not in minimized state.
-                    if !self.isMinimized {
-                        actionsSubject.send(.dismiss)
-                    }
+                    // sTalk: WebView is now always visible (mini window or fullscreen),
+                    // so .callEnded is only fired when the call actually ends.
+                    actionsSubject.send(.dismiss)
                 case .mediaStateChanged(let audioEnabled, let videoEnabled):
                     elementCallService.setAudioEnabled(audioEnabled, roomID: configuration.callRoomID)
                     // sTalk: Sync native button state with WebView state

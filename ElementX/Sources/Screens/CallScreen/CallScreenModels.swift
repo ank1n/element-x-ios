@@ -414,6 +414,22 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                     height: 100% !important;
                 }
 
+                /* ===== Contents wrapper: absolute to fill tile (no flex shrink from avatar) ===== */
+                [class*="_contents"] {
+                    position: absolute !important;
+                    inset: 0 !important;
+                    width: 100% !important;
+                    height: 100% !important;
+                }
+
+                /* ===== HIDE: avatar/noVideo overlay in tiles (pushes video down) ===== */
+                [class*="_noVideo"],
+                [class*="_avatar"],
+                [class*="_avatarContainer"],
+                [class*="_videoMuted"] {
+                    display: none !important;
+                }
+
                 /* ===== HIDE: non-essential UI ===== */
                 [class*="_invite_110p2"],
                 [class*="_shareScreen"],

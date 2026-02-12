@@ -17,59 +17,57 @@ struct CallScreen: View {
     @ObservedObject var context: CallScreenViewModel.Context
     @State private var showRecordingConsent = false
 
-    var body: some View {
-        if context.viewState.isMinimized {
-            // sTalk: Minimized mode — just the video, no chrome
-            miniContent
-        } else {
-            // sTalk: Full-screen mode — toolbar, gradients, controls
-            fullScreenContent
-        }
-    }
+    private var isMinimized: Bool { context.viewState.isMinimized }
 
-    /// Full-screen call view with toolbar, gradients and controls
-    private var fullScreenContent: some View {
+    var body: some View {
+        // sTalk: Single view tree — content always at same structural position
+        // to prevent WKWebView recreation on minimize/restore
         NavigationStack {
             ZStack {
                 content
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .ignoresSafeArea(.all)
 
-                // sTalk: Top gradient to mask WebView header/dashed border
-                VStack {
-                    LinearGradient(
-                        colors: [.black, .black, .black.opacity(0.85), .clear],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .frame(height: 60)
-                    Spacer()
-                }
-                .allowsHitTesting(false)
-
-                // sTalk: Native call control buttons at bottom
-                VStack {
-                    Spacer()
-
-                    // Bottom gradient overlay
-                    LinearGradient(
-                        colors: [.clear, .black.opacity(0.3), .black.opacity(0.75)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .frame(height: 140)
-                    .allowsHitTesting(false)
-                    .overlay(alignment: .bottom) {
-                        callControlButtons
-                            .padding(.bottom, 48)
+                if !isMinimized {
+                    // sTalk: Top gradient to mask WebView header/dashed border
+                    VStack {
+                        LinearGradient(
+                            colors: [.black, .black, .black.opacity(0.85), .clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .frame(height: 60)
+                        Spacer()
                     }
+                    .allowsHitTesting(false)
+
+                    // sTalk: Native call control buttons at bottom
+                    VStack {
+                        Spacer()
+                        LinearGradient(
+                            colors: [.clear, .black.opacity(0.3), .black.opacity(0.75)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .frame(height: 140)
+                        .allowsHitTesting(false)
+                        .overlay(alignment: .bottom) {
+                            callControlButtons
+                                .padding(.bottom, 48)
+                        }
+                    }
+                } else {
+                    // sTalk: Mini controls for floating window
+                    miniControls
                 }
             }
             .background(Color.black.ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
-            .toolbar(.visible, for: .navigationBar)
-            .toolbar { toolbar }
+            .toolbar(isMinimized ? .hidden : .visible, for: .navigationBar)
+            .toolbar {
+                if !isMinimized { toolbar }
+            }
         }
         .alert(item: $context.alertInfo)
         .environment(\.colorScheme, .dark)
@@ -85,64 +83,54 @@ struct CallScreen: View {
             )
             .presentationDetents([.medium])
         }
-        .onReceive(context.$viewState) { _ in
-            // This will be triggered by coordinator for showing consent
-        }
     }
 
-    /// Minimized content — just the video for the floating mini-window
-    private var miniContent: some View {
-        ZStack {
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            // Semi-transparent bottom bar with mini controls
-            VStack {
-                Spacer()
-                HStack(spacing: 16) {
-                    // Mic toggle
-                    Button {
-                        context.send(viewAction: .toggleMute)
-                    } label: {
-                        Image(systemName: context.viewState.isMuted ? "mic.slash.fill" : "mic.fill")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(width: 32, height: 32)
-                            .background(context.viewState.isMuted ? Color.white.opacity(0.9) : Color.white.opacity(0.15))
-                            .clipShape(Circle())
-                    }
-
-                    // Expand back to fullscreen
-                    Button {
-                        context.send(viewAction: .restoreFromMinimized)
-                    } label: {
-                        Image(systemName: "arrow.up.left.and.arrow.down.right")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(width: 32, height: 32)
-                            .background(Color.white.opacity(0.15))
-                            .clipShape(Circle())
-                    }
-
-                    // Hangup
-                    Button {
-                        context.send(viewAction: .endCall)
-                    } label: {
-                        Image(systemName: "phone.down.fill")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(width: 32, height: 32)
-                            .background(Color(red: 1.0, green: 0.23, blue: 0.19))
-                            .clipShape(Circle())
-                    }
+    /// Mini control buttons for floating window mode
+    private var miniControls: some View {
+        VStack {
+            Spacer()
+            HStack(spacing: 12) {
+                // Mic toggle
+                Button {
+                    context.send(viewAction: .toggleMute)
+                } label: {
+                    Image(systemName: context.viewState.isMuted ? "mic.slash.fill" : "mic.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(context.viewState.isMuted ? Color(red: 0.1, green: 0.1, blue: 0.1) : .white)
+                        .frame(width: 28, height: 28)
+                        .background(context.viewState.isMuted ? Color.white.opacity(0.9) : Color.white.opacity(0.2))
+                        .clipShape(Circle())
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(Color.black.opacity(0.6))
+
+                // Expand back to fullscreen
+                Button {
+                    context.send(viewAction: .restoreFromMinimized)
+                } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 28, height: 28)
+                        .background(Color.white.opacity(0.2))
+                        .clipShape(Circle())
+                }
+
+                // Hangup
+                Button {
+                    context.send(viewAction: .endCall)
+                } label: {
+                    Image(systemName: "phone.down.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 28, height: 28)
+                        .background(Color(red: 1.0, green: 0.23, blue: 0.19))
+                        .clipShape(Circle())
+                }
             }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
+            .background(Color.black.opacity(0.5).clipShape(Capsule()))
+            .padding(.bottom, 4)
         }
-        .background(Color.black)
-        .environment(\.colorScheme, .dark)
     }
     
     @ViewBuilder
@@ -241,9 +229,6 @@ struct CallScreen: View {
         if context.viewState.isRecordingEnabled {
             ToolbarItem(placement: .topBarTrailing) {
                 HStack(spacing: 6) {
-                    if context.viewState.recordingState.isRecording {
-                        RecordingIndicator()
-                    }
                     RecordingButton(recordingState: context.viewState.recordingState) {
                         if context.viewState.recordingState.isRecording {
                             context.send(viewAction: .toggleRecording)

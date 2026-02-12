@@ -386,23 +386,10 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
         }
         .accessibilityHidden(navigationTabCoordinator.overlayModule?.coordinator != nil && navigationTabCoordinator.overlayPresentationMode == .fullScreen)
         .overlay {
+            // sTalk: Single coordinator.toPresentable() call to prevent WKWebView recreation.
+            // When minimized, shrink to mini window; when fullscreen, fill the screen.
             if let coordinator = navigationTabCoordinator.overlayModule?.coordinator {
-                if navigationTabCoordinator.overlayPresentationMode == .fullScreen {
-                    coordinator.toPresentable()
-                        .transition(.opacity)
-                }
-            }
-        }
-        .overlay(alignment: .bottomTrailing) {
-            // sTalk: Floating mini video window when call is minimized
-            if navigationTabCoordinator.isCallMinimized,
-               let coordinator = navigationTabCoordinator.overlayModule?.coordinator {
-                FloatingMiniCallWindow(
-                    content: coordinator.toPresentable()
-                )
-                .padding(.bottom, 100) // Above tab bar
-                .padding(.trailing, 12)
-                .transition(.scale.combined(with: .opacity))
+                callOverlay(coordinator: coordinator)
             }
         }
         .animation(.elementDefault, value: navigationTabCoordinator.overlayModule)
@@ -440,28 +427,61 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
         }
         .accessibilityHidden(navigationTabCoordinator.overlayModule?.coordinator != nil && navigationTabCoordinator.overlayPresentationMode == .fullScreen)
         .overlay {
+            // sTalk: Single coordinator.toPresentable() call to prevent WKWebView recreation
             if let coordinator = navigationTabCoordinator.overlayModule?.coordinator {
-                if navigationTabCoordinator.overlayPresentationMode == .fullScreen {
-                    coordinator.toPresentable()
-                        .transition(.opacity)
-                }
-            }
-        }
-        .overlay(alignment: .bottomTrailing) {
-            // sTalk: Floating mini video window when call is minimized
-            if navigationTabCoordinator.isCallMinimized,
-               let coordinator = navigationTabCoordinator.overlayModule?.coordinator {
-                FloatingMiniCallWindow(
-                    content: coordinator.toPresentable()
-                )
-                .padding(.bottom, 100) // Above tab bar
-                .padding(.trailing, 12)
-                .transition(.scale.combined(with: .opacity))
+                callOverlay(coordinator: coordinator)
             }
         }
         .animation(.elementDefault, value: navigationTabCoordinator.overlayModule)
         .animation(.easeInOut(duration: 0.25), value: navigationTabCoordinator.isCallMinimized)
     }
+
+    // MARK: - sTalk Call Overlay (shared between both tab bar modes)
+
+    /// Single-instance call overlay that switches between fullscreen and mini-window
+    /// without recreating the WKWebView (structural identity preserved).
+    @ViewBuilder
+    private func callOverlay(coordinator: any CoordinatorProtocol) -> some View {
+        let minimized = navigationTabCoordinator.isCallMinimized
+        GeometryReader { geometry in
+            coordinator.toPresentable()
+                .frame(
+                    width: minimized ? 140 : geometry.size.width,
+                    height: minimized ? 200 : geometry.size.height
+                )
+                .clipShape(RoundedRectangle(cornerRadius: minimized ? 14 : 0))
+                .shadow(color: minimized ? .black.opacity(0.4) : .clear, radius: minimized ? 10 : 0, x: 0, y: 4)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(Color.white.opacity(0.15), lineWidth: minimized ? 0.5 : 0)
+                )
+                .position(
+                    x: minimized
+                        ? geometry.size.width - 82 + miniCallOffset.width
+                        : geometry.size.width / 2,
+                    y: minimized
+                        ? geometry.size.height - 190 + miniCallOffset.height
+                        : geometry.size.height / 2
+                )
+                .gesture(
+                    minimized
+                        ? DragGesture()
+                            .onChanged { value in
+                                miniCallDragOffset = value.translation
+                            }
+                            .onEnded { value in
+                                miniCallOffset.width += value.translation.width
+                                miniCallOffset.height += value.translation.height
+                                miniCallDragOffset = .zero
+                            }
+                        : nil
+                )
+                .offset(miniCallDragOffset)
+        }
+    }
+
+    @State private var miniCallOffset: CGSize = .zero
+    @State private var miniCallDragOffset: CGSize = .zero
 
     private func configureAppearance(_ tabBarController: UITabBarController) {
         standardAppearance.configureWithDefaultBackground()
@@ -472,39 +492,3 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
     }
 }
 
-// MARK: - sTalk Floating Mini Call Window
-
-/// Draggable floating mini video window shown when a call is minimized.
-/// Displays the live call video with mini controls (mic, expand, hangup).
-private struct FloatingMiniCallWindow<Content: View>: View {
-    let content: Content
-
-    @State private var position: CGPoint = .zero
-    @State private var dragOffset: CGSize = .zero
-
-    private let windowWidth: CGFloat = 140
-    private let windowHeight: CGFloat = 200
-
-    var body: some View {
-        content
-            .frame(width: windowWidth, height: windowHeight)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-            .shadow(color: .black.opacity(0.4), radius: 10, x: 0, y: 4)
-            .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
-            )
-            .offset(x: position.x + dragOffset.width, y: position.y + dragOffset.height)
-            .gesture(
-                DragGesture()
-                    .onChanged { value in
-                        dragOffset = value.translation
-                    }
-                    .onEnded { value in
-                        position.x += value.translation.width
-                        position.y += value.translation.height
-                        dragOffset = .zero
-                    }
-            )
-    }
-}
