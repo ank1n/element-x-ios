@@ -366,37 +366,46 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                     background: #000 !important;
                 }
 
-                /* tile: fill slot absolutely, no radius */
-                [class*="_tile"] {
+                /* tile: fill slot */
+                [class*="_tile_110p2"],
+                [class*="_tile_110p2"][class*="_maximised"] {
                     position: absolute !important;
                     inset: 0 !important;
                     width: 100% !important;
                     height: 100% !important;
-                    border-radius: 0 !important;
-                    --media-view-border-radius: 0px !important;
-                    background: #000 !important;
+                    flex-grow: 1 !important;
                 }
 
-                /* contents wrapper: fill tile absolutely */
-                [class*="_contents_"] {
+                /* media tile: fill parent, no radius */
+                [class*="_tile_31vx3"],
+                [class*="_tile_31vx3"] * {
+                    --media-view-border-radius: 0px !important;
+                    border-radius: 0 !important;
+                }
+                [class*="_tile_31vx3"] {
                     position: absolute !important;
                     inset: 0 !important;
+                    width: 100% !important;
+                    height: 100% !important;
+                    outline: none !important;
+                    border: none !important;
+                }
+
+                /* contents wrapper: fill tile */
+                [class*="_contents_18q5h"] {
                     width: 100% !important;
                     height: 100% !important;
                     border-radius: 0 !important;
                     border: none !important;
-                    background: #000 !important;
                 }
 
                 /* media view: fill contents */
+                [class*="_media_1yzvo"],
                 [class*="_media"] {
-                    position: absolute !important;
-                    inset: 0 !important;
                     width: 100% !important;
                     height: 100% !important;
                     border-radius: 0 !important;
                     container-type: normal !important;
-                    background: #000 !important;
                 }
 
                 /* video element: cover entire area */
@@ -406,35 +415,18 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                     border-radius: 0 !important;
                     width: 100% !important;
                     height: 100% !important;
-                    position: absolute !important;
-                    inset: 0 !important;
-                    z-index: 1 !important;
                 }
 
-                /* ===== HIDE: avatar/noVideo overlay — fully nuke them ===== */
+                /* ===== HIDE: avatar/noVideo overlay ===== */
                 [class*="_noVideo"],
                 [class*="_avatar"],
                 [class*="_avatarContainer"],
-                [class*="_videoMuted"],
-                [class*="_disconnected"],
-                [class*="_connecting"] {
+                [class*="_videoMuted"] {
                     display: none !important;
                     visibility: hidden !important;
                     opacity: 0 !important;
                     height: 0 !important;
-                    width: 0 !important;
                     overflow: hidden !important;
-                    position: absolute !important;
-                    pointer-events: none !important;
-                }
-
-                /* Black background on ALL intermediate containers to prevent white gaps */
-                [class*="_inRoom"] *,
-                [class*="_fixedGrid"] *,
-                [class*="_spotlight"] *,
-                [class*="_slot"] *,
-                [class*="_tile"] * {
-                    background-color: #000 !important;
                 }
 
                 /* ===== HIDE: non-essential UI ===== */
@@ -469,14 +461,10 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 /* mute icon: semi-transparent */
                 [class*="_muteIcon_31vx3"] { opacity: 0.4 !important; }
 
-                /* ===== KILL: borders/outlines on call-related elements ===== */
-                [class*="_tile"], [class*="_tile"] *,
-                [class*="_slot"], [class*="_slot"] *,
-                [class*="_media"], [class*="_media"] *,
-                [class*="_contents_"], [class*="_contents_"] *,
-                [class*="_spotlight"], [class*="_spotlight"] *,
-                [class*="_fixedGrid"], [class*="_fixedGrid"] * {
-                    border: none !important;
+                /* ===== KILL: all borders, outlines, scrollbars ===== */
+                *, *::before, *::after {
+                    border-style: none !important;
+                    border-width: 0 !important;
                     outline: none !important;
                 }
                 ::-webkit-scrollbar { display: none !important; width: 0 !important; }
@@ -520,40 +508,35 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                     el.style.setProperty('container-type', 'normal', 'important');
                 });
 
-                // slot: fill spotlight absolutely
+                // slot: fill spotlight
                 document.querySelectorAll('[class*="_slot"]').forEach(function(el) {
-                    el.style.setProperty('position', 'absolute', 'important');
-                    el.style.setProperty('inset', '0', 'important');
                     el.style.setProperty('width', '100%', 'important');
                     el.style.setProperty('height', '100%', 'important');
-                    el.style.setProperty('background', '#000', 'important');
+                    el.style.setProperty('inline-size', '100%', 'important');
+                    el.style.setProperty('block-size', '100%', 'important');
                 });
 
-                // tiles: fill slot (generic selector)
-                document.querySelectorAll('[class*="_tile"]').forEach(function(el) {
-                    el.style.setProperty('position', 'absolute', 'important');
-                    el.style.setProperty('inset', '0', 'important');
-                    el.style.setProperty('width', '100%', 'important');
-                    el.style.setProperty('height', '100%', 'important');
-                    el.style.setProperty('border-radius', '0', 'important');
-                    el.style.setProperty('background', '#000', 'important');
-                });
-
-                // contents + media: fill tile absolutely
-                document.querySelectorAll('[class*="_contents_"], [class*="_media"]').forEach(function(el) {
+                // tiles: fill slot
+                document.querySelectorAll('[class*="_tile_110p2"], [class*="_tile_31vx3"]').forEach(function(el) {
                     el.style.setProperty('position', 'absolute', 'important');
                     el.style.setProperty('inset', '0', 'important');
                     el.style.setProperty('width', '100%', 'important');
                     el.style.setProperty('height', '100%', 'important');
                     el.style.setProperty('border-radius', '0', 'important');
-                    el.style.setProperty('background', '#000', 'important');
                 });
 
-                // NUKE avatars/noVideo overlays
+                // contents + media: fill tile
+                document.querySelectorAll('[class*="_contents_18q5h"], [class*="_media"]').forEach(function(el) {
+                    el.style.setProperty('width', '100%', 'important');
+                    el.style.setProperty('height', '100%', 'important');
+                    el.style.setProperty('border-radius', '0', 'important');
+                    el.style.setProperty('container-type', 'normal', 'important');
+                });
+
+                // Hide avatar/noVideo overlays
                 document.querySelectorAll('[class*="_noVideo"], [class*="_avatar"], [class*="_avatarContainer"], [class*="_videoMuted"]').forEach(function(el) {
                     el.style.setProperty('display', 'none', 'important');
                     el.style.setProperty('visibility', 'hidden', 'important');
-                    el.remove();
                 });
 
                 // video: cover, centered
