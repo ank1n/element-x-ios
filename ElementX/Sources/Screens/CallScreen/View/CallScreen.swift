@@ -85,32 +85,40 @@ struct CallScreen: View {
         }
     }
 
-    /// Mini control buttons for floating window mode
+    /// Mini controls for floating window mode.
+    /// Tap on video area → restore fullscreen. Buttons: mic, camera, hangup.
     private var miniControls: some View {
-        VStack {
-            Spacer()
-            HStack(spacing: 12) {
-                // Mic toggle
+        VStack(spacing: 0) {
+            // Tap area — tap anywhere on video to return to fullscreen
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    context.send(viewAction: .restoreFromMinimized)
+                }
+
+            // Bottom control bar
+            HStack(spacing: 10) {
+                // Mic
                 Button {
                     context.send(viewAction: .toggleMute)
                 } label: {
                     Image(systemName: context.viewState.isMuted ? "mic.slash.fill" : "mic.fill")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(context.viewState.isMuted ? Color(red: 0.1, green: 0.1, blue: 0.1) : .white)
-                        .frame(width: 28, height: 28)
+                        .frame(width: 26, height: 26)
                         .background(context.viewState.isMuted ? Color.white.opacity(0.9) : Color.white.opacity(0.2))
                         .clipShape(Circle())
                 }
 
-                // Expand back to fullscreen
+                // Camera
                 Button {
-                    context.send(viewAction: .restoreFromMinimized)
+                    context.send(viewAction: .toggleVideo)
                 } label: {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(width: 28, height: 28)
-                        .background(Color.white.opacity(0.2))
+                    Image(systemName: context.viewState.isVideoEnabled ? "video.fill" : "video.slash.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(context.viewState.isVideoEnabled ? .white : Color(red: 0.1, green: 0.1, blue: 0.1))
+                        .frame(width: 26, height: 26)
+                        .background(context.viewState.isVideoEnabled ? Color.white.opacity(0.2) : Color.white.opacity(0.9))
                         .clipShape(Circle())
                 }
 
@@ -119,17 +127,16 @@ struct CallScreen: View {
                     context.send(viewAction: .endCall)
                 } label: {
                     Image(systemName: "phone.down.fill")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(.white)
-                        .frame(width: 28, height: 28)
+                        .frame(width: 26, height: 26)
                         .background(Color(red: 1.0, green: 0.23, blue: 0.19))
                         .clipShape(Circle())
                 }
             }
-            .padding(.horizontal, 6)
             .padding(.vertical, 4)
-            .background(Color.black.opacity(0.5).clipShape(Capsule()))
-            .padding(.bottom, 4)
+            .frame(maxWidth: .infinity)
+            .background(Color.black.opacity(0.6))
         }
     }
     
