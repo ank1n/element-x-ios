@@ -154,6 +154,12 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                     if self.startWithVideoEnabled || self.state.wasConnected {
                         self.state.isVideoEnabled = videoEnabled
                     }
+                    // sTalk: First mediaStateChanged = call actually connected
+                    if !self.state.wasConnected {
+                        self.state.wasConnected = true
+                        self.state.callStatus = .connected
+                        self.startCallTimer()
+                    }
                 }
             }
             .store(in: &cancellables)
@@ -218,9 +224,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         case .endCall:
             Task { await endCall() }
         case .mediaCapturePermissionGranted:
-            state.callStatus = .connected
-            state.wasConnected = true
-            startCallTimer()
+            // sTalk: Don't set wasConnected/timer here — wait for first mediaStateChanged
+            // (the actual call connection signal). This prevents premature lobby detection.
             Task { await updateOutputsListOnWeb() }
             // sTalk: Set body class for conditional CSS (direct vs group)
             Task {

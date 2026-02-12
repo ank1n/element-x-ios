@@ -183,25 +183,27 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
             """
         case .onLobbyDetected:
             """
-            // sTalk: Detect lobby state (remote hangup) via MutationObserver
+            // sTalk: Detect return-to-lobby (remote hangup) via hasLeftLobby pattern.
+            // Initial lobby during load is ignored. Only triggers when lobby RE-appears after leaving.
             (function() {
-                var lobbyNotified = false;
+                var hasLeftLobby = false;
                 function checkForLobby() {
-                    if (lobbyNotified) return;
-                    // Element Call lobby has a "Join" or "Join call" button
-                    var joinBtn = document.querySelector('[data-testid="lobby_joinCall"]');
-                    if (!joinBtn) {
-                        // Fallback: look for lobby container class
-                        joinBtn = document.querySelector('[class*="_lobby"]');
-                    }
-                    if (joinBtn) {
-                        lobbyNotified = true;
-                        window.webkit.messageHandlers.\(rawValue).postMessage("lobby");
+                    var lobbyEl = document.querySelector('[data-testid="lobby_joinCall"]');
+                    if (!lobbyEl) lobbyEl = document.querySelector('[class*="_lobby"]');
+
+                    if (lobbyEl) {
+                        // Lobby is visible
+                        if (hasLeftLobby) {
+                            // Was in call, now back to lobby = remote hangup
+                            window.webkit.messageHandlers.\(rawValue).postMessage("lobby");
+                        }
+                    } else {
+                        // Lobby gone = call has connected
+                        if (!hasLeftLobby) hasLeftLobby = true;
                     }
                 }
                 var lobbyObserver = new MutationObserver(function() { checkForLobby(); });
                 lobbyObserver.observe(document.body || document.documentElement, { childList: true, subtree: true });
-                // Also check periodically
                 setInterval(checkForLobby, 2000);
             })();
             """
@@ -547,40 +549,44 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                     el.style.setProperty('height', '100%', 'important');
                 });
 
-                // sTalk: Walk up from <video> element — definitive fix for avatar/whitespace/position
-                ensureVideoFullscreen();
+                // sTalk: Targeted fix for avatar/whitespace/position (safe — never hides video)
+                fixInRoomLayout();
             }
 
-            // sTalk: For 1:1 calls — walk up from <video>, hide non-video siblings,
-            // make each ancestor absolutely fill its parent with black background.
-            // This definitively fixes: avatar-at-top, white stripes, video position.
-            function ensureVideoFullscreen() {
+            // sTalk: For 1:1 calls — hide non-video children of _inRoom (header/footer/bar),
+            // set black background on all video ancestors to prevent white stripes.
+            // Does NOT hide siblings of video containers — avoids accidentally hiding video.
+            function fixInRoomLayout() {
                 if (!document.body.classList.contains('stalk-direct')) return;
-                var video = document.querySelector('video');
-                if (!video) return;
-                var current = video;
-                while (current.parentElement && current.parentElement !== document.body && current.parentElement !== document.documentElement) {
-                    var parent = current.parentElement;
-                    // Each container in the chain: absolute, fill parent, black bg
-                    if (current !== video) {
-                        current.style.setProperty('position', 'absolute', 'important');
-                        current.style.setProperty('inset', '0', 'important');
-                        current.style.setProperty('width', '100%', 'important');
-                        current.style.setProperty('height', '100%', 'important');
-                        current.style.setProperty('overflow', 'hidden', 'important');
-                        current.style.setProperty('background', '#000', 'important');
-                        current.style.setProperty('margin', '0', 'important');
-                        current.style.setProperty('padding', '0', 'important');
-                        current.style.setProperty('container-type', 'normal', 'important');
-                    }
-                    // Hide all siblings that are NOT on the path to video
-                    Array.from(parent.children).forEach(function(child) {
-                        if (child !== current && child.tagName !== 'STYLE' && child.tagName !== 'SCRIPT') {
-                            child.style.setProperty('display', 'none', 'important');
+
+                // 1. Inside _inRoom: hide direct children that are header/footer/bar/filler
+                var inRoom = document.querySelector('[class*="_inRoom"]');
+                if (inRoom) {
+                    Array.from(inRoom.children).forEach(function(child) {
+                        if (child.tagName === 'STYLE' || child.tagName === 'SCRIPT') return;
+                        var cls = child.className || '';
+                        // Keep containers that hold video (fixedGrid, spotlight, scrollingGrid, tile)
+                        if (child.querySelector('video') ||
+                            cls.indexOf('_fixedGrid') !== -1 ||
+                            cls.indexOf('_spotlight') !== -1 ||
+                            cls.indexOf('_scrollingGrid') !== -1) {
+                            return;
                         }
+                        // Hide everything else (header, footer, bar, logo, etc.)
+                        child.style.setProperty('display', 'none', 'important');
+                        child.style.setProperty('height', '0', 'important');
+                        child.style.setProperty('position', 'absolute', 'important');
                     });
-                    current = parent;
                 }
+
+                // 2. Set black background on all video ancestors (no white stripes)
+                document.querySelectorAll('video').forEach(function(video) {
+                    var el = video.parentElement;
+                    while (el && el !== document.body) {
+                        el.style.setProperty('background', '#000', 'important');
+                        el = el.parentElement;
+                    }
+                });
             }
 
             // Run immediately and on DOM changes
