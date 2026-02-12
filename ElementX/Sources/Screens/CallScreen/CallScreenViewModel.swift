@@ -299,21 +299,21 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 }
             }
 
-            // sTalk: Send hangup DIRECTLY to widget driver (bypasses WebView which may be destroyed).
-            // This ensures the Rust SDK receives the hangup and properly cleans up the MatrixRTC session.
-            let hangupMessage = ElementCallWidgetMessage(direction: .fromWidget,
-                                                          action: .hangup,
-                                                          widgetId: widgetDriver.widgetID)
-            if let data = try? JSONEncoder().encode(hangupMessage),
+            // sTalk: Send .close DIRECTLY to widget driver (bypasses WebView which may be destroyed).
+            // .close is the correct action to end MatrixRTC — it tells Rust SDK to remove state events.
+            let closeMessage = ElementCallWidgetMessage(direction: .fromWidget,
+                                                         action: .close,
+                                                         widgetId: widgetDriver.widgetID)
+            if let data = try? JSONEncoder().encode(closeMessage),
                let json = String(data: data, encoding: .utf8) {
                 await widgetDriver.handleMessage(json)
-                MXLog.info("sTalk: Hangup sent directly to widget driver")
+                MXLog.info("sTalk: .close sent to widget driver in stop()")
             }
 
             // Also try WebView hangup (may fail if WebView already destroyed, that's OK)
             await hangup()
 
-            // Give widget driver time to process hangup and clean up MatrixRTC state
+            // Give Rust SDK time to process .close and clean up MatrixRTC state events
             try? await Task.sleep(for: .milliseconds(500))
 
             await MainActor.run {
@@ -515,19 +515,21 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     }
 
     private func endCall() async {
-        // sTalk: Send hangup via WebView (while still alive)
+        // sTalk: Send hangup via WebView (while still alive) for Element Call UI
         await hangup()
 
-        // sTalk: Also send hangup directly to widget driver (reliable — doesn't need WebView)
-        let hangupMsg = ElementCallWidgetMessage(direction: .fromWidget,
-                                                  action: .hangup,
-                                                  widgetId: widgetDriver.widgetID)
-        if let data = try? JSONEncoder().encode(hangupMsg),
+        // sTalk: Send .close directly to widget driver — this is the CORRECT way to end MatrixRTC.
+        // .hangup only signals the WebView; .close tells the Rust SDK to clean up state events.
+        let closeMsg = ElementCallWidgetMessage(direction: .fromWidget,
+                                                 action: .close,
+                                                 widgetId: widgetDriver.widgetID)
+        if let data = try? JSONEncoder().encode(closeMsg),
            let json = String(data: data, encoding: .utf8) {
             await widgetDriver.handleMessage(json)
+            MXLog.info("sTalk: .close sent to widget driver — MatrixRTC session ending")
         }
 
-        // Delay for widget driver to process hangup and clean up MatrixRTC
+        // Delay for Rust SDK to process .close and clean up MatrixRTC state events
         try? await Task.sleep(for: .milliseconds(500))
         actionsSubject.send(.dismiss)
     }
