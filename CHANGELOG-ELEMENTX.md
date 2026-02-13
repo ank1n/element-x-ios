@@ -1230,6 +1230,134 @@ git cherry-pick d0f38ce f4a7ccf 7d6b575
 #### Важно при обновлении:
 CSS селекторы привязаны к хэшам CSS Modules Element Call v0.16.3. При обновлении Element Call пакета нужно проверить актуальность хэшей (например `_buttons_110p2_84` может измениться). Хэши можно найти в JS бандле Element Call (`index-*.js`).
 
+### 26. CallScreen v4 — 5 нативных кнопок, рука, динамик, формат участников, CSS grid
+
+**Дата**: 2026-02-11
+**Коммит**: `53dd858`
+
+#### Описание:
+Четыре улучшения CallScreen: 5 нативных кнопок управления (рука, камера, микрофон, динамик, завершить), кнопка «Поднять руку» для групповых звонков через DOM click, кнопка «Динамик» через AVRoutePickerView, формат участников «0:50 · 3 из 5 участников», CSS grid для групповых звонков.
+
+#### Функциональность:
+- **5 кнопок** — рука (только группа), камера, микрофон, динамик, завершить (spacing 20)
+- **Кнопка «Динамик»** — `showSpeakerPickerHandler` binding → `tapRoutePickerView()` в Coordinator
+- **isSpeakerOn** — отслеживается через `AVAudioSession.routeChangeNotification`
+- **Кнопка «Рука»** — DOM click через `window.stalkToggleHandRaise()` (JS injection)
+- **_raiseHand off-screen** — CSS `position: fixed; left: -9999px` вместо `display: none` для clickability
+- **MutationObserver руки** — наблюдает `aria-pressed` на кнопке _raiseHand, сообщает native через `onHandRaiseStateChanged`
+- **Формат статуса** — 1:1: `"0:43"`, группа: `"0:43 · 3 из 5 участников"` (время первое)
+- **Реактивные участники** — подписка на `roomProxy.infoPublisher` для `totalMembersCount` и `callParticipantsCount`
+- **CSS v2 conditional** — `body.stalk-direct` (spotlight fullscreen) / `body.stalk-group` (CSS grid 2x2)
+- **Grid плитки** — `border-radius: 12px`, `background: #1a1a1a`, имена участников с `text-shadow`
+- **Body class injection** — JS `document.body.classList.add('stalk-direct'|'stalk-group')` при `mediaCapturePermissionGranted`
+
+#### Изменённые файлы (3):
+
+1. **ElementX/Sources/Screens/CallScreen/CallScreenModels.swift**
+   - `isSpeakerOn`, `isHandRaised` в `CallScreenViewState`
+   - `totalMembersCount`, `callParticipantsCount` вместо `participantCount`
+   - `showSpeakerPickerHandler` в `Bindings`
+   - `showSpeakerPicker`, `toggleHandRaise`, `handRaiseStateChanged` в `CallScreenViewAction`
+   - `onHandRaiseStateChanged` в `CallScreenJavaScriptMessageName` + JS observer
+   - CSS: `body.stalk-direct` / `body.stalk-group` conditional стили
+   - CSS: `_raiseHand` off-screen вместо hidden
+   - CSS: grid layout для группы, nameTag/displayName показаны в grid
+
+2. **ElementX/Sources/Screens/CallScreen/CallScreenViewModel.swift**
+   - `showSpeakerPicker` → `showSpeakerPickerHandler?()`
+   - `toggleHandRaise()` → JS `window.stalkToggleHandRaise()`
+   - `handRaiseStateChanged` → `state.isHandRaised`
+   - `isSpeakerOn` обновляется при route change
+   - `roomProxy.infoPublisher` подписка для live participant counts
+   - Body class injection при `mediaCapturePermissionGranted`
+
+3. **ElementX/Sources/Screens/CallScreen/View/CallScreen.swift**
+   - 5 кнопок: рука (группа), камера, микрофон, динамик, завершить (spacing 20)
+   - `showSpeakerPickerHandler = self.tapRoutePickerView` в Coordinator
+   - `onHandRaiseStateChanged` handler → `handRaiseStateChanged` viewAction
+
+#### Коммиты для применения:
+```bash
+git cherry-pick 53dd858
+```
+
+#### Важно при обновлении:
+- CSS селекторы `_raiseHand`, `_scrollingGrid`, `_spotlight` зависят от версии Element Call
+- JS `stalkToggleHandRaise` кликает по DOM-кнопке _raiseHand — проверить наличие при обновлении EC
+- `activeRoomCallParticipants` может требовать rust SDK поддержки
+
+---
+
+### 27. Исправление конфликта LiveKit SDK + адаптация API
+
+**Дата**: 2026-02-13
+**Коммит**: `3cd7b9b`
+
+#### Описание:
+Исправлен конфликт SPM зависимостей `swift-collections` (корневой проект 1.3.0..<1.4.0 vs LiveKit SDK 1.1.0..<1.3.0). Адаптирован LiveKitRoomManager к обновлённому API. Удалены мёртвые ссылки на LottieTabBarIcon.
+
+#### Изменения:
+- `swift-collections`: `upToNextMinorVersion: 1.3.0` → `upToNextMajorVersion: 1.1.0` (1.1.0..<2.0.0)
+- LiveKit API: `participantDidJoin` → `participantDidConnect`, `participantDidLeave` → `participantDidDisconnect`
+- Убран `any` с конкретного типа `Participant`
+- Удалены 4 ссылки на LottieTabBarIcon.swift из pbxproj, убран `import Lottie`
+
+#### Изменённые файлы:
+- `ElementX.xcodeproj/project.pbxproj` — swift-collections range + LottieTabBarIcon cleanup
+- `ElementX/Sources/Services/LiveKit/LiveKitRoomManager.swift` — new LiveKit API
+- `ElementX/Sources/Application/Navigation/NavigationTabCoordinator.swift` — removed import Lottie
+
+#### Коммит для применения:
+```bash
+git cherry-pick 3cd7b9b
+```
+
+---
+
+### 28. Виджеты — реальные URL с продакшена
+
+**Дата**: 2026-02-13
+**Коммит**: `333daf5`
+
+#### Описание:
+Виджеты в табе "Приложения" используют реальные URL с продакшен-сервера. Статистика доступна по `/stats/` path (ingress rewrite), а не поддомену.
+
+#### Изменения:
+- Статистика: `stats.stalk.implica.ru` → `stalk.implica.ru/stats/`
+- Удалены 4 несуществующих виджета (Календарь, Задачи, Файлы, Заметки)
+- Добавлен `serverBaseURL` helper для построения URL из homeserver
+
+#### Изменённые файлы:
+- `ElementX/Sources/Screens/WidgetsListScreen/WidgetsListScreenViewModel.swift`
+
+#### Коммит для применения:
+```bash
+git cherry-pick 333daf5
+```
+
+---
+
+### 29. Виджет статистики — персональная информация пользователя
+
+**Дата**: 2026-02-13
+**Коммит**: `c5bf455`
+
+#### Описание:
+Виджет статистики передаёт `userId` текущего пользователя через query-параметр. Stats widget на сервере показывает персональную карточку (имя, аватар, комнаты, диалоги, группы, дней с регистрации) — как в Element Web на проде.
+
+#### Изменения:
+- URL: `stalk.implica.ru/stats/` → `stalk.implica.ru/stats/?userId=@user:domain`
+- userId из `userSession.clientProxy.userID`, URL-кодирован
+- Сервер отдаёт данные через `/api/user-stats?userId=` endpoint (Synapse Admin API)
+
+#### Изменённые файлы:
+- `ElementX/Sources/Screens/WidgetsListScreen/WidgetsListScreenViewModel.swift`
+
+#### Коммит для применения:
+```bash
+git cherry-pick c5bf455
+```
+
 ---
 
 ## 🎯 Текущий статус
@@ -1262,8 +1390,12 @@ CSS селекторы привязаны к хэшам CSS Modules Element Call
 - ✅ Фильтр пустых комнат в контактах (#23)
 - ✅ Поиск сообщений внутри чата (как в Telegram) (#24)
 - ✅ Telegram-style CallScreen UI — CSS injection в Element Call WebView (#25)
+- ✅ CallScreen v4 — 5 нативных кнопок, рука, динамик, формат участников, CSS grid (#26)
+- ✅ Исправление конфликта LiveKit SDK + адаптация API (#27)
+- ✅ Виджеты — реальные URL с продакшена (#28)
+- ✅ Виджет статистики — персональная информация пользователя (#29)
 
-**Последний коммит**: `7d6b575` - CallScreen: имя собеседника, все 5 кнопок, invite/raiseHand, Telegram-style recording
+**Последний коммит**: `c5bf455` - Виджет статистики с персональной информацией
 
 ---
 
@@ -1296,7 +1428,10 @@ CSS селекторы привязаны к хэшам CSS Modules Element Call
 - [ ] Применить коммит #23: Фильтр пустых комнат в контактах (`7bbfa2b`)
 - [ ] Применить коммит #24: Поиск сообщений внутри чата (`d8fb603`)
 - [ ] Применить коммиты #25: Telegram-style CallScreen UI (`d0f38ce`, `f4a7ccf`, `7d6b575`)
-- [ ] Добавить Lottie dependency в Package.swift / project.yml
+- [ ] Применить коммит #26: CallScreen v4 — 5 кнопок, рука, динамик, grid (`53dd858`)
+- [ ] Применить коммит #27: Исправление конфликта LiveKit SDK + API (`3cd7b9b`)
+- [ ] Применить коммит #28: Виджеты — реальные URL (`333daf5`)
+- [ ] Применить коммит #29: Виджет статистики — userId (`c5bf455`)
 - [ ] Разрешить конфликты в UserSessionFlowCoordinator.swift
 - [ ] Проект собирается без ошибок
 - [ ] 5 вкладок с SF Symbol иконками работают
@@ -1310,8 +1445,10 @@ CSS селекторы привязаны к хэшам CSS Modules Element Call
 - [ ] Навигация контакт → чат работает (назад → контакты)
 - [ ] Только реальные люди в контактах (без Empty Room)
 - [ ] Поиск внутри чата работает (inline bar, счётчик, навигация ↑↓)
+- [ ] Виджет статистики показывает персональную карточку пользователя
+- [ ] LiveKit SDK зависимости разрешаются без конфликтов
 
 ---
 
 **Дата создания**: 2026-01-28
-**Последнее обновление**: 2026-02-10
+**Последнее обновление**: 2026-02-13
