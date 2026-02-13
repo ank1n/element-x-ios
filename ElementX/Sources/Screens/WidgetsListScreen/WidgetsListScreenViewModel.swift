@@ -72,43 +72,33 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
         return URL(string: homeserver)?.host ?? "stalk.implica.ru"
     }
 
+    /// Base URL of the homeserver (e.g., https://stalk.implica.ru)
+    private var serverBaseURL: String {
+        let homeserver = userSession.clientProxy.homeserver
+        if let url = URL(string: homeserver), let scheme = url.scheme, let host = url.host {
+            return "\(scheme)://\(host)"
+        }
+        return "https://stalk.implica.ru"
+    }
+
     private func loadWidgets() {
-        let domain = serverDomain
+        let baseURL = serverBaseURL
         state.widgets = [
             WidgetItem(
                 id: "statistics",
                 name: "Статистика",
-                description: "Просмотр статистики и аналитики",
+                description: "Статистика сервера и активности",
                 icon: "chart.bar.fill",
-                url: "https://stats.\(domain)/"
+                url: "\(baseURL)/stats/",
+                category: .tools
             ),
             WidgetItem(
-                id: "calendar",
-                name: "Календарь",
-                description: "Календарь событий и встреч",
-                icon: "calendar",
-                url: "https://calendar.\(domain)/"
-            ),
-            WidgetItem(
-                id: "tasks",
-                name: "Задачи",
-                description: "Управление задачами и проектами",
-                icon: "checklist",
-                url: "https://tasks.\(domain)/"
-            ),
-            WidgetItem(
-                id: "files",
-                name: "Файлы",
-                description: "Файловый менеджер",
-                icon: "folder.fill",
-                url: "https://files.\(domain)/"
-            ),
-            WidgetItem(
-                id: "notes",
-                name: "Заметки",
-                description: "Создание и редактирование заметок",
-                icon: "note.text",
-                url: "https://notes.\(domain)/"
+                id: "dimension",
+                name: "Интеграции",
+                description: "Управление виджетами и ботами",
+                icon: "puzzlepiece.fill",
+                url: "https://dimension.\(serverDomain)/element",
+                category: .tools
             )
         ]
         state.isLoading = false
