@@ -7,7 +7,6 @@
 //
 
 import Compound
-import Lottie
 import SwiftUI
 
 /// Class responsible for displaying an arbitrary number of coordinators within the tab bar.

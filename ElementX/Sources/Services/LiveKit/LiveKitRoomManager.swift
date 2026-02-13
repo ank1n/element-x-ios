@@ -1,0 +1,155 @@
+//
+// Copyright 2025 Element Creations Ltd.
+//
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial.
+// Please see LICENSE files in the repository root for full details.
+//
+
+import Combine
+import LiveKit
+import SwiftUI
+
+/// sTalk: Manages a native LiveKit room connection using credentials intercepted from Element Call's WebSocket.
+/// Provides published state for SwiftUI views to render native video tracks.
+@MainActor
+final class LiveKitRoomManager: ObservableObject {
+    // MARK: - Published State
+
+    @Published private(set) var connectionState: ConnectionState = .disconnected
+    @Published private(set) var remoteParticipants: [RemoteParticipant] = []
+    @Published private(set) var localVideoTrack: VideoTrack?
+    @Published private(set) var localParticipant: LocalParticipant?
+
+    // MARK: - Private
+
+    private let room: Room
+    private var cancellables = Set<AnyCancellable>()
+
+    init() {
+        room = Room()
+        room.add(delegate: self)
+    }
+
+    deinit {
+        Task { @MainActor [room] in
+            await room.disconnect()
+        }
+    }
+
+    // MARK: - Public API
+
+    /// Connect to LiveKit SFU using intercepted credentials.
+    /// - Parameters:
+    ///   - wsURL: Full WebSocket URL from Element Call (wss://sfu.host/rtc?access_token=...)
+    ///   - token: The extracted access_token JWT
+    func connect(wsURL: String, token: String) async throws {
+        let baseURL = extractBaseURL(from: wsURL)
+        MXLog.info("sTalk LiveKit: Connecting to \(baseURL)")
+
+        let connectOptions = ConnectOptions(
+            autoSubscribe: true
+        )
+        let roomOptions = RoomOptions(
+            defaultCameraCaptureOptions: CameraCaptureOptions(
+                dimensions: .h720_169
+            ),
+            defaultVideoPublishOptions: VideoPublishOptions(
+                encoding: VideoEncoding(maxBitrate: 1_500_000, maxFps: 30)
+            )
+        )
+
+        try await room.connect(url: baseURL, token: token, connectOptions: connectOptions, roomOptions: roomOptions)
+        MXLog.info("sTalk LiveKit: Connected to room \(room.name ?? "unknown")")
+        updateState()
+    }
+
+    func disconnect() async {
+        await room.disconnect()
+        MXLog.info("sTalk LiveKit: Disconnected")
+        updateState()
+    }
+
+    func setCamera(enabled: Bool) async throws {
+        try await room.localParticipant.setCamera(enabled: enabled)
+    }
+
+    func setMicrophone(enabled: Bool) async throws {
+        try await room.localParticipant.setMicrophone(enabled: enabled)
+    }
+
+    // MARK: - Helpers
+
+    /// Extracts base URL from full WebSocket URL: wss://host/rtc?access_token=... → wss://host
+    private func extractBaseURL(from wsURL: String) -> String {
+        guard let url = URL(string: wsURL),
+              let scheme = url.scheme,
+              let host = url.host else {
+            return wsURL
+        }
+        if let port = url.port {
+            return "\(scheme)://\(host):\(port)"
+        }
+        return "\(scheme)://\(host)"
+    }
+
+    private func updateState() {
+        connectionState = room.connectionState
+        remoteParticipants = Array(room.remoteParticipants.values)
+        localParticipant = room.localParticipant
+
+        // Get local video track
+        localVideoTrack = room.localParticipant.videoTracks
+            .compactMap { $0.track as? VideoTrack }
+            .first
+    }
+}
+
+// MARK: - RoomDelegate
+
+extension LiveKitRoomManager: RoomDelegate {
+    nonisolated func room(_ room: Room, didUpdateConnectionState connectionState: ConnectionState, from oldConnectionState: ConnectionState) {
+        Task { @MainActor in
+            self.connectionState = connectionState
+            MXLog.info("sTalk LiveKit: Connection state: \(oldConnectionState) → \(connectionState)")
+        }
+    }
+
+    nonisolated func room(_ room: Room, participantDidConnect participant: RemoteParticipant) {
+        Task { @MainActor in
+            self.updateState()
+            MXLog.info("sTalk LiveKit: Participant joined: \(participant.identity?.stringValue ?? "unknown")")
+        }
+    }
+
+    nonisolated func room(_ room: Room, participantDidDisconnect participant: RemoteParticipant) {
+        Task { @MainActor in
+            self.updateState()
+            MXLog.info("sTalk LiveKit: Participant left: \(participant.identity?.stringValue ?? "unknown")")
+        }
+    }
+
+    nonisolated func room(_ room: Room, participant: RemoteParticipant, didSubscribeTrack publication: RemoteTrackPublication) {
+        Task { @MainActor in
+            self.updateState()
+            MXLog.info("sTalk LiveKit: Subscribed to track: \(publication.kind) from \(participant.identity?.stringValue ?? "unknown")")
+        }
+    }
+
+    nonisolated func room(_ room: Room, participant: RemoteParticipant, didUnsubscribeTrack publication: RemoteTrackPublication) {
+        Task { @MainActor in
+            self.updateState()
+        }
+    }
+
+    nonisolated func room(_ room: Room, participant: Participant, trackPublication: TrackPublication, didUpdateIsMuted isMuted: Bool) {
+        Task { @MainActor in
+            self.updateState()
+        }
+    }
+
+    nonisolated func room(_ room: Room, localParticipant: LocalParticipant, didPublishTrack publication: LocalTrackPublication) {
+        Task { @MainActor in
+            self.updateState()
+        }
+    }
+}
