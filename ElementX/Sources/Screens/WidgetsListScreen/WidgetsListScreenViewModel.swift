@@ -83,21 +83,15 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
 
     private func loadWidgets() {
         let baseURL = serverBaseURL
+        let userId = userSession.clientProxy.userID
+        let encodedUserId = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
         state.widgets = [
             WidgetItem(
                 id: "statistics",
                 name: "Статистика",
                 description: "Статистика сервера и активности",
                 icon: "chart.bar.fill",
-                url: "\(baseURL)/stats/",
-                category: .tools
-            ),
-            WidgetItem(
-                id: "dimension",
-                name: "Интеграции",
-                description: "Управление виджетами и ботами",
-                icon: "puzzlepiece.fill",
-                url: "https://dimension.\(serverDomain)/element",
+                url: "\(baseURL)/stats/?userId=\(encodedUserId)",
                 category: .tools
             )
         ]
