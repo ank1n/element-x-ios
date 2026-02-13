@@ -8,6 +8,7 @@
 
 import AVKit
 import Foundation
+import LiveKit
 
 enum CallScreenViewModelAction {
     case pictureInPictureIsAvailable(AVPictureInPictureController)
@@ -47,6 +48,8 @@ struct CallScreenViewState: BindableState {
     var wasConnected: Bool = false
     /// sTalk: Whether the call is shown as a mini floating window
     var isMinimized: Bool = false
+    /// sTalk: Native LiveKit room manager for rendering video
+    var liveKitRoomManager: LiveKitRoomManager?
 
     var callStatusText: String {
         switch callStatus {
@@ -104,6 +107,8 @@ enum CallScreenViewAction {
     case handRaiseStateChanged(raised: Bool)
     /// sTalk: Restore from minimized mini-window to fullscreen
     case restoreFromMinimized
+    /// sTalk: LiveKit credentials intercepted from Element Call WebSocket
+    case liveKitCredentialsIntercepted(url: String, token: String)
 }
 
 enum CallScreenError: Error {
@@ -144,6 +149,8 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
     case onLobbyDetected
     /// sTalk: Used to detect hand raise state changes from WebView
     case onHandRaiseStateChanged
+    /// sTalk: LiveKit WebSocket credentials intercepted from Element Call
+    case onLiveKitCredentials
     
     private var postMessageScript: String {
         switch self {
@@ -268,9 +275,88 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 setInterval(checkHandRaise, 1000);
             })();
             """
+        case .onLiveKitCredentials:
+            // No injection needed — credentials are captured via atDocumentStart script
+            ""
         }
     }
-    
+
+    /// sTalk: JS script injected at `.atDocumentStart` BEFORE Element Call loads.
+    /// 1. Intercepts LiveKit WebSocket → returns fake WS, posts credentials to native side
+    /// 2. Blocks getUserMedia → prevents WebView from capturing mic/camera (native SDK handles it)
+    /// Widget API (postMessage) is unaffected since it doesn't use WebSocket or media.
+    static var webSocketInterceptionScript: String {
+        """
+        (function() {
+            // === 1. Block getUserMedia so WebView doesn't compete with native SDK for mic/camera ===
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                navigator.mediaDevices.getUserMedia = function() {
+                    // Return a fake empty MediaStream — EC gets "media" but nothing real is captured
+                    return Promise.resolve(new MediaStream());
+                };
+            }
+            // Also block legacy API
+            if (navigator.getUserMedia) {
+                navigator.getUserMedia = function(constraints, success, error) {
+                    success(new MediaStream());
+                };
+            }
+
+            // === 2. Intercept LiveKit WebSocket — capture credentials, return fake WS ===
+            var OrigWS = window.WebSocket;
+            var _intercepted = false;
+            window.WebSocket = function(url, protocols) {
+                var u = String(url);
+                if (u.indexOf('/rtc') !== -1 && u.indexOf('access_token=') !== -1) {
+                    if (!_intercepted) {
+                        _intercepted = true;
+                        var token = (u.match(/access_token=([^&]+)/) || [])[1] || '';
+                        window.webkit.messageHandlers.onLiveKitCredentials.postMessage(
+                            JSON.stringify({ url: u, token: token })
+                        );
+                    }
+                    // Return fake WebSocket — EC thinks it's connected but no data flows
+                    var fake = Object.create(OrigWS.prototype);
+                    fake.readyState = 1;
+                    fake.url = u;
+                    fake.bufferedAmount = 0;
+                    fake.extensions = '';
+                    fake.protocol = '';
+                    fake.binaryType = 'blob';
+                    fake.onopen = null;
+                    fake.onclose = null;
+                    fake.onmessage = null;
+                    fake.onerror = null;
+                    fake.send = function() {};
+                    fake.close = function() {
+                        this.readyState = 3;
+                        if (this.onclose) {
+                            this.onclose({ type: 'close', code: 1000, reason: '', wasClean: true });
+                        }
+                    };
+                    fake.addEventListener = function() {};
+                    fake.removeEventListener = function() {};
+                    fake.dispatchEvent = function() { return true; };
+                    setTimeout(function() {
+                        if (fake.onopen) fake.onopen({ type: 'open' });
+                    }, 50);
+                    return fake;
+                }
+                // Non-LiveKit WebSockets pass through normally
+                if (protocols !== undefined) {
+                    return new OrigWS(url, protocols);
+                }
+                return new OrigWS(url);
+            };
+            window.WebSocket.prototype = OrigWS.prototype;
+            window.WebSocket.CONNECTING = 0;
+            window.WebSocket.OPEN = 1;
+            window.WebSocket.CLOSING = 2;
+            window.WebSocket.CLOSED = 3;
+        })();
+        """
+    }
+
     static var allCasesInjectionScript: String {
         allCases.map(\.postMessageScript).joined(separator: "\n") + "\n" + telegramStyleInjectionScript
     }

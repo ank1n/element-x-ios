@@ -145,10 +145,35 @@ struct CallScreen: View {
         if context.viewState.url == nil {
             ProgressView()
         } else {
-            CallView(url: context.viewState.url, viewModelContext: context)
-                // This URL is stable, forces view reloads if this representable is ever reused for another url
-                .id(context.viewState.url)
-                .ignoresSafeArea()
+            ZStack {
+                // sTalk: WebView — invisible (0×0) but alive for Widget API signaling (MatrixRTC)
+                CallView(url: context.viewState.url, viewModelContext: context)
+                    .id(context.viewState.url)
+                    .frame(width: 0, height: 0)
+                    .opacity(0)
+
+                // sTalk: Native LiveKit video — fullscreen
+                if let roomManager = context.viewState.liveKitRoomManager {
+                    NativeCallGridView(
+                        roomManager: roomManager,
+                        isDirect: context.viewState.isDirect
+                    )
+                    .ignoresSafeArea()
+                } else {
+                    // Connecting state — show black with activity indicator
+                    Color.black
+                        .ignoresSafeArea()
+                        .overlay {
+                            VStack(spacing: 16) {
+                                ProgressView()
+                                    .tint(.white)
+                                Text("Подключение к звонку...")
+                                    .font(.system(size: 16))
+                                    .foregroundColor(.white.opacity(0.6))
+                            }
+                        }
+                }
+            }
         }
     }
     
@@ -362,6 +387,14 @@ private struct CallView: UIViewRepresentable {
             configuration.allowsInlineMediaPlayback = true
             configuration.allowsPictureInPictureMediaPlayback = true
             
+            // sTalk: Inject WebSocket interception script BEFORE page loads (atDocumentStart)
+            let wsHookScript = WKUserScript(
+                source: CallScreenJavaScriptMessageName.webSocketInterceptionScript,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            )
+            configuration.userContentController.addUserScript(wsHookScript)
+
             if let script = viewModelContext.viewState.script {
                 let userScript = WKUserScript(source: script, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
                 configuration.userContentController.addUserScript(userScript)
@@ -456,6 +489,14 @@ private struct CallView: UIViewRepresentable {
                 if let stateStr = message.body as? String {
                     viewModelContext?.send(viewAction: .handRaiseStateChanged(raised: stateStr == "raised"))
                 }
+            case .onLiveKitCredentials:
+                // sTalk: LiveKit credentials intercepted from WebSocket URL
+                guard let jsonString = message.body as? String,
+                      let data = jsonString.data(using: .utf8),
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: String],
+                      let url = json["url"],
+                      let token = json["token"] else { return }
+                viewModelContext?.send(viewAction: .liveKitCredentialsIntercepted(url: url, token: token))
             }
         }
         

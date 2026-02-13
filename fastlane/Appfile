@@ -3,7 +3,7 @@
 
 app_identifier("ru.implica.stalk")
 apple_id("dp.bondar@gmail.com")
-team_id("PLACEHOLDER_TEAM_ID") # Update with actual Team ID from Apple Developer account
+team_id("5W8DAT7V5K")
 
 for_platform :ios do
   app_identifier("ru.implica.stalk")

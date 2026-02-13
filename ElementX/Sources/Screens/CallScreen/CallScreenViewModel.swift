@@ -9,6 +9,7 @@
 import AVKit
 import CallKit
 import Combine
+import LiveKit
 import SwiftUI
 
 typealias CallScreenViewModelType = StateStoreViewModel<CallScreenViewState, CallScreenViewAction>
@@ -25,6 +26,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
 
     private let startWithVideoEnabled: Bool
     private let widgetDriver: ElementCallWidgetDriverProtocol
+
+    /// sTalk: Native LiveKit room manager
+    private let liveKitRoomManager = LiveKitRoomManager()
 
     /// sTalk: Tracks whether the call is currently minimized (prevents spurious dismiss on opacity:0)
     private(set) var isMinimized = false
@@ -279,6 +283,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             isMinimized = false
             state.isMinimized = false
             actionsSubject.send(.pictureInPictureStopped)
+        case .liveKitCredentialsIntercepted(let url, let token):
+            MXLog.info("sTalk: LiveKit credentials intercepted — url=\(url.prefix(80))..., token length=\(token.count)")
+            Task { await connectNativeLiveKit(wsURL: url, token: token) }
         }
     }
     
@@ -294,25 +301,20 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                     MXLog.info("Recording stopped on call end")
                     await sendRecordingInfoMessage(duration: duration)
                 } catch {
-                    // If recording already stopped (e.g. EGRESS_COMPLETE), this is handled gracefully
                     MXLog.info("Recording cleanup on call end: \(error.localizedDescription)")
                 }
             }
 
-            // sTalk: Click Element Call's own hangup button — natural close path.
-            // This triggers EC's disconnect → io.element.close → Rust SDK cleans up MatrixRTC.
-            let clicked = await clickElementCallHangup()
+            // sTalk: Disconnect native LiveKit SDK
+            await liveKitRoomManager.disconnect()
 
-            if !clicked {
-                // Fallback: send .close directly (may fail if WebView already destroyed)
-                MXLog.info("sTalk: EC button not found in stop(), sending .close directly")
-                let closeMessage = ElementCallWidgetMessage(direction: .fromWidget,
-                                                             action: .close,
-                                                             widgetId: widgetDriver.widgetID)
-                if let data = try? JSONEncoder().encode(closeMessage),
-                   let json = String(data: data, encoding: .utf8) {
-                    await widgetDriver.handleMessage(json)
-                }
+            // sTalk: Send .close to Widget API for MatrixRTC cleanup
+            let closeMessage = ElementCallWidgetMessage(direction: .fromWidget,
+                                                         action: .close,
+                                                         widgetId: widgetDriver.widgetID)
+            if let data = try? JSONEncoder().encode(closeMessage),
+               let json = String(data: data, encoding: .utf8) {
+                await widgetDriver.handleMessage(json)
             }
 
             // Give Rust SDK / EC time to process and clean up MatrixRTC state events
@@ -498,17 +500,104 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         }
     }
 
+    // MARK: - Native LiveKit
+
+    private func connectNativeLiveKit(wsURL: String, token: String) async {
+        // Only connect once
+        guard liveKitRoomManager.connectionState == .disconnected else {
+            MXLog.info("sTalk LiveKit: Already connected or connecting, skipping")
+            return
+        }
+
+        do {
+            try await liveKitRoomManager.connect(wsURL: wsURL, token: token)
+            state.liveKitRoomManager = liveKitRoomManager
+            MXLog.info("sTalk LiveKit: Native connection established")
+
+            // Small delay to let audio session stabilize
+            try? await Task.sleep(for: .milliseconds(200))
+
+            // Enable mic first (audio is critical), then camera
+            try await liveKitRoomManager.setMicrophone(enabled: true)
+            MXLog.info("sTalk LiveKit: Microphone enabled")
+
+            if startWithVideoEnabled {
+                try await liveKitRoomManager.setCamera(enabled: true)
+                MXLog.info("sTalk LiveKit: Camera enabled")
+            }
+
+            // Mark as connected (since WebView fake WS won't trigger mediaCapturePermissionGranted)
+            state.wasConnected = true
+
+            // Observe native LiveKit connection state for call lifecycle
+            observeLiveKitState()
+        } catch {
+            MXLog.error("sTalk LiveKit: Failed to connect natively: \(error)")
+            // Fallback: show error but don't dismiss — user can still try ending call
+            state.liveKitRoomManager = nil
+        }
+    }
+
+    private func observeLiveKitState() {
+        liveKitRoomManager.$connectionState
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] connectionState in
+                guard let self else { return }
+                switch connectionState {
+                case .connected:
+                    MXLog.info("sTalk LiveKit: Connected state observed")
+                    // Restore from reconnecting state
+                    if self.state.callStatus == .reconnecting {
+                        self.state.callStatus = .connected
+                        MXLog.info("sTalk LiveKit: Reconnected successfully")
+                    }
+                case .reconnecting:
+                    self.state.callStatus = .reconnecting
+                    MXLog.info("sTalk LiveKit: Reconnecting...")
+                case .disconnected:
+                    if self.state.wasConnected {
+                        MXLog.info("sTalk LiveKit: Disconnected after being connected — remote may have ended call")
+                    }
+                default:
+                    break
+                }
+            }
+            .store(in: &cancellables)
+    }
+
     // MARK: - Native Call Controls
 
     private func toggleMute() async {
         let newMuted = !state.isMuted
         state.isMuted = newMuted
+
+        // sTalk: Use native LiveKit SDK for mute control
+        if state.liveKitRoomManager != nil {
+            do {
+                try await liveKitRoomManager.setMicrophone(enabled: !newMuted)
+            } catch {
+                MXLog.error("sTalk LiveKit: Failed to toggle microphone: \(error)")
+            }
+        }
+
+        // Also notify Widget API for MatrixRTC state sync
         await setAudioEnabled(!newMuted)
     }
 
     private func toggleVideo() async {
         let newVideoEnabled = !state.isVideoEnabled
         state.isVideoEnabled = newVideoEnabled
+
+        // sTalk: Use native LiveKit SDK for camera control
+        if state.liveKitRoomManager != nil {
+            do {
+                try await liveKitRoomManager.setCamera(enabled: newVideoEnabled)
+            } catch {
+                MXLog.error("sTalk LiveKit: Failed to toggle camera: \(error)")
+            }
+        }
+
+        // Also notify Widget API for MatrixRTC state sync
         let message = ElementCallWidgetMessage(direction: .toWidget,
                                                action: .mediaState,
                                                data: .init(videoEnabled: newVideoEnabled),
@@ -517,30 +606,21 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     }
 
     private func endCall() async {
-        // sTalk: Click Element Call's own hangup button via JS DOM click.
-        // This triggers EC's natural close flow: leave LiveKit → send io.element.close
-        // → Rust SDK processes it → removes m.call.member state events → run() exits.
-        // DOM .click() works even on display:none elements (React event delegation).
-        let clicked = await clickElementCallHangup()
-
-        if clicked {
-            // EC will process hangup and send io.element.close through Widget API.
-            // Wait for EC to finish — the .callEnded action will trigger auto-dismiss.
-            try? await Task.sleep(for: .seconds(2))
+        // sTalk: Disconnect native LiveKit SDK first
+        if state.liveKitRoomManager != nil {
+            await liveKitRoomManager.disconnect()
+            MXLog.info("sTalk LiveKit: Native SDK disconnected on endCall")
         }
 
-        // Fallback: if EC button wasn't found, send .close directly to widget driver
-        if !clicked {
-            MXLog.info("sTalk: EC hangup button not found, sending .close directly")
-            let closeMsg = ElementCallWidgetMessage(direction: .fromWidget,
-                                                     action: .close,
-                                                     widgetId: widgetDriver.widgetID)
-            if let data = try? JSONEncoder().encode(closeMsg),
-               let json = String(data: data, encoding: .utf8) {
-                await widgetDriver.handleMessage(json)
-            }
-            try? await Task.sleep(for: .milliseconds(500))
+        // sTalk: Send .close to Widget API for MatrixRTC cleanup
+        let closeMsg = ElementCallWidgetMessage(direction: .fromWidget,
+                                                 action: .close,
+                                                 widgetId: widgetDriver.widgetID)
+        if let data = try? JSONEncoder().encode(closeMsg),
+           let json = String(data: data, encoding: .utf8) {
+            await widgetDriver.handleMessage(json)
         }
+        try? await Task.sleep(for: .milliseconds(500))
 
         actionsSubject.send(.dismiss)
     }

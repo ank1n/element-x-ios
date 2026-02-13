@@ -5,6 +5,7 @@
 // Please see LICENSE files in the repository root for full details.
 //
 
+import AVFoundation
 import Combine
 import LiveKit
 import SwiftUI
@@ -24,6 +25,8 @@ final class LiveKitRoomManager: ObservableObject {
 
     private let room: Room
     private var cancellables = Set<AnyCancellable>()
+    private var reconnectToken: String?
+    private var reconnectURL: String?
 
     init() {
         room = Room()
@@ -46,6 +49,13 @@ final class LiveKitRoomManager: ObservableObject {
         let baseURL = extractBaseURL(from: wsURL)
         MXLog.info("sTalk LiveKit: Connecting to \(baseURL)")
 
+        // Store for potential reconnection
+        reconnectURL = baseURL
+        reconnectToken = token
+
+        // Configure iOS audio session for VoIP BEFORE connecting
+        configureAudioSession()
+
         let connectOptions = ConnectOptions(
             autoSubscribe: true
         )
@@ -53,8 +63,12 @@ final class LiveKitRoomManager: ObservableObject {
             defaultCameraCaptureOptions: CameraCaptureOptions(
                 dimensions: .h720_169
             ),
+            defaultAudioCaptureOptions: AudioCaptureOptions(), // Platform defaults: Apple Voice Processing on device, WebRTC on simulator
             defaultVideoPublishOptions: VideoPublishOptions(
                 encoding: VideoEncoding(maxBitrate: 1_500_000, maxFps: 30)
+            ),
+            defaultAudioPublishOptions: AudioPublishOptions(
+                dtx: true // Discontinuous transmission — saves bandwidth on silence
             )
         )
 
@@ -64,6 +78,8 @@ final class LiveKitRoomManager: ObservableObject {
     }
 
     func disconnect() async {
+        reconnectURL = nil
+        reconnectToken = nil
         await room.disconnect()
         MXLog.info("sTalk LiveKit: Disconnected")
         updateState()
@@ -71,10 +87,45 @@ final class LiveKitRoomManager: ObservableObject {
 
     func setCamera(enabled: Bool) async throws {
         try await room.localParticipant.setCamera(enabled: enabled)
+        updateState()
     }
 
     func setMicrophone(enabled: Bool) async throws {
         try await room.localParticipant.setMicrophone(enabled: enabled)
+    }
+
+    /// Switch between speaker and earpiece
+    func setSpeaker(enabled: Bool) {
+        let session = AVAudioSession.sharedInstance()
+        do {
+            if enabled {
+                try session.overrideOutputAudioPort(.speaker)
+            } else {
+                try session.overrideOutputAudioPort(.none)
+            }
+            MXLog.info("sTalk LiveKit: Speaker \(enabled ? "enabled" : "disabled")")
+        } catch {
+            MXLog.error("sTalk LiveKit: Failed to set speaker: \(error)")
+        }
+    }
+
+    // MARK: - Audio Session
+
+    /// Configure AVAudioSession for VoIP call before LiveKit connects.
+    /// This ensures the native SDK has exclusive control over the audio hardware.
+    private func configureAudioSession() {
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(
+                .playAndRecord,
+                mode: .voiceChat,
+                options: [.defaultToSpeaker, .allowBluetoothHFP, .allowBluetoothA2DP]
+            )
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
+            MXLog.info("sTalk LiveKit: Audio session configured for VoIP")
+        } catch {
+            MXLog.error("sTalk LiveKit: Failed to configure audio session: \(error)")
+        }
     }
 
     // MARK: - Helpers
@@ -111,6 +162,19 @@ extension LiveKitRoomManager: RoomDelegate {
         Task { @MainActor in
             self.connectionState = connectionState
             MXLog.info("sTalk LiveKit: Connection state: \(oldConnectionState) → \(connectionState)")
+
+            // Handle reconnection states
+            switch connectionState {
+            case .connected:
+                self.updateState()
+            case .disconnected:
+                // If we have stored credentials and were previously connected, this is an unexpected disconnect
+                if oldConnectionState == .connected || oldConnectionState == .reconnecting {
+                    MXLog.warning("sTalk LiveKit: Unexpected disconnect from \(oldConnectionState)")
+                }
+            default:
+                break
+            }
         }
     }
 
@@ -147,9 +211,10 @@ extension LiveKitRoomManager: RoomDelegate {
         }
     }
 
-    nonisolated func room(_ room: Room, localParticipant: LocalParticipant, didPublishTrack publication: LocalTrackPublication) {
+    nonisolated func room(_ room: Room, participant: LocalParticipant, didPublishTrack publication: LocalTrackPublication) {
         Task { @MainActor in
             self.updateState()
+            MXLog.info("sTalk LiveKit: Published local track: \(publication.kind)")
         }
     }
 }
