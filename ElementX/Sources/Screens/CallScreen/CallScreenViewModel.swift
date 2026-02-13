@@ -509,33 +509,43 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             return
         }
 
+        // Step 1: Connect to SFU (critical — if this fails, we can't proceed)
         do {
             try await liveKitRoomManager.connect(wsURL: wsURL, token: token)
-            state.liveKitRoomManager = liveKitRoomManager
             MXLog.info("sTalk LiveKit: Native connection established")
+        } catch {
+            MXLog.error("sTalk LiveKit: Failed to connect to SFU: \(error)")
+            return
+        }
 
-            // Small delay to let audio session stabilize
-            try? await Task.sleep(for: .milliseconds(200))
+        // Connection succeeded — expose room manager to UI
+        state.liveKitRoomManager = liveKitRoomManager
+        state.wasConnected = true
 
-            // Enable mic first (audio is critical), then camera
+        // Small delay to let audio session stabilize
+        try? await Task.sleep(for: .milliseconds(200))
+
+        // Step 2: Enable microphone (non-fatal — may fail on simulator)
+        do {
             try await liveKitRoomManager.setMicrophone(enabled: true)
             MXLog.info("sTalk LiveKit: Microphone enabled")
+        } catch {
+            MXLog.error("sTalk LiveKit: Microphone enable failed (non-fatal): \(error)")
+        }
 
-            if startWithVideoEnabled {
+        // Step 3: Enable camera if video call (non-fatal — no camera on simulator)
+        if startWithVideoEnabled {
+            do {
                 try await liveKitRoomManager.setCamera(enabled: true)
                 MXLog.info("sTalk LiveKit: Camera enabled")
+            } catch {
+                MXLog.error("sTalk LiveKit: Camera enable failed (non-fatal, e.g. simulator): \(error)")
+                state.isVideoEnabled = false
             }
-
-            // Mark as connected (since WebView fake WS won't trigger mediaCapturePermissionGranted)
-            state.wasConnected = true
-
-            // Observe native LiveKit connection state for call lifecycle
-            observeLiveKitState()
-        } catch {
-            MXLog.error("sTalk LiveKit: Failed to connect natively: \(error)")
-            // Fallback: show error but don't dismiss — user can still try ending call
-            state.liveKitRoomManager = nil
         }
+
+        // Observe native LiveKit connection state for call lifecycle
+        observeLiveKitState()
     }
 
     private func observeLiveKitState() {
