@@ -291,35 +291,14 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     
     func stop() {
         callTimerTask = nil
+        // Safety net: endCall() выполняет полную очистку до dismiss.
+        // stop() вызывается координатором при удалении — подстраховка на случай
+        // если endCall() не был вызван (PiP dismiss, crash).
         Task {
-            // ВАЖНО: Сначала останавливаем запись, потом закрываем звонок
-            // Иначе LiveKit уничтожит комнату и запись будет прервана (ABORTED)
-            if let recordingService, recordingService.state.isRecording {
-                let duration = recordingService.state.recordingDuration ?? 0
-                do {
-                    try await recordingService.stopRecording()
-                    MXLog.info("Recording stopped on call end")
-                    await sendRecordingInfoMessage(duration: duration)
-                } catch {
-                    MXLog.info("Recording cleanup on call end: \(error.localizedDescription)")
-                }
+            if liveKitRoomManager.connectionState != .disconnected {
+                MXLog.info("sTalk: stop() safety — disconnecting LiveKit")
+                await liveKitRoomManager.disconnect()
             }
-
-            // sTalk: Disconnect native LiveKit SDK
-            await liveKitRoomManager.disconnect()
-
-            // sTalk: Send .close to Widget API for MatrixRTC cleanup
-            let closeMessage = ElementCallWidgetMessage(direction: .fromWidget,
-                                                         action: .close,
-                                                         widgetId: widgetDriver.widgetID)
-            if let data = try? JSONEncoder().encode(closeMessage),
-               let json = String(data: data, encoding: .utf8) {
-                await widgetDriver.handleMessage(json)
-            }
-
-            // Give Rust SDK / EC time to process and clean up MatrixRTC state events
-            try? await Task.sleep(for: .seconds(1))
-
             await MainActor.run {
                 elementCallService.tearDownCallSession()
                 UIDevice.current.isProximityMonitoringEnabled = false
@@ -509,6 +488,11 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             return
         }
 
+        // sTalk: Отменить 10-секундный таймаут — LiveKit credentials получены,
+        // значит EC загрузился достаточно для Widget API. С фейковым WebSocket
+        // EC не отправит content_loaded, но нативный SDK берёт контроль.
+        timeoutTask = nil
+
         // Step 1: Connect to SFU (critical — if this fails, we can't proceed)
         do {
             try await liveKitRoomManager.connect(wsURL: wsURL, token: token)
@@ -616,22 +600,52 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     }
 
     private func endCall() async {
-        // sTalk: Disconnect native LiveKit SDK first
-        if state.liveKitRoomManager != nil {
-            await liveKitRoomManager.disconnect()
-            MXLog.info("sTalk LiveKit: Native SDK disconnected on endCall")
+        MXLog.info("sTalk: endCall — начинаю завершение звонка")
+
+        // 1. Остановить запись (до закрытия звонка, иначе ABORTED)
+        if let recordingService, recordingService.state.isRecording {
+            let duration = recordingService.state.recordingDuration ?? 0
+            do {
+                try await recordingService.stopRecording()
+                MXLog.info("sTalk: Recording stopped before call end")
+                await sendRecordingInfoMessage(duration: duration)
+            } catch {
+                MXLog.error("sTalk: Recording cleanup: \(error)")
+            }
         }
 
-        // sTalk: Send .close to Widget API for MatrixRTC cleanup
+        // 2. Отправить .hangup → Widget API (EC покидает звонок)
+        let hangupMsg = ElementCallWidgetMessage(direction: .fromWidget,
+                                                  action: .hangup,
+                                                  widgetId: widgetDriver.widgetID)
+        if let data = try? JSONEncoder().encode(hangupMsg),
+           let json = String(data: data, encoding: .utf8) {
+            await widgetDriver.handleMessage(json)
+            MXLog.info("sTalk: Sent .hangup to Widget API")
+        }
+
+        // 3. Отправить .close → Widget API (Rust SDK удаляет MatrixRTC state event)
         let closeMsg = ElementCallWidgetMessage(direction: .fromWidget,
                                                  action: .close,
                                                  widgetId: widgetDriver.widgetID)
         if let data = try? JSONEncoder().encode(closeMsg),
            let json = String(data: data, encoding: .utf8) {
             await widgetDriver.handleMessage(json)
+            MXLog.info("sTalk: Sent .close to Widget API")
         }
-        try? await Task.sleep(for: .milliseconds(500))
 
+        // 4. Дать Rust SDK время обработать удаление state event
+        try? await Task.sleep(for: .seconds(2))
+
+        // 5. Отключить нативный LiveKit SDK (после очистки state)
+        await liveKitRoomManager.disconnect()
+        MXLog.info("sTalk LiveKit: Disconnected on endCall")
+
+        // 6. Закрыть CallKit сессию
+        elementCallService.tearDownCallSession()
+        UIDevice.current.isProximityMonitoringEnabled = false
+
+        // 7. Dismiss экран звонка
         actionsSubject.send(.dismiss)
     }
 
