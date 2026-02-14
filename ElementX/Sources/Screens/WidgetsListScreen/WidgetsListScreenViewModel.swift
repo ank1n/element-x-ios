@@ -34,7 +34,7 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
         super.init(initialViewState: initialState, mediaProvider: userSession.mediaProvider)
 
         setupSubscriptions()
-        loadWidgets()
+        fetchWidgets()
     }
 
     override func process(viewAction: WidgetsListScreenViewAction) {
@@ -43,6 +43,8 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
             actionsSubject.send(.showSettings)
         case .selectWidget(let widget):
             actionsSubject.send(.openWidget(widget))
+        case .refresh:
+            fetchWidgets()
         }
     }
 
@@ -66,14 +68,14 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
             .store(in: &widgetsCancellables)
     }
 
-    /// Extract domain from homeserver URL for building service URLs
-    private var serverDomain: String {
-        let homeserver = userSession.clientProxy.homeserver
-        return URL(string: homeserver)?.host ?? "stalk.implica.ru"
-    }
-
-    /// Base URL of the homeserver (e.g., https://stalk.implica.ru)
+    /// Base URL for apps-api (same server as recording-api)
     private var serverBaseURL: String {
+        // Use the same domain as recording-api (from AppSettings)
+        let recordingBase = ServiceLocator.shared.settings?.recordingAPIBaseURL
+        if let base = recordingBase {
+            return base.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        }
+        // Fallback: extract from homeserver
         let homeserver = userSession.clientProxy.homeserver
         if let url = URL(string: homeserver), let scheme = url.scheme, let host = url.host {
             return "\(scheme)://\(host)"
@@ -81,11 +83,105 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
         return "https://stalk.implica.ru"
     }
 
-    private func loadWidgets() {
+    // MARK: - Apps API
+
+    private func fetchWidgets() {
+        state.isLoading = true
+
+        Task { [weak self] in
+            guard let self else { return }
+
+            do {
+                let widgets = try await self.fetchWidgetsFromAPI()
+                self.state.widgets = widgets
+                self.state.isLoading = false
+                MXLog.info("sTalk: Loaded \(widgets.count) widgets from apps-api")
+            } catch {
+                MXLog.error("sTalk: Failed to fetch widgets: \(error)")
+                self.state.widgets = self.fallbackWidgets()
+                self.state.isLoading = false
+            }
+        }
+    }
+
+    private func fetchWidgetsFromAPI() async throws -> [WidgetItem] {
+        let baseURL = serverBaseURL
+        let urlString = "\(baseURL)/apps-api/widgets"
+        MXLog.info("sTalk: Fetching widgets from \(urlString)")
+
+        guard let url = URL(string: urlString) else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 15.0
+        request.setValue("Bearer \(userSession.clientProxy.userID)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+
+        let apiResponse = try JSONDecoder().decode(AppsAPIResponse.self, from: data)
+
+        let userId = userSession.clientProxy.userID
+        let encodedUserId = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
+
+        return apiResponse.widgets
+            .filter(\.enabled)
+            .map { widget in
+                // Build full URL from relative path
+                var fullURL = "\(baseURL)\(widget.url)"
+                // Append userId param for widgets that need it
+                if fullURL.contains("?") {
+                    fullURL += "&userId=\(encodedUserId)"
+                } else {
+                    fullURL += "?userId=\(encodedUserId)"
+                }
+
+                // Build icon URL from relative path
+                let iconURL: URL? = URL(string: "\(baseURL)\(widget.icon)")
+
+                // Map SF Symbol for known widget types as fallback
+                let sfSymbol = sfSymbolForWidget(id: widget.id, type: widget.type)
+
+                return WidgetItem(
+                    id: widget.id,
+                    name: widget.name,
+                    description: widget.description,
+                    icon: sfSymbol,
+                    iconURL: iconURL,
+                    url: fullURL,
+                    category: WidgetCategory(apiType: widget.type)
+                )
+            }
+    }
+
+    /// Map known widget IDs to SF Symbols for fallback
+    private func sfSymbolForWidget(id: String, type: String) -> String {
+        switch id {
+        case "weather-bot": return "cloud.sun.fill"
+        case "recording-player": return "waveform"
+        case "stats-dashboard": return "chart.bar.fill"
+        default:
+            switch type {
+            case "smartapp": return "square.grid.2x2.fill"
+            case "widget": return "puzzlepiece.fill"
+            default: return "app.fill"
+            }
+        }
+    }
+
+    /// Fallback widgets when API is unreachable
+    private func fallbackWidgets() -> [WidgetItem] {
         let baseURL = serverBaseURL
         let userId = userSession.clientProxy.userID
         let encodedUserId = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
-        state.widgets = [
+        return [
             WidgetItem(
                 id: "statistics",
                 name: "Статистика",
@@ -95,6 +191,5 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
                 category: .tools
             )
         ]
-        state.isLoading = false
     }
 }

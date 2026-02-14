@@ -62,6 +62,9 @@ struct WidgetsListScreen: View {
             }
             .scrollDismissesKeyboard(.immediately)
             .scrollBounceBehavior(context.viewState.widgets.isEmpty ? .basedOnSize : .automatic)
+            .refreshable {
+                context.send(viewAction: .refresh)
+            }
         }
     }
 
@@ -172,15 +175,7 @@ struct WidgetsListScreen: View {
             context.send(viewAction: .selectWidget(widget))
         } label: {
             HStack(spacing: 16) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(iconColor(for: widget.name))
-                        .frame(width: 52, height: 52)
-
-                    Image(systemName: widget.icon)
-                        .font(.system(size: 24))
-                        .foregroundColor(.compound.textOnSolidPrimary)
-                }
+                widgetIcon(widget)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(widget.name)
@@ -209,6 +204,40 @@ struct WidgetsListScreen: View {
             }
         }
         .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func widgetIcon(_ widget: WidgetItem) -> some View {
+        if let iconURL = widget.iconURL {
+            // Remote icon from API
+            AsyncImage(url: iconURL) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 52, height: 52)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                default:
+                    // Loading or error — show SF Symbol fallback
+                    sfSymbolIcon(widget)
+                }
+            }
+        } else {
+            sfSymbolIcon(widget)
+        }
+    }
+
+    private func sfSymbolIcon(_ widget: WidgetItem) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(iconColor(for: widget.name))
+                .frame(width: 52, height: 52)
+
+            Image(systemName: widget.icon.isEmpty ? "app.fill" : widget.icon)
+                .font(.system(size: 24))
+                .foregroundColor(.compound.textOnSolidPrimary)
+        }
     }
 
     private func iconColor(for name: String) -> Color {
