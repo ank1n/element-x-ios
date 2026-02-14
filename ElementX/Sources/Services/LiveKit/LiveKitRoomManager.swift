@@ -21,6 +21,9 @@ final class LiveKitRoomManager: ObservableObject {
     @Published private(set) var localVideoTrack: VideoTrack?
     @Published private(set) var localParticipant: LocalParticipant?
 
+    /// LiveKit room name (used for recording-api)
+    var roomName: String? { room.name }
+
     // MARK: - Private
 
     private let room: Room

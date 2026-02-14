@@ -392,19 +392,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     }
     
     private func handleBackwardsNavigation() async {
-        // Try PiP first if available
-        if state.url != nil,
-           isPictureInPictureAllowed,
-           let requestPictureInPictureHandler = state.bindings.requestPictureInPictureHandler {
-            let result = await requestPictureInPictureHandler()
-            if case .success = result {
-                isMinimized = true
-                state.isMinimized = true
-                actionsSubject.send(.pictureInPictureStarted)
-                return
-            }
-        }
-        // Fallback: minimize overlay (call continues in mini-window)
+        // sTalk: WebView is 0×0 for Widget API only — PiP via WebView won't work.
+        // Always use the minimize overlay (SwiftUI mini-window with native video).
         isMinimized = true
         state.isMinimized = true
         actionsSubject.send(.minimizeCall)
@@ -728,7 +717,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             roomName = url.lastPathComponent
 
         case .roomCall(let roomProxy, let clientProxy, _, _, _, _):
-            roomName = roomProxy.id
+            // sTalk: Use LiveKit room name for recording-api (not Matrix room ID)
+            roomName = liveKitRoomManager.roomName ?? roomProxy.id
             matrixRoomId = roomProxy.id
             initiatedBy = clientProxy.userID
 
