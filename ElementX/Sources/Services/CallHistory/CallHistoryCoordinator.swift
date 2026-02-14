@@ -51,23 +51,31 @@ class CallHistoryCoordinator {
 
         case .startCall(let roomID):
             // Предотвращаем дублирование - если уже есть активный звонок в этой комнате, игнорируем
-            if currentCallRoomID == roomID, currentCallID != nil {
+            if currentCallRoomID == roomID {
                 MXLog.info("📞 CallHistory: Ignoring duplicate startCall for room \(roomID)")
                 pendingIncomingCall = false
                 return
             }
 
-            // Определяем направление звонка
             let direction: LocalCallHistoryItem.CallDirection = pendingIncomingCall ? .incoming : .outgoing
             pendingIncomingCall = false
 
-            // Создаём запись в локальной истории
+            // Для исходящих звонков запись уже создана в UserSessionFlowCoordinator.presentCallScreen()
+            // Создаём только для входящих звонков (через VoIP push)
+            if direction == .outgoing {
+                currentCallRoomID = roomID
+                currentCallID = nil // Запись управляется UserSessionFlowCoordinator
+                MXLog.info("📞 CallHistory: Outgoing call tracked (entry managed by UserSessionFlowCoordinator)")
+                return
+            }
+
+            // Входящий звонок — создаём запись здесь
             let callID = localCallHistoryService.startCall(roomID: roomID, direction: direction)
             currentCallID = callID
             currentCallRoomID = roomID
             currentCallDirection = direction
 
-            MXLog.info("📞 CallHistory: Started call \(callID), room: \(roomID), direction: \(direction)")
+            MXLog.info("📞 CallHistory: Started incoming call \(callID), room: \(roomID)")
 
             // Асинхронно получаем информацию о комнате и участниках
             Task {
@@ -75,14 +83,19 @@ class CallHistoryCoordinator {
             }
 
         case .endCall(let roomID):
-            guard let callID = currentCallID, currentCallRoomID == roomID else {
+            guard currentCallRoomID == roomID else {
                 MXLog.warning("📞 CallHistory: End call for unknown room \(roomID)")
                 return
             }
 
-            // Завершаем звонок (не пропущенный, т.к. он был отвечен)
-            localCallHistoryService.endCall(id: callID, missed: false)
-            MXLog.info("📞 CallHistory: Ended call \(callID)")
+            // Завершаем только входящие звонки (у которых есть callID от нас)
+            // Исходящие завершаются в UserSessionFlowCoordinator на .dismiss
+            if let callID = currentCallID {
+                localCallHistoryService.endCall(id: callID, missed: false)
+                MXLog.info("📞 CallHistory: Ended incoming call \(callID)")
+            } else {
+                MXLog.info("📞 CallHistory: Outgoing call ended (managed by UserSessionFlowCoordinator)")
+            }
 
             currentCallID = nil
             currentCallRoomID = nil

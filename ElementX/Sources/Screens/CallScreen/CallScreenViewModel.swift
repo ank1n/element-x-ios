@@ -679,19 +679,26 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     private func setupRecordingObserver() {
         guard let recordingService else {
             state.isRecordingEnabled = false
+            MXLog.warning("sTalk: Recording service is nil — recording button disabled")
             return
         }
+
+        MXLog.info("sTalk: Recording service available, button enabled")
 
         recordingService.statePublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] recordingState in
+                MXLog.info("sTalk: Recording state changed: \(recordingState)")
                 self?.state.recordingState = recordingState
             }
             .store(in: &cancellables)
     }
 
     private func handleToggleRecording() {
-        guard let recordingService else { return }
+        guard let recordingService else {
+            MXLog.error("sTalk: Recording toggle failed — service is nil")
+            return
+        }
 
         if recordingService.state.isRecording {
             Task { await stopRecording() }
@@ -702,7 +709,10 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     }
 
     private func startRecording() async {
-        guard let recordingService else { return }
+        guard let recordingService else {
+            MXLog.error("sTalk: startRecording failed — service is nil")
+            return
+        }
 
         // Get room info and participant metadata from configuration
         let roomName: String
