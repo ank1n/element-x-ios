@@ -81,8 +81,10 @@ struct CallScreenViewState: BindableState {
 
 struct Bindings {
     var javaScriptEvaluator: ((String) async throws -> Any)?
-    var requestPictureInPictureHandler: (() async -> Result<Void, CallScreenError>)?
     var showSpeakerPickerHandler: (() -> Void)?
+    /// sTalk: Removes WebView from view hierarchy to kill IOSurface compositing.
+    /// evaluateJavaScript() continues working — it's IPC to WebContent process.
+    var hideWebViewHandler: (() -> Void)?
 
     var alertInfo: AlertInfo<UUID>?
 }
@@ -94,7 +96,6 @@ enum CallScreenViewAction {
     case pictureInPictureWillStop
     case endCall
     case mediaCapturePermissionGranted
-    case outputDeviceSelected(deviceID: String)
     case widgetAction(message: String)
     // Recording actions
     case toggleRecording
@@ -139,12 +140,6 @@ struct CallParticipantInfo: Identifiable {
 enum CallScreenJavaScriptMessageName: String, CaseIterable {
     /// Widget actions's handler.
     case widgetAction
-    /// Used to show the native AVRoutePickerView.
-    case showNativeOutputDevicePicker
-    /// Used to determine if the webview has selected the earpiece or not.
-    case onOutputDeviceSelect
-    /// Used to handle the webview back button
-    case onBackButtonPressed
     /// sTalk: Used to detect when Element Call returns to lobby (remote hangup)
     case onLobbyDetected
     /// sTalk: Used to detect hand raise state changes from WebView
@@ -169,24 +164,6 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 },
                 false,
             );
-            """
-        case .showNativeOutputDevicePicker:
-            """
-            window.controls.\(rawValue) = () => {
-                window.webkit.messageHandlers.\(rawValue).postMessage("");
-            };
-            """
-        case .onOutputDeviceSelect:
-            """
-            window.controls.\(rawValue) = (id) => {
-                window.webkit.messageHandlers.\(rawValue).postMessage(id);
-            };
-            """
-        case .onBackButtonPressed:
-            """
-            window.controls.\(rawValue) = () => {
-                window.webkit.messageHandlers.\(rawValue).postMessage("");
-            }
             """
         case .onLobbyDetected:
             """
@@ -282,25 +259,39 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
     }
 
     /// sTalk: JS script injected at `.atDocumentStart` BEFORE Element Call loads.
-    /// 1. Intercepts LiveKit WebSocket → returns fake WS, posts credentials to native side
-    /// 2. Blocks getUserMedia → prevents WebView from capturing mic/camera (native SDK handles it)
-    /// Widget API (postMessage) is unaffected since it doesn't use WebSocket or media.
+    /// 1. Hides ALL visual content via CSS (IOSurface renders nothing)
+    /// 2. Intercepts LiveKit WebSocket → returns fake WS, posts credentials to native side.
+    /// Widget API (postMessage) is unaffected since it doesn't use WebSocket.
     static var webSocketInterceptionScript: String {
         """
         (function() {
-            // === 1. Block getUserMedia so WebView doesn't compete with native SDK for mic/camera ===
-            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                navigator.mediaDevices.getUserMedia = function() {
-                    // Return a fake empty MediaStream — EC gets "media" but nothing real is captured
-                    return Promise.resolve(new MediaStream());
-                };
-            }
-            // Also block legacy API
-            if (navigator.getUserMedia) {
-                navigator.getUserMedia = function(constraints, success, error) {
-                    success(new MediaStream());
-                };
-            }
+            // === 1. Hide ALL visual content at the earliest possible moment ===
+            // WKWebView IOSurface renders ABOVE all SwiftUI/UIKit views.
+            // If the WebView renders nothing, IOSurface is empty/transparent.
+            // This MUST run at atDocumentStart before any Element Call rendering.
+            (function() {
+                var s = document.createElement('style');
+                s.textContent = 'html,body{display:none!important;visibility:hidden!important;background:transparent!important;width:0!important;height:0!important;overflow:hidden!important}*{display:none!important}';
+                (document.documentElement || document).appendChild(s);
+                if (document.documentElement) {
+                    document.documentElement.style.cssText = 'display:none!important;visibility:hidden!important;background:transparent!important';
+                }
+                // Re-enforce every 100ms — Element Call may override styles
+                setInterval(function() {
+                    if (document.documentElement) {
+                        document.documentElement.style.setProperty('display', 'none', 'important');
+                        document.documentElement.style.setProperty('visibility', 'hidden', 'important');
+                        document.documentElement.style.setProperty('background', 'transparent', 'important');
+                    }
+                    if (document.body) {
+                        document.body.style.setProperty('display', 'none', 'important');
+                        document.body.style.setProperty('visibility', 'hidden', 'important');
+                    }
+                    if (!s.parentNode) {
+                        (document.documentElement || document.head || document).appendChild(s);
+                    }
+                }, 100);
+            })();
 
             // === 2. Intercept LiveKit WebSocket — capture credentials, return fake WS ===
             var OrigWS = window.WebSocket;
@@ -358,373 +349,11 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
     }
 
     static var allCasesInjectionScript: String {
-        allCases.map(\.postMessageScript).joined(separator: "\n") + "\n" + telegramStyleInjectionScript
+        allCases.map(\.postMessageScript).joined(separator: "\n")
     }
 
-    // MARK: - sTalk Telegram-style CSS Injection
-
-    /// JavaScript that injects Telegram-style CSS + DOM manipulation into Element Call.
-    /// Uses CSS Module attribute selectors ([class*="..."]) to match hashed class names,
-    /// plus MutationObserver for dynamic DOM manipulation (hiding extra buttons, forcing full-screen tiles).
-    private static var telegramStyleInjectionScript: String {
-        """
-        (function() {
-            if (document.getElementById('stalk-telegram-style')) return;
-
-            // 1. Inject CSS
-            var style = document.createElement('style');
-            style.id = 'stalk-telegram-style';
-            style.textContent = `
-                /* ===== sTalk: Telegram-style Call Screen ===== */
-
-                /* ===== LAYOUT: Full-viewport video ===== */
-
-                /* Body + #root: fixed fullscreen */
-                body { background: #000 !important; margin: 0 !important; padding: 0 !important; overflow: hidden !important; }
-                #root { background: #000 !important; position: fixed !important; inset: 0 !important; width: 100% !important; height: 100% !important; overflow: hidden !important; }
-                #root > * { position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; }
-
-                /* _inRoom: block (not flex!) so hidden children leave no gaps */
-                [class*="_inRoom"] {
-                    background: #000 !important;
-                    overflow: hidden !important;
-                    position: fixed !important;
-                    inset: 0 !important;
-                    width: 100% !important;
-                    height: 100% !important;
-                    display: block !important;
-                }
-
-                /* ===== HIDE: header, footer, lobby and ALL non-video containers ===== */
-                [class*="_header_"], [class*="_header_"] * { display: none !important; height: 0 !important; overflow: hidden !important; }
-                [class*="_filler_"], [class*="_filler_"] * { display: none !important; height: 0 !important; }
-                [class*="_footer_"], [class*="_footer_"] * { display: none !important; height: 0 !important; visibility: hidden !important; }
-                [class*="_bar_"], [class*="_bar_"] * { display: none !important; height: 0 !important; }
-                [class*="_logo_"], [class*="_layout_"] { display: none !important; height: 0 !important; }
-                [class*="_lobby"] { display: none !important; }
-
-                /* ===== 1:1 (direct): hide scrollingGrid, show spotlight fullscreen ===== */
-                body.stalk-direct [class*="_scrollingGrid"] { display: none !important; }
-                body.stalk-direct [class*="_spotlight"] { display: block !important; }
-
-                /* ===== Group: hide spotlight, show scrollingGrid as grid ===== */
-                body.stalk-group [class*="_spotlight"] { display: none !important; }
-                body.stalk-group [class*="_scrollingGrid"] {
-                    display: grid !important;
-                    grid-template-columns: repeat(2, 1fr) !important;
-                    gap: 4px !important;
-                    padding: 4px !important;
-                    position: absolute !important;
-                    inset: 0 !important;
-                    width: 100% !important;
-                    height: 100% !important;
-                    overflow: hidden !important;
-                }
-
-                /* Group tile: rounded, dark background */
-                body.stalk-group [class*="_scrollingGrid"] [class*="_tile"] {
-                    border-radius: 12px !important;
-                    overflow: hidden !important;
-                    background: #1a1a1a !important;
-                    position: relative !important;
-                }
-
-                /* Group tile video: cover */
-                body.stalk-group [class*="_scrollingGrid"] video {
-                    object-fit: cover !important;
-                    width: 100% !important;
-                    height: 100% !important;
-                    border-radius: 12px !important;
-                }
-
-                /* Group: show name tags on tiles */
-                body.stalk-group [class*="_scrollingGrid"] [class*="_nameTag"],
-                body.stalk-group [class*="_scrollingGrid"] [class*="_displayName"] {
-                    display: block !important;
-                    position: absolute !important;
-                    bottom: 8px !important;
-                    left: 8px !important;
-                    color: white !important;
-                    font-size: 13px !important;
-                    text-shadow: 0 1px 3px rgba(0,0,0,0.8) !important;
-                    z-index: 10 !important;
-                }
-
-                /* Default: hide scrollingGrid until body class is set */
-                [class*="_scrollingGrid"] { display: none !important; }
-
-                /* ===== fixedGrid: fill entire _inRoom ===== */
-                [class*="_fixedGrid"] {
-                    position: absolute !important;
-                    inset: 0 !important;
-                    width: 100% !important;
-                    height: 100% !important;
-                }
-
-                /* ===== CRITICAL: spotlight — remove grid/aspect-ratio 16/9, fill parent ===== */
-                [class*="_spotlight"] {
-                    display: block !important;
-                    position: absolute !important;
-                    inset: 0 !important;
-                    width: 100% !important;
-                    height: 100% !important;
-                    max-width: none !important;
-                    max-height: none !important;
-                    aspect-ratio: unset !important;
-                    margin: 0 !important;
-                    padding: 0 !important;
-                    container-type: normal !important;
-                }
-
-                /* slot: fill spotlight absolutely */
-                [class*="_slot"] {
-                    position: absolute !important;
-                    inset: 0 !important;
-                    width: 100% !important;
-                    height: 100% !important;
-                    inline-size: 100% !important;
-                    block-size: 100% !important;
-                    max-width: none !important;
-                    max-height: none !important;
-                    background: #000 !important;
-                }
-
-                /* tile: fill slot */
-                [class*="_tile_110p2"],
-                [class*="_tile_110p2"][class*="_maximised"] {
-                    position: absolute !important;
-                    inset: 0 !important;
-                    width: 100% !important;
-                    height: 100% !important;
-                    flex-grow: 1 !important;
-                }
-
-                /* media tile: fill parent, no radius */
-                [class*="_tile_31vx3"],
-                [class*="_tile_31vx3"] * {
-                    --media-view-border-radius: 0px !important;
-                    border-radius: 0 !important;
-                }
-                [class*="_tile_31vx3"] {
-                    position: absolute !important;
-                    inset: 0 !important;
-                    width: 100% !important;
-                    height: 100% !important;
-                    outline: none !important;
-                    border: none !important;
-                }
-
-                /* contents wrapper: fill tile */
-                [class*="_contents_18q5h"] {
-                    width: 100% !important;
-                    height: 100% !important;
-                    border-radius: 0 !important;
-                    border: none !important;
-                }
-
-                /* media view: fill contents */
-                [class*="_media_1yzvo"],
-                [class*="_media"] {
-                    width: 100% !important;
-                    height: 100% !important;
-                    border-radius: 0 !important;
-                    container-type: normal !important;
-                }
-
-                /* video element: cover entire area */
-                video {
-                    object-fit: cover !important;
-                    object-position: center center !important;
-                    border-radius: 0 !important;
-                    width: 100% !important;
-                    height: 100% !important;
-                }
-
-                /* ===== HIDE: avatar/noVideo overlay ===== */
-                [class*="_noVideo"],
-                [class*="_avatar"],
-                [class*="_avatarContainer"],
-                [class*="_videoMuted"] {
-                    display: none !important;
-                    visibility: hidden !important;
-                    opacity: 0 !important;
-                    height: 0 !important;
-                    overflow: hidden !important;
-                }
-
-                /* ===== HIDE: non-essential UI ===== */
-                [class*="_invite_110p2"],
-                [class*="_shareScreen"],
-                [class*="_screenshare"],
-                [class*="_settings"],
-                [class*="_settingsModal"],
-                [class*="_emoji"],
-                [class*="_reaction"],
-                [class*="_buttons_110p2"],
-                [class*="_bottomRightButtons"],
-                [class*="_volumeSlider"],
-                [class*="_switchCamera"],
-                [class*="_debug"], [class*="_stats"],
-                pre, code { display: none !important; }
-
-                /* _raiseHand: off-screen but clickable for JS DOM click */
-                [class*="_raiseHand"] {
-                    position: fixed !important;
-                    left: -9999px !important;
-                    opacity: 0 !important;
-                    pointer-events: auto !important;
-                }
-
-                /* _displayName, _nameTag: hidden by default, shown in group grid via body.stalk-group */
-                body:not(.stalk-group) [class*="_displayName"],
-                body:not(.stalk-group) [class*="_nameTag"] {
-                    display: none !important;
-                }
-
-                /* mute icon: semi-transparent */
-                [class*="_muteIcon_31vx3"] { opacity: 0.4 !important; }
-
-                /* ===== KILL: all borders, outlines, scrollbars ===== */
-                *, *::before, *::after {
-                    border-style: none !important;
-                    border-width: 0 !important;
-                    outline: none !important;
-                }
-                ::-webkit-scrollbar { display: none !important; width: 0 !important; }
-                hr, [role="separator"] { display: none !important; }
-
-                .stalk-hidden { display: none !important; }
-            `;
-            document.head.appendChild(style);
-
-            // 2. DOM manipulation via MutationObserver
-            function applyTelegramLayout() {
-                // _inRoom: fill viewport
-                document.querySelectorAll('[class*="_inRoom"]').forEach(function(el) {
-                    el.style.setProperty('position', 'fixed', 'important');
-                    el.style.setProperty('inset', '0', 'important');
-                    el.style.setProperty('width', '100%', 'important');
-                    el.style.setProperty('height', '100%', 'important');
-                    el.style.setProperty('overflow', 'hidden', 'important');
-                });
-
-                // fixedGrid: absolute, fill _inRoom
-                document.querySelectorAll('[class*="_fixedGrid"]').forEach(function(el) {
-                    el.style.setProperty('position', 'absolute', 'important');
-                    el.style.setProperty('inset', '0', 'important');
-                    el.style.setProperty('width', '100%', 'important');
-                    el.style.setProperty('height', '100%', 'important');
-                });
-
-                // CRITICAL: spotlight — remove grid/aspect-ratio 16/9, fill parent
-                document.querySelectorAll('[class*="_spotlight"]').forEach(function(el) {
-                    el.style.setProperty('display', 'block', 'important');
-                    el.style.setProperty('position', 'absolute', 'important');
-                    el.style.setProperty('inset', '0', 'important');
-                    el.style.setProperty('width', '100%', 'important');
-                    el.style.setProperty('height', '100%', 'important');
-                    el.style.setProperty('max-width', 'none', 'important');
-                    el.style.setProperty('max-height', 'none', 'important');
-                    el.style.setProperty('aspect-ratio', 'unset', 'important');
-                    el.style.setProperty('margin', '0', 'important');
-                    el.style.setProperty('padding', '0', 'important');
-                    el.style.setProperty('container-type', 'normal', 'important');
-                });
-
-                // slot: fill spotlight
-                document.querySelectorAll('[class*="_slot"]').forEach(function(el) {
-                    el.style.setProperty('width', '100%', 'important');
-                    el.style.setProperty('height', '100%', 'important');
-                    el.style.setProperty('inline-size', '100%', 'important');
-                    el.style.setProperty('block-size', '100%', 'important');
-                });
-
-                // tiles: fill slot
-                document.querySelectorAll('[class*="_tile_110p2"], [class*="_tile_31vx3"]').forEach(function(el) {
-                    el.style.setProperty('position', 'absolute', 'important');
-                    el.style.setProperty('inset', '0', 'important');
-                    el.style.setProperty('width', '100%', 'important');
-                    el.style.setProperty('height', '100%', 'important');
-                    el.style.setProperty('border-radius', '0', 'important');
-                });
-
-                // contents + media: fill tile
-                document.querySelectorAll('[class*="_contents_18q5h"], [class*="_media"]').forEach(function(el) {
-                    el.style.setProperty('width', '100%', 'important');
-                    el.style.setProperty('height', '100%', 'important');
-                    el.style.setProperty('border-radius', '0', 'important');
-                    el.style.setProperty('container-type', 'normal', 'important');
-                });
-
-                // Hide avatar/noVideo overlays
-                document.querySelectorAll('[class*="_noVideo"], [class*="_avatar"], [class*="_avatarContainer"], [class*="_videoMuted"]').forEach(function(el) {
-                    el.style.setProperty('display', 'none', 'important');
-                    el.style.setProperty('visibility', 'hidden', 'important');
-                });
-
-                // video: cover, centered
-                document.querySelectorAll('video').forEach(function(el) {
-                    el.style.setProperty('object-fit', 'cover', 'important');
-                    el.style.setProperty('object-position', 'center center', 'important');
-                    el.style.setProperty('width', '100%', 'important');
-                    el.style.setProperty('height', '100%', 'important');
-                });
-
-                // sTalk: Targeted fix for avatar/whitespace/position (safe — never hides video)
-                fixInRoomLayout();
-            }
-
-            // sTalk: For 1:1 calls — hide non-video children of _inRoom (header/footer/bar),
-            // set black background on all video ancestors to prevent white stripes.
-            // Does NOT hide siblings of video containers — avoids accidentally hiding video.
-            function fixInRoomLayout() {
-                if (!document.body.classList.contains('stalk-direct')) return;
-
-                // 1. Inside _inRoom: hide direct children that are header/footer/bar/filler
-                var inRoom = document.querySelector('[class*="_inRoom"]');
-                if (inRoom) {
-                    Array.from(inRoom.children).forEach(function(child) {
-                        if (child.tagName === 'STYLE' || child.tagName === 'SCRIPT') return;
-                        var cls = child.className || '';
-                        // Keep containers that hold video (fixedGrid, spotlight, scrollingGrid, tile)
-                        if (child.querySelector('video') ||
-                            cls.indexOf('_fixedGrid') !== -1 ||
-                            cls.indexOf('_spotlight') !== -1 ||
-                            cls.indexOf('_scrollingGrid') !== -1) {
-                            return;
-                        }
-                        // Hide everything else (header, footer, bar, logo, etc.)
-                        child.style.setProperty('display', 'none', 'important');
-                        child.style.setProperty('height', '0', 'important');
-                        child.style.setProperty('position', 'absolute', 'important');
-                    });
-                }
-
-                // 2. Set black background on all video ancestors (no white stripes)
-                document.querySelectorAll('video').forEach(function(video) {
-                    var el = video.parentElement;
-                    while (el && el !== document.body) {
-                        el.style.setProperty('background', '#000', 'important');
-                        el = el.parentElement;
-                    }
-                });
-            }
-
-            // Run immediately and on DOM changes
-            applyTelegramLayout();
-            var observer = new MutationObserver(function() { applyTelegramLayout(); });
-            observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
-
-            // Also run after delays (React renders asynchronously)
-            setTimeout(applyTelegramLayout, 500);
-            setTimeout(applyTelegramLayout, 1500);
-            setTimeout(applyTelegramLayout, 3000);
-            setTimeout(applyTelegramLayout, 5000);
-
-            // End of Telegram-style injection
-        })();
-        """
-    }
+    // sTalk: domClearingScript removed — WebView is in off-screen UIWindow,
+    // IOSurface doesn't render in visible area. No DOM manipulation needed.
 }
 
 struct DecodedWidgetMessage: Decodable {

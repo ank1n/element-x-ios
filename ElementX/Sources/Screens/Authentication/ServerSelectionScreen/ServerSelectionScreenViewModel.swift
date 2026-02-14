@@ -62,7 +62,7 @@ class ServerSelectionScreenViewModel: ServerSelectionScreenViewModelType, Server
                 actionsSubject.send(.updated)
                 stopLoading()
             case .failure(let error):
-                MXLog.info("Invalid homeserver: \(homeserverAddress)")
+                MXLog.info("sTalk: Invalid homeserver: \(homeserverAddress), error: \(error)")
                 stopLoading()
                 handleError(error)
             }
@@ -110,7 +110,10 @@ class ServerSelectionScreenViewModel: ServerSelectionScreenViewModelType, Server
                                                  },
                                                  secondaryButton: .init(title: L10n.actionCancel, role: .cancel, action: nil))
         default:
-            showFooterMessage(L10n.errorUnknown)
+            // sTalk DEBUG: show detailed error to diagnose login issues
+            state.bindings.alertInfo = AlertInfo(id: .loginAlert,
+                                                 title: "sTalk Debug Error",
+                                                 message: "Error type: \(error)\n\nDetails: \(String(describing: error))")
         }
     }
     

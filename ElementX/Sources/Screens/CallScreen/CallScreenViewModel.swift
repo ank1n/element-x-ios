@@ -169,12 +169,14 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             .publisher(for: AVAudioSession.routeChangeNotification)
             .sink { [weak self] _ in
                 guard let self else { return }
-                // sTalk: Update speaker button state
-                let isSpeaker = AVAudioSession.sharedInstance().currentRoute.outputs.first?.portType == .builtInSpeaker
+                // sTalk: Update speaker button state + proximity sensor for earpiece
+                let currentOutput = AVAudioSession.sharedInstance().currentRoute.outputs.first
+                let isSpeaker = currentOutput?.portType == .builtInSpeaker
+                let isEarpiece = currentOutput?.portType == .builtInReceiver
                 Task { @MainActor in
                     self.state.isSpeakerOn = isSpeaker
+                    UIDevice.current.isProximityMonitoringEnabled = isEarpiece
                 }
-                Task { await self.updateOutputsListOnWeb() }
             }
             .store(in: &cancellables)
 
@@ -244,12 +246,6 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         case .mediaCapturePermissionGranted:
             // sTalk: Don't set wasConnected/timer here — wait for first mediaStateChanged
             // (the actual call connection signal). This prevents premature lobby detection.
-            Task { await updateOutputsListOnWeb() }
-            // sTalk: Set body class for conditional CSS (direct vs group)
-            Task {
-                let bodyClass = self.state.isDirect ? "stalk-direct" : "stalk-group"
-                _ = try? await self.state.bindings.javaScriptEvaluator?("document.body.classList.add('\(bodyClass)')")
-            }
             // sTalk: If voice call, explicitly disable camera in WebView
             // (don't use toggleVideo() — it inverts current state which is already false)
             if !startWithVideoEnabled {
@@ -261,8 +257,6 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                     await self.postMessageToWidget(message)
                 }
             }
-        case .outputDeviceSelected(deviceID: let deviceID):
-            handleOutputDeviceSelected(deviceID: deviceID)
         case .widgetAction(let message):
             Task { await handleWidgetAction(message: message) }
         case .toggleRecording:
@@ -284,8 +278,19 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             state.isMinimized = false
             actionsSubject.send(.pictureInPictureStopped)
         case .liveKitCredentialsIntercepted(let url, let token):
+            NSLog("sTalk: LiveKit credentials intercepted — url=%@, token length=%d", String(url.prefix(80)), token.count)
             MXLog.info("sTalk: LiveKit credentials intercepted — url=\(url.prefix(80))..., token length=\(token.count)")
             Task { await connectNativeLiveKit(wsURL: url, token: token) }
+            // sTalk: Remove WebView from view hierarchy AFTER credentials captured.
+            // This kills IOSurface compositing — no more EC buttons/header rendering over SwiftUI.
+            // evaluateJavaScript() continues working (IPC to WebContent process, doesn't need view hierarchy).
+            // Small delay to let Widget API initial handshake complete.
+            Task {
+                try? await Task.sleep(for: .seconds(3))
+                await MainActor.run {
+                    state.bindings.hideWebViewHandler?()
+                }
+            }
         }
     }
     
@@ -382,15 +387,6 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         }
     }
     
-    // This should always match the web app value
-    private static let earpieceID = "earpiece-id"
-    
-    private func handleOutputDeviceSelected(deviceID: String) {
-        let isEarpiece = deviceID == Self.earpieceID
-        MXLog.info("Is earpiece: \(isEarpiece)")
-        UIDevice.current.isProximityMonitoringEnabled = isEarpiece
-    }
-    
     private func handleBackwardsNavigation() async {
         // sTalk: WebView is 0×0 for Widget API only — PiP via WebView won't work.
         // Always use the minimize overlay (SwiftUI mini-window with native video).
@@ -442,37 +438,13 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         }
     }
     
-    /// This function updates the list of available audio outputs on the web side
-    /// however since we actually handle switching the audio output through the OS,
-    /// this is only used to inform the webview when the speaker is selected,
-    /// so that the option to use the earpiece can be displayed.
-    private func updateOutputsListOnWeb() async {
-        guard let currentOutput = AVAudioSession.sharedInstance().currentRoute.outputs.first else {
-            return
-        }
-        
-        let deviceList = if currentOutput.portType == .builtInSpeaker {
-            // This allows the webview to display the earpiece option
-            "{id: '\(currentOutput.uid)', name: '\(currentOutput.portName)', forEarpiece: true, isSpeaker: true}"
-        } else {
-            // Doesn't matter because the switch is handled through the OS
-            "{id: 'dummy', name: 'dummy'}"
-        }
-        
-        let javaScript = "window.controls.setAvailableOutputDevices([\(deviceList)])"
-        do {
-            let result = try await state.bindings.javaScriptEvaluator?(javaScript)
-            MXLog.debug("Evaluated  with result: \(String(describing: result))")
-        } catch {
-            MXLog.error("Received javascript evaluation error: \(error)")
-        }
-    }
-
     // MARK: - Native LiveKit
 
     private func connectNativeLiveKit(wsURL: String, token: String) async {
+        NSLog("sTalk: connectNativeLiveKit called, wsURL prefix=%@", String(wsURL.prefix(60)))
         // Only connect once
         guard liveKitRoomManager.connectionState == .disconnected else {
+            NSLog("sTalk: Already connected, skipping")
             MXLog.info("sTalk LiveKit: Already connected or connecting, skipping")
             return
         }
@@ -639,23 +611,6 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
 
         // 7. Dismiss экран звонка
         actionsSubject.send(.dismiss)
-    }
-
-    /// sTalk: Click Element Call's hangup button in the WebView DOM.
-    /// Returns true if button was found and clicked.
-    private func clickElementCallHangup() async -> Bool {
-        let js = """
-        (function() {
-            var btn = document.querySelector('[data-testid="incall_leave"]')
-                   || document.querySelector('button[class*="_endCall"]');
-            if (btn) { btn.click(); return true; }
-            return false;
-        })()
-        """
-        let result = try? await state.bindings.javaScriptEvaluator?(js)
-        let clicked = (result as? Bool) == true
-        MXLog.info("sTalk: clickElementCallHangup — clicked: \(clicked)")
-        return clicked
     }
 
     private func toggleHandRaise() async {

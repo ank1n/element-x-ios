@@ -33,6 +33,7 @@ towncrier.toml.tmp
 version_changes.md
 
 build
+build-device
 /vendor/
 
 ## macOS Files

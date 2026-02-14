@@ -29,18 +29,6 @@ struct CallScreen: View {
                     .ignoresSafeArea(.all)
 
                 if !isMinimized {
-                    // sTalk: Top gradient to mask WebView header/dashed border
-                    VStack {
-                        LinearGradient(
-                            colors: [.black, .black, .black.opacity(0.85), .clear],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: 60)
-                        Spacer()
-                    }
-                    .allowsHitTesting(false)
-
                     // sTalk: Native call control buttons at bottom
                     VStack {
                         Spacer()
@@ -146,11 +134,12 @@ struct CallScreen: View {
             ProgressView()
         } else {
             ZStack {
-                // sTalk: WebView — invisible (0×0) but alive for Widget API signaling (MatrixRTC)
+                // sTalk: WebView lives in a separate off-screen UIWindow (managed by Coordinator).
+                // It handles Widget API signaling only — no visual rendering in the main UI.
+                // CallView creates the Coordinator which sets up the off-screen WebView.
                 CallView(url: context.viewState.url, viewModelContext: context)
-                    .id(context.viewState.url)
                     .frame(width: 0, height: 0)
-                    .opacity(0)
+                    .allowsHitTesting(false)
 
                 // sTalk: Native LiveKit video — fullscreen
                 if let roomManager = context.viewState.liveKitRoomManager {
@@ -346,32 +335,37 @@ private struct CallView: UIViewRepresentable {
     }
     
     @MainActor
-    class Coordinator: NSObject, WKUIDelegate, WKNavigationDelegate, AVPictureInPictureControllerDelegate {
+    class Coordinator: NSObject, WKUIDelegate, WKNavigationDelegate {
         private weak var viewModelContext: CallScreenViewModel.Context?
         private let certificateValidator: CertificateValidatorHookProtocol
-        
+
         private var webView: WKWebView!
-        private var pictureInPictureController: AVPictureInPictureController?
-        private let pictureInPictureViewController: AVPictureInPictureVideoCallViewController
         private var routePickerView: AVRoutePickerView!
-        
-        /// The view to be shown in the app. This will contain the web view when picture in picture isn't running.
+
+        /// Empty view returned to SwiftUI — WebView lives in a separate off-screen UIWindow.
         let webViewWrapper = WebViewWrapper(frame: .zero)
-        
+
+        // sTalk: WebView in same hierarchy but CSS injection hides all visual content.
+
         private var url: URL!
         
         init(viewModelContext: CallScreenViewModel.Context) {
             self.viewModelContext = viewModelContext
             certificateValidator = viewModelContext.viewState.certificateValidator
-            pictureInPictureViewController = AVPictureInPictureVideoCallViewController()
-            pictureInPictureViewController.preferredContentSize = CGSize(width: 1920, height: 1080)
-            
+
             super.init()
             
             DispatchQueue.main.async { // Avoid `Publishing changes from within view update` warnings
                 viewModelContext.javaScriptEvaluator = self.evaluateJavaScript
-                viewModelContext.requestPictureInPictureHandler = self.requestPictureInPicture
                 viewModelContext.showSpeakerPickerHandler = self.tapRoutePickerView
+                // sTalk: Handler to remove WebView from view hierarchy (kills IOSurface compositing).
+                // Called after LiveKit credentials are captured — WebView no longer needs to render.
+                viewModelContext.hideWebViewHandler = { [weak self] in
+                    guard let self else { return }
+                    self.webView.removeFromSuperview()
+                    self.webView.frame = .zero
+                    NSLog("sTalk: WebView removed from superview — IOSurface should stop compositing")
+                }
             }
             
             let configuration = WKWebViewConfiguration()
@@ -387,11 +381,13 @@ private struct CallView: UIViewRepresentable {
             configuration.allowsInlineMediaPlayback = true
             configuration.allowsPictureInPictureMediaPlayback = true
             
-            // sTalk: Inject WebSocket interception script BEFORE page loads (atDocumentStart)
+            // sTalk: Inject WebSocket interception + CSS hiding script BEFORE page loads.
+            // forMainFrameOnly: false — Element Call UI renders in iframes,
+            // CSS must apply to ALL frames to hide their content.
             let wsHookScript = WKUserScript(
                 source: CallScreenJavaScriptMessageName.webSocketInterceptionScript,
                 injectionTime: .atDocumentStart,
-                forMainFrameOnly: true
+                forMainFrameOnly: false
             )
             configuration.userContentController.addUserScript(wsHookScript)
 
@@ -399,22 +395,22 @@ private struct CallView: UIViewRepresentable {
                 let userScript = WKUserScript(source: script, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
                 configuration.userContentController.addUserScript(userScript)
             }
+
+            // sTalk: DOM-clearing script no longer needed — WebView is in off-screen UIWindow,
+            // IOSurface doesn't render in the visible area.
             
             webView = WKWebView(frame: .zero, configuration: configuration)
             webView.uiDelegate = self
             webView.navigationDelegate = self
             webView.isInspectable = true
-            
+
             // https://stackoverflow.com/a/77963877/730924
             webView.allowsLinkPreview = true
-            
-            // sTalk: black background for Telegram-style call
+
+            // sTalk: WebView is used ONLY for Widget API signaling.
+            // It will be removed from view hierarchy in didFinish after page loads.
             webView.isOpaque = false
-            webView.backgroundColor = .black
-            webView.scrollView.backgroundColor = .black
-            webView.scrollView.showsVerticalScrollIndicator = false
-            webView.scrollView.showsHorizontalScrollIndicator = false
-            webView.scrollView.bounces = false
+            webView.backgroundColor = .clear
             
             // This button is always hidden and is only used to be programmaticaly tapped
             routePickerView = AVRoutePickerView(frame: .zero)
@@ -422,15 +418,21 @@ private struct CallView: UIViewRepresentable {
             routePickerView.isUserInteractionEnabled = false
             webView.addSubview(routePickerView)
             
+            // sTalk: Place WebView in a SEPARATE off-screen UIWindow.
+            // WKWebView IOSurface compositing happens at the system compositor level
+            // and renders ABOVE all UIKit/SwiftUI views regardless of opacity, hidden,
+            // alpha, transform, frame constraints, or CSS display:none.
+            // The ONLY reliable solution: put the WebView in a different UIWindow
+            // that is off-screen. IOSurface is confined to that window's coordinate space.
+            // WebView still loads pages, executes JS, and receives WKScriptMessages —
+            // it just doesn't render anywhere visible.
+            // sTalk: WebView must be in a view hierarchy for page loading and JS execution.
+            // IOSurface hiding is handled by CSS injection (html{display:none}) at atDocumentStart.
+            // When the WebView renders nothing, IOSurface is empty/transparent.
             webViewWrapper.addMatchedSubview(webView)
-            
-            if AVPictureInPictureController.isPictureInPictureSupported() {
-                let pictureInPictureController = AVPictureInPictureController(contentSource: .init(activeVideoCallSourceView: webViewWrapper,
-                                                                                                   contentViewController: pictureInPictureViewController))
-                pictureInPictureController.delegate = self
-                self.pictureInPictureController = pictureInPictureController
-                viewModelContext.send(viewAction: .pictureInPictureIsAvailable(pictureInPictureController))
-            }
+
+            // sTalk: PiP via WebView is not usable — we use native LiveKit video.
+            // Skip AVPictureInPictureController setup entirely.
         }
         
         func load(_ url: URL) {
@@ -468,16 +470,13 @@ private struct CallView: UIViewRepresentable {
             case .widgetAction:
                 guard let message = message.body as? String else { return }
                 viewModelContext?.send(viewAction: .widgetAction(message: message))
-            case .showNativeOutputDevicePicker:
-                DispatchQueue.main.async {
-                    self.tapRoutePickerView()
-                }
-            case .onOutputDeviceSelect:
-                guard let deviceID = message.body as? String else { return }
-                viewModelContext?.send(viewAction: .outputDeviceSelected(deviceID: deviceID))
-            case .onBackButtonPressed:
-                viewModelContext?.send(viewAction: .navigateBack)
             case .onLobbyDetected:
+                // sTalk: Debug messages from DOM clearing script — ignore
+                if let msg = message.body as? String,
+                   msg.hasPrefix("domClear") {
+                    MXLog.info("sTalk: DOM clearing: \(msg)")
+                    return
+                }
                 // sTalk: Remote party hung up, Element Call returned to lobby — auto-dismiss.
                 // Safety: only trigger after 5+ seconds of connected call to avoid false positives.
                 if let elapsed = viewModelContext?.viewState.callElapsedTime,
@@ -552,69 +551,21 @@ private struct CallView: UIViewRepresentable {
         
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             viewModelContext?.send(viewAction: .urlChanged(webView.url))
+            // sTalk: Remove WebView from view hierarchy after page loads.
+            // At this point all JS scripts are injected, Widget API handlers registered.
+            // evaluateJavaScript() and WKScriptMessageHandler callbacks continue working
+            // via IPC to WebContent process — they don't need the view in hierarchy.
+            // This is the ONLY reliable way to prevent IOSurface compositing —
+            // isHidden, alpha, frame, CSS display:none all fail because WKWebView
+            // renders via system compositor independently of UIKit view properties.
+            webView.removeFromSuperview()
+            NSLog("sTalk: WebView removed from superview after page load — IOSurface killed")
         }
         
-        // MARK: - Picture in Picture
-        
+        // MARK: - Picture in Picture (disabled — native video uses SwiftUI minimize overlay)
+
         func requestPictureInPicture() async -> Result<Void, CallScreenError> {
-            guard let pictureInPictureController,
-                  pictureInPictureController.isPictureInPicturePossible,
-                  case .success(true) = await webViewCanEnterPictureInPicture() else {
-                return .failure(.pictureInPictureNotAvailable)
-            }
-            
-            pictureInPictureController.startPictureInPicture()
-            return .success(())
-        }
-        
-        func stopPictureInPicture() {
-            pictureInPictureController?.stopPictureInPicture()
-        }
-        
-        nonisolated func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-            Task { @MainActor in
-                // We move the view via the delegate so it works when you background the app without calling requestPictureInPicture
-                pictureInPictureViewController.view.addMatchedSubview(webView)
-                _ = try? await evaluateJavaScript("controls.enablePip()")
-            }
-        }
-        
-        nonisolated func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-            Task { @MainActor in
-                // Double check that the controller is definitely showing a page that supports picture in picture.
-                // This is necessary as it doesn't get checked when backgrounding the app or tapping a notification.
-                guard case .success(true) = await webViewCanEnterPictureInPicture() else {
-                    MXLog.error("Picture in picture started on a webpage that doesn't support it. Ending the call.")
-                    viewModelContext?.send(viewAction: .endCall)
-                    return
-                }
-            }
-        }
-        
-        nonisolated func pictureInPictureControllerWillStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-            Task { await viewModelContext?.send(viewAction: .pictureInPictureWillStop) }
-        }
-        
-        nonisolated func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-            Task { @MainActor in
-                webViewWrapper.addMatchedSubview(webView)
-                _ = try? await evaluateJavaScript("controls.disablePip()")
-            }
-        }
-        
-        /// Whether the web view can do picture in picture or not (e.g. it is showing an error or the page didn't load).
-        private func webViewCanEnterPictureInPicture() async -> Result<Bool, CallScreenError> {
-            do {
-                guard let canEnterPictureInPicture = try await evaluateJavaScript("controls.canEnterPip()") as? Bool else {
-                    MXLog.error("canEnterPip returned an unexpected value, skipping picture in picture.")
-                    return .failure(.pictureInPictureNotAvailable)
-                }
-                MXLog.info("canEnterPip returned \(canEnterPictureInPicture)")
-                return .success(canEnterPictureInPicture)
-            } catch {
-                MXLog.error("Error checking canEnterPip: \(error)")
-                return .failure(.pictureInPictureNotAvailable)
-            }
+            .failure(.pictureInPictureNotAvailable)
         }
     }
     
