@@ -86,12 +86,24 @@ final class LiveKitRoomManager: ObservableObject {
     }
 
     func setCamera(enabled: Bool) async throws {
+        #if targetEnvironment(simulator)
+        if enabled {
+            try await publishSimulatorVideoTrack()
+        }
+        #else
         try await room.localParticipant.setCamera(enabled: enabled)
+        #endif
         updateState()
     }
 
     func setMicrophone(enabled: Bool) async throws {
+        #if targetEnvironment(simulator)
+        if enabled {
+            try await publishSimulatorAudioTrack()
+        }
+        #else
         try await room.localParticipant.setMicrophone(enabled: enabled)
+        #endif
     }
 
     /// Log diagnostic info about local tracks (for debugging publish issues)
@@ -125,6 +137,78 @@ final class LiveKitRoomManager: ObservableObject {
             MXLog.error("sTalk LiveKit: Failed to set speaker: \(error)")
         }
     }
+
+    // MARK: - Simulator Fake Tracks
+
+    #if targetEnvironment(simulator)
+    private var simulatorVideoTimer: Timer?
+    private var simulatorBufferCapturer: BufferCapturer?
+
+    /// Publish a generated color-cycling video track on simulator (no camera available)
+    private func publishSimulatorVideoTrack() async throws {
+        let track = LocalVideoTrack.createBufferTrack(
+            name: "camera",
+            source: .camera,
+            options: BufferCaptureOptions()
+        )
+        guard let capturer = track.capturer as? BufferCapturer else { return }
+        simulatorBufferCapturer = capturer
+
+        // Generate first frame before publishing (required by SDK)
+        let firstFrame = createColorFrame(width: 640, height: 480, hue: 0.55)
+        capturer.capture(firstFrame, timeStampNs: VideoCapturer.createTimeStampNs())
+
+        _ = try await room.localParticipant.publish(videoTrack: track)
+        MXLog.info("sTalk LiveKit: Published simulator video track (generated color)")
+
+        // Timer to generate frames at ~15fps
+        var hue: CGFloat = 0.0
+        simulatorVideoTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 15.0, repeats: true) { [weak self] _ in
+            guard let self, let capturer = self.simulatorBufferCapturer else { return }
+            hue += 0.002
+            if hue > 1.0 { hue = 0.0 }
+            let frame = self.createColorFrame(width: 640, height: 480, hue: hue)
+            capturer.capture(frame, timeStampNs: VideoCapturer.createTimeStampNs())
+        }
+    }
+
+    /// Create a CVPixelBuffer with a solid color (hue-cycling gradient)
+    private func createColorFrame(width: Int, height: Int, hue: CGFloat) -> CVPixelBuffer {
+        var pixelBuffer: CVPixelBuffer?
+        CVPixelBufferCreate(kCFAllocatorDefault, width, height, kCVPixelFormatType_32BGRA, nil, &pixelBuffer)
+        guard let buffer = pixelBuffer else {
+            fatalError("Failed to create pixel buffer")
+        }
+        CVPixelBufferLockBaseAddress(buffer, [])
+        let baseAddress = CVPixelBufferGetBaseAddress(buffer)!
+        let bytesPerRow = CVPixelBufferGetBytesPerRow(buffer)
+        let color = UIColor(hue: hue, saturation: 0.6, brightness: 0.8, alpha: 1.0)
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        color.getRed(&r, green: &g, blue: &b, alpha: &a)
+        let bVal = UInt8(b * 255)
+        let gVal = UInt8(g * 255)
+        let rVal = UInt8(r * 255)
+        for y in 0..<height {
+            let row = baseAddress.advanced(by: y * bytesPerRow).assumingMemoryBound(to: UInt8.self)
+            for x in 0..<width {
+                let offset = x * 4
+                row[offset] = bVal     // B
+                row[offset + 1] = gVal // G
+                row[offset + 2] = rVal // R
+                row[offset + 3] = 255  // A
+            }
+        }
+        CVPixelBufferUnlockBaseAddress(buffer, [])
+        return buffer
+    }
+
+    /// Publish a real microphone audio track on simulator (Mac mic via WebRTC)
+    private func publishSimulatorAudioTrack() async throws {
+        let audioTrack = LocalAudioTrack.createTrack(name: "microphone")
+        _ = try await room.localParticipant.publish(audioTrack: audioTrack)
+        MXLog.info("sTalk LiveKit: Published simulator audio track (Mac microphone)")
+    }
+    #endif
 
     // MARK: - Audio Session
 
