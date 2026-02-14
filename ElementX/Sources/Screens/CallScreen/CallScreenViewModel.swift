@@ -528,6 +528,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             }
         }
 
+        // Diagnostic: verify tracks were actually published
+        liveKitRoomManager.logTrackDiagnostics()
+
         // Observe native LiveKit connection state for call lifecycle
         observeLiveKitState()
     }

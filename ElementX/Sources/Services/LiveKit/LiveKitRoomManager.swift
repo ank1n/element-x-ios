@@ -94,6 +94,23 @@ final class LiveKitRoomManager: ObservableObject {
         try await room.localParticipant.setMicrophone(enabled: enabled)
     }
 
+    /// Log diagnostic info about local tracks (for debugging publish issues)
+    func logTrackDiagnostics() {
+        let lp = room.localParticipant
+        let audioTracks = lp.audioTracks
+        let videoTracks = lp.videoTracks
+        MXLog.info("sTalk LiveKit diagnostics: identity=\(String(describing: lp.identity)), audioTracks=\(audioTracks.count), videoTracks=\(videoTracks.count)")
+        for pub in audioTracks {
+            MXLog.info("sTalk LiveKit audio track: sid=\(String(describing: pub.sid)), source=\(pub.source), track=\(pub.track != nil ? "exists" : "nil")")
+        }
+        for pub in videoTracks {
+            MXLog.info("sTalk LiveKit video track: sid=\(String(describing: pub.sid)), source=\(pub.source), track=\(pub.track != nil ? "exists" : "nil")")
+        }
+        #if targetEnvironment(simulator)
+        MXLog.warning("sTalk LiveKit: Running on SIMULATOR — camera unavailable, audio may have WebRTC limitations")
+        #endif
+    }
+
     /// Switch between speaker and earpiece
     func setSpeaker(enabled: Bool) {
         let session = AVAudioSession.sharedInstance()
