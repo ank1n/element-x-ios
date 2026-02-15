@@ -290,19 +290,10 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             state.isMinimized = false
             actionsSubject.send(.pictureInPictureStopped)
         case .liveKitCredentialsIntercepted(let url, let token):
-            MXLog.info("sTalk: LiveKit credentials intercepted — url=\(url.prefix(80)), token length=\(token.count)")
-            MXLog.info("sTalk: LiveKit credentials intercepted — url=\(url.prefix(80))..., token length=\(token.count)")
-            Task { await connectNativeLiveKit(wsURL: url, token: token) }
-            // sTalk: Remove WebView from view hierarchy AFTER credentials captured.
-            // This kills IOSurface compositing — no more EC buttons/header rendering over SwiftUI.
-            // evaluateJavaScript() continues working (IPC to WebContent process, doesn't need view hierarchy).
-            // Small delay to let Widget API initial handshake complete.
-            Task {
-                try? await Task.sleep(for: .seconds(3))
-                await MainActor.run {
-                    state.bindings.hideWebViewHandler?()
-                }
-            }
+            MXLog.info("sTalk: LiveKit credentials intercepted (pass-through) — url=\(url.prefix(80))..., token length=\(token.count)")
+            // sTalk: WebView handles media via Element Call — no native SDK connection.
+            // Credentials logged for future native SDK integration.
+            state.wasConnected = true
         }
     }
     

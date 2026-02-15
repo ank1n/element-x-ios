@@ -259,74 +259,73 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
     }
 
     /// sTalk: JS script injected at `.atDocumentStart` BEFORE Element Call loads.
-    /// 1. Hides ALL visual content via CSS (IOSurface renders nothing)
-    /// 2. Intercepts LiveKit WebSocket → returns fake WS, posts credentials to native side.
-    /// Widget API (postMessage) is unaffected since it doesn't use WebSocket.
+    /// 1. Hides ALL Element Call UI via visibility:hidden, shows ONLY <video> elements.
+    /// 2. MutationObserver makes video elements fullscreen as they appear.
+    /// 3. Intercepts LiveKit WebSocket URL — logs credentials (pass-through, no blocking).
+    /// Element Call handles all signaling and media via its own WebSocket connection.
     static var webSocketInterceptionScript: String {
         """
         (function() {
-            // === 1. Make content invisible but keep DOM/JS fully functional ===
-            // Using opacity:0 instead of display:none — Element Call needs full DOM
-            // for getUserMedia, LiveKit WebSocket creation, etc.
-            // WebView is already 1x1 frame, this is just extra insurance.
+            // === 1. CSS: Hide EVERYTHING except <video> tags ===
+            // visibility:hidden preserves layout & JS, unlike display:none.
+            // visibility:visible on <video> overrides parent's hidden — CSS spec.
             (function() {
                 var s = document.createElement('style');
-                s.textContent = 'html,body{opacity:0!important;pointer-events:none!important;background:transparent!important;overflow:hidden!important}';
+                s.textContent = [
+                    'html, body { background:#000!important; margin:0!important; padding:0!important; overflow:hidden!important }',
+                    'body * { visibility:hidden!important }',
+                    'video { visibility:visible!important; position:fixed!important; top:0!important; left:0!important; width:100vw!important; height:100vh!important; object-fit:cover!important; z-index:999999!important; background:#000!important }',
+                ].join('\\n');
                 (document.documentElement || document).appendChild(s);
             })();
 
-            // === 2. Intercept LiveKit WebSocket — capture credentials, return fake WS ===
+            // === 2. JS: MutationObserver — ensure video elements stay fullscreen ===
+            // EC dynamically creates/replaces video elements during the call.
+            (function() {
+                function styleVideos() {
+                    var videos = document.querySelectorAll('video');
+                    for (var i = 0; i < videos.length; i++) {
+                        var v = videos[i];
+                        if (!v.dataset.stalkStyled) {
+                            v.dataset.stalkStyled = '1';
+                            v.style.cssText = 'visibility:visible!important;position:fixed!important;top:0!important;left:0!important;width:100vw!important;height:100vh!important;object-fit:cover!important;z-index:999999!important;background:#000!important;';
+                            console.log('[sTalk] Styled video element: ' + (v.srcObject ? 'has stream' : 'no stream'));
+                        }
+                    }
+                }
+                // Run on DOM ready and via observer
+                if (document.body) styleVideos();
+                var obs = new MutationObserver(function() { styleVideos(); });
+                var startObs = function() {
+                    if (document.body) {
+                        obs.observe(document.body, { childList: true, subtree: true });
+                        styleVideos();
+                    } else {
+                        setTimeout(startObs, 50);
+                    }
+                };
+                startObs();
+            })();
+
+            // === 3. Intercept LiveKit WebSocket — log credentials, pass through ===
             var OrigWS = window.WebSocket;
             var _intercepted = false;
-            console.log('[sTalk WS Hook] Installed in frame: ' + window.location.href);
             window.WebSocket = function(url, protocols) {
                 var u = String(url);
-                console.log('[sTalk WS Hook] new WebSocket: ' + u.substring(0, 120));
-                try {
-                    window.webkit.messageHandlers.onLiveKitCredentials.postMessage(
-                        JSON.stringify({ debug: true, wsUrl: u.substring(0, 200) })
-                    );
-                } catch(e) {}
                 if (u.indexOf('/rtc') !== -1 && u.indexOf('access_token=') !== -1) {
                     if (!_intercepted) {
                         _intercepted = true;
                         var token = (u.match(/access_token=([^&]+)/) || [])[1] || '';
-                        window.webkit.messageHandlers.onLiveKitCredentials.postMessage(
-                            JSON.stringify({ url: u, token: token })
-                        );
+                        try {
+                            window.webkit.messageHandlers.onLiveKitCredentials.postMessage(
+                                JSON.stringify({ url: u, token: token })
+                            );
+                        } catch(e) {}
+                        console.log('[sTalk] LiveKit credentials captured (pass-through)');
                     }
-                    // Return fake WebSocket — EC thinks it's connected but no data flows
-                    var fake = Object.create(OrigWS.prototype);
-                    fake.readyState = 1;
-                    fake.url = u;
-                    fake.bufferedAmount = 0;
-                    fake.extensions = '';
-                    fake.protocol = '';
-                    fake.binaryType = 'blob';
-                    fake.onopen = null;
-                    fake.onclose = null;
-                    fake.onmessage = null;
-                    fake.onerror = null;
-                    fake.send = function() {};
-                    fake.close = function() {
-                        this.readyState = 3;
-                        if (this.onclose) {
-                            this.onclose({ type: 'close', code: 1000, reason: '', wasClean: true });
-                        }
-                    };
-                    fake.addEventListener = function() {};
-                    fake.removeEventListener = function() {};
-                    fake.dispatchEvent = function() { return true; };
-                    setTimeout(function() {
-                        if (fake.onopen) fake.onopen({ type: 'open' });
-                    }, 50);
-                    return fake;
                 }
-                // Non-LiveKit WebSockets pass through normally
-                if (protocols !== undefined) {
-                    return new OrigWS(url, protocols);
-                }
-                return new OrigWS(url);
+                // Pass through ALL WebSockets — EC handles signaling and media
+                return protocols !== undefined ? new OrigWS(url, protocols) : new OrigWS(url);
             };
             window.WebSocket.prototype = OrigWS.prototype;
             window.WebSocket.CONNECTING = 0;

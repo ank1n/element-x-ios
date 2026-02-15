@@ -134,37 +134,12 @@ struct CallScreen: View {
             ProgressView()
         } else {
             ZStack {
-                // sTalk: WebView lives in a separate off-screen UIWindow (managed by Coordinator).
-                // It handles Widget API signaling only — no visual rendering in the main UI.
-                // CallView creates the Coordinator which sets up the off-screen WebView.
-                // sTalk: WebView needs non-zero frame for getUserMedia & JS to work.
-                // CSS opacity:0 ensures nothing renders visually. 1x1 is minimum viable.
+                // sTalk: WebView renders Element Call video fullscreen.
+                // CSS injection hides EC UI chrome (header, buttons) — only video tiles visible.
+                // Our native SwiftUI controls overlay on top.
                 CallView(url: context.viewState.url, viewModelContext: context)
-                    .frame(width: 1, height: 1)
-                    .opacity(0.01)
-                    .allowsHitTesting(false)
-
-                // sTalk: Native LiveKit video — fullscreen
-                if let roomManager = context.viewState.liveKitRoomManager {
-                    NativeCallGridView(
-                        roomManager: roomManager,
-                        isDirect: context.viewState.isDirect
-                    )
                     .ignoresSafeArea()
-                } else {
-                    // Connecting state — show black with activity indicator
-                    Color.black
-                        .ignoresSafeArea()
-                        .overlay {
-                            VStack(spacing: 16) {
-                                ProgressView()
-                                    .tint(.white)
-                                Text("Подключение к звонку...")
-                                    .font(.system(size: 16))
-                                    .foregroundColor(.white.opacity(0.6))
-                            }
-                        }
-                }
+                    .allowsHitTesting(false)
             }
         }
     }
