@@ -299,10 +299,21 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     
     func stop() {
         callTimerTask = nil
-        // Safety net: endCall() выполняет полную очистку до dismiss.
-        // stop() вызывается координатором при удалении — подстраховка на случай
-        // если endCall() не был вызван (PiP dismiss, crash).
+        // Safety net: вызывается координатором при удалении.
+        // Как upstream: отправить hangup + close для MatrixRTC cleanup.
         Task {
+            // Отправить hangup → Widget API (как upstream stop())
+            let hangupMsg = ElementCallWidgetMessage(direction: .fromWidget,
+                                                      action: .hangup,
+                                                      widgetId: widgetDriver.widgetID)
+            await postMessageToWidget(hangupMsg)
+
+            // Отправить close → Rust SDK удалит MatrixRTC state
+            let closeMsg = ElementCallWidgetMessage(direction: .fromWidget,
+                                                     action: .close,
+                                                     widgetId: widgetDriver.widgetID)
+            await postMessageToWidget(closeMsg)
+
             if liveKitRoomManager.connectionState != .disconnected {
                 MXLog.info("sTalk: stop() safety — disconnecting LiveKit")
                 await liveKitRoomManager.disconnect()
@@ -599,38 +610,49 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             }
         }
 
-        // 2. Отправить .hangup → Widget API (EC покидает звонок)
+        // 2. Нажать кнопку hangup в Element Call через JS (надёжный путь)
+        //    EC обработает hangup и отправит .close через Widget API → Rust SDK удалит MatrixRTC state
+        _ = try? await state.bindings.javaScriptEvaluator?("""
+            (function() {
+                var btn = document.querySelector('[data-testid="hangup_button"]')
+                    || document.querySelector('button[class*="hangup"]')
+                    || document.querySelector('button[aria-label*="hang"]')
+                    || document.querySelector('button[aria-label*="Leave"]');
+                if (btn) { btn.click(); return 'clicked'; }
+                return 'not_found';
+            })()
+            """)
+        MXLog.info("sTalk: Triggered EC hangup button via JS")
+
+        // 3. Отправить .hangup → Widget API (fallback если JS клик не сработал)
         let hangupMsg = ElementCallWidgetMessage(direction: .fromWidget,
                                                   action: .hangup,
                                                   widgetId: widgetDriver.widgetID)
-        if let data = try? JSONEncoder().encode(hangupMsg),
-           let json = String(data: data, encoding: .utf8) {
-            await widgetDriver.handleMessage(json)
-            MXLog.info("sTalk: Sent .hangup to Widget API")
-        }
+        await postMessageToWidget(hangupMsg)
+        MXLog.info("sTalk: Sent .hangup to Widget API")
 
-        // 3. Отправить .close → Widget API (Rust SDK удаляет MatrixRTC state event)
+        // 4. Дать Element Call время обработать hangup и отправить .close
+        try? await Task.sleep(for: .seconds(2))
+
+        // 5. Fallback: отправить .close если EC не отправил его сам
         let closeMsg = ElementCallWidgetMessage(direction: .fromWidget,
                                                  action: .close,
                                                  widgetId: widgetDriver.widgetID)
-        if let data = try? JSONEncoder().encode(closeMsg),
-           let json = String(data: data, encoding: .utf8) {
-            await widgetDriver.handleMessage(json)
-            MXLog.info("sTalk: Sent .close to Widget API")
-        }
+        await postMessageToWidget(closeMsg)
+        MXLog.info("sTalk: Sent .close to Widget API (fallback)")
 
-        // 4. Дать Rust SDK время обработать удаление state event
-        try? await Task.sleep(for: .seconds(2))
+        // 6. Дать Rust SDK время обработать удаление MatrixRTC state event
+        try? await Task.sleep(for: .seconds(1))
 
-        // 5. Отключить нативный LiveKit SDK (после очистки state)
+        // 7. Отключить нативный LiveKit SDK
         await liveKitRoomManager.disconnect()
         MXLog.info("sTalk LiveKit: Disconnected on endCall")
 
-        // 6. Закрыть CallKit сессию
+        // 8. Закрыть CallKit сессию
         elementCallService.tearDownCallSession()
         UIDevice.current.isProximityMonitoringEnabled = false
 
-        // 7. Dismiss экран звонка
+        // 9. Dismiss экран звонка
         actionsSubject.send(.dismiss)
     }
 

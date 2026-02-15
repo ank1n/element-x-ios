@@ -377,8 +377,8 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
 
                 MXLog.info("Downloaded data size: \(data.count) bytes")
 
-                // Минимум 100KB для коротких записей
-                if data.count < 100_000 {
+                // Минимум 1KB — пустые/битые файлы
+                if data.count < 1_000 {
                     throw CallHistoryError.serverError("File too small: \(data.count) bytes")
                 }
 
