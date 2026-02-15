@@ -266,45 +266,22 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
     static var webSocketInterceptionScript: String {
         """
         (function() {
-            // === 1. CSS: Hide EVERYTHING except <video> tags ===
-            // visibility:hidden preserves layout & JS, unlike display:none.
-            // visibility:visible on <video> overrides parent's hidden — CSS spec.
+            // === 1. CSS: Make all EC UI transparent, keep video pixel rendering ===
+            // Strategy: color/background/border → transparent. Layout 100% preserved.
+            // <video> renders pixel data from stream regardless of CSS colors.
+            // This hides text, icons, buttons, avatars — but keeps grid/flex layout intact.
             (function() {
                 var s = document.createElement('style');
                 s.textContent = [
                     'html, body { background:#000!important; margin:0!important; padding:0!important; overflow:hidden!important }',
-                    'body * { visibility:hidden!important }',
-                    'video { visibility:visible!important; position:fixed!important; top:0!important; left:0!important; width:100vw!important; height:100vh!important; object-fit:cover!important; z-index:999999!important; background:#000!important }',
+                    // Make all UI decorations invisible
+                    'body * { color:transparent!important; background:transparent!important; border-color:transparent!important; box-shadow:none!important; outline:none!important; text-shadow:none!important; caret-color:transparent!important }',
+                    // Hide SVG icons, images (avatars), canvases
+                    'svg, img { opacity:0!important }',
+                    // Ensure video background is black (for when no stream yet)
+                    'video { background:#000!important }',
                 ].join('\\n');
                 (document.documentElement || document).appendChild(s);
-            })();
-
-            // === 2. JS: MutationObserver — ensure video elements stay fullscreen ===
-            // EC dynamically creates/replaces video elements during the call.
-            (function() {
-                function styleVideos() {
-                    var videos = document.querySelectorAll('video');
-                    for (var i = 0; i < videos.length; i++) {
-                        var v = videos[i];
-                        if (!v.dataset.stalkStyled) {
-                            v.dataset.stalkStyled = '1';
-                            v.style.cssText = 'visibility:visible!important;position:fixed!important;top:0!important;left:0!important;width:100vw!important;height:100vh!important;object-fit:cover!important;z-index:999999!important;background:#000!important;';
-                            console.log('[sTalk] Styled video element: ' + (v.srcObject ? 'has stream' : 'no stream'));
-                        }
-                    }
-                }
-                // Run on DOM ready and via observer
-                if (document.body) styleVideos();
-                var obs = new MutationObserver(function() { styleVideos(); });
-                var startObs = function() {
-                    if (document.body) {
-                        obs.observe(document.body, { childList: true, subtree: true });
-                        styleVideos();
-                    } else {
-                        setTimeout(startObs, 50);
-                    }
-                };
-                startObs();
             })();
 
             // === 3. Intercept LiveKit WebSocket — log credentials, pass through ===
