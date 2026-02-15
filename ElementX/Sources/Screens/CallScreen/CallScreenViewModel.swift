@@ -32,6 +32,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
 
     /// sTalk: Tracks whether the call is currently minimized (prevents spurious dismiss on opacity:0)
     private(set) var isMinimized = false
+    /// sTalk: Guard against cascade endCall() — infoPublisher fires multiple times
+    private var isEndingCall = false
 
     private let actionsSubject: PassthroughSubject<CallScreenViewModelAction, Never> = .init()
     var actions: AnyPublisher<CallScreenViewModelAction, Never> {
@@ -107,7 +109,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                                                          callParticipantsCount: callParticipantsCount,
                                                          mediaProvider: mediaProvider,
                                                          isVideoEnabled: startWithVideoEnabled))
-        
+
+        MXLog.info("sTalk CallScreenVM init: startWithVideoEnabled=\(startWithVideoEnabled), isDirect=\(isDirect), participants=\(callParticipantsCount), room=\(roomDisplayName ?? "nil")")
+
         elementCallService.actions
             .receive(on: DispatchQueue.main)
             .sink { [weak self] action in
@@ -188,7 +192,11 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                     guard let self else { return }
                     self.state.totalMembersCount = roomInfo.activeMembersCount
                     let callParticipants = roomInfo.activeRoomCallParticipants
+                    let prevCount = self.state.callParticipantsCount
                     self.state.callParticipantsCount = callParticipants.count
+                    if callParticipants.count != prevCount {
+                        MXLog.info("sTalk: MatrixRTC participants changed: \(prevCount) → \(callParticipants.count), users=\(callParticipants), liveKit remote=\(self.liveKitRoomManager.remoteParticipants.count)")
+                    }
 
                     // sTalk: For 1:1 — start timer only when BOTH participants are in the call.
                     // This prevents the timer from running during the lobby/connecting phase.
@@ -209,13 +217,17 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                     }
 
                     // sTalk: Auto-end 1:1 call when remote party leaves.
-                    // Grace period: 5+ seconds after connection to avoid race conditions.
+                    // Check BOTH MatrixRTC (callParticipants) AND LiveKit (remoteParticipants).
+                    // Grace period: 30 seconds to avoid race conditions with state sync.
                     if self.state.isDirect,
                        self.state.callStatus == .connected,
-                       self.state.callElapsedTime > 5 {
-                        if callParticipants.isEmpty ||
-                           (callParticipants.count == 1 && callParticipants.contains(roomProxy.ownUserID)) {
-                            MXLog.info("sTalk: Remote party left 1:1 call — auto-ending")
+                       self.state.callElapsedTime > 30 {
+                        let matrixRTCEmpty = callParticipants.isEmpty ||
+                           (callParticipants.count == 1 && callParticipants.contains(roomProxy.ownUserID))
+                        let liveKitEmpty = self.liveKitRoomManager.remoteParticipants.isEmpty
+                        MXLog.info("sTalk: Auto-end check — matrixRTC participants=\(callParticipants.count), liveKit remote=\(self.liveKitRoomManager.remoteParticipants.count), elapsed=\(self.state.callElapsedTime)")
+                        if matrixRTCEmpty && liveKitEmpty {
+                            MXLog.info("sTalk: Remote party left 1:1 call (both MatrixRTC and LiveKit empty) — auto-ending")
                             Task { await self.endCall() }
                         }
                     }
@@ -278,7 +290,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             state.isMinimized = false
             actionsSubject.send(.pictureInPictureStopped)
         case .liveKitCredentialsIntercepted(let url, let token):
-            NSLog("sTalk: LiveKit credentials intercepted — url=%@, token length=%d", String(url.prefix(80)), token.count)
+            MXLog.info("sTalk: LiveKit credentials intercepted — url=\(url.prefix(80)), token length=\(token.count)")
             MXLog.info("sTalk: LiveKit credentials intercepted — url=\(url.prefix(80))..., token length=\(token.count)")
             Task { await connectNativeLiveKit(wsURL: url, token: token) }
             // sTalk: Remove WebView from view hierarchy AFTER credentials captured.
@@ -441,10 +453,10 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     // MARK: - Native LiveKit
 
     private func connectNativeLiveKit(wsURL: String, token: String) async {
-        NSLog("sTalk: connectNativeLiveKit called, wsURL prefix=%@", String(wsURL.prefix(60)))
+        MXLog.info("sTalk: connectNativeLiveKit called, wsURL prefix=\(wsURL.prefix(60))")
         // Only connect once
         guard liveKitRoomManager.connectionState == .disconnected else {
-            NSLog("sTalk: Already connected, skipping")
+            MXLog.info("sTalk: Already connected, skipping")
             MXLog.info("sTalk LiveKit: Already connected or connecting, skipping")
             return
         }
@@ -478,16 +490,28 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             MXLog.error("sTalk LiveKit: Microphone enable failed (non-fatal): \(error)")
         }
 
-        // Step 3: Enable camera if video call (non-fatal — no camera on simulator)
+        // Step 3: Enable camera
+        // On simulator: ALWAYS publish fake video to verify pipeline (color-cycling track)
+        // On device: only if video call was requested
+        #if targetEnvironment(simulator)
+        do {
+            try await liveKitRoomManager.setCamera(enabled: true)
+            state.isVideoEnabled = true
+            MXLog.info("sTalk LiveKit: Camera enabled (simulator — fake video track)")
+        } catch {
+            MXLog.error("sTalk LiveKit: Simulator camera failed: \(error)")
+        }
+        #else
         if startWithVideoEnabled {
             do {
                 try await liveKitRoomManager.setCamera(enabled: true)
                 MXLog.info("sTalk LiveKit: Camera enabled")
             } catch {
-                MXLog.error("sTalk LiveKit: Camera enable failed (non-fatal, e.g. simulator): \(error)")
+                MXLog.error("sTalk LiveKit: Camera enable failed (non-fatal): \(error)")
                 state.isVideoEnabled = false
             }
         }
+        #endif
 
         // Diagnostic: verify tracks were actually published
         liveKitRoomManager.logTrackDiagnostics()
@@ -564,6 +588,12 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     }
 
     private func endCall() async {
+        // sTalk: Guard against cascade — infoPublisher fires multiple times
+        guard !isEndingCall else {
+            MXLog.info("sTalk: endCall — already ending, skipping duplicate")
+            return
+        }
+        isEndingCall = true
         MXLog.info("sTalk: endCall — начинаю завершение звонка")
 
         // 1. Остановить запись (до закрытия звонка, иначе ABORTED)

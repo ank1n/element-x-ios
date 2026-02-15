@@ -285,14 +285,14 @@ extension LiveKitRoomManager: RoomDelegate {
     nonisolated func room(_ room: Room, participantDidConnect participant: RemoteParticipant) {
         Task { @MainActor in
             self.updateState()
-            MXLog.info("sTalk LiveKit: Participant joined: \(participant.identity?.stringValue ?? "unknown")")
+            MXLog.info("sTalk LiveKit: Participant joined: \(participant.identity?.stringValue ?? "unknown"), sid=\(participant.sid?.stringValue ?? "nil"), totalRemote=\(self.remoteParticipants.count)")
         }
     }
 
     nonisolated func room(_ room: Room, participantDidDisconnect participant: RemoteParticipant) {
         Task { @MainActor in
             self.updateState()
-            MXLog.info("sTalk LiveKit: Participant left: \(participant.identity?.stringValue ?? "unknown")")
+            MXLog.info("sTalk LiveKit: Participant left: \(participant.identity?.stringValue ?? "unknown"), sid=\(participant.sid?.stringValue ?? "nil"), remainingRemote=\(self.remoteParticipants.count)")
         }
     }
 

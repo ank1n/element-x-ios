@@ -265,39 +265,28 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
     static var webSocketInterceptionScript: String {
         """
         (function() {
-            // === 1. Hide ALL visual content at the earliest possible moment ===
-            // WKWebView IOSurface renders ABOVE all SwiftUI/UIKit views.
-            // If the WebView renders nothing, IOSurface is empty/transparent.
-            // This MUST run at atDocumentStart before any Element Call rendering.
+            // === 1. Make content invisible but keep DOM/JS fully functional ===
+            // Using opacity:0 instead of display:none — Element Call needs full DOM
+            // for getUserMedia, LiveKit WebSocket creation, etc.
+            // WebView is already 1x1 frame, this is just extra insurance.
             (function() {
                 var s = document.createElement('style');
-                s.textContent = 'html,body{display:none!important;visibility:hidden!important;background:transparent!important;width:0!important;height:0!important;overflow:hidden!important}*{display:none!important}';
+                s.textContent = 'html,body{opacity:0!important;pointer-events:none!important;background:transparent!important;overflow:hidden!important}';
                 (document.documentElement || document).appendChild(s);
-                if (document.documentElement) {
-                    document.documentElement.style.cssText = 'display:none!important;visibility:hidden!important;background:transparent!important';
-                }
-                // Re-enforce every 100ms — Element Call may override styles
-                setInterval(function() {
-                    if (document.documentElement) {
-                        document.documentElement.style.setProperty('display', 'none', 'important');
-                        document.documentElement.style.setProperty('visibility', 'hidden', 'important');
-                        document.documentElement.style.setProperty('background', 'transparent', 'important');
-                    }
-                    if (document.body) {
-                        document.body.style.setProperty('display', 'none', 'important');
-                        document.body.style.setProperty('visibility', 'hidden', 'important');
-                    }
-                    if (!s.parentNode) {
-                        (document.documentElement || document.head || document).appendChild(s);
-                    }
-                }, 100);
             })();
 
             // === 2. Intercept LiveKit WebSocket — capture credentials, return fake WS ===
             var OrigWS = window.WebSocket;
             var _intercepted = false;
+            console.log('[sTalk WS Hook] Installed in frame: ' + window.location.href);
             window.WebSocket = function(url, protocols) {
                 var u = String(url);
+                console.log('[sTalk WS Hook] new WebSocket: ' + u.substring(0, 120));
+                try {
+                    window.webkit.messageHandlers.onLiveKitCredentials.postMessage(
+                        JSON.stringify({ debug: true, wsUrl: u.substring(0, 200) })
+                    );
+                } catch(e) {}
                 if (u.indexOf('/rtc') !== -1 && u.indexOf('access_token=') !== -1) {
                     if (!_intercepted) {
                         _intercepted = true;

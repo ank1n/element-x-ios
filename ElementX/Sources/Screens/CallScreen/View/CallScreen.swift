@@ -137,8 +137,11 @@ struct CallScreen: View {
                 // sTalk: WebView lives in a separate off-screen UIWindow (managed by Coordinator).
                 // It handles Widget API signaling only — no visual rendering in the main UI.
                 // CallView creates the Coordinator which sets up the off-screen WebView.
+                // sTalk: WebView needs non-zero frame for getUserMedia & JS to work.
+                // CSS opacity:0 ensures nothing renders visually. 1x1 is minimum viable.
                 CallView(url: context.viewState.url, viewModelContext: context)
-                    .frame(width: 0, height: 0)
+                    .frame(width: 1, height: 1)
+                    .opacity(0.01)
                     .allowsHitTesting(false)
 
                 // sTalk: Native LiveKit video — fullscreen
@@ -342,8 +345,8 @@ private struct CallView: UIViewRepresentable {
         private var webView: WKWebView!
         private var routePickerView: AVRoutePickerView!
 
-        /// Empty view returned to SwiftUI — WebView lives in a separate off-screen UIWindow.
-        let webViewWrapper = WebViewWrapper(frame: .zero)
+        /// Minimal wrapper returned to SwiftUI — WebView needs non-zero frame for JS/getUserMedia.
+        let webViewWrapper = WebViewWrapper(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
 
         // sTalk: WebView in same hierarchy but CSS injection hides all visual content.
 
@@ -364,7 +367,7 @@ private struct CallView: UIViewRepresentable {
                     guard let self else { return }
                     self.webView.removeFromSuperview()
                     self.webView.frame = .zero
-                    NSLog("sTalk: WebView removed from superview — IOSurface should stop compositing")
+                    MXLog.info("sTalk: WebView removed from superview — IOSurface should stop compositing")
                 }
             }
             
@@ -399,7 +402,7 @@ private struct CallView: UIViewRepresentable {
             // sTalk: DOM-clearing script no longer needed — WebView is in off-screen UIWindow,
             // IOSurface doesn't render in the visible area.
             
-            webView = WKWebView(frame: .zero, configuration: configuration)
+            webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 1, height: 1), configuration: configuration)
             webView.uiDelegate = self
             webView.navigationDelegate = self
             webView.isInspectable = true
@@ -490,11 +493,23 @@ private struct CallView: UIViewRepresentable {
                 }
             case .onLiveKitCredentials:
                 // sTalk: LiveKit credentials intercepted from WebSocket URL
+                MXLog.info("sTalk WS Hook: raw message received: \(String(describing: message.body).prefix(300))")
                 guard let jsonString = message.body as? String,
                       let data = jsonString.data(using: .utf8),
-                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: String],
-                      let url = json["url"],
-                      let token = json["token"] else { return }
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    MXLog.info("sTalk WS Hook: failed to parse JSON")
+                    return
+                }
+                // Debug messages — just log WS URLs being created
+                if json["debug"] != nil {
+                    MXLog.info("sTalk WS Hook DEBUG: WebSocket created — \(json["wsUrl"] as? String ?? "?")")
+                    return
+                }
+                guard let url = json["url"] as? String,
+                      let token = json["token"] as? String else {
+                    MXLog.info("sTalk WS Hook: no url/token in JSON")
+                    return
+                }
                 viewModelContext?.send(viewAction: .liveKitCredentialsIntercepted(url: url, token: token))
             }
         }
@@ -551,15 +566,12 @@ private struct CallView: UIViewRepresentable {
         
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             viewModelContext?.send(viewAction: .urlChanged(webView.url))
-            // sTalk: Remove WebView from view hierarchy after page loads.
-            // At this point all JS scripts are injected, Widget API handlers registered.
-            // evaluateJavaScript() and WKScriptMessageHandler callbacks continue working
-            // via IPC to WebContent process — they don't need the view in hierarchy.
-            // This is the ONLY reliable way to prevent IOSurface compositing —
-            // isHidden, alpha, frame, CSS display:none all fail because WKWebView
-            // renders via system compositor independently of UIKit view properties.
-            webView.removeFromSuperview()
-            NSLog("sTalk: WebView removed from superview after page load — IOSurface killed")
+            // sTalk: Do NOT removeFromSuperview() here.
+            // didFinish fires when the HTML shell loads, but Element Call (React app)
+            // hasn't finished initializing yet. Removing WebView kills getUserMedia,
+            // WebSocket creation, and Widget API — content_loaded never arrives.
+            // WebView is already 1x1 with opacity 0.01 — IOSurface renders ~nothing.
+            MXLog.info("sTalk: WebView didFinish — keeping in hierarchy for EC initialization")
         }
         
         // MARK: - Picture in Picture (disabled — native video uses SwiftUI minimize overlay)

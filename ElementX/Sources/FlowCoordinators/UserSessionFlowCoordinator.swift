@@ -459,6 +459,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         // The caller decides their own video state, but receiver should start without video
         // to match standard telephony behavior.
         let effectiveVideoEnabled = isJoiningExistingCall ? false : videoEnabled
+        MXLog.info("sTalk: presentCallScreen — videoEnabled=\(videoEnabled), isJoiningExistingCall=\(isJoiningExistingCall), effectiveVideoEnabled=\(effectiveVideoEnabled), hasRoomCall=\(roomInfo.hasRoomCall), participants=\(roomInfo.activeRoomCallParticipants)")
 
         let colorScheme: ColorScheme = flowParameters.windowManager.mainWindow.traitCollection.userInterfaceStyle == .light ? .light : .dark
         presentCallScreen(configuration: .init(roomProxy: roomProxy,
