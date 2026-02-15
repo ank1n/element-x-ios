@@ -226,6 +226,9 @@ class AuthenticationFlowCoordinator: FlowCoordinatorProtocol {
             switch (context.fromState, context.toState) {
             case (.complete, .complete):
                 break
+            case (.savedAccountsScreen, .savedAccountsScreen):
+                // sTalk: Ignore duplicate showSavedAccounts when already on that screen
+                MXLog.warning("AuthFlow: Ignoring duplicate savedAccountsScreen transition")
             default:
                 fatalError("Unexpected transition: \(context)")
             }
