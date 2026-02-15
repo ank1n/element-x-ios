@@ -30,6 +30,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     /// sTalk: Native LiveKit room manager
     private let liveKitRoomManager = LiveKitRoomManager()
 
+    /// sTalk: LiveKit room name extracted from JWT token (for recording-api)
+    private var interceptedLiveKitRoomName: String?
+
     /// sTalk: Tracks whether the call is currently minimized (prevents spurious dismiss on opacity:0)
     private(set) var isMinimized = false
     /// sTalk: Guard against cascade endCall() — infoPublisher fires multiple times
@@ -45,6 +48,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
 
     @CancellableTask
     private var callTimerTask: Task<Void, Never>?
+
+    /// sTalk: Polling task for remote recording detection
+    private var recordingPollingTask: Task<Void, Never>?
         
     /// Designated initialiser
     /// - Parameters:
@@ -291,14 +297,19 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             actionsSubject.send(.pictureInPictureStopped)
         case .liveKitCredentialsIntercepted(let url, let token):
             MXLog.info("sTalk: LiveKit credentials intercepted (pass-through) — url=\(url.prefix(80))..., token length=\(token.count)")
-            // sTalk: WebView handles media via Element Call — no native SDK connection.
-            // Credentials logged for future native SDK integration.
+            // sTalk: Extract LiveKit room name from JWT for recording-api
+            if let roomName = extractRoomNameFromJWT(token) {
+                interceptedLiveKitRoomName = roomName
+                MXLog.info("sTalk: Extracted LiveKit room name from JWT: \(roomName)")
+            }
             state.wasConnected = true
         }
     }
     
     func stop() {
         callTimerTask = nil
+        recordingPollingTask?.cancel()
+        recordingPollingTask = nil
         // Safety net: вызывается координатором при удалении.
         // Как upstream: отправить hangup + close для MatrixRTC cleanup.
         Task {
@@ -454,6 +465,32 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     
     // MARK: - Native LiveKit
 
+    /// sTalk: Decode JWT token payload to extract LiveKit room name
+    private func extractRoomNameFromJWT(_ token: String) -> String? {
+        let parts = token.split(separator: ".")
+        guard parts.count >= 2 else { return nil }
+
+        var base64 = String(parts[1])
+        // Fix base64 padding
+        while base64.count % 4 != 0 {
+            base64.append("=")
+        }
+
+        guard let data = Data(base64Encoded: base64),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let video = json["video"] as? [String: Any],
+              let roomName = video["room"] as? String else {
+            // Fallback: try top-level "room" claim
+            if let data = Data(base64Encoded: base64),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let roomName = json["room"] as? String {
+                return roomName
+            }
+            return nil
+        }
+        return roomName
+    }
+
     private func connectNativeLiveKit(wsURL: String, token: String) async {
         MXLog.info("sTalk: connectNativeLiveKit called, wsURL prefix=\(wsURL.prefix(60))")
         // Only connect once
@@ -596,6 +633,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             return
         }
         isEndingCall = true
+        recordingPollingTask?.cancel()
+        recordingPollingTask = nil
         MXLog.info("sTalk: endCall — начинаю завершение звонка")
 
         // 1. Остановить запись (до закрытия звонка, иначе ABORTED)
@@ -604,7 +643,6 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             do {
                 try await recordingService.stopRecording()
                 MXLog.info("sTalk: Recording stopped before call end")
-                await sendRecordingInfoMessage(duration: duration)
             } catch {
                 MXLog.error("sTalk: Recording cleanup: \(error)")
             }
@@ -716,7 +754,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
 
         case .roomCall(let roomProxy, let clientProxy, _, _, _, _):
             // sTalk: Use LiveKit room name for recording-api (not Matrix room ID)
-            roomName = liveKitRoomManager.roomName ?? roomProxy.id
+            roomName = liveKitRoomManager.roomName ?? interceptedLiveKitRoomName ?? roomProxy.id
             matrixRoomId = roomProxy.id
             initiatedBy = clientProxy.userID
 
@@ -759,35 +797,12 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         do {
             try await recordingService.stopRecording()
             MXLog.info("Recording stopped")
-
-            // sTalk: Send recording info message to the room chat
-            await sendRecordingInfoMessage(duration: recordingDuration)
         } catch {
             MXLog.error("Failed to stop recording: \(error)")
             state.bindings.alertInfo = .init(id: UUID(),
                                              title: L10n.commonError,
                                              message: error.localizedDescription,
                                              primaryButton: .init(title: L10n.actionOk, action: nil))
-        }
-    }
-
-    private func sendRecordingInfoMessage(duration: TimeInterval) async {
-        guard case .roomCall(let roomProxy, _, _, _, _, _) = configuration.kind else { return }
-
-        let minutes = Int(duration) / 60
-        let seconds = Int(duration) % 60
-        let durationText = String(format: "%d:%02d", minutes, seconds)
-        let message = "Запись звонка завершена (длительность: \(durationText))"
-
-        let result = await roomProxy.timeline.sendMessage(message,
-                                                          html: nil,
-                                                          inReplyToEventID: nil,
-                                                          intentionalMentions: .empty)
-        switch result {
-        case .success:
-            MXLog.info("Recording info message sent to room")
-        case .failure(let error):
-            MXLog.error("Failed to send recording info message: \(error)")
         }
     }
 
@@ -819,6 +834,43 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 guard !Task.isCancelled, let self else { return }
                 await MainActor.run {
                     self.state.callElapsedTime += 1
+                }
+            }
+        }
+
+        // sTalk: Start polling for remote recording
+        startRecordingPolling()
+    }
+
+    // MARK: - Remote Recording Polling
+
+    /// sTalk: Poll recording-api every 5 seconds to detect if another participant started recording
+    private func startRecordingPolling() {
+        recordingPollingTask?.cancel()
+        recordingPollingTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled, let self else { return }
+
+                // Skip if we're recording locally — we already show indicator
+                if self.state.recordingState.isRecording { continue }
+
+                guard let recordingService = self.recordingService else { continue }
+
+                // Use intercepted LiveKit room name
+                let roomName = self.liveKitRoomManager.roomName ?? self.interceptedLiveKitRoomName
+                guard let roomName else { continue }
+
+                let hasRemote = await recordingService.hasActiveRecording(roomName: roomName)
+                await MainActor.run {
+                    if self.state.isRemoteRecording != hasRemote {
+                        self.state.isRemoteRecording = hasRemote
+                        if hasRemote {
+                            MXLog.info("sTalk: Remote recording detected for room \(roomName)")
+                        } else {
+                            MXLog.info("sTalk: Remote recording stopped for room \(roomName)")
+                        }
+                    }
                 }
             }
         }

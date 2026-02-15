@@ -81,6 +81,22 @@ struct EgressInfo: Codable {
     let endedAt: String?
 }
 
+// MARK: - Recording List (for remote recording detection)
+
+struct RecordingListResponse: Codable {
+    let success: Bool
+    let recordings: [RecordingListItem]?
+    let error: String?
+}
+
+struct RecordingListItem: Codable {
+    let egressId: String
+    let roomName: String?
+    let status: Int?
+    let startedAt: String?
+    let initiatedBy: String?
+}
+
 // MARK: - Recording State
 
 enum RecordingState: Equatable {

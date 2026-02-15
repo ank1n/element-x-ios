@@ -27,6 +27,9 @@ protocol RecordingServiceProtocol: AnyObject {
     func stopRecording() async throws
     func getStatus(egressId: String) async throws -> EgressInfo
 
+    /// Check if there's an active recording for the given room (started by someone else)
+    func hasActiveRecording(roomName: String) async -> Bool
+
     /// Принудительный сброс состояния записи (при входе в новый звонок)
     func forceReset()
 }
@@ -204,6 +207,18 @@ class RecordingService: RecordingServiceProtocol {
         return egress
     }
 
+    /// Check if there's an active recording for the given room (status=1 ACTIVE)
+    func hasActiveRecording(roomName: String) async -> Bool {
+        do {
+            let response: RecordingListResponse = try await get(endpoint: "/recording-api/api/recording/list")
+            guard let recordings = response.recordings else { return false }
+            return recordings.contains { $0.roomName == roomName && $0.status == 1 }
+        } catch {
+            MXLog.verbose("Failed to check active recording: \(error)")
+            return false
+        }
+    }
+
     /// Принудительный сброс состояния записи (при входе в новый звонок)
     func forceReset() {
         MXLog.info("Force resetting recording state")
@@ -366,6 +381,8 @@ class RecordingServiceMock: RecordingServiceProtocol {
     func getStatus(egressId: String) async throws -> EgressInfo {
         EgressInfo(egressId: egressId, roomName: "test-room", status: 1, startedAt: nil, endedAt: nil)
     }
+
+    func hasActiveRecording(roomName: String) async -> Bool { false }
 
     func forceReset() {
         stateSubject.send(.idle)

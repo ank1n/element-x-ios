@@ -225,14 +225,20 @@ struct CallScreen: View {
         }
 
         // sTalk: Recording button in toolbar (top-right, same level as "Назад")
-        if context.viewState.isRecordingEnabled {
+        if context.viewState.isRecordingEnabled || context.viewState.isRemoteRecording {
             ToolbarItem(placement: .topBarTrailing) {
                 HStack(spacing: 6) {
-                    RecordingButton(recordingState: context.viewState.recordingState) {
-                        if context.viewState.recordingState.isRecording {
-                            context.send(viewAction: .toggleRecording)
-                        } else {
-                            showRecordingConsent = true
+                    if context.viewState.isRemoteRecording && !context.viewState.recordingState.isRecording {
+                        // Remote recording — show red indicator, no action
+                        RecordingButton(recordingState: .recording(egressId: "remote", duration: 0)) { }
+                            .disabled(true)
+                    } else {
+                        RecordingButton(recordingState: context.viewState.recordingState) {
+                            if context.viewState.recordingState.isRecording {
+                                context.send(viewAction: .toggleRecording)
+                            } else {
+                                showRecordingConsent = true
+                            }
                         }
                     }
                 }

@@ -29,6 +29,8 @@ struct CallScreenViewState: BindableState {
     // Recording state
     var recordingState: RecordingState = .idle
     var isRecordingEnabled: Bool = true
+    /// sTalk: Remote recording detected (started by another participant)
+    var isRemoteRecording: Bool = false
 
     // sTalk: call participant info
     var roomDisplayName: String?
