@@ -71,7 +71,10 @@ class OIDCAuthenticationPresenter: NSObject {
         startLoading(delay: .milliseconds(50)) // Small delay to handle a cancellation callback without the indicator showing.
         defer { stopLoading() }
         
-        switch await authenticationService.loginWithOIDCCallback(url) {
+        // Rewrite custom scheme URL back to HTTPS for the SDK (MAS expects HTTPS redirect_uri).
+        let callbackURL = url.rewritingCustomSchemeToHTTPS()
+
+        switch await authenticationService.loginWithOIDCCallback(callbackURL) {
         case .success(let userSession):
             return .success(userSession)
         case .failure(.oidcError(.userCancellation)):
@@ -110,14 +113,26 @@ extension OIDCAuthenticationPresenter: ASWebAuthenticationPresentationContextPro
 }
 
 extension ASWebAuthenticationSession.Callback {
+    /// sTalk: Use custom scheme callback to avoid associated-domains requirement (Personal Team).
+    /// Server at stalk.implica.ru/oidc/callback redirects HTTPS → ru.implica.stalk:// custom scheme.
+    static let sTalkCustomScheme = "ru.implica.stalk"
+
     static func oidcRedirectURL(_ url: URL) -> Self {
-        if url.scheme == "https", let host = url.host() {
-            .https(host: host, path: url.path())
-        } else if let scheme = url.scheme {
-            .customScheme(scheme)
-        } else {
-            fatalError("Invalid OIDC redirect URL: \(url)")
-        }
+        // Always use custom scheme — server will 302 redirect from HTTPS to custom scheme.
+        // This avoids the need for Associated Domains entitlement (not supported by Personal Team).
+        .customScheme(sTalkCustomScheme)
+    }
+}
+
+extension URL {
+    /// Rewrites a custom scheme callback URL back to the HTTPS redirect URL expected by the SDK.
+    /// e.g. ru.implica.stalk://oidc/callback?code=X → https://stalk.implica.ru/oidc/callback?code=X
+    func rewritingCustomSchemeToHTTPS() -> URL {
+        guard scheme == ASWebAuthenticationSession.Callback.sTalkCustomScheme else { return self }
+        var components = URLComponents(url: self, resolvingAgainstBaseURL: false)
+        components?.scheme = "https"
+        components?.host = "stalk.implica.ru"
+        return components?.url ?? self
     }
 }
 
