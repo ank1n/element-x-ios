@@ -249,8 +249,8 @@ final class AppSettings {
     
     /// Any pre-defined static client registrations for OIDC issuers.
     let oidcStaticRegistrations: [URL: String] = ["https://id.thirdroom.io/realms/thirdroom": "elementx"]
-    /// The redirect URL used for OIDC. Uses HTTPS callback — requires associated domains entitlement.
-    private(set) var oidcRedirectURL: URL = "https://stalk.implica.ru/oidc/login"
+    /// The redirect URL used for OIDC. Uses custom scheme — no associated domains needed.
+    private(set) var oidcRedirectURL: URL = "ru.implica.stalk://oidc/login"
     
     private(set) lazy var oidcConfiguration = OIDCConfiguration(clientName: InfoPlistReader.main.bundleDisplayName,
                                                                 redirectURI: oidcRedirectURL,
