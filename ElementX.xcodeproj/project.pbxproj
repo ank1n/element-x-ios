@@ -9575,7 +9575,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				APP_DISPLAY_NAME = "Element X";
+				APP_DISPLAY_NAME = sTalk;
 				APP_GROUP_IDENTIFIER = group.ru.implica.stalk;
 				APP_NAME = ElementX;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "colors/accent-color";
@@ -9645,7 +9645,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				APP_DISPLAY_NAME = "Element X";
+				APP_DISPLAY_NAME = sTalk;
 				APP_GROUP_IDENTIFIER = group.ru.implica.stalk;
 				APP_NAME = ElementX;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "colors/accent-color";
