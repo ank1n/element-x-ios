@@ -154,7 +154,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         }
     }
 
-    /// Проверяет соответствует ли запись локальному звонку (по roomID и близости времени)
+    /// Проверяет соответствует ли запись локальному звонку
     private func isRecordingMatchingCall(_ recording: CallHistoryItem, localCall: LocalCallHistoryItem) -> Bool {
         // Проверяем roomID (contactId в recording может быть matrixRoomId или encoded roomName)
         let roomMatches = recording.contactId == localCall.roomID ||
@@ -164,7 +164,30 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         let timeDiff = abs(recording.timestamp.timeIntervalSince(localCall.startedAt))
         let timeMatches = timeDiff < 300 // 5 минут
 
-        return roomMatches && timeMatches
+        // Вариант 1: roomID совпадает + время близко
+        if roomMatches && timeMatches {
+            return true
+        }
+
+        // Вариант 2: roomID разные (DM vs call room), но время и длительность совпадают
+        // Это случай когда local хранит DM roomID, а сервер — call roomID
+        if timeMatches {
+            let localDuration = localCall.duration ?? 0
+            let recordingDuration = recording.duration ?? 0
+            // Если обе длительности > 0 и разница < 10 секунд — это один звонок
+            if localDuration > 0, recordingDuration > 0 {
+                let durationDiff = abs(localDuration - recordingDuration)
+                if durationDiff < 10 {
+                    return true
+                }
+            }
+            // Или если время начала совпадает с точностью до 30 секунд — скорее всего один звонок
+            if timeDiff < 30 {
+                return true
+            }
+        }
+
+        return false
     }
 
     // MARK: - Server Recordings
