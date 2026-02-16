@@ -32,14 +32,15 @@ struct CallScreen: View {
                     // sTalk: Native call control buttons at bottom
                     VStack {
                         Spacer()
-                        LinearGradient(
-                            colors: [.clear, .black.opacity(0.3), .black.opacity(0.75)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: 140)
-                        .allowsHitTesting(false)
-                        .overlay(alignment: .bottom) {
+                        ZStack(alignment: .bottom) {
+                            LinearGradient(
+                                colors: [.clear, .black.opacity(0.3), .black.opacity(0.75)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                            .frame(height: 140)
+                            .allowsHitTesting(false)
+
                             callControlButtons
                                 .padding(.bottom, 48)
                         }

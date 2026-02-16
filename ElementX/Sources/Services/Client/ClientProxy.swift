@@ -303,7 +303,12 @@ class ClientProxy: ClientProxyProtocol {
     var homeserver: String {
         client.homeserver()
     }
-    
+
+    /// sTalk: Access token for direct Matrix REST API calls (e.g. clearing MatrixRTC state)
+    func matrixAccessToken() throws -> String {
+        try client.session().accessToken
+    }
+
     var canDeactivateAccount: Bool {
         client.canDeactivateAccount()
     }

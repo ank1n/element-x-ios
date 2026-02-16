@@ -10,7 +10,30 @@ import AVKit
 import CallKit
 import Combine
 import LiveKit
+import os.log
 import SwiftUI
+
+private let callLog = OSLog(subsystem: "ru.implica.stalk", category: "CallScreen")
+
+/// sTalk: Debug log to file (os_log doesn't work on simulator)
+private func stalkLog(_ message: String) {
+    let ts = ISO8601DateFormatter().string(from: Date())
+    let line = "[\(ts)] \(message)\n"
+    NSLog("sTalk: %@", message)
+    let dir = FileManager.default.temporaryDirectory
+    let file = dir.appendingPathComponent("stalk_call_debug.log")
+    if let data = line.data(using: .utf8) {
+        if FileManager.default.fileExists(atPath: file.path) {
+            if let handle = try? FileHandle(forWritingTo: file) {
+                handle.seekToEndOfFile()
+                handle.write(data)
+                handle.closeFile()
+            }
+        } else {
+            try? data.write(to: file)
+        }
+    }
+}
 
 typealias CallScreenViewModelType = StateStoreViewModel<CallScreenViewState, CallScreenViewAction>
 
@@ -157,8 +180,14 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 
                 switch action {
                 case .callEnded:
-                    // sTalk: WebView is now always visible (mini window or fullscreen),
-                    // so .callEnded is only fired when the call actually ends.
+                    // sTalk: Guard against bounce-back.
+                    // .callEnded fires when Widget API receives .close with fromWidget direction.
+                    // Our endCall() sends .close directly → handleMessageIfNeeded echoes .callEnded.
+                    // If endCall() is already running, ignore the bounced signal.
+                    if self.isEndingCall {
+                        MXLog.info("sTalk: .callEnded ignored — endCall() is already in progress")
+                        return
+                    }
                     actionsSubject.send(.dismiss)
                 case .mediaStateChanged(let audioEnabled, let videoEnabled):
                     elementCallService.setAudioEnabled(audioEnabled, roomID: configuration.callRoomID)
@@ -260,6 +289,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             state.isMinimized = false
             actionsSubject.send(.pictureInPictureStopped)
         case .endCall:
+            stalkLog(">>> .endCall viewAction received, isEndingCall=\(isEndingCall)")
             Task { await endCall() }
         case .mediaCapturePermissionGranted:
             // sTalk: Don't set wasConnected/timer here — wait for first mediaStateChanged
@@ -310,30 +340,25 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         callTimerTask = nil
         recordingPollingTask?.cancel()
         recordingPollingTask = nil
-        // Safety net: вызывается координатором при удалении.
-        // Как upstream: отправить hangup + close для MatrixRTC cleanup.
-        Task {
-            // Отправить hangup → Widget API (как upstream stop())
-            let hangupMsg = ElementCallWidgetMessage(direction: .fromWidget,
-                                                      action: .hangup,
-                                                      widgetId: widgetDriver.widgetID)
-            await postMessageToWidget(hangupMsg)
+        MXLog.info("sTalk: stop() called — safety net cleanup")
 
-            // Отправить close → Rust SDK удалит MatrixRTC state
-            let closeMsg = ElementCallWidgetMessage(direction: .fromWidget,
-                                                     action: .close,
-                                                     widgetId: widgetDriver.widgetID)
-            await postMessageToWidget(closeMsg)
+        // Safety net: вызывается координатором при удалении.
+        Task {
+            // Очистить MatrixRTC state event через REST API
+            if case .roomCall(let roomProxy, let clientProxy, _, _, _, _) = configuration.kind {
+                await sendLeaveCallStateEventViaREST(roomProxy: roomProxy, clientProxy: clientProxy)
+            }
+            await sendDirectlyToWidgetDriver(.hangup)
+            await sendDirectlyToWidgetDriver(.close)
 
             if liveKitRoomManager.connectionState != .disconnected {
-                MXLog.info("sTalk: stop() safety — disconnecting LiveKit")
                 await liveKitRoomManager.disconnect()
             }
-            await MainActor.run {
-                elementCallService.tearDownCallSession()
-                UIDevice.current.isProximityMonitoringEnabled = false
-            }
         }
+
+        // Teardown immediately (как upstream — вне Task)
+        elementCallService.tearDownCallSession()
+        UIDevice.current.isProximityMonitoringEnabled = false
     }
     
     // MARK: - Private
@@ -629,69 +654,200 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     private func endCall() async {
         // sTalk: Guard against cascade — infoPublisher fires multiple times
         guard !isEndingCall else {
-            MXLog.info("sTalk: endCall — already ending, skipping duplicate")
+            stalkLog("endCall — already ending, skipping duplicate")
             return
         }
         isEndingCall = true
         recordingPollingTask?.cancel()
         recordingPollingTask = nil
-        MXLog.info("sTalk: endCall — начинаю завершение звонка")
+        stalkLog("endCall — начинаю завершение звонка")
 
         // 1. Остановить запись (до закрытия звонка, иначе ABORTED)
         if let recordingService, recordingService.state.isRecording {
-            let duration = recordingService.state.recordingDuration ?? 0
             do {
                 try await recordingService.stopRecording()
-                MXLog.info("sTalk: Recording stopped before call end")
+                stalkLog("[1] Recording stopped")
             } catch {
-                MXLog.error("sTalk: Recording cleanup: \(error)")
+                stalkLog("[1] Recording cleanup error: \(error)")
             }
         }
 
-        // 2. Нажать кнопку hangup в Element Call через JS (надёжный путь)
-        //    EC обработает hangup и отправит .close через Widget API → Rust SDK удалит MatrixRTC state
-        _ = try? await state.bindings.javaScriptEvaluator?("""
-            (function() {
-                var btn = document.querySelector('[data-testid="hangup_button"]')
-                    || document.querySelector('button[class*="hangup"]')
-                    || document.querySelector('button[aria-label*="hang"]')
-                    || document.querySelector('button[aria-label*="Leave"]');
-                if (btn) { btn.click(); return 'clicked'; }
-                return 'not_found';
-            })()
-            """)
-        MXLog.info("sTalk: Triggered EC hangup button via JS")
+        // 2. Очистить MatrixRTC state event через REST API (основной метод)
+        //    Widget API send_event не работает — Rust SDK принимает но не отправляет на сервер.
+        //    REST API отправляет напрямую на Matrix homeserver.
+        if case .roomCall(let roomProxy, let clientProxy, _, _, _, _) = configuration.kind {
+            stalkLog("[2] Clearing call.member via REST API...")
+            await sendLeaveCallStateEventViaREST(roomProxy: roomProxy, clientProxy: clientProxy)
+        }
 
-        // 3. Отправить .hangup → Widget API (fallback если JS клик не сработал)
-        let hangupMsg = ElementCallWidgetMessage(direction: .fromWidget,
-                                                  action: .hangup,
-                                                  widgetId: widgetDriver.widgetID)
-        await postMessageToWidget(hangupMsg)
-        MXLog.info("sTalk: Sent .hangup to Widget API")
+        // 3. Отправить .hangup + .close через Widget API (для Rust SDK cleanup)
+        stalkLog("[3] Sending .hangup + .close to Rust SDK")
+        await sendDirectlyToWidgetDriver(.hangup)
+        await sendDirectlyToWidgetDriver(.close)
 
-        // 4. Дать Element Call время обработать hangup и отправить .close
-        try? await Task.sleep(for: .seconds(2))
-
-        // 5. Fallback: отправить .close если EC не отправил его сам
-        let closeMsg = ElementCallWidgetMessage(direction: .fromWidget,
-                                                 action: .close,
-                                                 widgetId: widgetDriver.widgetID)
-        await postMessageToWidget(closeMsg)
-        MXLog.info("sTalk: Sent .close to Widget API (fallback)")
-
-        // 6. Дать Rust SDK время обработать удаление MatrixRTC state event
-        try? await Task.sleep(for: .seconds(1))
-
-        // 7. Отключить нативный LiveKit SDK
+        // 4. Отключить нативный LiveKit SDK
+        stalkLog("[4] Disconnecting LiveKit")
         await liveKitRoomManager.disconnect()
-        MXLog.info("sTalk LiveKit: Disconnected on endCall")
 
-        // 8. Закрыть CallKit сессию
+        // 5. Закрыть CallKit сессию
+        stalkLog("[5] Tearing down CallKit session")
         elementCallService.tearDownCallSession()
         UIDevice.current.isProximityMonitoringEnabled = false
 
-        // 9. Dismiss экран звонка
+        // 6. Dismiss экран звонка
+        stalkLog("[6] endCall complete — dismissing")
         actionsSubject.send(.dismiss)
+    }
+
+    /// Send a widget message directly to the Rust SDK widget driver, bypassing the WebView JS bridge.
+    /// postMessageToWidget() goes through WebView → JS postMessage() → async handler chain,
+    /// which fails if WebView is 1x1 or deallocated. This calls widgetDriver.handleMessage() directly.
+    private func sendDirectlyToWidgetDriver(_ action: ElementCallWidgetMessage.Action) async {
+        let msg = ElementCallWidgetMessage(direction: .fromWidget,
+                                            action: action,
+                                            widgetId: widgetDriver.widgetID)
+        guard let data = try? JSONEncoder().encode(msg),
+              let json = String(data: data, encoding: .utf8) else {
+            stalkLog("FAILED to encode \(action.rawValue) message")
+            return
+        }
+        stalkLog("Sending \(action.rawValue) directly to Rust SDK, json=\(json.prefix(200))")
+        let result = await widgetDriver.handleMessage(json)
+        stalkLog("\(action.rawValue) sent to Rust SDK, result = \(result)")
+    }
+
+    /// sTalk: Send Widget API `send_event` to clear the MatrixRTC call.member state event.
+    /// In upstream, Element Call sends this automatically when it processes hangup.
+    /// Since our EC is hidden (1x1), it never processes hangup, so we send it manually.
+    private func sendLeaveCallStateEvent() async {
+        guard case .roomCall(_, let clientProxy, _, _, _, _) = configuration.kind else {
+            stalkLog("sendLeaveCallStateEvent: not a room call, skipping")
+            return
+        }
+
+        let userID = clientProxy.userID
+        let deviceID = clientProxy.deviceID ?? "unknown"
+        let widgetId = widgetDriver.widgetID
+
+        // Try both event types and state key formats
+        let eventTypes = ["org.matrix.msc3401.call.member"]
+        // Per-device state key (MSC4143): _@user:server_DEVICEID
+        // Legacy state key (MSC3401): @user:server
+        let stateKeys = ["_\(userID)_\(deviceID)", userID]
+
+        for eventType in eventTypes {
+            for stateKey in stateKeys {
+                let json = """
+                {"api":"fromWidget","requestId":"stalk-leave-\(UUID().uuidString)","action":"send_event","widgetId":"\(widgetId)","data":{"type":"\(eventType)","state_key":"\(stateKey)","content":{"memberships":[]}}}
+                """
+                stalkLog("send_event: type=\(eventType) state_key=\(stateKey)")
+                let result = await widgetDriver.handleMessage(json)
+                stalkLog("send_event result: \(result)")
+            }
+        }
+    }
+
+    /// sTalk: Fallback — clear call.member state event directly via Matrix REST API.
+    /// First GET all call.member state events to find the real state keys, then PUT empty memberships.
+    private func sendLeaveCallStateEventViaREST(roomProxy: JoinedRoomProxyProtocol, clientProxy: ClientProxyProtocol) async {
+        let userID = clientProxy.userID
+        let homeserver = clientProxy.homeserver
+
+        // Get room ID
+        let roomID = roomProxy.id
+
+        // Get access token
+        guard let concreteProxy = clientProxy as? ClientProxy else {
+            stalkLog("REST fallback: cannot cast to ClientProxy")
+            return
+        }
+
+        let accessToken: String
+        do {
+            accessToken = try concreteProxy.matrixAccessToken()
+        } catch {
+            stalkLog("REST fallback: failed to get access token: \(error)")
+            return
+        }
+
+        // Fix trailing slash in homeserver URL
+        let baseURL = homeserver.hasSuffix("/") ? String(homeserver.dropLast()) : homeserver
+        stalkLog("REST fallback: token len=\(accessToken.count), baseURL=\(baseURL), roomID=\(roomID)")
+
+        // Step 1: GET all room state to find actual call.member events and their state keys
+        let encodedRoom = roomID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? roomID
+        let stateURL = "\(baseURL)/_matrix/client/v3/rooms/\(encodedRoom)/state"
+        stalkLog("REST GET: \(stateURL)")
+
+        var stateKeysToClean: [(eventType: String, stateKey: String)] = []
+
+        do {
+            var req = URLRequest(url: URL(string: stateURL)!)
+            req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            let statusCode = (resp as? HTTPURLResponse)?.statusCode ?? -1
+            stalkLog("REST GET state: status=\(statusCode)")
+
+            if statusCode == 200, let events = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+                for event in events {
+                    guard let type = event["type"] as? String,
+                          (type == "org.matrix.msc3401.call.member" || type == "m.call.member"),
+                          let sk = event["state_key"] as? String else { continue }
+
+                    let content = event["content"] as? [String: Any] ?? [:]
+                    let memberships = content["memberships"] as? [[String: Any]] ?? []
+                    stalkLog("Found call.member: type=\(type) state_key=\(sk) memberships=\(memberships.count)")
+
+                    // Only clear events that have our user ID in the state key or have non-empty memberships for our user
+                    if sk.contains(userID) || memberships.contains(where: { ($0["user_id"] as? String) == userID }) {
+                        stateKeysToClean.append((eventType: type, stateKey: sk))
+                        stalkLog("  → will clear this one (matches our userID)")
+                    } else if sk == userID || sk.hasPrefix("_\(userID)") {
+                        stateKeysToClean.append((eventType: type, stateKey: sk))
+                        stalkLog("  → will clear this one (state_key matches)")
+                    } else {
+                        stalkLog("  → skipping (not ours)")
+                    }
+                }
+            }
+        } catch {
+            stalkLog("REST GET state error: \(error)")
+        }
+
+        stalkLog("REST: found \(stateKeysToClean.count) call.member events to clear")
+
+        // Step 2: PUT empty memberships for each found state key
+        for item in stateKeysToClean {
+            let encodedType = item.eventType.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? item.eventType
+            let encodedKey = item.stateKey.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? item.stateKey
+            let urlString = "\(baseURL)/_matrix/client/v3/rooms/\(encodedRoom)/state/\(encodedType)/\(encodedKey)"
+
+            guard let url = URL(string: urlString) else {
+                stalkLog("REST PUT: invalid URL: \(urlString)")
+                continue
+            }
+
+            var request = URLRequest(url: url)
+            request.httpMethod = "PUT"
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = "{\"memberships\":[]}".data(using: .utf8)
+
+            stalkLog("REST PUT: \(urlString)")
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+                let body = String(data: data, encoding: .utf8) ?? "nil"
+                stalkLog("REST PUT result: status=\(statusCode) body=\(body.prefix(200))")
+            } catch {
+                stalkLog("REST PUT error: \(error)")
+            }
+        }
+
+        // If we didn't find any events to clear, log the full state for debugging
+        if stateKeysToClean.isEmpty {
+            stalkLog("REST: NO call.member events found for our user! Check state dump above.")
+        }
     }
 
     private func toggleHandRaise() async {

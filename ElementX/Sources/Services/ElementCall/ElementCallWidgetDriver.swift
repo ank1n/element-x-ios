@@ -8,7 +8,10 @@
 
 import Combine
 import MatrixRustSDK
+import os.log
 import SwiftUI
+
+private let widgetLog = OSLog(subsystem: "ru.implica.stalk", category: "WidgetDriver")
 
 struct ElementCallWidgetMessage: Codable {
     enum Direction: String, Codable {
@@ -162,14 +165,25 @@ final class ElementCallWidgetDriver: WidgetCapabilitiesProvider, ElementCallWidg
     @discardableResult
     func handleMessage(_ message: String) async -> Result<Bool, ElementCallWidgetDriverError> {
         guard let widgetDriver else {
+            os_log("sTalk WidgetDriver: handleMessage FAILED — driver not setup!", log: widgetLog, type: .error)
             return .failure(.driverNotSetup)
         }
-        
+
+        // Log lifecycle messages
+        if message.contains("io.element.close") || message.contains("im.vector.hangup") {
+            os_log("sTalk WidgetDriver: handleMessage LIFECYCLE: %{public}@", log: widgetLog, type: .info, String(message.prefix(300)))
+        }
+
         let result = await widgetDriver.handle.send(msg: message)
+
+        if message.contains("io.element.close") || message.contains("im.vector.hangup") {
+            os_log("sTalk WidgetDriver: handle.send result = %{public}d", log: widgetLog, type: .info, result ? 1 : 0)
+        }
+
         MXLog.debug("Sent message: \(message) with result: \(result)")
-        
+
         handleMessageIfNeeded(message)
-        
+
         return .success(result)
     }
     
