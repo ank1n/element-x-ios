@@ -187,6 +187,7 @@
 		1C6B06DB15EC194AF35C05DB /* RoomPowerLevelsProxy.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFFA5E881D281810AB428EA3 /* RoomPowerLevelsProxy.swift */; };
 		1C8BC70A18060677E295A846 /* ShareToMapsAppActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4481799F455B3DA243BDA2AC /* ShareToMapsAppActivity.swift */; };
 		1C95ECE760E1EF89BB061A57 /* TabChats.json in Resources */ = {isa = PBXBuildFile; fileRef = C2D9572707E7189CA3323F9C /* TabChats.json */; };
+		AA12345678TABAPPS000001 /* TabApps.json in Resources */ = {isa = PBXBuildFile; fileRef = AA12345678TABAPPS000002 /* TabApps.json */; };
 		1C9BB74711E5F24C77B7FED0 /* RoomMembersListScreenCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AEA0B743847CFA5B3C38EE4 /* RoomMembersListScreenCoordinator.swift */; };
 		1D5DC685CED904386C89B7DA /* NSRegularExpresion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95BAC0F6C9644336E9567EE6 /* NSRegularExpresion.swift */; };
 		1D623953F970D11F6F38499C /* AppLockService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 851B95BB98649B8E773D6790 /* AppLockService.swift */; };
@@ -2692,6 +2693,7 @@
 		C2751C0CABB0CAE3B43A6F33 /* TabCalls.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = TabCalls.json; sourceTree = "<group>"; };
 		C2886615BEBAE33A0AA4D5F8 /* RoomScreenModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomScreenModels.swift; sourceTree = "<group>"; };
 		C2D9572707E7189CA3323F9C /* TabChats.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = TabChats.json; sourceTree = "<group>"; };
+		AA12345678TABAPPS000002 /* TabApps.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = TabApps.json; sourceTree = "<group>"; };
 		C2E9B841EE4878283ECDB554 /* InviteUsersScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InviteUsersScreen.swift; sourceTree = "<group>"; };
 		C30F45308428A4D9FFDB2FB8 /* BannedRoomProxy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BannedRoomProxy.swift; sourceTree = "<group>"; };
 		C3285BD95B564CA2A948E511 /* OnboardingFlowCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFlowCoordinator.swift; sourceTree = "<group>"; };
@@ -5426,6 +5428,7 @@
 		8C159E9C19A186E5D8C3CD70 /* StalkIcons */ = {
 			isa = PBXGroup;
 			children = (
+				AA12345678TABAPPS000002 /* TabApps.json */,
 				C2751C0CABB0CAE3B43A6F33 /* TabCalls.json */,
 				C2D9572707E7189CA3323F9C /* TabChats.json */,
 				0B325221A0BFBCB9BA798E8D /* TabContacts.json */,
@@ -7471,6 +7474,7 @@
 				8B408C574E35E1C9B43A50CE /* PrivacyInfo.xcprivacy in Resources */,
 				C3317EF833AB4060988DF098 /* SAS.strings in Resources */,
 				5FCD8AFA364206EE32B909A3 /* Settings.bundle in Resources */,
+				AA12345678TABAPPS000001 /* TabApps.json in Resources */,
 				950BED7CB38E24B345C0386F /* TabCalls.json in Resources */,
 				1C95ECE760E1EF89BB061A57 /* TabChats.json in Resources */,
 				E81F3B58518BC7C4042D34A8 /* TabContacts.json in Resources */,
