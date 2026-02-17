@@ -102,7 +102,7 @@ struct StalkTabBar: View {
             VStack(spacing: 3) {
                 ZStack(alignment: .topTrailing) {
                     iconView(for: item, index: index, isActive: isActive)
-                        .frame(width: 30, height: 30)
+                        .frame(width: 36, height: 36)
 
                     // Badge
                     if item.badgeCount > 0 {
@@ -128,11 +128,12 @@ struct StalkTabBar: View {
                 animationName: lottie,
                 isSelected: isActive,
                 playAnimation: animatingIndex == index,
-                iconSize: 30
+                iconSize: 36
             )
+            .scaleEffect(1.8)
         } else if let sfSymbol = item.sfSymbol {
             Image(systemName: isActive ? (item.sfSymbolSelected ?? sfSymbol) : sfSymbol)
-                .font(.system(size: 24))
+                .font(.system(size: 26))
                 .foregroundColor(isActive ? .accentColor : Color(.systemGray))
         }
     }

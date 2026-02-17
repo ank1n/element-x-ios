@@ -105,7 +105,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         let appsStackCoordinator = NavigationStackCoordinator()
         appsTabFlowCoordinator = WidgetsTabFlowCoordinator(navigationStackCoordinator: appsStackCoordinator,
                                                            flowParameters: flowParameters)
-        appsTabDetails = .init(tag: HomeTab.apps, title: "Приложения", icon: \.extensions, selectedIcon: \.extensionsSolid, sfSymbol: "square.grid.2x2", sfSymbolSelected: "square.grid.2x2.fill")
+        appsTabDetails = .init(tag: HomeTab.apps, title: "Приложения", icon: \.extensions, selectedIcon: \.extensionsSolid, sfSymbol: "square.grid.2x2", sfSymbolSelected: "square.grid.2x2.fill", lottieAnimation: "TabApps")
         appsTabDetails.barVisibilityOverride = .visible
 
         // 5. Profile tab (uses SettingsFlowCoordinator)
