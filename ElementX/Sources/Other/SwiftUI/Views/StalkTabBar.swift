@@ -46,15 +46,18 @@ struct StalkTabItem: Identifiable {
     let title: String
     let sfSymbol: String?
     let sfSymbolSelected: String?
+    let lottieAnimation: String?
     var badgeCount: Int = 0
 
     init(id: String, title: String,
          sfSymbol: String? = nil, sfSymbolSelected: String? = nil,
+         lottieAnimation: String? = nil,
          badgeCount: Int = 0) {
         self.id = id
         self.title = title
         self.sfSymbol = sfSymbol
         self.sfSymbolSelected = sfSymbolSelected
+        self.lottieAnimation = lottieAnimation
         self.badgeCount = badgeCount
     }
 }
@@ -120,7 +123,14 @@ struct StalkTabBar: View {
 
     @ViewBuilder
     private func iconView(for item: StalkTabItem, index: Int, isActive: Bool) -> some View {
-        if let sfSymbol = item.sfSymbol {
+        if let lottie = item.lottieAnimation {
+            LottieTabBarIcon(
+                animationName: lottie,
+                isSelected: isActive,
+                playAnimation: animatingIndex == index,
+                iconSize: 30
+            )
+        } else if let sfSymbol = item.sfSymbol {
             Image(systemName: isActive ? (item.sfSymbolSelected ?? sfSymbol) : sfSymbol)
                 .font(.system(size: 24))
                 .foregroundColor(isActive ? .accentColor : Color(.systemGray))

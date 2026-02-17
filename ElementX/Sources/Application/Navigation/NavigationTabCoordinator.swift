@@ -28,6 +28,8 @@ import SwiftUI
         let sfSymbol: String?
         /// SF Symbol name for selected tab icon (filled style)
         let sfSymbolSelected: String?
+        /// Lottie animation name (from StalkIcons bundle)
+        let lottieAnimation: String?
         var badgeCount = 0
         var barVisibilityOverride: Visibility?
 
@@ -36,13 +38,14 @@ import SwiftUI
         weak var navigationSplitCoordinator: NavigationSplitCoordinator?
 
         init(tag: Tag, title: String, icon: KeyPath<CompoundIcons, Image>, selectedIcon: KeyPath<CompoundIcons, Image>,
-             sfSymbol: String? = nil, sfSymbolSelected: String? = nil) {
+             sfSymbol: String? = nil, sfSymbolSelected: String? = nil, lottieAnimation: String? = nil) {
             self.tag = tag
             self.title = title
             self.icon = icon
             self.selectedIcon = selectedIcon
             self.sfSymbol = sfSymbol
             self.sfSymbolSelected = sfSymbolSelected
+            self.lottieAnimation = lottieAnimation
         }
         
         func barVisibility(in horizontalSizeClass: UserInterfaceSizeClass?) -> Visibility {
@@ -363,6 +366,7 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
                         title: module.details.title,
                         sfSymbol: module.details.sfSymbol,
                         sfSymbolSelected: module.details.sfSymbolSelected,
+                        lottieAnimation: module.details.lottieAnimation,
                         badgeCount: module.details.badgeCount
                     )
                 },
