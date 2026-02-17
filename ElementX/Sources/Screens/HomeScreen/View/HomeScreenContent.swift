@@ -12,12 +12,19 @@ import SwiftUI
 
 struct HomeScreenContent: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
-    
+    @FocusState private var isSearchFocused: Bool
+
     @ObservedObject var context: HomeScreenViewModel.Context
     let scrollViewAdapter: ScrollViewAdapter
     
     var body: some View {
         roomList
+            .onChange(of: isSearchFocused) {
+                context.isSearchFieldFocused = isSearchFocused
+            }
+            .onChange(of: context.isSearchFieldFocused) {
+                isSearchFocused = context.isSearchFieldFocused
+            }
             .sentryTrace("\(Self.self)")
     }
     
@@ -54,10 +61,6 @@ struct HomeScreenContent: View {
                             topSection
                         }
                     }
-                    .isSearching($context.isSearchFieldFocused)
-                    .searchable(text: $context.searchQuery, placement: .navigationBarDrawer(displayMode: .always))
-                    .compoundSearchField()
-                    .disableAutocorrection(true)
                 }
             }
             .introspect(.scrollView, on: .supportedVersions) { scrollView in
@@ -126,21 +129,46 @@ struct HomeScreenContent: View {
     
     @ViewBuilder
     private var topSection: some View {
-        // An empty VStack causes glitches within the room list
-        if context.viewState.shouldShowFilters || context.viewState.shouldShowBanner {
-            VStack(spacing: 0) {
-                if context.viewState.shouldShowFilters {
-                    RoomListFiltersView(state: $context.filtersState)
-                }
-                
-                if case let .show(state) = context.viewState.securityBannerMode {
-                    HomeScreenRecoveryKeyConfirmationBanner(state: state, context: context)
-                } else if context.viewState.shouldShowNewSoundBanner {
-                    HomeScreenNewSoundBanner { context.send(viewAction: .dismissNewSoundBanner) }
+        VStack(spacing: 0) {
+            // Search bar
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 16))
+                    .foregroundColor(.compound.iconTertiary)
+
+                TextField("Поиск", text: $context.searchQuery)
+                    .font(.compound.bodyLG)
+                    .disableAutocorrection(true)
+                    .focused($isSearchFocused)
+
+                if !context.searchQuery.isEmpty {
+                    Button {
+                        context.searchQuery = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(.compound.iconTertiary)
+                    }
                 }
             }
-            .background(Color.compound.bgCanvasDefault)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color.compound.bgSubtleSecondary)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+
+            if context.viewState.shouldShowFilters {
+                RoomListFiltersView(state: $context.filtersState)
+            }
+
+            if case let .show(state) = context.viewState.securityBannerMode {
+                HomeScreenRecoveryKeyConfirmationBanner(state: state, context: context)
+            } else if context.viewState.shouldShowNewSoundBanner {
+                HomeScreenNewSoundBanner { context.send(viewAction: .dismissNewSoundBanner) }
+            }
         }
+        .background(Color.compound.bgCanvasDefault)
     }
     
     // MARK: - Recent Searches

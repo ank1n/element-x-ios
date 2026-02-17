@@ -26,6 +26,7 @@ struct HomeScreen: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbarVisibility(.visible, for: .navigationBar)
             .toolbar { toolbar }
+            .disableAutocorrection(true)
             .background(Color.compound.bgCanvasDefault.ignoresSafeArea())
             .track(screen: .Home)
             .sentryTrace("\(Self.self)")
@@ -35,11 +36,6 @@ struct HomeScreen: View {
         
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .cancellationAction) {
-            Button("Изменить") {
-                // TODO: implement edit mode (select/delete rooms)
-            }
-        }
         ToolbarItem(placement: .primaryAction) {
             if #available(iOS 26, *) {
                 newRoomButton
