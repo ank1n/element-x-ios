@@ -187,7 +187,7 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
                 name: "Статистика",
                 description: "Статистика сервера и активности",
                 icon: "chart.bar.fill",
-                url: "\(baseURL)/stats/?userId=\(encodedUserId)",
+                url: "\(baseURL)/application/stats/?userId=\(encodedUserId)",
                 category: .tools
             )
         ]

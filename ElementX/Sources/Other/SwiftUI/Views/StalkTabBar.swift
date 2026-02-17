@@ -130,7 +130,7 @@ struct StalkTabBar: View {
                 playAnimation: animatingIndex == index,
                 iconSize: 36
             )
-            .scaleEffect(1.8)
+            .scaleEffect(1.54)
         } else if let sfSymbol = item.sfSymbol {
             Image(systemName: isActive ? (item.sfSymbolSelected ?? sfSymbol) : sfSymbol)
                 .font(.system(size: 26))

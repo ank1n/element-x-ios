@@ -92,8 +92,8 @@ struct AppsAPIWidget: Decodable {
     let id: String
     let name: String
     let description: String
-    let icon: String           // Relative path: /smartapps/icon.png
-    let url: String            // Relative path: /smartapps/weather-bot/
+    let icon: String           // Relative path: /application/icon.png
+    let url: String            // Relative path: /application/weather-bot/
     let type: String           // "smartapp", "widget"
     let enabled: Bool
 }
