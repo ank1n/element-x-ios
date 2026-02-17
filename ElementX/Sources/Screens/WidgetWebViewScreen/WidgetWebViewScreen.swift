@@ -18,6 +18,7 @@ struct WidgetWebViewScreen: View {
             AppWidgetWebView(url: URL(string: context.viewState.widget.url)!,
                              isLoading: $isLoading,
                              progress: $loadingProgress)
+                .id(context.viewState.widget.id)
                 .ignoresSafeArea(.all, edges: .bottom)
 
             if isLoading {
@@ -53,8 +54,10 @@ struct AppWidgetWebView: UIViewRepresentable {
     @Binding var progress: Double
 
     func makeUIView(context: Context) -> WKWebView {
+        // Each widget gets its own data store to avoid shared cookies/localStorage
         let configuration = WKWebViewConfiguration()
         configuration.allowsInlineMediaPlayback = true
+        configuration.websiteDataStore = .nonPersistent()
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
@@ -67,14 +70,14 @@ struct AppWidgetWebView: UIViewRepresentable {
             }
         }
 
+        // Load URL immediately on creation
+        webView.load(URLRequest(url: url))
+
         return webView
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
-        if webView.url == nil {
-            let request = URLRequest(url: url)
-            webView.load(request)
-        }
+        // URL loaded in makeUIView; no reuse needed
     }
 
     func makeCoordinator() -> Coordinator {
