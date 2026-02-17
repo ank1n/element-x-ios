@@ -8885,6 +8885,25 @@ class JoinedRoomProxyMock: JoinedRoomProxyProtocol, @unchecked Sendable {
             return flagAsFavouriteReturnValue
         }
     }
+    //MARK: - flagAsLowPriority
+
+    var flagAsLowPriorityCallsCount = 0
+    var flagAsLowPriorityCalled: Bool {
+        return flagAsLowPriorityCallsCount > 0
+    }
+    var flagAsLowPriorityReceivedIsLowPriority: Bool?
+    var flagAsLowPriorityReturnValue: Result<Void, RoomProxyError>!
+    var flagAsLowPriorityClosure: ((Bool) async -> Result<Void, RoomProxyError>)?
+
+    func flagAsLowPriority(_ isLowPriority: Bool) async -> Result<Void, RoomProxyError> {
+        flagAsLowPriorityCallsCount += 1
+        flagAsLowPriorityReceivedIsLowPriority = isLowPriority
+        if let flagAsLowPriorityClosure = flagAsLowPriorityClosure {
+            return await flagAsLowPriorityClosure(isLowPriority)
+        } else {
+            return flagAsLowPriorityReturnValue
+        }
+    }
     //MARK: - powerLevels
 
     var powerLevelsUnderlyingCallsCount = 0

@@ -216,6 +216,28 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
             Task {
                 await markRoomAsFavourite(roomIdentifier, isFavourite: isFavourite)
             }
+        case .toggleMuteRoom(let roomIdentifier, let isMuted):
+            Task {
+                do {
+                    if isMuted {
+                        try await userSession.clientProxy.notificationSettings.restoreDefaultNotificationMode(roomId: roomIdentifier)
+                    } else {
+                        try await userSession.clientProxy.notificationSettings.setNotificationMode(roomId: roomIdentifier, mode: .mute)
+                    }
+                } catch {
+                    MXLog.error("Failed toggling mute for room \(roomIdentifier): \(error)")
+                }
+            }
+        case .archiveRoom(let roomIdentifier):
+            Task {
+                guard case let .joined(roomProxy) = await userSession.clientProxy.roomForIdentifier(roomIdentifier) else {
+                    MXLog.error("Failed retrieving room for identifier: \(roomIdentifier)")
+                    return
+                }
+                if case .failure(let error) = await roomProxy.flagAsLowPriority(true) {
+                    MXLog.error("Failed archiving room \(roomIdentifier): \(error)")
+                }
+            }
         case .acceptInvite(let roomIdentifier):
             Task {
                 await acceptInvite(roomID: roomIdentifier)

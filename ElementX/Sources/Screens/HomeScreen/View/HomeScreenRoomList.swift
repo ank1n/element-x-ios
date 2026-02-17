@@ -228,48 +228,42 @@ struct HomeScreenRoomList: View {
     // MARK: - Swipe Actions
 
     private func leadingActions(for room: HomeScreenRoom) -> [SwipeAction] {
-        var actions: [SwipeAction] = []
-
-        if room.badges.isDotShown {
-            actions.append(SwipeAction(
-                title: L10n.screenRoomlistMarkAsRead,
-                icon: "envelope.open",
-                color: .blue
+        [
+            SwipeAction(
+                title: room.isFavourite ? L10n.commonFavourited : L10n.commonFavourite,
+                icon: room.isFavourite ? "star.fill" : "star",
+                color: .orange
             ) {
-                context.send(viewAction: .markRoomAsRead(roomIdentifier: room.id))
-            })
-        } else {
-            actions.append(SwipeAction(
-                title: L10n.screenRoomlistMarkAsUnread,
-                icon: "envelope.badge",
-                color: .blue
+                context.send(viewAction: .markRoomAsFavourite(roomIdentifier: room.id, isFavourite: !room.isFavourite))
+            },
+            SwipeAction(
+                title: "Архив",
+                icon: "archivebox",
+                color: .purple
             ) {
-                context.send(viewAction: .markRoomAsUnread(roomIdentifier: room.id))
-            })
-        }
-
-        actions.append(SwipeAction(
-            title: room.isFavourite ? L10n.commonFavourited : L10n.commonFavourite,
-            icon: room.isFavourite ? "pin.slash" : "pin",
-            color: .orange
-        ) {
-            context.send(viewAction: .markRoomAsFavourite(roomIdentifier: room.id, isFavourite: !room.isFavourite))
-        })
-
-        return actions
+                context.send(viewAction: .archiveRoom(roomIdentifier: room.id))
+            }
+        ]
     }
 
     private func trailingActions(for room: HomeScreenRoom) -> [SwipeAction] {
         [
             SwipeAction(
+                title: room.badges.isMuteShown ? "Вкл. звук" : "Без звука",
+                icon: room.badges.isMuteShown ? "bell.slash.fill" : "bell.slash",
+                color: room.badges.isMuteShown ? .green : .orange
+            ) {
+                context.send(viewAction: .toggleMuteRoom(roomIdentifier: room.id, isMuted: room.badges.isMuteShown))
+            },
+            SwipeAction(
                 title: L10n.commonSettings,
-                icon: "ellipsis",
+                icon: "gearshape",
                 color: Color(.systemGray)
             ) {
                 context.send(viewAction: .showRoomDetails(roomIdentifier: room.id))
             },
             SwipeAction(
-                title: L10n.actionLeaveRoom,
+                title: "Удалить",
                 icon: "trash",
                 color: .red
             ) {

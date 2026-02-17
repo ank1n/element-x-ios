@@ -161,7 +161,9 @@ protocol JoinedRoomProxyProtocol: RoomProxyProtocol {
     func flagAsUnread(_ isUnread: Bool) async -> Result<Void, RoomProxyError>
     
     func flagAsFavourite(_ isFavourite: Bool) async -> Result<Void, RoomProxyError>
-    
+
+    func flagAsLowPriority(_ isLowPriority: Bool) async -> Result<Void, RoomProxyError>
+
     // MARK: - Power Levels
     
     func powerLevels() async -> Result<RoomPowerLevelsProxyProtocol?, RoomProxyError>

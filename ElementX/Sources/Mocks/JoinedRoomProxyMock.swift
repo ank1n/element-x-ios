@@ -83,7 +83,8 @@ extension JoinedRoomProxyMock {
         flagAsUnreadReturnValue = .success(())
         markAsReadReceiptTypeReturnValue = .success(())
         flagAsFavouriteReturnValue = .success(())
-        
+        flagAsLowPriorityReturnValue = .success(())
+
         applyPowerLevelChangesReturnValue = .success(())
         resetPowerLevelsReturnValue = .success(())
         suggestedRoleForClosure = { [weak self] userID in

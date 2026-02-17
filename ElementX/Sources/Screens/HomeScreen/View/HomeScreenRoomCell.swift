@@ -126,13 +126,21 @@ struct HomeScreenRoomCell: View {
             Spacer()
             
             HStack(spacing: 8) {
+                if room.isFavourite {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(.orange)
+                }
+
                 if room.badges.isCallShown {
                     CompoundIcon(\.videoCallSolid, size: .xSmall, relativeTo: .compound.bodySM)
                         .accessibilityLabel(L10n.a11yNotificationsOngoingCall)
                 }
-                
+
                 if room.badges.isMuteShown {
-                    CompoundIcon(\.notificationsOffSolid, size: .custom(15), relativeTo: .compound.bodyMD)
+                    Image(systemName: "bell.slash.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(Color(.systemGray))
                         .accessibilityLabel(L10n.a11yNotificationsMuted)
                 }
                 
