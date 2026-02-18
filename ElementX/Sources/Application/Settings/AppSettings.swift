@@ -408,7 +408,7 @@ final class AppSettings {
     @UserPreference(key: UserDefaultsKeys.fuzzyRoomListSearchEnabled, defaultValue: false, storageType: .userDefaults(store))
     var fuzzyRoomListSearchEnabled
     
-    @UserPreference(key: UserDefaultsKeys.lowPriorityFilterEnabled, defaultValue: false, storageType: .userDefaults(store))
+    @UserPreference(key: UserDefaultsKeys.lowPriorityFilterEnabled, defaultValue: true, storageType: .userDefaults(store))
     var lowPriorityFilterEnabled
     
     /// Configuration to enable only signed device isolation mode for  crypto. In this mode only devices signed by their owner will be considered in e2ee rooms.

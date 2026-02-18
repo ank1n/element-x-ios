@@ -25,6 +25,7 @@ enum HomeScreenViewModelAction {
     case presentFeedbackScreen
     case presentStartChatScreen
     case presentGlobalSearch
+    case presentArchive
     case logout
 }
 
@@ -48,6 +49,7 @@ enum HomeScreenViewAction {
     case markRoomAsFavourite(roomIdentifier: String, isFavourite: Bool)
     case toggleMuteRoom(roomIdentifier: String, isMuted: Bool)
     case archiveRoom(roomIdentifier: String)
+    case openArchive
 
     case acceptInvite(roomIdentifier: String)
     case declineInvite(roomIdentifier: String)
@@ -115,7 +117,10 @@ struct HomeScreenViewState: BindableState {
     var reportRoomEnabled = false
 
     var recentSearchQueries: [String] = []
-    
+
+    var archiveRoomCount: Int = 0
+    var archivePreviewText: String = ""
+
     var visibleRooms: [HomeScreenRoom] {
         if roomListMode == .skeletons {
             return placeholderRooms

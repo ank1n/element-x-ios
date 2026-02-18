@@ -139,6 +139,7 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
             .store(in: &cancellables)
         
         setupRoomListSubscriptions()
+        setupArchiveSubscription()
 
         updateRooms()
 
@@ -236,8 +237,17 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
                 }
                 if case .failure(let error) = await roomProxy.flagAsLowPriority(true) {
                     MXLog.error("Failed archiving room \(roomIdentifier): \(error)")
+                    return
+                }
+                // Mute notifications for archived room
+                do {
+                    try await userSession.clientProxy.notificationSettings.setNotificationMode(roomId: roomIdentifier, mode: .mute)
+                } catch {
+                    MXLog.error("Failed muting archived room \(roomIdentifier): \(error)")
                 }
             }
+        case .openArchive:
+            actionsSubject.send(.presentArchive)
         case .acceptInvite(let roomIdentifier):
             Task {
                 await acceptInvite(roomID: roomIdentifier)
@@ -315,6 +325,25 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
             .store(in: &cancellables)
     }
     
+    private func setupArchiveSubscription() {
+        let archiveProvider = userSession.clientProxy.alternateRoomSummaryProvider
+        // Temporarily set filter to count archived rooms
+        archiveProvider.setFilter(.all(filters: [.lowPriority]))
+
+        archiveProvider.roomListPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] rooms in
+                guard let self else { return }
+                state.archiveRoomCount = rooms.count
+                let names = rooms.prefix(3).map(\.name)
+                state.archivePreviewText = names.joined(separator: ", ")
+                if rooms.count > 3 {
+                    state.archivePreviewText += " и ещё \(rooms.count - 3)"
+                }
+            }
+            .store(in: &cancellables)
+    }
+
     private func updateRoomListMode(with roomSummaryProviderState: RoomSummaryProviderState) {
         let isLoadingData = !roomSummaryProviderState.isLoaded
         let hasNoRooms = roomSummaryProviderState.isLoaded && roomSummaryProviderState.totalNumberOfRooms == 0

@@ -403,6 +403,8 @@ class ChatsTabFlowCoordinator: FlowCoordinatorProtocol {
                     stateMachine.processEvent(.startStartChatFlow)
                 case .presentGlobalSearch:
                     presentGlobalSearch()
+                case .presentArchive:
+                    presentArchiveScreen()
                 case .logout:
                     actionsSubject.send(.logout)
                 case .presentDeclineAndBlock(let userID, let roomID):
@@ -695,6 +697,30 @@ class ChatsTabFlowCoordinator: FlowCoordinatorProtocol {
         globalSearchScreenCoordinator = nil
     }
     
+    // MARK: Archive Screen
+
+    private func presentArchiveScreen() {
+        let parameters = ArchiveScreenCoordinatorParameters(userSession: userSession,
+                                                            mediaProvider: userSession.mediaProvider,
+                                                            userIndicatorController: flowParameters.userIndicatorController)
+        let coordinator = ArchiveScreenCoordinator(parameters: parameters)
+
+        coordinator.actions
+            .sink { [weak self] action in
+                guard let self else { return }
+
+                switch action {
+                case .selectRoom(let roomID):
+                    handleAppRoute(.room(roomID: roomID, via: []), animated: true)
+                case .showRoomDetails(let roomID):
+                    handleAppRoute(.roomDetails(roomID: roomID), animated: true)
+                }
+            }
+            .store(in: &cancellables)
+
+        sidebarNavigationStackCoordinator.push(coordinator)
+    }
+
     // MARK: Room Directory Search
     
     private func presentRoomDirectorySearch() {

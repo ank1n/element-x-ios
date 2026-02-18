@@ -53,6 +53,12 @@ struct HomeScreenContent: View {
                     }
                 case .rooms:
                     LazyVStack(spacing: 0) {
+                        // Archive row — hidden above the scroll, revealed on pull-down
+                        if context.viewState.archiveRoomCount > 0
+                            && !context.viewState.bindings.isSearchFieldFocused {
+                            archiveRow
+                        }
+
                         Section {
                             if !context.viewState.shouldShowEmptyFilterState {
                                 HomeScreenRoomList(context: context)
@@ -171,6 +177,50 @@ struct HomeScreenContent: View {
         .background(Color.compound.bgCanvasDefault)
     }
     
+    // MARK: - Archive Row
+
+    private var archiveRow: some View {
+        Button {
+            context.send(viewAction: .openArchive)
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(Color.compound.bgSubtleSecondary)
+                        .frame(width: 40, height: 40)
+                    Image(systemName: "archivebox.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(.compound.iconSecondary)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Text("Архив")
+                            .font(.compound.bodyLGSemibold)
+                            .foregroundColor(.compound.textPrimary)
+                        Spacer()
+                        Text("\(context.viewState.archiveRoomCount)")
+                            .font(.compound.bodySM)
+                            .foregroundColor(.compound.textSecondary)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.compound.iconTertiary)
+                    }
+
+                    if !context.viewState.archivePreviewText.isEmpty {
+                        Text(context.viewState.archivePreviewText)
+                            .font(.compound.bodySM)
+                            .foregroundColor(.compound.textSecondary)
+                            .lineLimit(1)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(Color.compound.bgCanvasDefault)
+        }
+    }
+
     // MARK: - Recent Searches
 
     private var recentSearchesView: some View {
