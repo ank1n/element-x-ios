@@ -27,20 +27,19 @@ actor STalkCacheService {
 
     // MARK: - Public API
 
+    /// Always returns cached data if it exists (for instant UI display).
+    /// TTL is only used for disk cleanup, NOT to block showing data.
+    /// The caller always fetches from server in parallel to get fresh data.
     func load<T: Decodable>(_ type: T.Type, forKey key: String) -> T? {
-        // 1. Check memory
-        if let entry = memory[key], entry.expiry > Date() {
+        // 1. Check memory (return even if expired — for instant display)
+        if let entry = memory[key] {
             return try? JSONDecoder().decode(T.self, from: entry.data)
         }
 
-        // 2. Check disk
+        // 2. Check disk (return even if expired)
         let fileURL = fileURL(for: key)
         guard let wrapper = try? Data(contentsOf: fileURL),
-              let envelope = try? JSONDecoder().decode(CacheEnvelope.self, from: wrapper),
-              envelope.expiry > Date() else {
-            // Expired or missing — clean up
-            memory[key] = nil
-            try? fileManager.removeItem(at: fileURL)
+              let envelope = try? JSONDecoder().decode(CacheEnvelope.self, from: wrapper) else {
             return nil
         }
 

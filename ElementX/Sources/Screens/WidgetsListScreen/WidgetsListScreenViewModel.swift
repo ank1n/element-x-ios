@@ -92,14 +92,14 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
         Task { [weak self] in
             guard let self else { return }
 
-            // 1. Try cache first (unless force refresh)
-            if !forceRefresh, let cached = await ServiceLocator.shared.cacheService?.load([WidgetItem].self, forKey: Self.widgetsCacheKey) {
+            // 1. Always show cache instantly (for fast UI)
+            if let cached = await ServiceLocator.shared.cacheService?.load([WidgetItem].self, forKey: Self.widgetsCacheKey) {
                 self.state.widgets = cached
                 self.state.isLoading = false
                 MXLog.info("sTalk: Loaded \(cached.count) widgets from cache")
             }
 
-            // 2. Fetch from server in background
+            // 2. Always fetch from server to check for updates
             do {
                 let widgets = try await self.fetchWidgetsFromAPI()
 
@@ -111,10 +111,10 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
 
                 // Save to cache
                 await ServiceLocator.shared.cacheService?.save(widgets, forKey: Self.widgetsCacheKey, ttl: Self.widgetsCacheTTL)
-                MXLog.info("sTalk: Loaded \(widgets.count) widgets from apps-api")
+                MXLog.info("sTalk: Updated \(widgets.count) widgets from server")
             } catch {
                 MXLog.error("sTalk: Failed to fetch widgets: \(error)")
-                // Only show fallback if no cached data
+                // Only show fallback if no cached data either
                 if self.state.widgets.isEmpty {
                     self.state.widgets = self.fallbackWidgets()
                 }

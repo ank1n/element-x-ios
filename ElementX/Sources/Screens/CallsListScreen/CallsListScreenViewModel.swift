@@ -202,20 +202,19 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
     private static let recordingsCacheTTL: TimeInterval = 300 // 5 minutes
 
     private func loadRecordingsFromServer(forceRefresh: Bool = false) {
-        // 1. Try cache first
-        if !forceRefresh {
-            Task {
-                if let cached = await ServiceLocator.shared.cacheService?.load([CallHistoryItem].self, forKey: Self.recordingsCacheKey) {
-                    await MainActor.run {
-                        serverRecordings = cached
-                        let localCalls = localCallHistoryService.getAllCalls()
-                        updateCallHistoryFromLocal(localCalls)
-                        MXLog.info("📞 Loaded \(cached.count) recordings from cache")
-                    }
+        // 1. Always show cache instantly (for fast UI — no spinner)
+        Task {
+            if let cached = await ServiceLocator.shared.cacheService?.load([CallHistoryItem].self, forKey: Self.recordingsCacheKey) {
+                await MainActor.run {
+                    serverRecordings = cached
+                    let localCalls = localCallHistoryService.getAllCalls()
+                    updateCallHistoryFromLocal(localCalls)
+                    MXLog.info("📞 Loaded \(cached.count) recordings from cache")
                 }
             }
         }
 
+        // 2. Always fetch from server to check for updates (new recordings from other devices etc.)
         guard let callHistoryService else {
             MXLog.info("📞 No call history service configured, skipping server fetch")
             return
@@ -227,7 +226,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         Task {
             do {
                 let recordings = try await callHistoryService.fetchRecordings(currentUserID: currentUserID)
-                MXLog.info("📞 Loaded \(recordings.count) recordings from server")
+                MXLog.info("📞 Updated \(recordings.count) recordings from server")
 
                 // Save to cache
                 await ServiceLocator.shared.cacheService?.save(recordings, forKey: Self.recordingsCacheKey, ttl: Self.recordingsCacheTTL)
