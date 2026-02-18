@@ -187,7 +187,6 @@
 		1C6B06DB15EC194AF35C05DB /* RoomPowerLevelsProxy.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFFA5E881D281810AB428EA3 /* RoomPowerLevelsProxy.swift */; };
 		1C8BC70A18060677E295A846 /* ShareToMapsAppActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4481799F455B3DA243BDA2AC /* ShareToMapsAppActivity.swift */; };
 		1C95ECE760E1EF89BB061A57 /* TabChats.json in Resources */ = {isa = PBXBuildFile; fileRef = C2D9572707E7189CA3323F9C /* TabChats.json */; };
-		AA12345678TABAPPS000001 /* TabApps.json in Resources */ = {isa = PBXBuildFile; fileRef = AA12345678TABAPPS000002 /* TabApps.json */; };
 		1C9BB74711E5F24C77B7FED0 /* RoomMembersListScreenCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AEA0B743847CFA5B3C38EE4 /* RoomMembersListScreenCoordinator.swift */; };
 		1D5DC685CED904386C89B7DA /* NSRegularExpresion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95BAC0F6C9644336E9567EE6 /* NSRegularExpresion.swift */; };
 		1D623953F970D11F6F38499C /* AppLockService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 851B95BB98649B8E773D6790 /* AppLockService.swift */; };
@@ -534,7 +533,6 @@
 		5C164551F7D26E24F09083D3 /* StaticLocationScreenViewModelProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = C616D90B1E2F033CAA325439 /* StaticLocationScreenViewModelProtocol.swift */; };
 		5C33976A720B64094CBC56B1 /* VideoMediaEventsTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B1FB56520A847DD2532D5C8 /* VideoMediaEventsTimelineView.swift */; };
 		5C5B47A3CCC1961ACB71DCAB /* StalkTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 956D61EA8EFAC35522DEDC1B /* StalkTabBar.swift */; };
-		AA1234567890LOTTIETAB0001 /* LottieTabBarIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1234567890LOTTIETAB0002 /* LottieTabBarIcon.swift */; };
 		5C61810ED7B7CB48346B1B9D /* portrait_test_video.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = E5E7D4EE7CA295E5039FDA21 /* portrait_test_video.mp4 */; };
 		5C8804B4F25903516E2DAB81 /* RoomInfoProxy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40A66E8BC8D9AE4A08EFB2DF /* RoomInfoProxy.swift */; };
 		5CEA0BF496F00339A9E4486B /* TimelineItemProviderProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 829D3CE4F6C4DF6CC02D33C3 /* TimelineItemProviderProtocol.swift */; };
@@ -624,6 +622,7 @@
 		69B9CC733A880E1BB097C113 /* LinkNewDeviceScreenModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4D09290C6791D6EF04F569E /* LinkNewDeviceScreenModels.swift */; };
 		69C7B956B74BEC3DB88224EA /* NavigationSplitCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78913D6E120D46138E97C107 /* NavigationSplitCoordinatorTests.swift */; };
 		69DE29C3E3180BB17D840690 /* ProgressCursorModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97C8E13A1FBA717B0C277ECC /* ProgressCursorModifier.swift */; };
+		6A00F3EC1A62CAF091A5CCB1 /* CacheAndStorageScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90F7B0B7CA1748469B6F9EC /* CacheAndStorageScreen.swift */; };
 		6A38D0A2BC3943A92D82576E /* EditRoomAddressScreenViewModelProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7B18089ED50324583BB2FB7 /* EditRoomAddressScreenViewModelProtocol.swift */; };
 		6A54F52443EC52AC5CD772C0 /* JoinRoomScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 869A8A4632E511351BFE2EC4 /* JoinRoomScreen.swift */; };
 		6A64546ABE648ED9E6DBB459 /* RemoteSettingsHook.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5D186A6DB8FAC5C9D0E4D61 /* RemoteSettingsHook.swift */; };
@@ -664,6 +663,7 @@
 		709A9B52FC26B4CB86B8B020 /* EncryptedRoomTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F06F70B9C433BAD4BC6B9F5 /* EncryptedRoomTimelineView.swift */; };
 		70B83D44043293B4B77440B9 /* PollFormScreenModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB63761D9F9CE8B23CBD6179 /* PollFormScreenModels.swift */; };
 		71643093F87153F633A1B025 /* ThreadDecorator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DA4F09CB613C54FDC73AE6A /* ThreadDecorator.swift */; };
+		71839308CFA7EEDF58E7502A /* CacheAndStorageScreenCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C511D69AEA064294477B191E /* CacheAndStorageScreenCoordinator.swift */; };
 		719E7AAD1F8E68F68F30FECD /* Task.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40C19719687984FD9478FBE /* Task.swift */; };
 		71AC1CAAC23403FFE847F2C9 /* ComposerToolbarViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90514BE9B8ACCBCF0AD2489 /* ComposerToolbarViewModel.swift */; };
 		71B62C48B8079D49F3FBC845 /* ExpiringTaskRunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B7A28A6606D58D1E38C55A /* ExpiringTaskRunnerTests.swift */; };
@@ -891,6 +891,7 @@
 		94EB81606839C175CA6C2ADB /* RoomScreenTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D97A4E73EA97CA08D2BB9806 /* RoomScreenTests.swift */; };
 		94F0B78928E952689ACDB271 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D67E616BCA82D8A1258D488 /* NetworkMonitor.swift */; };
 		950BED7CB38E24B345C0386F /* TabCalls.json in Resources */ = {isa = PBXBuildFile; fileRef = C2751C0CABB0CAE3B43A6F33 /* TabCalls.json */; };
+		95462CB2953325AEBB68E692 /* STalkCacheService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E398B0560B1C7859311FB74 /* STalkCacheService.swift */; };
 		95690DDD9D547D3D842ACBE3 /* AnalyticsSettingsScreenCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BD371B60E07A5324B9507EF /* AnalyticsSettingsScreenCoordinator.swift */; };
 		9586E90A447C4896C0CA3A8E /* TimelineItemReplyDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE89A8BD65CCE3FCC925CA14 /* TimelineItemReplyDetails.swift */; };
 		95BEAEFEC81A2A2965B4515E /* RecordingButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE9FA23F5911CDA9568B8383 /* RecordingButton.swift */; };
@@ -1021,6 +1022,8 @@
 		A9A5801D5EE3D4D91F6DDADB /* AnalyticsSettingsScreenViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58C2527813FDAE23E72A9063 /* AnalyticsSettingsScreenViewModelTests.swift */; };
 		A9D349478F7D4A2B1E40CEF9 /* LegalInformationScreenViewModelProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8977176AB534AA41630395BC /* LegalInformationScreenViewModelProtocol.swift */; };
 		AA050DF4AEE54A641BA7CA22 /* RoomSummaryProviderProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10CC626F97AD70FF0420C115 /* RoomSummaryProviderProtocol.swift */; };
+		AA1234567890LOTTIETAB0001 /* LottieTabBarIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1234567890LOTTIETAB0002 /* LottieTabBarIcon.swift */; };
+		AA12345678TABAPPS000001 /* TabApps.json in Resources */ = {isa = PBXBuildFile; fileRef = AA12345678TABAPPS000002 /* TabApps.json */; };
 		AA5924D3B67F7ACD98BBEFDC /* OrientationManagerProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4756240773D26AB74C22668 /* OrientationManagerProtocol.swift */; };
 		AA85C8951B0C40326197A482 /* CallsListScreenViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BAB648BCE93F8E46C012A0B /* CallsListScreenViewModel.swift */; };
 		AA93B3F9B5DD097DEF79F981 /* NotificationSettingsEditScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBB0328F2887BF0A65BC5D49 /* NotificationSettingsEditScreen.swift */; };
@@ -2292,6 +2295,7 @@
 		7DC017C3CB6B0F7C63F460F2 /* SecureBackupLogoutConfirmationScreenViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureBackupLogoutConfirmationScreenViewModel.swift; sourceTree = "<group>"; };
 		7DDBF99755A9008CF8C8499E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		7DDF49CEBC0DFC59C308335F /* RoomMemberDetailsScreenViewModelProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomMemberDetailsScreenViewModelProtocol.swift; sourceTree = "<group>"; };
+		7E398B0560B1C7859311FB74 /* STalkCacheService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = STalkCacheService.swift; sourceTree = "<group>"; };
 		7E8562F4D7DE073BC32902AB /* EncryptionResetScreenViewModelProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EncryptionResetScreenViewModelProtocol.swift; sourceTree = "<group>"; };
 		7EA2AFF6EB59FE25234D29F3 /* ElementCallServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ElementCallServiceTests.swift; sourceTree = "<group>"; };
 		7EB58E4E8D6D634C246AD5C2 /* RoomInviterLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomInviterLabel.swift; sourceTree = "<group>"; };
@@ -2430,7 +2434,6 @@
 		955336CBD5ED73C792D1F580 /* EncryptionAuthenticity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EncryptionAuthenticity.swift; sourceTree = "<group>"; };
 		95547A6C69606B5282C765D3 /* RemoveItemButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoveItemButton.swift; sourceTree = "<group>"; };
 		956D61EA8EFAC35522DEDC1B /* StalkTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StalkTabBar.swift; sourceTree = "<group>"; };
-		AA1234567890LOTTIETAB0002 /* LottieTabBarIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LottieTabBarIcon.swift; sourceTree = "<group>"; };
 		95A2E4BD7C0CAD25EF924A4C /* GeneratedPreviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneratedPreviewTests.swift; sourceTree = "<group>"; };
 		95BAC0F6C9644336E9567EE6 /* NSRegularExpresion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NSRegularExpresion.swift; sourceTree = "<group>"; };
 		964093C7CA8823CAB7FFD88E /* UserIdentityProxy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserIdentityProxy.swift; sourceTree = "<group>"; };
@@ -2533,11 +2536,14 @@
 		A861DA5932B128FE1DCB5CE2 /* InviteUsersScreenCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InviteUsersScreenCoordinator.swift; sourceTree = "<group>"; };
 		A8DF55467ED4CE76B7AE9A33 /* pt */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = pt; path = pt.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		A8F48EB9B52E70285A4BCB07 /* ur */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ur; path = ur.lproj/Localizable.strings; sourceTree = "<group>"; };
+		A90F7B0B7CA1748469B6F9EC /* CacheAndStorageScreen.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CacheAndStorageScreen.swift; sourceTree = "<group>"; };
 		A9873374E72AA53260AE90A2 /* fa */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fa; path = fa.lproj/Localizable.strings; sourceTree = "<group>"; };
 		A9B069D7772DDF6513E0F1B8 /* AuthenticationFlowCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticationFlowCoordinator.swift; sourceTree = "<group>"; };
 		A9E6065FC6BC4A1B4C629E08 /* TimelineItemMenuActionProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineItemMenuActionProvider.swift; sourceTree = "<group>"; };
 		A9E88667D393612FD5D84718 /* fi */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fi; path = fi.lproj/SAS.strings; sourceTree = "<group>"; };
 		A9FAFE1C2149E6AC8156ED2B /* Collection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Collection.swift; sourceTree = "<group>"; };
+		AA1234567890LOTTIETAB0002 /* LottieTabBarIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LottieTabBarIcon.swift; sourceTree = "<group>"; };
+		AA12345678TABAPPS000002 /* TabApps.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = TabApps.json; sourceTree = "<group>"; };
 		AA19C32BD97F45847724E09A /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Untranslated.strings; sourceTree = "<group>"; };
 		AAC9344689121887B74877AF /* UnitTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = UnitTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		AACE9B8E1A4AE79A7E2914F6 /* es */ = {isa = PBXFileReference; lastKnownFileType = text.plist.stringsdict; name = es; path = es.lproj/Localizable.stringsdict; sourceTree = "<group>"; };
@@ -2693,7 +2699,6 @@
 		C2751C0CABB0CAE3B43A6F33 /* TabCalls.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = TabCalls.json; sourceTree = "<group>"; };
 		C2886615BEBAE33A0AA4D5F8 /* RoomScreenModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomScreenModels.swift; sourceTree = "<group>"; };
 		C2D9572707E7189CA3323F9C /* TabChats.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = TabChats.json; sourceTree = "<group>"; };
-		AA12345678TABAPPS000002 /* TabApps.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = TabApps.json; sourceTree = "<group>"; };
 		C2E9B841EE4878283ECDB554 /* InviteUsersScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InviteUsersScreen.swift; sourceTree = "<group>"; };
 		C30F45308428A4D9FFDB2FB8 /* BannedRoomProxy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BannedRoomProxy.swift; sourceTree = "<group>"; };
 		C3285BD95B564CA2A948E511 /* OnboardingFlowCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFlowCoordinator.swift; sourceTree = "<group>"; };
@@ -2703,6 +2708,7 @@
 		C4C1C19A4BE46EDE1411ECCE /* ThreadTimelineScreenViewModelProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadTimelineScreenViewModelProtocol.swift; sourceTree = "<group>"; };
 		C4C89820BB2B88D4EA28131C /* BugReportScreenViewModelProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BugReportScreenViewModelProtocol.swift; sourceTree = "<group>"; };
 		C4CD503F5E0938FE53C7C6E7 /* UserDetailsEditScreenCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserDetailsEditScreenCoordinator.swift; sourceTree = "<group>"; };
+		C511D69AEA064294477B191E /* CacheAndStorageScreenCoordinator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CacheAndStorageScreenCoordinator.swift; sourceTree = "<group>"; };
 		C537DE821FED94D23467B6C4 /* PillUtilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PillUtilities.swift; sourceTree = "<group>"; };
 		C55679AF67545EF8087E47BE /* RoomMemberDetails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomMemberDetails.swift; sourceTree = "<group>"; };
 		C5599255A6C98EBDA77B76E6 /* ImageRoomTimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageRoomTimelineView.swift; sourceTree = "<group>"; };
@@ -3258,6 +3264,7 @@
 				CBBF6127C313A5412E438BC6 /* UserSession */,
 				0121014DD16467736455AF16 /* VoiceMessage */,
 				367F7E351E985CE10F62CFBD /* Widget */,
+				DE763B6F98604B16094B49E5 /* Cache */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -4832,6 +4839,7 @@
 				7B91CB64534AD870924CCFEF /* NotificationSettingsScreen */,
 				B364E08924AD15820350CDD9 /* SettingsScreen */,
 				4775A7D6FBB210BF21318AD9 /* UserDetailsEditScreen */,
+				E222EAB93BBBA99962D6CFB8 /* CacheAndStorageScreen */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -6603,6 +6611,15 @@
 			path = View;
 			sourceTree = "<group>";
 		};
+		DE763B6F98604B16094B49E5 /* Cache */ = {
+			isa = PBXGroup;
+			children = (
+				7E398B0560B1C7859311FB74 /* STalkCacheService.swift */,
+			);
+			name = Cache;
+			path = Cache;
+			sourceTree = "<group>";
+		};
 		DF10E31B5AA21015971C3FAD /* View */ = {
 			isa = PBXGroup;
 			children = (
@@ -6617,6 +6634,16 @@
 				4048547AC50ADCF201684E87 /* EditRoomAddressScreen.swift */,
 			);
 			path = View;
+			sourceTree = "<group>";
+		};
+		E222EAB93BBBA99962D6CFB8 /* CacheAndStorageScreen */ = {
+			isa = PBXGroup;
+			children = (
+				C511D69AEA064294477B191E /* CacheAndStorageScreenCoordinator.swift */,
+				A90F7B0B7CA1748469B6F9EC /* CacheAndStorageScreen.swift */,
+			);
+			name = CacheAndStorageScreen;
+			path = CacheAndStorageScreen;
 			sourceTree = "<group>";
 		};
 		E2DA161C142B7AB8CC40F752 /* Animation */ = {
@@ -9085,6 +9112,9 @@
 				08CB4BD12CEEDE6AAE4A18DD /* WindowManager.swift in Sources */,
 				AE5AAD9E32511544FDFA5560 /* WindowManagerProtocol.swift in Sources */,
 				91F766C0FD4CDE41F10B4DEF /* RoomSearchBar.swift in Sources */,
+				95462CB2953325AEBB68E692 /* STalkCacheService.swift in Sources */,
+				71839308CFA7EEDF58E7502A /* CacheAndStorageScreenCoordinator.swift in Sources */,
+				6A00F3EC1A62CAF091A5CCB1 /* CacheAndStorageScreen.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

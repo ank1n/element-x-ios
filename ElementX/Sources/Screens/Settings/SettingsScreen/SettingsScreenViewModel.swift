@@ -126,6 +126,8 @@ class SettingsScreenViewModel: SettingsScreenViewModelType, SettingsScreenViewMo
             appSettings.developerOptionsEnabled.toggle()
         case .developerOptions:
             actionsSubject.send(.developerOptions)
+        case .cacheAndStorage:
+            actionsSubject.send(.cacheAndStorage)
         case .deactivateAccount:
             actionsSubject.send(.deactivateAccount)
         }

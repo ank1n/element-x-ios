@@ -71,26 +71,46 @@ class UserProfileScreenViewModel: UserProfileScreenViewModelType, UserProfileScr
 
     // MARK: - Private
     
+    private static let profileCacheTTL: TimeInterval = 1800 // 30 minutes
+
     private func loadProfile() async {
+        let cacheKey = "profile-\(state.userID)"
+
+        // 1. Try cache first — show instantly without spinner
+        if let cached = await ServiceLocator.shared.cacheService?.load(UserProfileProxy.self, forKey: cacheKey) {
+            state.userProfile = cached
+            state.permalink = (try? matrixToUserPermalink(userId: state.userID)).flatMap(URL.init(string:))
+            if case .success(let roomID) = userSession.clientProxy.directRoomForUserID(cached.userID) {
+                state.dmRoomID = roomID
+            }
+        }
+
+        // 2. Fetch fresh data from server
         async let profileResult = userSession.clientProxy.profile(for: state.userID)
         async let identityResult = userSession.clientProxy.userIdentity(for: state.userID, fallBackToServer: true)
-        
+
         switch await profileResult {
         case .success(let userProfile):
             state.userProfile = userProfile
             state.permalink = (try? matrixToUserPermalink(userId: state.userID)).flatMap(URL.init(string:))
-            
+
             switch userSession.clientProxy.directRoomForUserID(userProfile.userID) {
             case .success(let roomID):
                 state.dmRoomID = roomID
             case .failure:
                 break
             }
+
+            // Save to cache
+            await ServiceLocator.shared.cacheService?.save(userProfile, forKey: cacheKey, ttl: Self.profileCacheTTL)
         case .failure(let error):
-            state.bindings.alertInfo = .init(id: .unknown)
+            // Only show error if no cached data
+            if state.userProfile == nil {
+                state.bindings.alertInfo = .init(id: .unknown)
+            }
             MXLog.error("Failed to find user profile: \(error)")
         }
-        
+
         if case let .success(.some(identity)) = await identityResult {
             state.isVerified = identity.verificationState == .verified
         } else {

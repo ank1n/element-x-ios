@@ -30,7 +30,9 @@ struct SettingsScreen: View {
             }
             
             generalSection
-            
+
+            storageSection
+
             signOutSection
             
             if context.viewState.showDeveloperOptions {
@@ -203,6 +205,16 @@ struct SettingsScreen: View {
         }
     }
     
+    private var storageSection: some View {
+        Section(header: Text("Хранилище")) {
+            ListRow(label: .default(title: "Кеш и данные",
+                                    icon: \.host),
+                    kind: .navigationLink {
+                        context.send(viewAction: .cacheAndStorage)
+                    })
+        }
+    }
+
     private var signOutSection: some View {
         Section {
             ListRow(label: .action(title: L10n.screenSignoutPreferenceItem,

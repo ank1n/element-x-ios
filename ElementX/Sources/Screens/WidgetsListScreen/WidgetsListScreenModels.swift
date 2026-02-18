@@ -36,7 +36,7 @@ struct WidgetsListScreenViewStateBindings {
 }
 
 /// Widget category for filtering
-enum WidgetCategory: String, CaseIterable {
+enum WidgetCategory: String, CaseIterable, Codable {
     case productivity = "Продуктивность"
     case communication = "Связь"
     case tools = "Инструменты"
@@ -59,7 +59,7 @@ enum WidgetCategory: String, CaseIterable {
 }
 
 /// Available widget
-struct WidgetItem: Identifiable, Equatable {
+struct WidgetItem: Identifiable, Equatable, Codable {
     let id: String
     let name: String
     let description: String

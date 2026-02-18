@@ -401,6 +401,9 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         // Setup Recording Service for call recording
         ServiceLocator.shared.setupRecordingService()
 
+        // Setup Cache Service
+        ServiceLocator.shared.setupCacheService()
+
         // Setup Local Call History Service
         ServiceLocator.shared.setupLocalCallHistoryService()
     }
@@ -954,6 +957,7 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         Task {
             try? await Task.sleep(for: .seconds(2))
             await userSession.clientProxy.clearCaches()
+            await ServiceLocator.shared.cacheService?.clearAll()
             stateMachine.processEvent(.startWithExistingSession)
             hideLoadingIndicator()
         }

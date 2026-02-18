@@ -48,7 +48,7 @@ struct CallsListScreenViewStateBindings {
 }
 
 /// Call history item
-struct CallHistoryItem: Identifiable, Equatable {
+struct CallHistoryItem: Identifiable, Equatable, Codable {
     let id: String
     var contactName: String
     let contactId: String
@@ -57,12 +57,14 @@ struct CallHistoryItem: Identifiable, Equatable {
     let duration: TimeInterval?
     let isMissed: Bool
     let recordingURL: URL?
+    /// Whether the recording has been listened to
+    var isListened: Bool = false
 
     var hasRecording: Bool {
         recordingURL != nil
     }
 
-    enum CallType: String {
+    enum CallType: String, Codable {
         case incoming
         case outgoing
         case video

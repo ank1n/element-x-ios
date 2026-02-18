@@ -9,7 +9,7 @@
 import Foundation
 import MatrixRustSDK
 
-struct UserProfileProxy: Equatable, Hashable {
+struct UserProfileProxy: Equatable, Hashable, Codable {
     let userID: String
     let displayName: String?
     let avatarURL: URL?

@@ -44,6 +44,19 @@ class ServiceLocator {
         register(recordingService: service)
     }
 
+    // MARK: - Cache Service
+
+    private(set) var cacheService: STalkCacheService?
+
+    func register(cacheService: STalkCacheService) {
+        self.cacheService = cacheService
+    }
+
+    func setupCacheService() {
+        let service = STalkCacheService()
+        register(cacheService: service)
+    }
+
     // MARK: - Local Call History
 
     private(set) var localCallHistoryService: LocalCallHistoryServiceProtocol!

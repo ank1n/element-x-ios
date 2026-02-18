@@ -44,7 +44,7 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
         case .selectWidget(let widget):
             actionsSubject.send(.openWidget(widget))
         case .refresh:
-            fetchWidgets()
+            fetchWidgets(forceRefresh: true)
         }
     }
 
@@ -85,20 +85,39 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
 
     // MARK: - Apps API
 
-    private func fetchWidgets() {
-        state.isLoading = true
+    private static let widgetsCacheKey = "widgets-list"
+    private static let widgetsCacheTTL: TimeInterval = 3600 // 1 hour
 
+    private func fetchWidgets(forceRefresh: Bool = false) {
         Task { [weak self] in
             guard let self else { return }
 
+            // 1. Try cache first (unless force refresh)
+            if !forceRefresh, let cached = await ServiceLocator.shared.cacheService?.load([WidgetItem].self, forKey: Self.widgetsCacheKey) {
+                self.state.widgets = cached
+                self.state.isLoading = false
+                MXLog.info("sTalk: Loaded \(cached.count) widgets from cache")
+            }
+
+            // 2. Fetch from server in background
             do {
                 let widgets = try await self.fetchWidgetsFromAPI()
-                self.state.widgets = widgets
+
+                // Update only if different
+                if self.state.widgets != widgets {
+                    self.state.widgets = widgets
+                }
                 self.state.isLoading = false
+
+                // Save to cache
+                await ServiceLocator.shared.cacheService?.save(widgets, forKey: Self.widgetsCacheKey, ttl: Self.widgetsCacheTTL)
                 MXLog.info("sTalk: Loaded \(widgets.count) widgets from apps-api")
             } catch {
                 MXLog.error("sTalk: Failed to fetch widgets: \(error)")
-                self.state.widgets = self.fallbackWidgets()
+                // Only show fallback if no cached data
+                if self.state.widgets.isEmpty {
+                    self.state.widgets = self.fallbackWidgets()
+                }
                 self.state.isLoading = false
             }
         }

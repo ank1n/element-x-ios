@@ -111,6 +111,8 @@ class SettingsFlowCoordinator: FlowCoordinatorProtocol {
                     presentLabs()
                 case .developerOptions:
                     presentDeveloperOptions()
+                case .cacheAndStorage:
+                    presentCacheAndStorageScreen()
                 case .deactivateAccount:
                     presentDeactivateAccount()
                 }
@@ -270,6 +272,21 @@ class SettingsFlowCoordinator: FlowCoordinatorProtocol {
         navigationStackCoordinator.push(coordinator)
     }
     
+    private func presentCacheAndStorageScreen() {
+        let coordinator = CacheAndStorageScreenCoordinator()
+        coordinator.actions
+            .sink { [weak self] action in
+                guard let self else { return }
+                switch action {
+                case .clearCache:
+                    actionsSubject.send(.clearCache)
+                }
+            }
+            .store(in: &cancellables)
+
+        navigationStackCoordinator.push(coordinator)
+    }
+
     private func presentDeactivateAccount() {
         let parameters = DeactivateAccountScreenCoordinatorParameters(clientProxy: flowParameters.userSession.clientProxy,
                                                                       userIndicatorController: flowParameters.userIndicatorController)

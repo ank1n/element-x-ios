@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import Kingfisher
 import MatrixRustSDK
 
 class UserSessionStore: UserSessionStoreProtocol {
@@ -85,10 +86,15 @@ class UserSessionStore: UserSessionStoreProtocol {
         let userID = userSession.clientProxy.userID
         let credentials = keychainController.restorationTokens().first { $0.userID == userID }
         keychainController.removeRestorationTokenForUsername(userID)
-        
+
         if let credentials {
             credentials.restorationToken.sessionDirectories.delete()
         }
+
+        // Clear all sTalk caches
+        Task { await ServiceLocator.shared.cacheService?.clearAll() }
+        ImageCache.default.clearDiskCache()
+        ImageCache.default.clearMemoryCache()
     }
         
     // MARK: - Private

@@ -24,6 +24,7 @@ enum SettingsScreenViewModelAction: Equatable {
     case advancedSettings
     case labs
     case developerOptions
+    case cacheAndStorage
     case logout
     case deactivateAccount
 }
@@ -75,6 +76,7 @@ enum SettingsScreenViewAction {
     case developerOptions
     case advancedSettings
     case labs
+    case cacheAndStorage
     case logout
     case deactivateAccount
 }

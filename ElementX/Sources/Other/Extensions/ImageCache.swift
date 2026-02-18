@@ -13,7 +13,9 @@ extension ImageCache {
     static var onlyInMemory: ImageCache {
         let result = ImageCache.default
         result.memoryStorage.config.keepWhenEnteringBackground = true
-        result.diskStorage.config.sizeLimit = 1
+        // Enable disk cache for avatars — persist across background/foreground cycles
+        result.diskStorage.config.sizeLimit = 100 * 1024 * 1024 // 100 MB
+        result.diskStorage.config.expiration = .days(7)
         return result
     }
 

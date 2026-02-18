@@ -27,6 +27,10 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
     /// Кэш записей с сервера для быстрого доступа по roomID
     private var recordingsCache: [String: CallHistoryAPIItem] = [:]
 
+    /// Set of recording IDs that have been listened to (persisted)
+    private var listenedRecordingIDs: Set<String> = []
+    private static let listenedCacheKey = "listened-recording-ids"
+
     var actionsPublisher: AnyPublisher<CallsListScreenViewModelAction, Never> {
         actionsSubject.eraseToAnyPublisher()
     }
@@ -50,6 +54,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         setupSubscriptions()
         setupAudioPlayerObserver()
         setupLocalHistorySubscription()
+        loadListenedRecordingIDs()
         loadRecordingsFromServer()
     }
 
@@ -66,7 +71,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         case .seekPlayback(let progress):
             Task { await audioPlayer.seek(to: progress) }
         case .refresh:
-            loadRecordingsFromServer()
+            loadRecordingsFromServer(forceRefresh: true)
         }
     }
 
@@ -144,6 +149,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         calls.sort { $0.timestamp > $1.timestamp }
 
         state.callHistory = calls
+        applyListenedStatus()
         state.isLoading = false
     }
 
@@ -192,7 +198,24 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
 
     // MARK: - Server Recordings
 
-    private func loadRecordingsFromServer() {
+    private static let recordingsCacheKey = "recordings-list"
+    private static let recordingsCacheTTL: TimeInterval = 300 // 5 minutes
+
+    private func loadRecordingsFromServer(forceRefresh: Bool = false) {
+        // 1. Try cache first
+        if !forceRefresh {
+            Task {
+                if let cached = await ServiceLocator.shared.cacheService?.load([CallHistoryItem].self, forKey: Self.recordingsCacheKey) {
+                    await MainActor.run {
+                        serverRecordings = cached
+                        let localCalls = localCallHistoryService.getAllCalls()
+                        updateCallHistoryFromLocal(localCalls)
+                        MXLog.info("📞 Loaded \(cached.count) recordings from cache")
+                    }
+                }
+            }
+        }
+
         guard let callHistoryService else {
             MXLog.info("📞 No call history service configured, skipping server fetch")
             return
@@ -206,11 +229,11 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
                 let recordings = try await callHistoryService.fetchRecordings(currentUserID: currentUserID)
                 MXLog.info("📞 Loaded \(recordings.count) recordings from server")
 
-                await MainActor.run {
-                    // Сохраняем записи в кэш
-                    serverRecordings = recordings
+                // Save to cache
+                await ServiceLocator.shared.cacheService?.save(recordings, forKey: Self.recordingsCacheKey, ttl: Self.recordingsCacheTTL)
 
-                    // Обновляем UI объединяя с локальной историей
+                await MainActor.run {
+                    serverRecordings = recordings
                     let localCalls = localCallHistoryService.getAllCalls()
                     updateCallHistoryFromLocal(localCalls)
                 }
@@ -220,6 +243,13 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
                     state.isLoading = false
                 }
             }
+        }
+    }
+
+    /// Invalidate recordings cache (call after ending a call)
+    static func invalidateRecordingsCache() {
+        Task {
+            await ServiceLocator.shared.cacheService?.invalidate(forKey: recordingsCacheKey)
         }
     }
 
@@ -244,6 +274,10 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
                     state.playbackState = .paused
                     stopProgressTimer()
                 case .didStopPlaying, .didFinishPlaying:
+                    // Mark recording as listened
+                    if let playingId = state.playingCallId {
+                        markRecordingAsListened(playingId)
+                    }
                     state.playbackState = .stopped
                     state.playingCallId = nil
                     state.playbackProgress = 0
@@ -424,6 +458,40 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         }
 
         throw lastError ?? CallHistoryError.serverError("Download failed after 3 attempts")
+    }
+
+    // MARK: - Listened Status
+
+    private func loadListenedRecordingIDs() {
+        Task {
+            if let ids = await ServiceLocator.shared.cacheService?.load(Set<String>.self, forKey: Self.listenedCacheKey) {
+                listenedRecordingIDs = ids
+            }
+        }
+    }
+
+    private func markRecordingAsListened(_ recordingId: String) {
+        guard !listenedRecordingIDs.contains(recordingId) else { return }
+        listenedRecordingIDs.insert(recordingId)
+
+        // Update UI
+        if let index = state.callHistory.firstIndex(where: { $0.id == recordingId }) {
+            state.callHistory[index].isListened = true
+        }
+
+        // Persist
+        Task {
+            await ServiceLocator.shared.cacheService?.save(listenedRecordingIDs, forKey: Self.listenedCacheKey, ttl: 365 * 24 * 3600)
+        }
+    }
+
+    /// Apply listened status from cache to call history items
+    private func applyListenedStatus() {
+        for i in state.callHistory.indices {
+            if listenedRecordingIDs.contains(state.callHistory[i].id) {
+                state.callHistory[i].isListened = true
+            }
+        }
     }
 
     // MARK: - Private
