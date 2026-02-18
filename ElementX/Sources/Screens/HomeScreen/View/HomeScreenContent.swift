@@ -13,6 +13,7 @@ import SwiftUI
 struct HomeScreenContent: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @FocusState private var isSearchFocused: Bool
+    @State private var isArchiveRevealed = false
 
     @ObservedObject var context: HomeScreenViewModel.Context
     let scrollViewAdapter: ScrollViewAdapter
@@ -47,19 +48,21 @@ struct HomeScreenContent: View {
                 case .empty:
                     HomeScreenEmptyStateLayout(minHeight: geometry.size.height) {
                         topSection
-                        
+
                         HomeScreenEmptyStateView(context: context)
                             .layoutPriority(1)
                     }
                 case .rooms:
                     LazyVStack(spacing: 0) {
-                        // Archive row — hidden above the scroll, revealed on pull-down
-                        if context.viewState.archiveRoomCount > 0
-                            && !context.viewState.bindings.isSearchFieldFocused {
-                            archiveRow
-                        }
-
                         Section {
+                            // Archive row — hidden by default, appears on pull-down (Telegram-style)
+                            if context.viewState.archiveRoomCount > 0
+                                && !context.viewState.bindings.isSearchFieldFocused
+                                && isArchiveRevealed {
+                                archiveRow
+                                    .transition(.move(edge: .top).combined(with: .opacity))
+                            }
+
                             if !context.viewState.shouldShowEmptyFilterState {
                                 HomeScreenRoomList(context: context)
                             }
@@ -75,6 +78,7 @@ struct HomeScreenContent: View {
             }
             .onReceive(scrollViewAdapter.didScroll) { _ in
                 updateVisibleRange()
+                checkOverscrollForArchive()
             }
             .onReceive(scrollViewAdapter.isScrolling) { _ in
                 updateVisibleRange()
@@ -84,7 +88,7 @@ struct HomeScreenContent: View {
             }
             .onChange(of: context.viewState.visibleRooms) {
                 updateVisibleRange()
-                
+
                 // We have been seeing a lot of issues around the room list not updating properly after
                 // rooms shifting around:
                 // * Tapping on the room list doesn't always take you to the right room  - https://github.com/element-hq/element-x-ios/issues/2386
@@ -99,11 +103,11 @@ struct HomeScreenContent: View {
                     guard !scrollViewAdapter.isScrolling.value, let scrollView = scrollViewAdapter.scrollView else {
                         return
                     }
-                    
+
                     let oldOffset = scrollView.contentOffset
                     var newOffset = scrollView.contentOffset
                     newOffset.y += 1
-                    
+
                     scrollView.setContentOffset(newOffset, animated: false)
                     scrollView.setContentOffset(oldOffset, animated: false)
                 }
@@ -130,6 +134,11 @@ struct HomeScreenContent: View {
             .scrollBounceBehavior(context.viewState.roomListMode == .empty ? .basedOnSize : .automatic)
             .animation(.elementDefault, value: context.viewState.roomListMode)
             .animation(.none, value: context.viewState.visibleRooms)
+            .onChange(of: context.viewState.roomListMode) { _, newMode in
+                if newMode != .rooms {
+                    isArchiveRevealed = false
+                }
+            }
         }
     }
     
@@ -186,26 +195,17 @@ struct HomeScreenContent: View {
             HStack(spacing: 12) {
                 ZStack {
                     Circle()
-                        .fill(Color.compound.bgSubtleSecondary)
-                        .frame(width: 40, height: 40)
+                        .fill(Color.blue.opacity(0.12))
+                        .frame(width: 52, height: 52)
                     Image(systemName: "archivebox.fill")
-                        .font(.system(size: 18))
-                        .foregroundColor(.compound.iconSecondary)
+                        .font(.system(size: 22))
+                        .foregroundColor(.blue)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    HStack {
-                        Text("Архив")
-                            .font(.compound.bodyLGSemibold)
-                            .foregroundColor(.compound.textPrimary)
-                        Spacer()
-                        Text("\(context.viewState.archiveRoomCount)")
-                            .font(.compound.bodySM)
-                            .foregroundColor(.compound.textSecondary)
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.compound.iconTertiary)
-                    }
+                    Text("Архив")
+                        .font(.compound.bodyLGSemibold)
+                        .foregroundColor(.compound.textPrimary)
 
                     if !context.viewState.archivePreviewText.isEmpty {
                         Text(context.viewState.archivePreviewText)
@@ -214,6 +214,8 @@ struct HomeScreenContent: View {
                             .lineLimit(1)
                     }
                 }
+
+                Spacer()
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -256,6 +258,36 @@ struct HomeScreenContent: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
+                }
+            }
+        }
+    }
+
+    /// Detects pull-down overscroll to reveal / scroll-up to hide the archive row (Telegram-style)
+    private func checkOverscrollForArchive() {
+        guard context.viewState.archiveRoomCount > 0,
+              context.viewState.roomListMode == .rooms,
+              let scrollView = scrollViewAdapter.scrollView else { return }
+        let topInset = scrollView.adjustedContentInset.top
+        let offset = scrollView.contentOffset.y + topInset
+
+        if !isArchiveRevealed {
+            // Pull down past 60pt → reveal archive
+            if offset < -60 {
+                withAnimation(.easeOut(duration: 0.25)) {
+                    isArchiveRevealed = true
+                }
+            }
+        } else {
+            // Scrolled up past archive row height (76pt) → hide it
+            if offset > 80 {
+                // Compensate content shift so visible rooms don't jump
+                scrollView.setContentOffset(
+                    CGPoint(x: scrollView.contentOffset.x, y: scrollView.contentOffset.y - 76),
+                    animated: false
+                )
+                withAnimation(.easeOut(duration: 0.25)) {
+                    isArchiveRevealed = false
                 }
             }
         }

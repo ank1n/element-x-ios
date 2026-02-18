@@ -221,7 +221,7 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
             Task {
                 do {
                     if isMuted {
-                        try await userSession.clientProxy.notificationSettings.restoreDefaultNotificationMode(roomId: roomIdentifier)
+                        try await userSession.clientProxy.notificationSettings.setNotificationMode(roomId: roomIdentifier, mode: .allMessages)
                     } else {
                         try await userSession.clientProxy.notificationSettings.setNotificationMode(roomId: roomIdentifier, mode: .mute)
                     }
