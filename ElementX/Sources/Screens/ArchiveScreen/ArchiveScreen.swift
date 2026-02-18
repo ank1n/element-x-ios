@@ -183,54 +183,56 @@ private struct ArchiveRoomSwipeView<Content: View>: View {
 
             content()
                 .offset(x: offset)
-                .highPriorityGesture(
-                    DragGesture(minimumDistance: 20, coordinateSpace: .local)
-                        .onChanged { value in
-                            let translation = value.translation.width + prevOffset
-                            if translation > 0 {
-                                if leadingActions.isEmpty {
-                                    offset = translation * 0.2
-                                } else {
-                                    let limit = maxLeadingOffset
-                                    offset = translation > limit ? limit + (translation - limit) * 0.2 : translation
-                                }
-                            } else {
-                                if trailingActions.isEmpty {
-                                    offset = translation * 0.2
-                                } else {
-                                    let limit = -maxTrailingOffset
-                                    offset = translation < limit ? limit + (translation - limit) * 0.2 : translation
-                                }
-                            }
-                        }
-                        .onEnded { value in
-                            let velocity = value.predictedEndTranslation.width - value.translation.width
-                            withAnimation(.easeOut(duration: 0.2)) {
-                                if offset > 0 {
-                                    if offset > maxLeadingOffset * snapThreshold || velocity > 200 {
-                                        offset = maxLeadingOffset
-                                        prevOffset = maxLeadingOffset
-                                    } else {
-                                        offset = 0
-                                        prevOffset = 0
-                                    }
-                                } else if offset < 0 {
-                                    if -offset > maxTrailingOffset * snapThreshold || velocity < -200 {
-                                        offset = -maxTrailingOffset
-                                        prevOffset = -maxTrailingOffset
-                                    } else {
-                                        offset = 0
-                                        prevOffset = 0
-                                    }
-                                } else {
-                                    offset = 0
-                                    prevOffset = 0
-                                }
-                            }
-                        }
-                )
+                .allowsHitTesting(offset == 0)
         }
         .clipped()
+        .contentShape(Rectangle())
+        .highPriorityGesture(
+            DragGesture(minimumDistance: 20, coordinateSpace: .local)
+                .onChanged { value in
+                    let translation = value.translation.width + prevOffset
+                    if translation > 0 {
+                        if leadingActions.isEmpty {
+                            offset = translation * 0.2
+                        } else {
+                            let limit = maxLeadingOffset
+                            offset = translation > limit ? limit + (translation - limit) * 0.2 : translation
+                        }
+                    } else {
+                        if trailingActions.isEmpty {
+                            offset = translation * 0.2
+                        } else {
+                            let limit = -maxTrailingOffset
+                            offset = translation < limit ? limit + (translation - limit) * 0.2 : translation
+                        }
+                    }
+                }
+                .onEnded { value in
+                    let velocity = value.predictedEndTranslation.width - value.translation.width
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        if offset > 0 {
+                            if offset > maxLeadingOffset * snapThreshold || velocity > 200 {
+                                offset = maxLeadingOffset
+                                prevOffset = maxLeadingOffset
+                            } else {
+                                offset = 0
+                                prevOffset = 0
+                            }
+                        } else if offset < 0 {
+                            if -offset > maxTrailingOffset * snapThreshold || velocity < -200 {
+                                offset = -maxTrailingOffset
+                                prevOffset = -maxTrailingOffset
+                            } else {
+                                offset = 0
+                                prevOffset = 0
+                            }
+                        } else {
+                            offset = 0
+                            prevOffset = 0
+                        }
+                    }
+                }
+        )
     }
 
     private func actionButton(action: ArchiveSwipeAction) -> some View {

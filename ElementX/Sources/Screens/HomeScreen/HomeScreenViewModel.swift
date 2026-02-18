@@ -245,6 +245,21 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
                 } catch {
                     MXLog.error("Failed muting archived room \(roomIdentifier): \(error)")
                 }
+                // Show undo toast
+                let indicatorID = "archiveUndo-\(roomIdentifier)"
+                let indicator = UserIndicator(id: indicatorID,
+                                              type: .toast,
+                                              title: "Чат архивирован",
+                                              iconName: "archivebox",
+                                              actionTitle: "Отменить",
+                                              action: { [weak self] in
+                    guard let self else { return }
+                    self.userIndicatorController.retractIndicatorWithId(indicatorID)
+                    Task {
+                        await self.unarchiveRoom(roomIdentifier: roomIdentifier)
+                    }
+                })
+                userIndicatorController.submitIndicator(indicator)
             }
         case .openArchive:
             actionsSubject.send(.presentArchive)
@@ -410,6 +425,22 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
         }
     }
     
+    private func unarchiveRoom(roomIdentifier: String) async {
+        guard case let .joined(roomProxy) = await userSession.clientProxy.roomForIdentifier(roomIdentifier) else {
+            MXLog.error("Failed retrieving room for unarchive: \(roomIdentifier)")
+            return
+        }
+        if case .failure(let error) = await roomProxy.flagAsLowPriority(false) {
+            MXLog.error("Failed unarchiving room \(roomIdentifier): \(error)")
+            return
+        }
+        do {
+            try await userSession.clientProxy.notificationSettings.restoreDefaultNotificationMode(roomId: roomIdentifier)
+        } catch {
+            MXLog.error("Failed restoring notifications for room \(roomIdentifier): \(error)")
+        }
+    }
+
     private static let leaveRoomLoadingID = "LeaveRoomLoading"
     
     private func startLeaveRoomProcess(roomID: String) {

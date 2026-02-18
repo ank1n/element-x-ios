@@ -17,7 +17,7 @@ enum UserIndicatorType: Equatable {
     static var modal: Self { .modal(progress: .indeterminate, interactiveDismissDisabled: false, allowsInteraction: false) }
 }
 
-struct UserIndicator: Equatable, Identifiable {
+struct UserIndicator: Identifiable {
     enum Progress: Equatable {
         static func == (lhs: UserIndicator.Progress, rhs: UserIndicator.Progress) -> Bool {
             switch (lhs, rhs) {
@@ -37,6 +37,8 @@ struct UserIndicator: Equatable, Identifiable {
     var message: String?
     var iconName: String?
     var persistent = false
+    var actionTitle: String?
+    var action: (() -> Void)?
     
     // MARK: - Associated values from the type
     
@@ -75,5 +77,17 @@ struct UserIndicator: Equatable, Identifiable {
         case .modal(_, _, let allowsInteraction):
             return allowsInteraction
         }
+    }
+}
+
+extension UserIndicator: Equatable {
+    static func == (lhs: UserIndicator, rhs: UserIndicator) -> Bool {
+        lhs.id == rhs.id
+            && lhs.type == rhs.type
+            && lhs.title == rhs.title
+            && lhs.message == rhs.message
+            && lhs.iconName == rhs.iconName
+            && lhs.persistent == rhs.persistent
+            && lhs.actionTitle == rhs.actionTitle
     }
 }

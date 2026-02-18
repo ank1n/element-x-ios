@@ -16,6 +16,7 @@ struct WidgetWebViewScreen: View {
     var body: some View {
         ZStack {
             AppWidgetWebView(url: URL(string: context.viewState.widget.url)!,
+                             userId: extractUserId(from: context.viewState.widget.url),
                              isLoading: $isLoading,
                              progress: $loadingProgress)
                 .id(context.viewState.widget.id)
@@ -44,20 +45,43 @@ struct WidgetWebViewScreen: View {
         .navigationTitle(context.viewState.widget.name)
         .navigationBarTitleDisplayMode(.inline)
     }
+
+    private func extractUserId(from urlString: String) -> String {
+        guard let url = URL(string: urlString),
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let userId = components.queryItems?.first(where: { $0.name == "userId" })?.value else {
+            return ""
+        }
+        return userId
+    }
 }
 
 // MARK: - App Widget WebView
 
 struct AppWidgetWebView: UIViewRepresentable {
     let url: URL
+    let userId: String
     @Binding var isLoading: Bool
     @Binding var progress: Double
 
     func makeUIView(context: Context) -> WKWebView {
-        // Each widget gets its own data store to avoid shared cookies/localStorage
         let configuration = WKWebViewConfiguration()
         configuration.allowsInlineMediaPlayback = true
-        configuration.websiteDataStore = .nonPersistent()
+
+        // Inject mx_user_id into localStorage before page loads
+        // (widget frontends read localStorage.getItem('mx_user_id') to identify user)
+        let escapedUserId = userId.replacingOccurrences(of: "'", with: "\\'")
+        let injectScript = WKUserScript(
+            source: """
+            try {
+                localStorage.setItem('mx_user_id', '\(escapedUserId)');
+                localStorage.setItem('mx_hs_url', '\(url.scheme ?? "https")://\(url.host ?? "stalk.implica.ru")');
+            } catch(e) {}
+            """,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: false
+        )
+        configuration.userContentController.addUserScript(injectScript)
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator

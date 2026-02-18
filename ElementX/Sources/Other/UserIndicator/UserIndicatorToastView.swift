@@ -26,6 +26,16 @@ struct UserIndicatorToastView: View {
             Text(indicator.title)
                 .font(.compound.bodyMD)
                 .foregroundColor(.compound.textPrimary)
+            if let actionTitle = indicator.actionTitle, let action = indicator.action {
+                Button {
+                    action()
+                } label: {
+                    Text(actionTitle)
+                        .font(.compound.bodyMDSemibold)
+                        .foregroundColor(.compound.textLinkExternal)
+                }
+                .padding(.leading, 4)
+            }
         }
         .id(indicator.id)
         .padding(.horizontal, 12.0)
