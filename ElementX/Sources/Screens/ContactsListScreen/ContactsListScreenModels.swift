@@ -48,6 +48,7 @@ struct ContactItem: Identifiable, Equatable {
     let id: String
     let displayName: String
     let avatarURL: URL?
-    let isOnline: Bool
-    let lastSeenDate: Date?
+    let matrixUserID: String?
+    var isOnline: Bool
+    var lastSeenDate: Date?
 }
