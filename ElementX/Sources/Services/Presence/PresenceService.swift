@@ -6,6 +6,9 @@
 
 import Combine
 import Foundation
+import os.log
+
+private let presenceLog = OSLog(subsystem: "ru.implica.stalk", category: "Presence")
 
 struct UserPresence: Equatable {
     let isOnline: Bool
@@ -23,9 +26,11 @@ class PresenceService {
     let presenceSubject = CurrentValueSubject<[String: UserPresence], Never>([:])
 
     init(homeserver: String, accessToken: String, ownUserID: String) {
-        self.homeserver = homeserver
+        // Remove trailing slash to avoid double-slash in URLs
+        self.homeserver = homeserver.hasSuffix("/") ? String(homeserver.dropLast()) : homeserver
         self.accessToken = accessToken
         self.ownUserID = ownUserID
+        os_log(.info, log: presenceLog, "PresenceService init: homeserver=%{public}@, ownUserID=%{public}@", self.homeserver, ownUserID)
     }
 
     deinit {
@@ -34,9 +39,18 @@ class PresenceService {
 
     // MARK: - Own Presence
 
+    private static func encodeUserID(_ userID: String) -> String {
+        // Matrix user IDs contain @ and : which must be percent-encoded in URL paths
+        var allowed = CharacterSet.urlPathAllowed
+        allowed.remove(charactersIn: "@:")
+        return userID.addingPercentEncoding(withAllowedCharacters: allowed) ?? userID
+    }
+
     func setOwnPresence(_ status: String) async {
-        let encodedUserID = ownUserID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ownUserID
-        guard let url = URL(string: "\(homeserver)/_matrix/client/v3/presence/\(encodedUserID)/status") else { return }
+        let encodedUserID = Self.encodeUserID(ownUserID)
+        let urlString = "\(homeserver)/_matrix/client/v3/presence/\(encodedUserID)/status"
+        os_log(.info, log: presenceLog, "setOwnPresence URL: %{public}@", urlString)
+        guard let url = URL(string: urlString) else { return }
 
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
@@ -44,7 +58,14 @@ class PresenceService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: ["presence": status])
 
-        _ = try? await URLSession.shared.data(for: request)
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+            let body = String(data: data, encoding: .utf8) ?? ""
+            os_log(.info, log: presenceLog, "setOwnPresence(%{public}@) url=%{public}@ → %d: %{public}@", status, urlString, statusCode, body)
+        } catch {
+            os_log(.error, log: presenceLog, "setOwnPresence error: %{public}@", error.localizedDescription)
+        }
     }
 
     // MARK: - Fetch Presence
@@ -71,7 +92,7 @@ class PresenceService {
     }
 
     private func fetchSinglePresence(userID: String) async -> UserPresence? {
-        let encodedUserID = userID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? userID
+        let encodedUserID = Self.encodeUserID(userID)
         guard let url = URL(string: "\(homeserver)/_matrix/client/v3/presence/\(encodedUserID)/status") else { return nil }
 
         var request = URLRequest(url: url)
@@ -79,8 +100,15 @@ class PresenceService {
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
 
         guard let (data, response) = try? await URLSession.shared.data(for: request),
-              let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200,
+              let httpResponse = response as? HTTPURLResponse else {
+            os_log(.error, log: presenceLog, "fetchPresence(%{public}@): network error", userID)
+            return nil
+        }
+
+        let body = String(data: data, encoding: .utf8) ?? ""
+        os_log(.info, log: presenceLog, "fetchPresence(%{public}@) → %d: %{public}@", userID, httpResponse.statusCode, body)
+
+        guard httpResponse.statusCode == 200,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
         }
@@ -100,6 +128,7 @@ class PresenceService {
     // MARK: - Polling
 
     func startPolling(userIDs: [String], interval: TimeInterval = 30) {
+        os_log(.info, log: presenceLog, "startPolling: %d users: %{public}@", userIDs.count, userIDs.joined(separator: ", "))
         pollingUserIDs = userIDs
         stopPolling()
 

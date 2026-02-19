@@ -78,7 +78,13 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
         // App lifecycle: foreground → online, background → offline
         NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)
             .sink { [weak self] _ in
-                Task { await self?.presenceService?.setOwnPresence("online") }
+                guard let self, let presenceService = self.presenceService else { return }
+                let userIDs = self.state.contacts.compactMap(\.matrixUserID)
+                if !userIDs.isEmpty {
+                    presenceService.startPolling(userIDs: userIDs)
+                } else {
+                    Task { await presenceService.setOwnPresence("online") }
+                }
             }
             .store(in: &contactsCancellables)
 
