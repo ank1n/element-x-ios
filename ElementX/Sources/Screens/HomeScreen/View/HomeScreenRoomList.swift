@@ -10,14 +10,14 @@ import SwiftUI
 
 // MARK: - Swipe Action Infrastructure
 
-private struct SwipeAction {
+struct SwipeAction {
     let title: String
     let icon: String
     let color: Color
     let action: () -> Void
 }
 
-private struct SwipeActionView<Content: View>: View {
+struct SwipeActionView<Content: View>: View {
     let leadingActions: [SwipeAction]
     let trailingActions: [SwipeAction]
     let content: () -> Content

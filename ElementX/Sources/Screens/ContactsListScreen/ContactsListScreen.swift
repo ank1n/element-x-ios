@@ -57,7 +57,19 @@ struct ContactsListScreen: View {
                             ForEach(groupedContacts, id: \.letter) { group in
                                 Section {
                                     ForEach(group.contacts) { contact in
-                                        contactCell(contact)
+                                        SwipeActionView(
+                                            trailingActions: [
+                                                SwipeAction(
+                                                    title: contact.isFavorite ? "Убрать" : "Избранное",
+                                                    icon: contact.isFavorite ? "star.slash" : "star.fill",
+                                                    color: .orange
+                                                ) {
+                                                    context.send(viewAction: .toggleFavorite(contact))
+                                                }
+                                            ]
+                                        ) {
+                                            contactCell(contact)
+                                        }
                                     }
                                 } header: {
                                     sectionHeader(group.letter)
@@ -270,19 +282,6 @@ struct ContactsListScreen: View {
                 context.send(viewAction: .selectContact(contact))
             }
 
-            // Favorite star
-            Button {
-                context.send(viewAction: .toggleFavorite(contact))
-            } label: {
-                Image(systemName: contact.isFavorite ? "star.fill" : "star")
-                    .font(.system(size: 18))
-                    .foregroundColor(contact.isFavorite ? .yellow : .compound.iconTertiary)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("favorite-\(contact.id)")
-
             if contact.isOnline {
                 Circle()
                     .fill(Color.stalkOnlineGreen)
@@ -291,6 +290,7 @@ struct ContactsListScreen: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
+        .background(Color.compound.bgCanvasDefault)
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(Color.compound.borderDisabled)
