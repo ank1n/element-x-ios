@@ -408,6 +408,10 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         request.setValue("*/*", forHTTPHeaderField: "Accept")
         request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
         request.setValue("close", forHTTPHeaderField: "Connection")  // Force connection close
+        // Add auth token for Recording API endpoints
+        if let token = getAccessToken() {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
         request.timeoutInterval = 120.0
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         // Disable HTTP/3 by using explicit HTTP version
@@ -493,6 +497,14 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         }
     }
 
+    /// Get Matrix access token for API authorization
+    private func getAccessToken() -> String? {
+        if let clientProxy = userSession.clientProxy as? ClientProxy {
+            return try? clientProxy.matrixAccessToken()
+        }
+        return nil
+    }
+
     // MARK: - Private
 
     private func setupSubscriptions() {
@@ -524,9 +536,11 @@ class CallHistoryService: NSObject, CallHistoryServiceProtocol, URLSessionDelega
     private let baseURL: URL
     private var urlSession: URLSession
     private let allowInsecureConnection: Bool
+    private var accessToken: String?
 
-    init(baseURL: URL, urlSession: URLSession? = nil, allowInsecureConnection: Bool = false) {
+    init(baseURL: URL, accessToken: String? = nil, urlSession: URLSession? = nil, allowInsecureConnection: Bool = false) {
         self.baseURL = baseURL
+        self.accessToken = accessToken
         self.allowInsecureConnection = allowInsecureConnection
 
         let configuration = URLSessionConfiguration.default
@@ -547,6 +561,11 @@ class CallHistoryService: NSObject, CallHistoryServiceProtocol, URLSessionDelega
         }
     }
 
+    /// Update the access token (e.g. when user session becomes available)
+    func updateAccessToken(_ token: String) {
+        accessToken = token
+    }
+
     // MARK: - URLSessionDelegate
 
     func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
@@ -565,6 +584,9 @@ class CallHistoryService: NSObject, CallHistoryServiceProtocol, URLSessionDelega
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
+        if let accessToken {
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        }
         request.timeoutInterval = 30.0
 
         // Retry up to 3 times

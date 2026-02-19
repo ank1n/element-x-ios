@@ -74,7 +74,13 @@ class CallsTabFlowCoordinator: FlowCoordinatorProtocol {
         let homeserver = userSession.clientProxy.homeserver
         let domain = URL(string: homeserver)?.host ?? "stalk.implica.ru"
         let apiBaseURL = URL(string: "https://\(domain)/recording-api")!
-        let callHistoryService = CallHistoryService(baseURL: apiBaseURL)
+
+        // Get Matrix access token for Recording API authorization
+        var accessToken: String?
+        if let clientProxy = userSession.clientProxy as? ClientProxy {
+            accessToken = try? clientProxy.matrixAccessToken()
+        }
+        let callHistoryService = CallHistoryService(baseURL: apiBaseURL, accessToken: accessToken)
 
         let parameters = CallsListScreenCoordinatorParameters(
             userSession: userSession,
