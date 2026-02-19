@@ -30,6 +30,9 @@ protocol RecordingServiceProtocol: AnyObject {
     /// Check if there's an active recording for the given room (started by someone else)
     func hasActiveRecording(roomName: String) async -> Bool
 
+    /// Check if there's an active recording in the given Matrix room via /api/recording/active
+    func hasActiveRecordingInRoom(matrixRoomId: String) async -> Bool
+
     /// Принудительный сброс состояния записи (при входе в новый звонок)
     func forceReset()
 }
@@ -216,12 +219,36 @@ class RecordingService: RecordingServiceProtocol {
 
     /// Check if there's an active recording for the given room (status=1 ACTIVE)
     func hasActiveRecording(roomName: String) async -> Bool {
+        // Deprecated: use hasActiveRecordingInRoom(matrixRoomId:) instead
+        await hasActiveRecordingInRoom(matrixRoomId: roomName)
+    }
+
+    /// Check if there's an active recording in the given Matrix room via /api/recording/active
+    func hasActiveRecordingInRoom(matrixRoomId: String) async -> Bool {
         do {
-            let response: RecordingListResponse = try await get(endpoint: "/recording-api/api/recording/list")
-            guard let recordings = response.recordings else { return false }
-            return recordings.contains { $0.roomName == roomName && $0.status == 1 }
+            guard let encoded = matrixRoomId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+                return false
+            }
+            // Build URL directly (appendingPathComponent would encode the query string)
+            guard let url = URL(string: "\(baseURL.absoluteString)/api/recording/active?matrixRoomId=\(encoded)") else {
+                return false
+            }
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            if let accessToken {
+                request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            }
+            request.timeoutInterval = requestTimeout
+
+            let (data, response) = try await urlSession.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                return false
+            }
+            let result = try JSONDecoder().decode(ActiveRecordingResponse.self, from: data)
+            MXLog.info("sTalk hasActiveRecording: matrixRoomId=\(matrixRoomId.prefix(30)), recording=\(result.recording)")
+            return result.recording
         } catch {
-            MXLog.verbose("Failed to check active recording: \(error)")
+            MXLog.info("sTalk hasActiveRecording: ERROR \(error)")
             return false
         }
     }
@@ -396,6 +423,8 @@ class RecordingServiceMock: RecordingServiceProtocol {
     }
 
     func hasActiveRecording(roomName: String) async -> Bool { false }
+
+    func hasActiveRecordingInRoom(matrixRoomId: String) async -> Bool { false }
 
     func forceReset() {
         stateSubject.send(.idle)

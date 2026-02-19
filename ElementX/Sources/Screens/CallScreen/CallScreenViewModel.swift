@@ -1012,6 +1012,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     /// sTalk: Poll recording-api every 5 seconds to detect if another participant started recording
     private func startRecordingPolling() {
         recordingPollingTask?.cancel()
+        stalkLog("startRecordingPolling: starting, callRoomID=\(configuration.callRoomID)")
         recordingPollingTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(5))
@@ -1022,18 +1023,16 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
 
                 guard let recordingService = self.recordingService else { continue }
 
-                // Use intercepted LiveKit room name
-                let roomName = self.liveKitRoomManager.roomName ?? self.interceptedLiveKitRoomName
-                guard let roomName else { continue }
-
-                let hasRemote = await recordingService.hasActiveRecording(roomName: roomName)
+                let matrixRoomId = self.configuration.callRoomID
+                let hasRemote = await recordingService.hasActiveRecordingInRoom(matrixRoomId: matrixRoomId)
+                stalkLog("recordingPoll: matrixRoomId=\(matrixRoomId.prefix(30)), hasRemote=\(hasRemote)")
                 await MainActor.run {
                     if self.state.isRemoteRecording != hasRemote {
                         self.state.isRemoteRecording = hasRemote
                         if hasRemote {
-                            MXLog.info("sTalk: Remote recording detected for room \(roomName)")
+                            MXLog.info("sTalk: Remote recording detected for room \(matrixRoomId)")
                         } else {
-                            MXLog.info("sTalk: Remote recording stopped for room \(roomName)")
+                            MXLog.info("sTalk: Remote recording stopped for room \(matrixRoomId)")
                         }
                     }
                 }

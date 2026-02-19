@@ -97,6 +97,15 @@ struct RecordingListItem: Codable {
     let initiatedBy: String?
 }
 
+// MARK: - Active Recording Check
+
+struct ActiveRecordingResponse: Codable {
+    let recording: Bool
+    let egressId: String?
+    let startedAt: String?
+    let initiatedBy: String?
+}
+
 // MARK: - Recording State
 
 enum RecordingState: Equatable {
