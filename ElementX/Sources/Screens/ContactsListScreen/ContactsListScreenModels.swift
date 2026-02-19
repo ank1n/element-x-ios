@@ -17,6 +17,7 @@ enum ContactsListScreenViewAction {
     case selectContact(ContactItem)
     case addContact
     case selectFilter(ContactFilter)
+    case toggleFavorite(ContactItem)
 }
 
 enum ContactsListScreenViewModelAction {
@@ -51,4 +52,5 @@ struct ContactItem: Identifiable, Equatable {
     let matrixUserID: String?
     var isOnline: Bool
     var lastSeenDate: Date?
+    var isFavorite: Bool
 }

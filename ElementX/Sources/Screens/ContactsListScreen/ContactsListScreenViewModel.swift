@@ -21,12 +21,20 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
     private var contactsCancellables: Set<AnyCancellable> = []
     private var presenceService: PresenceService?
 
+    private static let favoritesKey = "ru.implica.stalk.favoriteContacts"
+    private var favoriteRoomIDs: Set<String> {
+        didSet { saveFavorites() }
+    }
+
     var actionsPublisher: AnyPublisher<ContactsListScreenViewModelAction, Never> {
         actionsSubject.eraseToAnyPublisher()
     }
 
     init(userSession: UserSessionProtocol) {
         self.userSession = userSession
+
+        let saved = UserDefaults.standard.stringArray(forKey: Self.favoritesKey) ?? []
+        self.favoriteRoomIDs = Set(saved)
 
         var initialState = ContactsListScreenViewState()
         initialState.userID = userSession.clientProxy.userID
@@ -49,6 +57,8 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
             break
         case .selectFilter(let filter):
             state.selectedFilter = filter
+        case .toggleFavorite(let contact):
+            toggleFavorite(contact)
         }
     }
 
@@ -94,6 +104,23 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
                 self?.presenceService?.stopPolling()
             }
             .store(in: &contactsCancellables)
+    }
+
+    private func toggleFavorite(_ contact: ContactItem) {
+        MXLog.info("[Contacts] toggleFavorite: \(contact.displayName) id=\(contact.id)")
+        if favoriteRoomIDs.contains(contact.id) {
+            favoriteRoomIDs.remove(contact.id)
+        } else {
+            favoriteRoomIDs.insert(contact.id)
+        }
+
+        if let index = state.contacts.firstIndex(where: { $0.id == contact.id }) {
+            state.contacts[index].isFavorite = favoriteRoomIDs.contains(contact.id)
+        }
+    }
+
+    private func saveFavorites() {
+        UserDefaults.standard.set(Array(favoriteRoomIDs), forKey: Self.favoritesKey)
     }
 
     private func applyPresence(_ presenceMap: [String: UserPresence]) {
@@ -166,7 +193,8 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
                 avatarURL: summary.avatarURL,
                 matrixUserID: heroUserID,
                 isOnline: presence?.isOnline ?? false,
-                lastSeenDate: presence?.lastSeenDate
+                lastSeenDate: presence?.lastSeenDate,
+                isFavorite: favoriteRoomIDs.contains(summary.id)
             )
             contacts.append(contact)
 

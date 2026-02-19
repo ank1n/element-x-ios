@@ -98,7 +98,7 @@ struct ContactsListScreen: View {
         .padding(.vertical, 4)
         .contentShape(Rectangle())
         .gesture(
-            DragGesture(minimumDistance: 0)
+            DragGesture(minimumDistance: 1)
                 .onChanged { value in
                     let index = Int(value.location.y / 14)
                     if index >= 0, index < letters.count {
@@ -231,8 +231,7 @@ struct ContactsListScreen: View {
         case .online:
             contacts = contacts.filter { $0.isOnline }
         case .favorites:
-            // TODO: Add favorites support
-            break
+            contacts = contacts.filter { $0.isFavorite }
         }
 
         // Apply search
@@ -246,47 +245,58 @@ struct ContactsListScreen: View {
     }
 
     private func contactCell(_ contact: ContactItem) -> some View {
-        Button {
-            context.send(viewAction: .selectContact(contact))
-        } label: {
-            HStack(spacing: 12) {
-                LoadableAvatarImage(url: contact.avatarURL,
-                                    name: contact.displayName,
-                                    contentID: contact.id,
-                                    avatarSize: .custom(44),
-                                    mediaProvider: context.mediaProvider)
-                    .accessibilityHidden(true)
+        HStack(spacing: 12) {
+            LoadableAvatarImage(url: contact.avatarURL,
+                                name: contact.displayName,
+                                contentID: contact.id,
+                                avatarSize: .custom(44),
+                                mediaProvider: context.mediaProvider)
+                .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(contact.displayName)
-                        .font(.compound.bodyLGSemibold)
-                        .foregroundColor(.compound.textPrimary)
-                        .lineLimit(1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(contact.displayName)
+                    .font(.compound.bodyLGSemibold)
+                    .foregroundColor(.compound.textPrimary)
+                    .lineLimit(1)
 
-                    Text(contact.isOnline ? "в сети" : contactLastSeen(contact))
-                        .font(.compound.bodySM)
-                        .foregroundColor(contact.isOnline ? .stalkOnlineGreen : .compound.textSecondary)
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                if contact.isOnline {
-                    Circle()
-                        .fill(Color.stalkOnlineGreen)
-                        .frame(width: 10, height: 10)
-                }
+                Text(contact.isOnline ? "в сети" : contactLastSeen(contact))
+                    .font(.compound.bodySM)
+                    .foregroundColor(contact.isOnline ? .stalkOnlineGreen : .compound.textSecondary)
+                    .lineLimit(1)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .overlay(alignment: .bottom) {
-                Rectangle()
-                    .fill(Color.compound.borderDisabled)
-                    .frame(height: 1 / UIScreen.main.scale)
-                    .padding(.leading, 72)
+            .onTapGesture {
+                context.send(viewAction: .selectContact(contact))
+            }
+
+            // Favorite star
+            Button {
+                context.send(viewAction: .toggleFavorite(contact))
+            } label: {
+                Image(systemName: contact.isFavorite ? "star.fill" : "star")
+                    .font(.system(size: 18))
+                    .foregroundColor(contact.isFavorite ? .yellow : .compound.iconTertiary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("favorite-\(contact.id)")
+
+            if contact.isOnline {
+                Circle()
+                    .fill(Color.stalkOnlineGreen)
+                    .frame(width: 10, height: 10)
             }
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.compound.borderDisabled)
+                .frame(height: 1 / UIScreen.main.scale)
+                .padding(.leading, 72)
+        }
     }
 
     private func contactLastSeen(_ contact: ContactItem) -> String {
