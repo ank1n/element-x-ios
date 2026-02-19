@@ -106,6 +106,15 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         // Сбрасываем состояние записи от предыдущего звонка
         recordingService?.forceReset()
 
+        // sTalk: Pass access token to recording service for Authorization header
+        if let concreteRecording = recordingService as? RecordingService {
+            if case .roomCall(_, let clientProxy, _, _, _, _) = configuration.kind,
+               let concreteProxy = clientProxy as? ClientProxy,
+               let token = try? concreteProxy.matrixAccessToken() {
+                concreteRecording.updateAccessToken(token)
+            }
+        }
+
         var isGenericCallLink = false
         switch configuration.kind {
         case .genericCallLink(let url):

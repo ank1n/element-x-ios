@@ -40,6 +40,7 @@ class RecordingService: RecordingServiceProtocol {
     private let baseURL: URL
     private let urlSession: URLSession
     private let requestTimeout: TimeInterval = 15.0
+    private var accessToken: String?
 
     private let stateSubject = CurrentValueSubject<RecordingState, Never>(.idle)
 
@@ -56,8 +57,9 @@ class RecordingService: RecordingServiceProtocol {
     private var durationTimer: Task<Void, Never>?
     private var recordingStartTime: Date?
 
-    init(baseURL: URL, urlSession: URLSession? = nil) {
+    init(baseURL: URL, accessToken: String? = nil, urlSession: URLSession? = nil) {
         self.baseURL = baseURL
+        self.accessToken = accessToken
 
         // Create URLSession with timeout configuration
         if let urlSession {
@@ -68,6 +70,11 @@ class RecordingService: RecordingServiceProtocol {
             configuration.timeoutIntervalForResource = 30.0
             self.urlSession = URLSession(configuration: configuration)
         }
+    }
+
+    /// Update the access token (e.g. when user session becomes available)
+    func updateAccessToken(_ token: String) {
+        accessToken = token
     }
 
     // MARK: - Public Methods
@@ -290,6 +297,9 @@ class RecordingService: RecordingServiceProtocol {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let accessToken {
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        }
         request.timeoutInterval = requestTimeout
         request.httpBody = try JSONEncoder().encode(body)
 
@@ -313,6 +323,9 @@ class RecordingService: RecordingServiceProtocol {
         let url = baseURL.appendingPathComponent(endpoint)
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
+        if let accessToken {
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        }
         request.timeoutInterval = requestTimeout
 
         let (data, response) = try await urlSession.data(for: request)
