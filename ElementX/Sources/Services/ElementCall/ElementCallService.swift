@@ -26,18 +26,26 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         let roomID: String
         let rtcNotificationID: String?
     }
-    
+
     private let pushRegistry: PKPushRegistry
     private let callController = CXCallController()
     private let callProvider: CXProviderProtocol
     private let timeProvider: TimeProvider
-    
+
+    /// Stored VoIP push token (received from PushKit before clientProxy may be available)
+    private var voipDeviceToken: Data?
+
     private weak var clientProxy: ClientProxyProtocol? {
         didSet {
             // There's a race condition where a call starts when the app has been killed and the
             // observation set in `incomingCallID` occurs *before* the user session is restored.
             // So observe when the client proxy is set to fix this (the method guards for the call).
             Task { await observeIncomingCall() }
+
+            // Register VoIP pusher if we already have a token
+            if let voipDeviceToken {
+                Task { await registerVoIPPusher(with: voipDeviceToken) }
+            }
         }
     }
     
@@ -174,7 +182,17 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
 
     // MARK: - PKPushRegistryDelegate
     
-    func pushRegistry(_ registry: PKPushRegistry, didUpdate pushCredentials: PKPushCredentials, for type: PKPushType) { }
+    func pushRegistry(_ registry: PKPushRegistry, didUpdate pushCredentials: PKPushCredentials, for type: PKPushType) {
+        guard type == .voIP else { return }
+
+        let token = pushCredentials.token
+        voipDeviceToken = token
+
+        let tokenHex = token.map { String(format: "%02x", $0) }.joined()
+        MXLog.info("Received VoIP push token: \(tokenHex.prefix(8))...")
+
+        Task { await registerVoIPPusher(with: token) }
+    }
     
     func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping () -> Void) {
         guard let roomID = payload.dictionaryPayload[ElementCallServiceNotificationKey.roomID.rawValue] as? String else {
@@ -323,7 +341,34 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     }
     
     // MARK: - Private
-    
+
+    /// Register VoIP pusher with the Matrix homeserver so Sygnal can send VoIP pushes
+    private func registerVoIPPusher(with token: Data) async {
+        guard let clientProxy else {
+            MXLog.info("VoIP pusher registration deferred — no client proxy yet")
+            return
+        }
+
+        let pushGatewayURL = ServiceLocator.shared.settings.pushGatewayNotifyEndpoint.absoluteString
+        let appID = InfoPlistReader.main.baseBundleIdentifier + ".voip"
+        let pushkey = token.base64EncodedString()
+
+        do {
+            let configuration = PusherConfiguration(identifiers: .init(pushkey: pushkey, appId: appID),
+                                                    kind: .http(data: .init(url: pushGatewayURL,
+                                                                            format: .eventIdOnly,
+                                                                            defaultPayload: nil)),
+                                                    appDisplayName: "\(InfoPlistReader.main.bundleDisplayName) (iOS VoIP)",
+                                                    deviceDisplayName: UIDevice.current.name,
+                                                    profileTag: nil,
+                                                    lang: Bundle.app.preferredLocalizations.first ?? "en")
+            try await clientProxy.setPusher(with: configuration)
+            MXLog.info("VoIP pusher registered successfully (appID: \(appID))")
+        } catch {
+            MXLog.error("Failed to register VoIP pusher: \(error)")
+        }
+    }
+
     private func tearDownCallSession(sendEndCallAction: Bool = true) {
         if let ongoingCallID {
             // Send endCall action for call history tracking
