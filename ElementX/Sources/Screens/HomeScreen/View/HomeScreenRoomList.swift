@@ -47,7 +47,7 @@ struct SwipeActionView<Content: View>: View {
     var body: some View {
         ZStack(alignment: .center) {
             // Leading actions (revealed when swiping right)
-            if !leadingActions.isEmpty {
+            if !leadingActions.isEmpty, offset > 0 {
                 HStack(spacing: 0) {
                     ForEach(leadingActions.indices, id: \.self) { index in
                         actionButton(action: leadingActions[index])
@@ -57,7 +57,7 @@ struct SwipeActionView<Content: View>: View {
             }
 
             // Trailing actions (revealed when swiping left)
-            if !trailingActions.isEmpty {
+            if !trailingActions.isEmpty, offset < 0 {
                 HStack(spacing: 0) {
                     Spacer()
                     ForEach(trailingActions.indices, id: \.self) { index in

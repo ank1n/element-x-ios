@@ -280,7 +280,8 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
         }
         
         guard let userIdentity else {
-            MXLog.failure("User identity should be known at this point")
+            // sTalk: Don't crash — identity may be nil without cross-signing bootstrap
+            MXLog.error("User identity is nil for DM recipient, skipping verification badge")
             state.dmRecipientVerificationState = .notVerified
             return
         }
