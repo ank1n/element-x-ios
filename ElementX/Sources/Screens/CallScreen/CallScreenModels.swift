@@ -264,6 +264,7 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
     /// 1. Hides ALL Element Call UI via visibility:hidden, shows ONLY <video> elements.
     /// 2. MutationObserver makes video elements fullscreen as they appear.
     /// 3. Intercepts LiveKit WebSocket URL — logs credentials (pass-through, no blocking).
+    /// 4. KS-Bridge: forwards E2EE encryption_keys to key-server for recording/guests.
     /// Element Call handles all signaling and media via its own WebSocket connection.
     static var webSocketInterceptionScript: String {
         """
@@ -311,6 +312,88 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
             window.WebSocket.OPEN = 1;
             window.WebSocket.CLOSING = 2;
             window.WebSocket.CLOSED = 3;
+
+            // === 4. KS-Bridge: Forward E2EE encryption_keys to key-server ===
+            // Mirrors element-web KS-Bridge v7: intercepts fetch() calls that send
+            // encryption_keys via sendToDevice or room events, and forwards per-participant
+            // keys to key-server so recording-api and meet-app guests can decrypt media.
+            (function() {
+                var KS_BASE = '/api/keys/pp';
+
+                function ksPost(url, body, token) {
+                    var x = new XMLHttpRequest();
+                    x.open('POST', url, true);
+                    x.setRequestHeader('Content-Type', 'application/json');
+                    if (token) x.setRequestHeader('Authorization', 'Bearer ' + token);
+                    x.onload = function() { console.log('[KS-Bridge-iOS] POST ' + url.substring(0, 60) + ' -> ' + x.status); };
+                    x.onerror = function() { console.warn('[KS-Bridge-iOS] XHR error'); };
+                    x.send(body);
+                }
+
+                function getMatrixToken() {
+                    try { return localStorage.getItem('mx_access_token') || ''; } catch(e) { return ''; }
+                }
+
+                function forwardKeys(roomId, identity, keysArr) {
+                    crypto.subtle.digest('SHA-256', new TextEncoder().encode(roomId + '|m.call#ROOM')).then(function(hash) {
+                        var lkRoom = btoa(String.fromCharCode.apply(null, new Uint8Array(hash))).replace(/=+$/, '');
+                        var token = getMatrixToken();
+                        console.log('[KS-Bridge-iOS] forwarding ' + keysArr.length + ' key(s) for ' + identity + ' lkRoom=' + lkRoom.substring(0, 20));
+                        keysArr.forEach(function(k) {
+                            if (!k.key) return;
+                            ksPost(
+                                KS_BASE + '/' + encodeURIComponent(lkRoom) + '/' + encodeURIComponent(identity),
+                                JSON.stringify({ key: k.key, keyIndex: k.index || 0 }),
+                                token
+                            );
+                        });
+                    }).catch(function(e) { console.warn('[KS-Bridge-iOS] SHA error:', e); });
+                }
+
+                // Intercept fetch() — catches Widget Driver HTTP calls to Synapse
+                var _fetch = window.fetch;
+                window.fetch = function(url, opts) {
+                    var s = (typeof url === 'string') ? url : (url instanceof URL) ? url.href : (url && url.url) || '';
+                    if (opts && opts.body && opts.method && opts.method.toUpperCase() === 'PUT') {
+                        // sendToDevice path
+                        if (s.indexOf('/sendToDevice/') !== -1 && s.indexOf('encryption_keys') !== -1) {
+                            try {
+                                var body = JSON.parse(opts.body);
+                                var msgs = body.messages;
+                                if (msgs) {
+                                    var fu = Object.keys(msgs)[0], fd = Object.keys(msgs[fu])[0], c = msgs[fu][fd];
+                                    var roomId = c.room_id;
+                                    var senderId = c.member ? c.member.id : '';
+                                    var senderDevice = c.member ? c.member.claimed_device_id : '';
+                                    var keys = c.keys;
+                                    if (roomId && keys && senderId) {
+                                        forwardKeys(roomId, senderId + ':' + senderDevice, Array.isArray(keys) ? keys : [keys]);
+                                    }
+                                }
+                            } catch(e) { console.warn('[KS-Bridge-iOS] fetch parse error:', e); }
+                        }
+                        // Room event path
+                        if (s.indexOf('/send/') !== -1 && s.indexOf('encryption_keys') !== -1) {
+                            try {
+                                var body2 = JSON.parse(opts.body);
+                                var keys2 = body2.keys;
+                                if (keys2) {
+                                    var rm = s.match(/\\/rooms\\/([^/]+)\\/send\\//);
+                                    var rid = rm ? decodeURIComponent(rm[1]) : null;
+                                    var uid = localStorage.getItem('mx_user_id') || '';
+                                    var did = localStorage.getItem('mx_device_id') || '';
+                                    if (rid && uid) {
+                                        forwardKeys(rid, uid + ':' + did, Array.isArray(keys2) ? keys2 : [keys2]);
+                                    }
+                                }
+                            } catch(e) { console.warn('[KS-Bridge-iOS] room event parse error:', e); }
+                        }
+                    }
+                    return _fetch.apply(this, arguments);
+                };
+
+                console.log('[KS-Bridge-iOS] v1 initialized (fetch intercept)');
+            })();
         })();
         """
     }
