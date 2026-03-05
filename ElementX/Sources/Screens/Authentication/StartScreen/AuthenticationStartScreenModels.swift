@@ -43,7 +43,9 @@ struct AuthenticationStartScreenViewState: BindableState {
     var bindings = AuthenticationStartScreenViewStateBindings()
     
     var loginButtonTitle: String {
-        if let serverName {
+        if hideBrandChrome {
+            "Войти"
+        } else if let serverName {
             L10n.screenOnboardingSignInTo(serverName)
         } else {
             L10n.tr("Localizable", "action_sign_in")

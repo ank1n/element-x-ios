@@ -2705,6 +2705,13 @@ class ClientProxyMock: ClientProxyProtocol, @unchecked Sendable {
             return accountURLActionReturnValue
         }
     }
+    //MARK: - matrixAccessToken
+
+    var matrixAccessTokenReturnValue: String = "mock_access_token"
+
+    func matrixAccessToken() throws -> String {
+        matrixAccessTokenReturnValue
+    }
     //MARK: - directRoomForUserID
 
     var directRoomForUserIDUnderlyingCallsCount = 0

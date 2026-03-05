@@ -195,9 +195,9 @@ final class AppSettings {
     /// match the last part of the user ID. For example `example.com` and not `https://matrix.example.com`.
     private(set) var accountProviders = ["stalk.implica.ru"]
     /// Whether or not the user is allowed to manually enter their own account provider or must select from one of `defaultAccountProviders`.
-    private(set) var allowOtherAccountProviders = true
+    private(set) var allowOtherAccountProviders = false
     /// Whether the components surrounding the app brand/logo should be hidden or not
-    private(set) var hideBrandChrome = false
+    private(set) var hideBrandChrome = true
     
     /// The task identifier used for background app refresh. Also used in main target's the Info.plist
     let backgroundAppRefreshTaskIdentifier = "ru.implica.stalk.background.refresh"
@@ -263,7 +263,7 @@ final class AppSettings {
     /// Whether or not the Create Account button is shown on the start screen.
     ///
     /// **Note:** Setting this to false doesn't prevent someone from creating an account when the selected homeserver's MAS allows registration.
-    let showCreateAccountButton = true
+    let showCreateAccountButton = false
     
     // MARK: - Notifications
     

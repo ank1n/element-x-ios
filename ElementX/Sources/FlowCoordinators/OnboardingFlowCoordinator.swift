@@ -124,9 +124,8 @@ class OnboardingFlowCoordinator: FlowCoordinatorProtocol {
     // MARK: - Private
     
     private var requiresVerification: Bool {
-        // sTalk: Skip device verification for corporate environment.
-        // Auto-bootstrap in UserSession handles key backup & recovery automatically.
-        // OIDC/Keycloak auth is the source of trust — no need for device cross-signing.
+        // sTalk: Skip verification screen. For new logins, SDK auto-bootstraps cross-signing
+        // via autoEnableCrossSigning in ClientBuilder. For broken states, user should re-login.
         false
     }
     

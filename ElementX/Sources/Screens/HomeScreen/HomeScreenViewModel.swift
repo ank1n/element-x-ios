@@ -55,13 +55,12 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
             .weakAssign(to: \.state.userDisplayName, on: self)
             .store(in: &cancellables)
         
-        // sTalk: Suppress security banner — auto-bootstrap in UserSession handles
-        // key backup & recovery automatically. No need to show "set up recovery" or
-        // "key storage out of sync" banners in a corporate environment.
         userSession.sessionSecurityStatePublisher
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
+            .sink { [weak self] securityState in
                 guard let self else { return }
+
+                // sTalk: Don't show security banners — setupAutoRecovery() handles this automatically
                 state.securityBannerMode = .none
                 state.requiresExtraAccountSetup = false
             }

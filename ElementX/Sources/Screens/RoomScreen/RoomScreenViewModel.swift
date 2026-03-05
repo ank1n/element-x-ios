@@ -245,21 +245,20 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
                     MXLog.error("Failed retrieving room member for identity status change: \(change)")
                     continue
                 }
-                
+
                 identityPinningViolations[change.userId] = member
             case .verificationViolation:
-                guard case let .success(member) = await roomProxy.getMember(userID: change.userId) else {
-                    MXLog.error("Failed retrieving room member for identity status change: \(change)")
-                    continue
-                }
-
-                identityVerificationViolations[change.userId] = member
+                // sTalk: Auto-resolve verification violations — in corporate environment
+                // identity resets are expected (auto-bootstrap). Withdraw the violation to unblock sending.
+                MXLog.info("sTalk: Auto-resolving verification violation for \(change.userId)")
+                Task { await resolveIdentityVerificationViolation(change.userId) }
+                continue
             default:
                 identityVerificationViolations[change.userId] = nil
                 identityPinningViolations[change.userId] = nil
             }
         }
-        
+
         if let member = identityVerificationViolations.values.first {
             state.identityViolationDetails = .verificationViolation(member: member,
                                                                     learnMoreURL: appSettings.identityPinningViolationDetailsURL)

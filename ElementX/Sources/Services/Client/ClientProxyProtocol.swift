@@ -164,6 +164,9 @@ protocol ClientProxyProtocol: AnyObject {
     func expireSyncSessions() async
         
     func accountURL(action: AccountManagementAction) async -> URL?
+
+    /// sTalk: Access token for direct Matrix REST API calls
+    func matrixAccessToken() throws -> String
     
     func directRoomForUserID(_ userID: String) -> Result<String?, ClientProxyError>
     
