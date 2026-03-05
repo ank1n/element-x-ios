@@ -23,6 +23,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
 
     private let audioPlayer: AudioPlayerProtocol
     private let fileManager = FileManager.default
+    private var meetingsService: MeetingsService?
 
     /// Кэш записей с сервера для быстрого доступа по roomID
     private var recordingsCache: [String: CallHistoryAPIItem] = [:]
@@ -56,6 +57,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         setupLocalHistorySubscription()
         loadListenedRecordingIDs()
         loadRecordingsFromServer()
+        setupMeetingsService()
     }
 
     override func process(viewAction: CallsListScreenViewAction) {
@@ -72,6 +74,13 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
             Task { await audioPlayer.seek(to: progress) }
         case .refresh:
             loadRecordingsFromServer(forceRefresh: true)
+            Task { await meetingsService?.fetchMeetings() }
+        case .rsvpMeeting(let meetingId, let response):
+            handleRSVP(meetingId: meetingId, response: response)
+        case .joinMeeting(let meeting):
+            if let roomId = meeting.matrixRoomId {
+                actionsSubject.send(.startCall(userId: roomId))
+            }
         }
     }
 
@@ -503,6 +512,40 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
             return try? clientProxy.matrixAccessToken()
         }
         return nil
+    }
+
+    // MARK: - Meetings
+
+    private func setupMeetingsService() {
+        guard let concreteProxy = userSession.clientProxy as? ClientProxy,
+              let accessToken = try? concreteProxy.matrixAccessToken() else {
+            return
+        }
+
+        let homeserver = userSession.clientProxy.homeserver
+        meetingsService = MeetingsService(homeserver: homeserver, accessToken: accessToken)
+
+        meetingsService?.meetingsSubject
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] (meetings: [Meeting]) in
+                self?.state.meetings = meetings
+                self?.state.isMeetingsLoading = false
+            }
+            .store(in: &callsCancellables)
+
+        state.isMeetingsLoading = true
+        Task { await meetingsService?.fetchMeetings() }
+    }
+
+    private func handleRSVP(meetingId: Int, response: String) {
+        Task {
+            guard let success = await meetingsService?.rsvp(meetingId: meetingId, response: response),
+                  success else {
+                return
+            }
+            // Refresh meetings to reflect updated RSVP
+            await meetingsService?.fetchMeetings()
+        }
     }
 
     // MARK: - Private

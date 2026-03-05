@@ -54,9 +54,21 @@ struct CallsListScreen: View {
         GeometryReader { geometry in
             ScrollView {
                 LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    // Meetings section
+                    if !upcomingMeetings.isEmpty {
+                        Section {
+                            ForEach(upcomingMeetings) { meeting in
+                                meetingCell(meeting)
+                            }
+                        } header: {
+                            dateSectionHeader("Встречи")
+                        }
+                    }
+
+                    // Call history
                     if context.viewState.isLoading {
                         loadingCells
-                    } else if filteredCalls.isEmpty {
+                    } else if filteredCalls.isEmpty && upcomingMeetings.isEmpty {
                         emptyStateView(minHeight: geometry.size.height)
                     } else {
                         ForEach(groupedCalls, id: \.title) { group in
@@ -216,6 +228,190 @@ struct CallsListScreen: View {
 
         return calls
     }
+
+    // MARK: - Meetings
+
+    private var upcomingMeetings: [Meeting] {
+        context.viewState.meetings
+            .filter { !$0.isPast }
+            .sorted { $0.startTime < $1.startTime }
+    }
+
+    private func meetingCell(_ meeting: Meeting) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                // Calendar icon
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.green.opacity(0.15))
+                        .frame(width: 44, height: 44)
+
+                    VStack(spacing: 0) {
+                        Text(meetingDayShort(meeting.startTime))
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.green)
+                        Text(meetingDayNumber(meeting.startTime))
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(.green)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(meeting.title)
+                        .font(.compound.bodyLGSemibold)
+                        .foregroundColor(.compound.textPrimary)
+                        .lineLimit(1)
+
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock")
+                            .font(.caption2)
+                            .foregroundColor(.compound.textSecondary)
+
+                        Text(meetingTimeRange(meeting))
+                            .font(.compound.bodySM)
+                            .foregroundColor(.compound.textSecondary)
+
+                        if let location = meeting.location, !location.isEmpty {
+                            Text("·")
+                                .foregroundColor(.compound.textSecondary)
+                            Image(systemName: "mappin")
+                                .font(.caption2)
+                                .foregroundColor(.compound.textSecondary)
+                            Text(location)
+                                .font(.compound.bodySM)
+                                .foregroundColor(.compound.textSecondary)
+                                .lineLimit(1)
+                        }
+                    }
+
+                    // Participant count + my RSVP status
+                    HStack(spacing: 4) {
+                        Image(systemName: "person.2")
+                            .font(.caption2)
+                            .foregroundColor(.compound.textSecondary)
+                        Text("\(meeting.participants.count)")
+                            .font(.compound.bodySM)
+                            .foregroundColor(.compound.textSecondary)
+
+                        if let myRsvp = myRSVP(for: meeting) {
+                            Text("·")
+                                .foregroundColor(.compound.textSecondary)
+                            Text(rsvpLabel(myRsvp))
+                                .font(.compound.bodySM)
+                                .foregroundColor(rsvpColor(myRsvp))
+                        }
+                    }
+                }
+
+                Spacer()
+
+                // RSVP buttons
+                rsvpButtons(for: meeting)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.compound.borderDisabled)
+                .frame(height: 1 / UIScreen.main.scale)
+                .padding(.leading, 72)
+        }
+    }
+
+    @ViewBuilder
+    private func rsvpButtons(for meeting: Meeting) -> some View {
+        let myRsvp = myRSVP(for: meeting)
+
+        if myRsvp == nil || myRsvp == "pending" {
+            HStack(spacing: 6) {
+                Button {
+                    context.send(viewAction: .rsvpMeeting(meetingId: meeting.id, response: "accepted"))
+                } label: {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 30, height: 30)
+                        .background(Color.green)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    context.send(viewAction: .rsvpMeeting(meetingId: meeting.id, response: "declined"))
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.compound.textSecondary)
+                        .frame(width: 30, height: 30)
+                        .background(Color.compound.bgSubtleSecondary)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+            }
+        } else if meeting.matrixRoomId != nil {
+            Button {
+                context.send(viewAction: .joinMeeting(meeting))
+            } label: {
+                Image(systemName: "video.fill")
+                    .font(.system(size: 12))
+                    .foregroundColor(.compound.iconPrimary)
+                    .frame(width: 30, height: 30)
+                    .background(Color.compound.bgSubtleSecondary)
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func myRSVP(for meeting: Meeting) -> String? {
+        meeting.participants.first(where: { $0.userId == context.viewState.userID })?.rsvp
+    }
+
+    private func rsvpLabel(_ rsvp: String) -> String {
+        switch rsvp {
+        case "accepted": return "Принято"
+        case "declined": return "Отклонено"
+        case "tentative": return "Возможно"
+        case "pending": return "Ожидает"
+        default: return rsvp
+        }
+    }
+
+    private func rsvpColor(_ rsvp: String) -> Color {
+        switch rsvp {
+        case "accepted": return .green
+        case "declined": return .red
+        case "tentative": return .orange
+        default: return .compound.textSecondary
+        }
+    }
+
+    private func meetingDayShort(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ru_RU")
+        formatter.dateFormat = "EEE"
+        return formatter.string(from: date).uppercased()
+    }
+
+    private func meetingDayNumber(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "d"
+        return formatter.string(from: date)
+    }
+
+    private func meetingTimeRange(_ meeting: Meeting) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ru_RU")
+        formatter.dateFormat = "HH:mm"
+        let start = formatter.string(from: meeting.startTime)
+        if let endTime = meeting.endTime {
+            return "\(start) – \(formatter.string(from: endTime))"
+        }
+        return start
+    }
+
+    // MARK: - Call History
 
     private func callCell(_ call: CallHistoryItem) -> some View {
         VStack(spacing: 0) {

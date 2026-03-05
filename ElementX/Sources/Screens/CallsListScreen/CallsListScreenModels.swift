@@ -13,6 +13,9 @@ enum CallsListScreenViewAction {
     case playRecording(CallHistoryItem)
     case seekPlayback(progress: Double)
     case refresh
+    // Meetings
+    case rsvpMeeting(meetingId: Int, response: String)
+    case joinMeeting(Meeting)
 }
 
 enum CallsListScreenViewModelAction {
@@ -38,6 +41,10 @@ struct CallsListScreenViewState: BindableState {
     var playbackDuration: TimeInterval = 0
     var playbackCurrentTime: TimeInterval = 0
     var downloadProgress: Double = 0  // 0.0 to 1.0
+
+    // Meetings
+    var meetings: [Meeting] = []
+    var isMeetingsLoading: Bool = false
 
     var bindings = CallsListScreenViewStateBindings()
 }

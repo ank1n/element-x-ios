@@ -479,6 +479,7 @@
 		51263FC33CC961A14F5D6BCA /* TracingHook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A95C9B8299A36A6495DECA6 /* TracingHook.swift */; };
 		5139F4BD5A5DF6F8D11A9BDE /* NotificationPermissionsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46D0BA44B1838E65B507B277 /* NotificationPermissionsScreen.swift */; };
 		513AF15E0E84711B80D04B1B /* ReportRoomScreenViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C3E9684DCE6B66BD0B5DF67 /* ReportRoomScreenViewModelTests.swift */; };
+		51AB09C2E30BF1CB3C40D80C /* MeetingsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEF3461D9D4D0A632F23F5D3 /* MeetingsService.swift */; };
 		51B3B19FA5F91B455C807BA7 /* RoomPollsHistoryScreenModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E964AF2DFEB31E2B799999F /* RoomPollsHistoryScreenModels.swift */; };
 		522269133E6F65F68482F4F4 /* RemotePreferenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 181CF280BC8E3F335AFCB4B8 /* RemotePreferenceTests.swift */; };
 		523C6800ED85D5810CF18C19 /* OIDCAccountSettingsPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1D737F4672021D0A7D218CD /* OIDCAccountSettingsPresenter.swift */; };
@@ -2857,6 +2858,7 @@
 		DE9FA23F5911CDA9568B8383 /* RecordingButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingButton.swift; sourceTree = "<group>"; };
 		DEBB74427E24AF30CDB131B7 /* DeferredFulfillmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeferredFulfillmentTests.swift; sourceTree = "<group>"; };
 		DEC1D382565A4E9CAC2F14EA /* MediaFileHandleProxy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaFileHandleProxy.swift; sourceTree = "<group>"; };
+		DEF3461D9D4D0A632F23F5D3 /* MeetingsService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MeetingsService.swift; sourceTree = "<group>"; };
 		DF05DA24F71B455E8EFEBC3B /* SessionVerificationViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionVerificationViewModelTests.swift; sourceTree = "<group>"; };
 		DF17EA323AD0205A6AB621AA /* Snapshotting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Snapshotting.swift; sourceTree = "<group>"; };
 		DF3D25B3EDB283B5807EADCF /* ReadMarkerRoomTimelineItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadMarkerRoomTimelineItem.swift; sourceTree = "<group>"; };
@@ -3279,6 +3281,7 @@
 				367F7E351E985CE10F62CFBD /* Widget */,
 				DE763B6F98604B16094B49E5 /* Cache */,
 				A30A573FEA8EA30EC3F3BABF /* OrgProfile */,
+				FBC5E3CD6A94D1F926AE5713 /* Meetings */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -7046,6 +7049,15 @@
 			path = View;
 			sourceTree = "<group>";
 		};
+		FBC5E3CD6A94D1F926AE5713 /* Meetings */ = {
+			isa = PBXGroup;
+			children = (
+				DEF3461D9D4D0A632F23F5D3 /* MeetingsService.swift */,
+			);
+			name = Meetings;
+			path = Meetings;
+			sourceTree = "<group>";
+		};
 		FCDF06BDB123505F0334B4F9 /* Timeline */ = {
 			isa = PBXGroup;
 			children = (
@@ -9165,6 +9177,7 @@
 				F33E95E2A066275E8DC36ADE /* ArchiveScreen.swift in Sources */,
 				95E073B63C798BE38444A47A /* ArchiveScreenCoordinator.swift in Sources */,
 				BB3CA4D3C33FA0B97DF347A5 /* OrgProfileService.swift in Sources */,
+				51AB09C2E30BF1CB3C40D80C /* MeetingsService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
