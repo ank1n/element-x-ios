@@ -1116,6 +1116,7 @@
 		BA43D782BE85C7F5F20C624A /* AttributedStringBuilderProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72F37B5DA798C9AE436F2C2C /* AttributedStringBuilderProtocol.swift */; };
 		BA48D6AFF6421D199148C0A1 /* KnockRequestsListScreenViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9AC2CC94FA06F728883B694 /* KnockRequestsListScreenViewModelTests.swift */; };
 		BA4C9049BC96DED3A2F3B82E /* RoomNotificationSettingsScreenViewModelProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03DD998E523D4EC93C7ED703 /* RoomNotificationSettingsScreenViewModelProtocol.swift */; };
+		BB3CA4D3C33FA0B97DF347A5 /* OrgProfileService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DECF4674CFB64C23C62C8B0 /* OrgProfileService.swift */; };
 		BB6BF528BC7F5B87E08C4F18 /* CameraPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8A3B7637DDBD6AA97AC2545 /* CameraPicker.swift */; };
 		BB784A02BADB03C820617A46 /* TextRoomTimelineItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90A55430639712CFACA34F43 /* TextRoomTimelineItem.swift */; };
 		BB9B800C6094E34860E89DC5 /* AppLockSetupBiometricsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8CCF9A924521DECA44778C4 /* AppLockSetupBiometricsScreen.swift */; };
@@ -2303,6 +2304,7 @@
 		7DC017C3CB6B0F7C63F460F2 /* SecureBackupLogoutConfirmationScreenViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureBackupLogoutConfirmationScreenViewModel.swift; sourceTree = "<group>"; };
 		7DDBF99755A9008CF8C8499E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		7DDF49CEBC0DFC59C308335F /* RoomMemberDetailsScreenViewModelProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomMemberDetailsScreenViewModelProtocol.swift; sourceTree = "<group>"; };
+		7DECF4674CFB64C23C62C8B0 /* OrgProfileService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OrgProfileService.swift; sourceTree = "<group>"; };
 		7E398B0560B1C7859311FB74 /* STalkCacheService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = STalkCacheService.swift; sourceTree = "<group>"; };
 		7E8562F4D7DE073BC32902AB /* EncryptionResetScreenViewModelProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EncryptionResetScreenViewModelProtocol.swift; sourceTree = "<group>"; };
 		7EA2AFF6EB59FE25234D29F3 /* ElementCallServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ElementCallServiceTests.swift; sourceTree = "<group>"; };
@@ -3276,6 +3278,7 @@
 				0121014DD16467736455AF16 /* VoiceMessage */,
 				367F7E351E985CE10F62CFBD /* Widget */,
 				DE763B6F98604B16094B49E5 /* Cache */,
+				A30A573FEA8EA30EC3F3BABF /* OrgProfile */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -5826,6 +5829,23 @@
 			path = LiveKit;
 			sourceTree = "<group>";
 		};
+		A1B2C3D4E5F60789ABCD1003 /* Presence */ = {
+			isa = PBXGroup;
+			children = (
+				A1B2C3D4E5F60789ABCD1001 /* PresenceService.swift */,
+			);
+			path = Presence;
+			sourceTree = "<group>";
+		};
+		A30A573FEA8EA30EC3F3BABF /* OrgProfile */ = {
+			isa = PBXGroup;
+			children = (
+				7DECF4674CFB64C23C62C8B0 /* OrgProfileService.swift */,
+			);
+			name = OrgProfile;
+			path = OrgProfile;
+			sourceTree = "<group>";
+		};
 		A33CE1B72A29E3931CBEC2A5 /* VoiceMessage */ = {
 			isa = PBXGroup;
 			children = (
@@ -6926,14 +6946,6 @@
 				493225D61FED2DA3D3B26104 /* View */,
 			);
 			path = InviteUsersScreen;
-			sourceTree = "<group>";
-		};
-		A1B2C3D4E5F60789ABCD1003 /* Presence */ = {
-			isa = PBXGroup;
-			children = (
-				A1B2C3D4E5F60789ABCD1001 /* PresenceService.swift */,
-			);
-			path = Presence;
 			sourceTree = "<group>";
 		};
 		F1B03FD5ADA289E77B99E0E2 /* Recording */ = {
@@ -9152,6 +9164,7 @@
 				B479A1884E9C6121C0AA7B17 /* ArchiveScreenViewModel.swift in Sources */,
 				F33E95E2A066275E8DC36ADE /* ArchiveScreen.swift in Sources */,
 				95E073B63C798BE38444A47A /* ArchiveScreenCoordinator.swift in Sources */,
+				BB3CA4D3C33FA0B97DF347A5 /* OrgProfileService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

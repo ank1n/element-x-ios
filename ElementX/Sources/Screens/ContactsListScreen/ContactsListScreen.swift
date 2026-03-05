@@ -271,6 +271,13 @@ struct ContactsListScreen: View {
                     .foregroundColor(.compound.textPrimary)
                     .lineLimit(1)
 
+                if let orgSubtitle = contactOrgSubtitle(contact) {
+                    Text(orgSubtitle)
+                        .font(.compound.bodySM)
+                        .foregroundColor(.compound.textSecondary)
+                        .lineLimit(1)
+                }
+
                 Text(contact.isOnline ? "в сети" : contactLastSeen(contact))
                     .font(.compound.bodySM)
                     .foregroundColor(contact.isOnline ? .stalkOnlineGreen : .compound.textSecondary)
@@ -297,6 +304,11 @@ struct ContactsListScreen: View {
                 .frame(height: 1 / UIScreen.main.scale)
                 .padding(.leading, 72)
         }
+    }
+
+    private func contactOrgSubtitle(_ contact: ContactItem) -> String? {
+        let parts = [contact.jobTitle, contact.department].compactMap { $0?.isEmpty == true ? nil : $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     private func contactLastSeen(_ contact: ContactItem) -> String {

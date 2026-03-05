@@ -53,4 +53,7 @@ struct ContactItem: Identifiable, Equatable {
     var isOnline: Bool
     var lastSeenDate: Date?
     var isFavorite: Bool
+    // org-profile fields
+    var jobTitle: String?
+    var department: String?
 }

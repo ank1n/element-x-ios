@@ -20,6 +20,7 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
     private let actionsSubject: PassthroughSubject<ContactsListScreenViewModelAction, Never> = .init()
     private var contactsCancellables: Set<AnyCancellable> = []
     private var presenceService: PresenceService?
+    private var orgProfileService: OrgProfileService?
 
     private static let favoritesKey = "ru.implica.stalk.favoriteContacts"
     private var favoriteRoomIDs: Set<String> {
@@ -44,6 +45,7 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
         super.init(initialViewState: initialState, mediaProvider: userSession.mediaProvider)
 
         setupPresenceService()
+        setupOrgProfileService()
         setupSubscriptions()
     }
 
@@ -136,6 +138,39 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
         state.contacts = contacts
     }
 
+    // MARK: - Org Profile
+
+    private func setupOrgProfileService() {
+        guard let concreteProxy = userSession.clientProxy as? ClientProxy,
+              let accessToken = try? concreteProxy.matrixAccessToken() else {
+            return
+        }
+
+        let homeserver = userSession.clientProxy.homeserver
+
+        orgProfileService = OrgProfileService(homeserver: homeserver, accessToken: accessToken)
+
+        orgProfileService?.profilesSubject
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] (profilesMap: [String: OrgProfile]) in
+                self?.applyOrgProfiles(profilesMap)
+            }
+            .store(in: &contactsCancellables)
+    }
+
+    private func applyOrgProfiles(_ profilesMap: [String: OrgProfile]) {
+        guard !profilesMap.isEmpty else { return }
+
+        var contacts = state.contacts
+        for i in contacts.indices {
+            guard let matrixUserID = contacts[i].matrixUserID,
+                  let profile = profilesMap[matrixUserID] else { continue }
+            contacts[i].jobTitle = profile.jobTitle
+            contacts[i].department = profile.department
+        }
+        state.contacts = contacts
+    }
+
     private func setupSubscriptions() {
         state.isLoading = true
 
@@ -212,6 +247,11 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
                 presenceService?.startPolling(userIDs: userIDs)
             } else {
                 presenceService?.updatePollingUserIDs(userIDs)
+            }
+
+            // Fetch org-profiles for contacts (one-time per user)
+            if let orgProfileService {
+                Task { await orgProfileService.fetchProfiles(for: userIDs) }
             }
         }
     }
