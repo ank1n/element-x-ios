@@ -13,31 +13,32 @@ struct TimelineDeliveryStatusView: View {
     enum Status {
         case sending
         case sent
+        case read
     }
 
     let deliveryStatus: Status
 
-    private var icon: CompoundIcon {
-        switch deliveryStatus {
-        case .sending:
-            return CompoundIcon(\.circle, size: .xSmall, relativeTo: .compound.bodyMD)
-        case .sent:
-            return CompoundIcon(\.checkCircle, size: .xSmall, relativeTo: .compound.bodyMD)
-        }
-    }
-    
     var body: some View {
-        icon
-            .foregroundColor(.compound.iconSecondary)
-            .accessibilityLabel(accessibilityLabel)
-    }
-    
-    private var accessibilityLabel: String {
         switch deliveryStatus {
         case .sending:
-            return L10n.commonSending
+            CompoundIcon(\.circle, size: .xSmall, relativeTo: .compound.bodyMD)
+                .foregroundColor(.compound.iconSecondary)
+                .accessibilityLabel(L10n.commonSending)
         case .sent:
-            return L10n.commonSent
+            Image(systemName: "checkmark")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundColor(.compound.iconSecondary)
+                .accessibilityLabel(L10n.commonSent)
+        case .read:
+            // sTalk: double checkmark (read) — blue like Telegram
+            HStack(spacing: -3) {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 9, weight: .bold))
+                Image(systemName: "checkmark")
+                    .font(.system(size: 9, weight: .bold))
+            }
+            .foregroundColor(.compound.iconAccentTertiary)
+            .accessibilityLabel(L10n.commonSent)
         }
     }
 }
@@ -47,6 +48,7 @@ struct TimelineDeliveryStatusView_Previews: PreviewProvider, TestablePreview {
         VStack(spacing: 8) {
             TimelineDeliveryStatusView(deliveryStatus: .sending)
             TimelineDeliveryStatusView(deliveryStatus: .sent)
+            TimelineDeliveryStatusView(deliveryStatus: .read)
         }
     }
 }

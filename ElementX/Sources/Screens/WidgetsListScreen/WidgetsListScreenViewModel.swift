@@ -135,7 +135,9 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.timeoutInterval = 15.0
-        request.setValue("Bearer \(userSession.clientProxy.userID)", forHTTPHeaderField: "Authorization")
+        if let accessToken = try? userSession.clientProxy.matrixAccessToken() {
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let (data, response) = try await URLSession.shared.data(for: request)

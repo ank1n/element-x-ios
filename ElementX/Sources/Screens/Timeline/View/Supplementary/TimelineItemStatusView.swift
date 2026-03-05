@@ -24,34 +24,8 @@ struct TimelineItemStatusView: View {
 
     @ViewBuilder
     private var mainContent: some View {
-        if context.viewState.timelineKind == .pinned {
-            // Do not display any status when is a pinned events timeline
-            EmptyView()
-        } else if context.viewState.showReadReceipts, !timelineItem.properties.orderedReadReceipts.isEmpty {
-            readReceipts
-        } else {
-            deliveryStatusBadge
-        }
-    }
-
-    @ViewBuilder
-    var deliveryStatusBadge: some View {
-        switch adjustedDeliveryStatus {
-        case .sending:
-            TimelineDeliveryStatusView(deliveryStatus: .sending)
-        case .sent, .none:
-            if isLastOutgoingMessage {
-                // We only display the sent icon for the latest outgoing message
-                TimelineDeliveryStatusView(deliveryStatus: .sent)
-            }
-        case .sendingFailed:
-            // Bubbles handle the case internally
-            EmptyView()
-        }
-    }
-
-    var readReceipts: some View {
-        TimelineReadReceiptsView(timelineItem: timelineItem)
-            .environmentObject(context)
+        // sTalk: delivery checkmarks are now shown inline with timestamp
+        // in TimelineItemSendInfoLabel. This badge area is no longer used.
+        EmptyView()
     }
 }

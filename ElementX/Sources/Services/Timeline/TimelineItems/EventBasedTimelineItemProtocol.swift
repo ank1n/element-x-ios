@@ -75,6 +75,11 @@ extension EventBasedTimelineItemProtocol {
             whiteSpaces += 3
         }
 
+        // sTalk: extra space for delivery checkmarks (✓ or ✓✓)
+        if isOutgoing {
+            whiteSpaces += 3
+        }
+
         return whiteSpaces
     }
 

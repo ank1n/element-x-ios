@@ -144,6 +144,33 @@ class SecureBackupController: SecureBackupControllerProtocol {
         }
     }
     
+    /// sTalk: Force full recovery bootstrap via enableRecovery(), regardless of current state.
+    func forceEnableRecovery() async -> Result<String, SecureBackupControllerError> {
+        do {
+            MXLog.info("sTalk: Force-enabling recovery (full bootstrap)")
+
+            var keyUploadErrored = false
+            let recoveryKey = try await encryption.enableRecovery(waitForBackupsToUpload: false, passphrase: nil, progressListener: SDKListener { [weak self] state in
+                guard let self else { return }
+
+                switch state {
+                case .starting, .creatingBackup, .creatingRecoveryKey, .backingUp:
+                    recoveryStateSubject.send(.settingUp)
+                case .done:
+                    recoveryStateSubject.send(.enabled)
+                case .roomKeyUploadError:
+                    MXLog.error("sTalk: Room key upload error during force-enable recovery")
+                    keyUploadErrored = true
+                }
+            })
+
+            return keyUploadErrored ? .failure(.failedGeneratingRecoveryKey) : .success(recoveryKey)
+        } catch {
+            MXLog.error("sTalk: Force-enable recovery failed: \(error)")
+            return .failure(.failedGeneratingRecoveryKey)
+        }
+    }
+
     func confirmRecoveryKey(_ key: String) async -> Result<Void, SecureBackupControllerError> {
         do {
             MXLog.info("Confirming recovery key")

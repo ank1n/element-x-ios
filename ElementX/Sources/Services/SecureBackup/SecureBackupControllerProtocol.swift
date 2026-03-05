@@ -56,6 +56,10 @@ protocol SecureBackupControllerProtocol {
     func disable() async -> Result<Void, SecureBackupControllerError>
     
     func generateRecoveryKey() async -> Result<String, SecureBackupControllerError>
+    /// sTalk: Force full recovery bootstrap (enableRecovery) regardless of current state.
+    /// Unlike generateRecoveryKey() which calls resetRecoveryKey() when state != .disabled,
+    /// this always does the full bootstrap that stores cross-signing keys in SSSS.
+    func forceEnableRecovery() async -> Result<String, SecureBackupControllerError>
     func confirmRecoveryKey(_ key: String) async -> Result<Void, SecureBackupControllerError>
     
     func waitForKeyBackupUpload(uploadStateSubject: CurrentValueSubject<SecureBackupSteadyState, Never>) async -> Result<Void, SecureBackupControllerError>

@@ -16103,6 +16103,20 @@ class SecureBackupControllerMock: SecureBackupControllerProtocol, @unchecked Sen
             return generateRecoveryKeyReturnValue
         }
     }
+    //MARK: - forceEnableRecovery
+
+    var forceEnableRecoveryCallsCount = 0
+    var forceEnableRecoveryReturnValue: Result<String, SecureBackupControllerError> = .success("fake-recovery-key")
+    var forceEnableRecoveryClosure: (() async -> Result<String, SecureBackupControllerError>)?
+
+    func forceEnableRecovery() async -> Result<String, SecureBackupControllerError> {
+        forceEnableRecoveryCallsCount += 1
+        if let forceEnableRecoveryClosure = forceEnableRecoveryClosure {
+            return await forceEnableRecoveryClosure()
+        } else {
+            return forceEnableRecoveryReturnValue
+        }
+    }
     //MARK: - confirmRecoveryKey
 
     var confirmRecoveryKeyUnderlyingCallsCount = 0

@@ -116,6 +116,28 @@ enum RoomTimelineItemType: Equatable {
         }
     }
 
+    /// sTalk: Extract EventBasedTimelineItemProtocol if this is an event-based item
+    var eventBasedItem: EventBasedTimelineItemProtocol? {
+        switch self {
+        case .text(let item): item
+        case .image(let item): item
+        case .video(let item): item
+        case .audio(let item): item
+        case .file(let item): item
+        case .emote(let item): item
+        case .notice(let item): item
+        case .redacted(let item): item
+        case .encrypted(let item): item
+        case .sticker(let item): item
+        case .unsupported(let item): item
+        case .location(let item): item
+        case .poll(let item): item
+        case .voice(let item): item
+        case .state(let item): item
+        default: nil
+        }
+    }
+
     var id: TimelineItemIdentifier {
         switch self {
         case .text(let item as RoomTimelineItemProtocol),
