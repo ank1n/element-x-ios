@@ -84,6 +84,7 @@ class AuthenticationFlowCoordinator: FlowCoordinatorProtocol {
     private var cancellables = Set<AnyCancellable>()
 
     private var oidcPresenter: OIDCAuthenticationPresenter?
+    private var nativeLoginCoordinator: NativeLoginScreenCoordinator?
 
     // periphery:ignore - retaining purpose
     private var bugReportFlowCoordinator: BugReportFlowCoordinator?
@@ -147,6 +148,8 @@ class AuthenticationFlowCoordinator: FlowCoordinatorProtocol {
             stateMachine.tryEvent(.cancelledServerInput(previousState: .startScreen))
         case .oidcAuthentication:
             oidcPresenter?.cancel()
+            navigationStackCoordinator.setSheetCoordinator(nil)
+            nativeLoginCoordinator = nil
             navigationStackCoordinator.popToRoot(animated: animated)
         case .complete:
             fatalError()
@@ -430,30 +433,46 @@ class AuthenticationFlowCoordinator: FlowCoordinatorProtocol {
     }
 
     private func showOIDCAuthentication(oidcData: OIDCAuthorizationDataProxy, presentationAnchor: UIWindow, useEphemeral: Bool, fromState: State) {
-        let presenter = OIDCAuthenticationPresenter(authenticationService: authenticationService,
-                                                    oidcRedirectURL: appSettings.oidcRedirectURL,
-                                                    presentationAnchor: presentationAnchor,
-                                                    userIndicatorController: userIndicatorController,
-                                                    useEphemeralSession: useEphemeral)
-        oidcPresenter = presenter
+        // sTalk: Show native login screen instead of WebView
+        showNativeLogin(oidcData: oidcData, fromState: fromState)
+    }
 
-        Task {
-            switch await presenter.authenticate(using: oidcData) {
-            case .success(let userSession):
-                // Save account after successful login
-                let serverAddress = authenticationService.homeserver.value.address
-                let userId = userSession.clientProxy.userID
-                let savedAccount = SavedAccount(serverURL: serverAddress,
-                                                userId: userId,
-                                                displayName: nil,
-                                                lastUsedAt: Date())
-                savedAccountsStore.save(savedAccount)
+    private func showNativeLogin(oidcData: OIDCAuthorizationDataProxy, fromState: State) {
+        let parameters = NativeLoginScreenCoordinatorParameters(
+            authenticationService: authenticationService,
+            oidcData: oidcData
+        )
+        let coordinator = NativeLoginScreenCoordinator(parameters: parameters)
+        nativeLoginCoordinator = coordinator
 
-                stateMachine.tryEvent(.signedIn, userInfo: userSession)
-            case .failure:
-                stateMachine.tryEvent(.cancelledOIDCAuthentication(previousState: fromState))
+        coordinator.actions
+            .sink { [weak self] action in
+                guard let self else { return }
+
+                switch action {
+                case .signedIn(let userSession):
+                    navigationStackCoordinator.setSheetCoordinator(nil)
+                    // Save account after successful login
+                    let serverAddress = authenticationService.homeserver.value.address
+                    let userId = userSession.clientProxy.userID
+                    let savedAccount = SavedAccount(serverURL: serverAddress,
+                                                    userId: userId,
+                                                    displayName: nil,
+                                                    lastUsedAt: Date())
+                    savedAccountsStore.save(savedAccount)
+
+                    stateMachine.tryEvent(.signedIn, userInfo: userSession)
+                case .cancelled:
+                    navigationStackCoordinator.setSheetCoordinator(nil)
+                    stateMachine.tryEvent(.cancelledOIDCAuthentication(previousState: fromState))
+                }
+                nativeLoginCoordinator = nil
             }
-            oidcPresenter = nil
+            .store(in: &cancellables)
+
+        navigationStackCoordinator.setSheetCoordinator(coordinator) { [weak self] in
+            self?.stateMachine.tryEvent(.cancelledOIDCAuthentication(previousState: fromState))
+            self?.nativeLoginCoordinator = nil
         }
     }
 
