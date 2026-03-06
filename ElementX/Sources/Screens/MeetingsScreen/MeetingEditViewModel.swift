@@ -28,7 +28,10 @@ class MeetingEditViewModel: MeetingEditViewModelType {
                 endDate: meeting.endTime,
                 location: meeting.location,
                 isIndefinite: meeting.isIndefinite,
-                allowGuests: meeting.accessLevel == "public"
+                allowGuests: meeting.accessLevel == "public",
+                participants: meeting.participants.map { participant in
+                    UserProfileProxy(userID: participant.userId, displayName: participant.displayName)
+                }
             )
         } else {
             bindings = MeetingEditViewStateBindings()
