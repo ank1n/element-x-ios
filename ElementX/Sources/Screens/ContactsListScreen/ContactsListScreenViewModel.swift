@@ -317,26 +317,47 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
     }
 
     /// Fetch all users from User Directory that aren't already in the contacts list.
-    /// Uses empty search term to get all users on the homeserver.
+    /// Requires Synapse config: user_directory.search_all_users: true
     private func fetchUserDirectory(existingUserIDs: Set<String>) {
         Task { [weak self] in
             guard let self else { return }
             let ownUserID = userSession.clientProxy.userID
 
-            // Search with empty string returns all users (up to limit)
-            let result = await userSession.clientProxy.searchUsers(searchTerm: "", limit: 200)
-            guard case .success(let searchResults) = result else { return }
+            MXLog.info("[Contacts] fetchUserDirectory: existingUserIDs=\(existingUserIDs.count)")
+
+            // Try empty search first (requires search_all_users: true)
+            var users: [UserProfileProxy] = []
+            let result = await userSession.clientProxy.searchUsers(searchTerm: "", limit: 500)
+            if case .success(let searchResults) = result {
+                users = searchResults.results
+                MXLog.info("[Contacts] fetchUserDirectory: empty search returned \(users.count)")
+            }
+
+            // Fallback: if empty search returns nothing, search by common letters
+            if users.isEmpty {
+                MXLog.info("[Contacts] fetchUserDirectory: fallback — searching a-z")
+                var allUsers: [String: UserProfileProxy] = [:]
+                for letter in "abcdefghijklmnopqrstuvwxyz" {
+                    let r = await userSession.clientProxy.searchUsers(searchTerm: String(letter), limit: 50)
+                    if case .success(let sr) = r {
+                        for u in sr.results { allUsers[u.userID] = u }
+                    }
+                }
+                users = Array(allUsers.values)
+                MXLog.info("[Contacts] fetchUserDirectory: fallback found \(users.count) unique users")
+            }
+
+            guard !users.isEmpty else { return }
 
             let presenceMap = presenceService?.presenceSubject.value ?? [:]
             var newContacts: [ContactItem] = []
             var newUserIDs: [String] = []
 
-            for user in searchResults.results {
+            for user in users {
                 guard user.userID != ownUserID,
                       !existingUserIDs.contains(user.userID) else { continue }
 
                 let presence = presenceMap[user.userID]
-                // Use userID as stable ID (no room yet)
                 newContacts.append(ContactItem(
                     id: user.userID,
                     displayName: user.displayName ?? user.userID.replacingOccurrences(of: "@", with: "").components(separatedBy: ":").first ?? user.userID,
@@ -350,15 +371,16 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
             }
 
             guard !newContacts.isEmpty else { return }
+            MXLog.info("[Contacts] fetchUserDirectory: adding \(newContacts.count) new contacts")
 
             await MainActor.run {
-                // Dedup: only add users not already in the list
                 let existingIDs = Set(self.state.contacts.map(\.id))
-                let filtered = newContacts.filter { !existingIDs.contains($0.id) }
+                let existingMatrixIDs = Set(self.state.contacts.compactMap(\.matrixUserID))
+                let filtered = newContacts.filter { !existingIDs.contains($0.id) && !existingMatrixIDs.contains($0.matrixUserID ?? "") }
                 self.state.contacts.append(contentsOf: filtered)
+                MXLog.info("[Contacts] total contacts now: \(self.state.contacts.count)")
             }
 
-            // Extend presence polling with new user IDs
             if !newUserIDs.isEmpty {
                 presenceService?.updatePollingUserIDs(
                     (presenceService?.currentUserIDs ?? []) + newUserIDs
