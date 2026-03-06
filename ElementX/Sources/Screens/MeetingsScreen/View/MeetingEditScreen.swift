@@ -121,7 +121,7 @@ struct MeetingEditScreen: View {
                             .padding(12)
                         }
 
-                        ForEach(context.viewState.searchResults.prefix(5)) { user in
+                        ForEach(context.viewState.searchResults) { user in
                             Button {
                                 context.send(viewAction: .addParticipant(user))
                                 isSearchFocused = false

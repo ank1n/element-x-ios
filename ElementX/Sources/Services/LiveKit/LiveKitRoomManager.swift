@@ -71,7 +71,8 @@ final class LiveKitRoomManager: ObservableObject {
                 encoding: VideoEncoding(maxBitrate: 1_500_000, maxFps: 30)
             ),
             defaultAudioPublishOptions: AudioPublishOptions(
-                dtx: true // Discontinuous transmission — saves bandwidth on silence
+                encoding: AudioEncoding(maxBitrate: 32_000), // 32 kbps minimum — prevents low frame rate (19→50 pps)
+                dtx: false // DTX off — don't skip packets on silence, keeps consistent frame rate
             )
         )
 
