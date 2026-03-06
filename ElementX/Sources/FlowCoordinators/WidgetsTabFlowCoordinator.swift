@@ -90,9 +90,47 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
     }
 
     private func presentWidget(_ widget: WidgetItem) {
+        // Builtin apps get native screens
+        if widget.isBuiltin {
+            presentBuiltinApp(widget)
+            return
+        }
+
         let parameters = WidgetWebViewScreenCoordinatorParameters(widget: widget)
         let coordinator = WidgetWebViewScreenCoordinator(parameters: parameters)
 
         navigationStackCoordinator.push(coordinator)
+    }
+
+    private func presentBuiltinApp(_ widget: WidgetItem) {
+        switch widget.id {
+        case "meetings-calendar":
+            guard let apiURL = widget.apiURL, !apiURL.isEmpty,
+                  let accessToken = try? userSession.clientProxy.matrixAccessToken() else {
+                MXLog.error("sTalk: Missing apiURL or accessToken for meetings-calendar")
+                return
+            }
+            // apiURL is like "https://stalk.implica.ru/api/meetings"
+            // MeetingsService needs just the base: "https://stalk.implica.ru"
+            let baseURL: String
+            if let range = apiURL.range(of: "/api/") {
+                baseURL = String(apiURL[apiURL.startIndex..<range.lowerBound])
+            } else {
+                baseURL = apiURL
+            }
+            let parameters = MeetingsScreenCoordinatorParameters(
+                apiURL: baseURL,
+                accessToken: accessToken,
+                currentUserId: userSession.clientProxy.userID,
+                clientProxy: userSession.clientProxy
+            )
+            let coordinator = MeetingsScreenCoordinator(
+                parameters: parameters,
+                navigationStackCoordinator: navigationStackCoordinator
+            )
+            navigationStackCoordinator.push(coordinator)
+        default:
+            MXLog.warning("sTalk: Unknown builtin app: \(widget.id)")
+        }
     }
 }

@@ -125,8 +125,8 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
 
     private func fetchWidgetsFromAPI() async throws -> [WidgetItem] {
         let baseURL = serverBaseURL
-        let urlString = "\(baseURL)/apps-api/widgets"
-        MXLog.info("sTalk: Fetching widgets from \(urlString)")
+        let urlString = "\(baseURL)/apps-api/apps"
+        MXLog.info("sTalk: Fetching apps from \(urlString)")
 
         guard let url = URL(string: urlString) else {
             throw URLError(.badURL)
@@ -152,49 +152,32 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
         let userId = userSession.clientProxy.userID
         let encodedUserId = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
 
-        return apiResponse.widgets
+        return apiResponse.apps
             .filter(\.enabled)
-            .map { widget in
-                // Build full URL from relative path
-                var fullURL = "\(baseURL)\(widget.url)"
-                // Append userId param for widgets that need it
+            .map { app in
+                // URL is already absolute from API v3
+                var fullURL = app.url
+                // Append userId param
                 if fullURL.contains("?") {
                     fullURL += "&userId=\(encodedUserId)"
                 } else {
                     fullURL += "?userId=\(encodedUserId)"
                 }
 
-                // Build icon URL from relative path
-                let iconURL: URL? = URL(string: "\(baseURL)\(widget.icon)")
-
-                // Map SF Symbol for known widget types as fallback
-                let sfSymbol = sfSymbolForWidget(id: widget.id, type: widget.type)
+                // Use SF Symbol name from API, fallback to generic
+                let sfSymbol = app.icon.sf ?? "app.fill"
 
                 return WidgetItem(
-                    id: widget.id,
-                    name: widget.name,
-                    description: widget.description,
+                    id: app.id,
+                    name: app.name,
+                    description: app.description,
                     icon: sfSymbol,
-                    iconURL: iconURL,
                     url: fullURL,
-                    category: WidgetCategory(apiType: widget.type)
+                    apiURL: app.apiUrl,
+                    type: app.type,
+                    category: WidgetCategory(apiCategory: app.category)
                 )
             }
-    }
-
-    /// Map known widget IDs to SF Symbols for fallback
-    private func sfSymbolForWidget(id: String, type: String) -> String {
-        switch id {
-        case "weather-bot": return "cloud.sun.fill"
-        case "recording-player": return "waveform"
-        case "stats-dashboard": return "chart.bar.fill"
-        default:
-            switch type {
-            case "smartapp": return "square.grid.2x2.fill"
-            case "widget": return "puzzlepiece.fill"
-            default: return "app.fill"
-            }
-        }
     }
 
     /// Fallback widgets when API is unreachable
@@ -204,11 +187,11 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
         let encodedUserId = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
         return [
             WidgetItem(
-                id: "statistics",
+                id: "stats",
                 name: "Статистика",
-                description: "Статистика сервера и активности",
+                description: "Статистика использования системы",
                 icon: "chart.bar.fill",
-                url: "\(baseURL)/application/stats/?userId=\(encodedUserId)",
+                url: "\(baseURL)/stats/?userId=\(encodedUserId)",
                 category: .tools
             )
         ]

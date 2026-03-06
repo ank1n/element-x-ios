@@ -271,7 +271,8 @@ struct CallsListScreen: View {
                             .font(.compound.bodySM)
                             .foregroundColor(.compound.textSecondary)
 
-                        if let location = meeting.location, !location.isEmpty {
+                        if !meeting.location.isEmpty {
+                            let location = meeting.location
                             Text("·")
                                 .foregroundColor(.compound.textSecondary)
                             Image(systemName: "mappin")
@@ -323,7 +324,7 @@ struct CallsListScreen: View {
     private func rsvpButtons(for meeting: Meeting) -> some View {
         let myRsvp = myRSVP(for: meeting)
 
-        if myRsvp == nil || myRsvp == "pending" {
+        if myRsvp == nil || myRsvp == .pending {
             HStack(spacing: 6) {
                 Button {
                     context.send(viewAction: .rsvpMeeting(meetingId: meeting.id, response: "accepted"))
@@ -364,26 +365,23 @@ struct CallsListScreen: View {
         }
     }
 
-    private func myRSVP(for meeting: Meeting) -> String? {
+    private func myRSVP(for meeting: Meeting) -> RSVPStatus? {
         meeting.participants.first(where: { $0.userId == context.viewState.userID })?.rsvp
     }
 
-    private func rsvpLabel(_ rsvp: String) -> String {
+    private func rsvpLabel(_ rsvp: RSVPStatus) -> String {
         switch rsvp {
-        case "accepted": return "Принято"
-        case "declined": return "Отклонено"
-        case "tentative": return "Возможно"
-        case "pending": return "Ожидает"
-        default: return rsvp
+        case .accepted: return "Принято"
+        case .declined: return "Отклонено"
+        case .pending: return "Ожидает"
         }
     }
 
-    private func rsvpColor(_ rsvp: String) -> Color {
+    private func rsvpColor(_ rsvp: RSVPStatus) -> Color {
         switch rsvp {
-        case "accepted": return .green
-        case "declined": return .red
-        case "tentative": return .orange
-        default: return .compound.textSecondary
+        case .accepted: return .green
+        case .declined: return .red
+        case .pending: return .compound.textSecondary
         }
     }
 
@@ -405,10 +403,7 @@ struct CallsListScreen: View {
         formatter.locale = Locale(identifier: "ru_RU")
         formatter.dateFormat = "HH:mm"
         let start = formatter.string(from: meeting.startTime)
-        if let endTime = meeting.endTime {
-            return "\(start) – \(formatter.string(from: endTime))"
-        }
-        return start
+        return "\(start) – \(formatter.string(from: meeting.endTime))"
     }
 
     // MARK: - Call History
