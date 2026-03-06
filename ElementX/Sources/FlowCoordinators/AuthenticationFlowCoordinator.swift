@@ -451,7 +451,6 @@ class AuthenticationFlowCoordinator: FlowCoordinatorProtocol {
 
                 switch action {
                 case .signedIn(let userSession):
-                    navigationStackCoordinator.setSheetCoordinator(nil)
                     // Save account after successful login
                     let serverAddress = authenticationService.homeserver.value.address
                     let userId = userSession.clientProxy.userID
@@ -461,7 +460,13 @@ class AuthenticationFlowCoordinator: FlowCoordinatorProtocol {
                                                     lastUsedAt: Date())
                     savedAccountsStore.save(savedAccount)
 
+                    // Fire state machine event BEFORE dismissing sheet to avoid
+                    // the dismissal callback triggering cancelledOIDCAuthentication
+                    // while we're still in .oidcAuthentication state
                     stateMachine.tryEvent(.signedIn, userInfo: userSession)
+                    nativeLoginCoordinator = nil
+                    navigationStackCoordinator.setSheetCoordinator(nil)
+                    return
                 case .cancelled:
                     navigationStackCoordinator.setSheetCoordinator(nil)
                     stateMachine.tryEvent(.cancelledOIDCAuthentication(previousState: fromState))
@@ -471,8 +476,9 @@ class AuthenticationFlowCoordinator: FlowCoordinatorProtocol {
             .store(in: &cancellables)
 
         navigationStackCoordinator.setSheetCoordinator(coordinator) { [weak self] in
-            self?.stateMachine.tryEvent(.cancelledOIDCAuthentication(previousState: fromState))
-            self?.nativeLoginCoordinator = nil
+            guard let self, stateMachine.state == .oidcAuthentication else { return }
+            stateMachine.tryEvent(.cancelledOIDCAuthentication(previousState: fromState))
+            nativeLoginCoordinator = nil
         }
     }
 
