@@ -113,13 +113,13 @@ struct CalendarGridView: View {
                 selectedDate = date
             }
         } label: {
-            VStack(spacing: 5) {
+            VStack(spacing: 4) {
                 Text("\(dayNum)")
-                    .font(.system(size: 22, weight: isSelected ? .bold : .semibold))
+                    .font(.system(size: 26, weight: isSelected ? .bold : .semibold))
                     .foregroundColor(isSelected ? .white : .primary)
 
                 Text(weekday)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 14, weight: .medium))
                     .foregroundColor(isSelected ? .white.opacity(0.85) : .secondary)
 
                 // Meeting dot
@@ -127,7 +127,7 @@ struct CalendarGridView: View {
                     .fill(hasMeeting ? (isSelected ? Color.white : Color.orange) : Color.clear)
                     .frame(width: 5, height: 5)
             }
-            .frame(width: 52, height: 80)
+            .frame(width: 56, height: 84)
             .background(
                 RoundedRectangle(cornerRadius: 16)
                     .fill(isSelected ? accentBlue : (isToday ? lightBg : Color.clear))

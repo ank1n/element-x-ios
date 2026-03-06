@@ -87,9 +87,12 @@ struct MeetingsListScreen: View {
                 }
             }
         }
-        .navigationTitle("Календарь")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("Календарь")
+                    .font(.system(size: 20, weight: .bold))
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
                     context.send(viewAction: .createMeeting)
@@ -104,17 +107,19 @@ struct MeetingsListScreen: View {
 
     // MARK: - Header (day number + weekday + month)
 
+    private let today = Date()
+
     private var headerView: some View {
         HStack(alignment: .center, spacing: 10) {
-            Text(dayNumberFormatter.string(from: context.viewState.selectedDate))
+            Text(dayNumberFormatter.string(from: today))
                 .font(.system(size: 38, weight: .bold))
                 .foregroundColor(.primary)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(weekdayFormatter.string(from: context.viewState.selectedDate).capitalized)
+                Text(weekdayFormatter.string(from: today).capitalized)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.secondary)
-                Text(monthYearFormatter.string(from: context.viewState.selectedDate).capitalized)
+                Text(monthYearFormatter.string(from: today).capitalized)
                     .font(.system(size: 13))
                     .foregroundColor(.secondary)
             }
