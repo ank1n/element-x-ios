@@ -135,8 +135,8 @@ struct MeetingDetailScreen: View {
                         .buttonStyle(.borderedProminent)
                     }
 
-                    // RSVP buttons
-                    if let myRSVP = context.viewState.myRSVP {
+                    // RSVP buttons (only for non-creators)
+                    if !context.viewState.isCreator, let myRSVP = context.viewState.myRSVP {
                         HStack(spacing: 12) {
                             rsvpButton("Приму", icon: "checkmark", status: .accepted, current: myRSVP)
                             rsvpButton("Отклоню", icon: "xmark", status: .declined, current: myRSVP)
