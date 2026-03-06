@@ -153,21 +153,21 @@ struct ContactsListScreen: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 GenericFilterView(
-                    title: "Все",
+                    title: "Все \(context.viewState.contacts.count)",
                     isActive: Binding(
                         get: { context.viewState.selectedFilter == .all },
                         set: { if $0 { context.send(viewAction: .selectFilter(.all)) } }
                     )
                 )
                 GenericFilterView(
-                    title: "В сети",
+                    title: "В сети \(context.viewState.onlineCount)",
                     isActive: Binding(
                         get: { context.viewState.selectedFilter == .online },
                         set: { if $0 { context.send(viewAction: .selectFilter(.online)) } }
                     )
                 )
                 GenericFilterView(
-                    title: "Избранные",
+                    title: "Избранные \(context.viewState.favoritesCount)",
                     isActive: Binding(
                         get: { context.viewState.selectedFilter == .favorites },
                         set: { if $0 { context.send(viewAction: .selectFilter(.favorites)) } }

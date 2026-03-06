@@ -54,13 +54,49 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
         case .showSettings:
             actionsSubject.send(.showSettings)
         case .selectContact(let contact):
-            actionsSubject.send(.openChat(roomId: contact.id))
+            openContact(contact)
         case .addContact:
             break
         case .selectFilter(let filter):
             state.selectedFilter = filter
         case .toggleFavorite(let contact):
             toggleFavorite(contact)
+        }
+    }
+
+    /// Open a contact. If it's a room-based contact, navigate directly.
+    /// If it's a User Directory contact (id starts with @), find or create a DM room first.
+    private func openContact(_ contact: ContactItem) {
+        // Room-based contacts have room IDs (start with !)
+        if contact.id.hasPrefix("!") {
+            actionsSubject.send(.openChat(roomId: contact.id))
+            return
+        }
+
+        // User Directory contact — find or create DM
+        guard let matrixUserID = contact.matrixUserID else { return }
+
+        Task { [weak self] in
+            guard let self else { return }
+
+            // First try to find existing DM
+            if case .success(let existingRoomID) = userSession.clientProxy.directRoomForUserID(matrixUserID),
+               let roomID = existingRoomID {
+                actionsSubject.send(.openChat(roomId: roomID))
+                return
+            }
+
+            // Create new DM
+            let result = await userSession.clientProxy.createDirectRoom(
+                with: matrixUserID,
+                expectedRoomName: contact.displayName
+            )
+            switch result {
+            case .success(let roomID):
+                actionsSubject.send(.openChat(roomId: roomID))
+            case .failure(let error):
+                MXLog.error("[Contacts] Failed to create DM with \(matrixUserID): \(error)")
+            }
         }
     }
 
@@ -202,27 +238,25 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
     }
 
     private func updateContacts(from summaries: [RoomSummary]) {
-        var seen = Set<String>()
+        var seen = Set<String>() // roomID dedup
+        var seenUserIDs = Set<String>() // userID dedup across sources
         var contacts: [ContactItem] = []
         var userIDs: [String] = []
+        let ownUserID = userSession.clientProxy.userID
+        let presenceMap = presenceService?.presenceSubject.value ?? [:]
 
+        // Source 1: DM rooms (isDirect)
         for summary in summaries where summary.isDirect {
-            // Пропускаем пустые/покинутые комнаты и дубликаты
             guard summary.activeMembersCount >= 2,
                   !summary.name.hasPrefix("Empty Room"),
-                  !seen.contains(summary.id) else {
-                continue
-            }
+                  !seen.contains(summary.id) else { continue }
             seen.insert(summary.id)
 
-            // Hero — собеседник в DM
             let heroUserID = summary.heroes.first?.userID
-
-            // Preserve existing presence if available
-            let presenceMap = presenceService?.presenceSubject.value ?? [:]
+            if let heroUserID { seenUserIDs.insert(heroUserID) }
             let presence = heroUserID.flatMap { presenceMap[$0] }
 
-            let contact = ContactItem(
+            contacts.append(ContactItem(
                 id: summary.id,
                 displayName: summary.name,
                 avatarURL: summary.avatarURL,
@@ -230,12 +264,36 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
                 isOnline: presence?.isOnline ?? false,
                 lastSeenDate: presence?.lastSeenDate,
                 isFavorite: favoriteRoomIDs.contains(summary.id)
-            )
-            contacts.append(contact)
+            ))
 
-            if let heroUserID {
-                userIDs.append(heroUserID)
-            }
+            if let heroUserID { userIDs.append(heroUserID) }
+        }
+
+        // Source 2: 2-member rooms (not isDirect, but only 2 active members → treat as contact)
+        for summary in summaries where !summary.isDirect {
+            guard summary.activeMembersCount == 2,
+                  !summary.name.hasPrefix("Empty Room"),
+                  !seen.contains(summary.id) else { continue }
+
+            // Skip if the hero user was already added from a DM
+            let heroUserID = summary.heroes.first?.userID
+            if let heroUserID, seenUserIDs.contains(heroUserID) { continue }
+
+            seen.insert(summary.id)
+            if let heroUserID { seenUserIDs.insert(heroUserID) }
+            let presence = heroUserID.flatMap { presenceMap[$0] }
+
+            contacts.append(ContactItem(
+                id: summary.id,
+                displayName: summary.name,
+                avatarURL: summary.avatarURL,
+                matrixUserID: heroUserID,
+                isOnline: presence?.isOnline ?? false,
+                lastSeenDate: presence?.lastSeenDate,
+                isFavorite: favoriteRoomIDs.contains(summary.id)
+            ))
+
+            if let heroUserID { userIDs.append(heroUserID) }
         }
 
         state.contacts = contacts
@@ -249,9 +307,65 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
                 presenceService?.updatePollingUserIDs(userIDs)
             }
 
-            // Fetch org-profiles for contacts (one-time per user)
             if let orgProfileService {
                 Task { await orgProfileService.fetchProfiles(for: userIDs) }
+            }
+        }
+
+        // Source 3: User Directory — async fetch server-wide users
+        fetchUserDirectory(existingUserIDs: seenUserIDs)
+    }
+
+    /// Fetch all users from User Directory that aren't already in the contacts list.
+    /// Uses empty search term to get all users on the homeserver.
+    private func fetchUserDirectory(existingUserIDs: Set<String>) {
+        Task { [weak self] in
+            guard let self else { return }
+            let ownUserID = userSession.clientProxy.userID
+
+            // Search with empty string returns all users (up to limit)
+            let result = await userSession.clientProxy.searchUsers(searchTerm: "", limit: 200)
+            guard case .success(let searchResults) = result else { return }
+
+            let presenceMap = presenceService?.presenceSubject.value ?? [:]
+            var newContacts: [ContactItem] = []
+            var newUserIDs: [String] = []
+
+            for user in searchResults.results {
+                guard user.userID != ownUserID,
+                      !existingUserIDs.contains(user.userID) else { continue }
+
+                let presence = presenceMap[user.userID]
+                // Use userID as stable ID (no room yet)
+                newContacts.append(ContactItem(
+                    id: user.userID,
+                    displayName: user.displayName ?? user.userID.replacingOccurrences(of: "@", with: "").components(separatedBy: ":").first ?? user.userID,
+                    avatarURL: user.avatarURL,
+                    matrixUserID: user.userID,
+                    isOnline: presence?.isOnline ?? false,
+                    lastSeenDate: presence?.lastSeenDate,
+                    isFavorite: favoriteRoomIDs.contains(user.userID)
+                ))
+                newUserIDs.append(user.userID)
+            }
+
+            guard !newContacts.isEmpty else { return }
+
+            await MainActor.run {
+                // Dedup: only add users not already in the list
+                let existingIDs = Set(self.state.contacts.map(\.id))
+                let filtered = newContacts.filter { !existingIDs.contains($0.id) }
+                self.state.contacts.append(contentsOf: filtered)
+            }
+
+            // Extend presence polling with new user IDs
+            if !newUserIDs.isEmpty {
+                presenceService?.updatePollingUserIDs(
+                    (presenceService?.currentUserIDs ?? []) + newUserIDs
+                )
+                if let orgProfileService {
+                    await orgProfileService.fetchProfiles(for: newUserIDs)
+                }
             }
         }
     }

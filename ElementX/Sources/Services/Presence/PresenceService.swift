@@ -22,6 +22,7 @@ class PresenceService {
 
     private var pollingTask: Task<Void, Never>?
     private var pollingUserIDs: [String] = []
+    var currentUserIDs: [String] { pollingUserIDs }
 
     let presenceSubject = CurrentValueSubject<[String: UserPresence], Never>([:])
 

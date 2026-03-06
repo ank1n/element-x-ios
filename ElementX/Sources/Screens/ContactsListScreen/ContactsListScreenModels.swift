@@ -38,6 +38,10 @@ struct ContactsListScreenViewState: BindableState {
     var requiresExtraAccountSetup = false
 
     var bindings = ContactsListScreenViewStateBindings()
+
+    // Filter counts
+    var onlineCount: Int { contacts.filter(\.isOnline).count }
+    var favoritesCount: Int { contacts.filter(\.isFavorite).count }
 }
 
 struct ContactsListScreenViewStateBindings {
