@@ -5,244 +5,443 @@
 //
 
 import SwiftUI
+import UIKit
 
 typealias MeetingDetailViewModelType = StateStoreViewModel<MeetingDetailViewState, MeetingDetailViewAction>
 
 struct MeetingDetailScreen: View {
     @ObservedObject var context: MeetingDetailViewModelType.Context
 
+    // Colors matching calendar screen
+    private let accentBlue = Color(red: 0.38, green: 0.42, blue: 0.96)
+    private let bgGradientTop = Color(red: 0.90, green: 0.92, blue: 1.0)
+    private let bgGradientBottom = Color(red: 0.95, green: 0.96, blue: 1.0)
+    private let cardBg = Color(UIColor.systemBackground)
+
     private let dateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "ru_RU")
-        f.dateFormat = "d MMMM yyyy, HH:mm"
+        f.dateFormat = "d MMMM yyyy"
         return f
     }()
 
+    private let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "ru_RU")
+        f.dateFormat = "HH:mm"
+        return f
+    }()
+
+    private let weekdayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "ru_RU")
+        f.dateFormat = "EEEE"
+        return f
+    }()
+
+    private var meeting: Meeting { context.viewState.meeting }
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                // Header
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(context.viewState.meeting.title)
-                        .font(.title2.bold())
+        ZStack {
+            LinearGradient(
+                colors: [bgGradientTop, bgGradientBottom, Color(UIColor.systemGroupedBackground)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
 
-                    statusBadge(context.viewState.meeting.status)
-                }
+            ScrollView {
+                VStack(spacing: 16) {
+                    // Header card
+                    headerCard
 
-                Divider()
+                    // Date & Time card
+                    dateTimeCard
 
-                // Date & Time
-                infoRow(icon: "calendar", title: "Начало", value: dateFormatter.string(from: context.viewState.meeting.startTime))
-                infoRow(icon: "calendar.badge.clock", title: "Конец", value: dateFormatter.string(from: context.viewState.meeting.endTime))
-
-                if !context.viewState.meeting.location.isEmpty {
-                    infoRow(icon: "mappin.and.ellipse", title: "Место", value: context.viewState.meeting.location)
-                }
-
-                if !context.viewState.meeting.description.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Label("Описание", systemImage: "text.alignleft")
-                            .font(.subheadline.bold())
-                            .foregroundColor(.secondary)
-                        Text(context.viewState.meeting.description)
-                            .font(.body)
-                    }
-                }
-
-                // Meeting link
-                if let link = context.viewState.meetingLink {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Label("Ссылка на встречу", systemImage: "link")
-                            .font(.subheadline.bold())
-                            .foregroundColor(.secondary)
-                        HStack {
-                            Text(link)
-                                .font(.subheadline)
-                                .foregroundColor(.accentColor)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            Spacer()
-                            Button {
-                                context.send(viewAction: .copyLink)
-                            } label: {
-                                Image(systemName: context.viewState.linkCopied ? "checkmark" : "doc.on.doc")
-                                    .foregroundColor(context.viewState.linkCopied ? .green : .accentColor)
-                            }
-                        }
-                    }
-                }
-
-                // Guest access
-                HStack(spacing: 12) {
-                    Image(systemName: context.viewState.meeting.accessLevel == "public" ? "globe" : "lock.fill")
-                        .foregroundColor(.accentColor)
-                        .frame(width: 24)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Доступ")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text(context.viewState.meeting.accessLevel == "public" ? "Открытая (гости разрешены)" : "Закрытая (только участники)")
-                            .font(.subheadline)
-                    }
-                }
-
-                // Attachments
-                if let attachments = context.viewState.meeting.attachments, !attachments.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label("Вложения (\(attachments.count))", systemImage: "paperclip")
-                            .font(.subheadline.bold())
-                            .foregroundColor(.secondary)
-                        ForEach(attachments) { attachment in
-                            HStack(spacing: 8) {
-                                Image(systemName: attachmentIcon(attachment.filename))
-                                    .foregroundColor(.accentColor)
-                                Text(attachment.filename)
-                                    .font(.subheadline)
-                                    .lineLimit(1)
-                                Spacer()
-                            }
-                            .padding(.vertical, 2)
-                        }
-                    }
-                }
-
-                Divider()
-
-                // Participants
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("Участники (\(context.viewState.meeting.participants.count))", systemImage: "person.2")
-                        .font(.subheadline.bold())
-                        .foregroundColor(.secondary)
-
-                    ForEach(context.viewState.meeting.participants) { participant in
-                        participantRow(participant)
-                    }
-                }
-
-                Divider()
-
-                // Actions
-                VStack(spacing: 12) {
-                    // Join call button
-                    if let roomId = context.viewState.meeting.matrixRoomId, !roomId.isEmpty {
-                        Button {
-                            context.send(viewAction: .joinCall)
-                        } label: {
-                            Label("Присоединиться к звонку", systemImage: "phone.fill")
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                        }
-                        .buttonStyle(.borderedProminent)
+                    // Description card (if present)
+                    if !meeting.description.isEmpty {
+                        descriptionCard
                     }
 
-                    // RSVP buttons (only for non-creators)
-                    if !context.viewState.isCreator, let myRSVP = context.viewState.myRSVP {
-                        HStack(spacing: 12) {
-                            rsvpButton("Приму", icon: "checkmark", status: .accepted, current: myRSVP)
-                            rsvpButton("Отклоню", icon: "xmark", status: .declined, current: myRSVP)
-                        }
-                    }
+                    // Participants card
+                    participantsCard
 
-                    // Edit & Delete (creator only)
-                    if context.viewState.isCreator {
-                        HStack(spacing: 12) {
-                            Button {
-                                context.send(viewAction: .edit)
-                            } label: {
-                                Label("Редактировать", systemImage: "pencil")
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 10)
-                            }
-                            .buttonStyle(.bordered)
-
-                            Button(role: .destructive) {
-                                context.send(viewAction: .delete)
-                            } label: {
-                                Label("Удалить", systemImage: "trash")
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 10)
-                            }
-                            .buttonStyle(.bordered)
-                        }
-                    }
+                    // Actions
+                    actionsSection
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 32)
             }
-            .padding()
         }
         .navigationTitle("Встреча")
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    @ViewBuilder
-    private func infoRow(icon: String, title: String, value: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .foregroundColor(.accentColor)
-                .frame(width: 24)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Text(value)
-                    .font(.subheadline)
+    // MARK: - Header Card
+
+    private var headerCard: some View {
+        VStack(spacing: 12) {
+            // Status + Title
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(meeting.title)
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundColor(.primary)
+
+                    statusBadge(meeting.status)
+                }
+                Spacer()
+
+                // Status icon
+                statusCircle(meeting.status)
+            }
+
+            // Quick info row
+            HStack(spacing: 16) {
+                if !meeting.location.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "mappin.circle.fill")
+                            .font(.system(size: 13))
+                            .foregroundColor(accentBlue)
+                        Text(meeting.location)
+                            .font(.system(size: 13))
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                HStack(spacing: 4) {
+                    Image(systemName: "person.2.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(accentBlue)
+                    Text("\(meeting.participants.count)")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                if meeting.accessLevel == "public" {
+                    HStack(spacing: 4) {
+                        Image(systemName: "globe")
+                            .font(.system(size: 12))
+                            .foregroundColor(.orange)
+                        Text("Открытая")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                }
             }
         }
+        .padding(16)
+        .background(cardBg)
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
+    }
+
+    // MARK: - Date & Time Card
+
+    private var dateTimeCard: some View {
+        VStack(spacing: 0) {
+            // Date header with weekday
+            HStack(spacing: 12) {
+                // Day circle
+                VStack(spacing: 2) {
+                    Text(timeFormatter.string(from: meeting.startTime))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white.opacity(0.9))
+                    Text("\(Calendar.current.component(.day, from: meeting.startTime))")
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundColor(.white)
+                }
+                .frame(width: 56, height: 56)
+                .background(accentBlue)
+                .cornerRadius(14)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(weekdayFormatter.string(from: meeting.startTime).capitalized)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.primary)
+                    Text(dateFormatter.string(from: meeting.startTime))
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+            }
+            .padding(16)
+
+            Divider()
+                .padding(.horizontal, 16)
+
+            // Duration row
+            HStack(spacing: 12) {
+                Image(systemName: "clock")
+                    .font(.system(size: 14))
+                    .foregroundColor(accentBlue)
+                    .frame(width: 24)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(timeFormatter.string(from: meeting.startTime)) — \(timeFormatter.string(from: meeting.endTime))")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.primary)
+                    Text(durationText)
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+            }
+            .padding(16)
+
+            // Meeting link (if available)
+            if let link = context.viewState.meetingLink {
+                Divider()
+                    .padding(.horizontal, 16)
+
+                HStack(spacing: 12) {
+                    Image(systemName: "link")
+                        .font(.system(size: 14))
+                        .foregroundColor(accentBlue)
+                        .frame(width: 24)
+
+                    Text(link)
+                        .font(.system(size: 13))
+                        .foregroundColor(accentBlue)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+
+                    Spacer()
+
+                    Button {
+                        context.send(viewAction: .copyLink)
+                    } label: {
+                        Image(systemName: context.viewState.linkCopied ? "checkmark.circle.fill" : "doc.on.doc")
+                            .font(.system(size: 16))
+                            .foregroundColor(context.viewState.linkCopied ? .green : accentBlue)
+                    }
+                }
+                .padding(16)
+            }
+        }
+        .background(cardBg)
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
+    }
+
+    // MARK: - Description Card
+
+    private var descriptionCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "text.alignleft")
+                    .font(.system(size: 13))
+                    .foregroundColor(accentBlue)
+                Text("Описание")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.secondary)
+            }
+
+            Text(meeting.description)
+                .font(.system(size: 14))
+                .foregroundColor(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(cardBg)
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
+    }
+
+    // MARK: - Participants Card
+
+    private var participantsCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "person.2.fill")
+                    .font(.system(size: 13))
+                    .foregroundColor(accentBlue)
+                Text("Участники (\(meeting.participants.count))")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.secondary)
+            }
+
+            ForEach(meeting.participants) { participant in
+                participantRow(participant)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(cardBg)
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
     }
 
     @ViewBuilder
     private func participantRow(_ participant: MeetingParticipant) -> some View {
         HStack(spacing: 10) {
-            Circle()
-                .fill(rsvpColor(participant.rsvp))
-                .frame(width: 8, height: 8)
+            // Avatar circle with initial
+            ZStack {
+                Circle()
+                    .fill(avatarColor(for: participant.displayName))
+                Text(String(participant.displayName.prefix(1)).uppercased())
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white)
+            }
+            .frame(width: 32, height: 32)
+
             Text(participant.displayName)
-                .font(.subheadline)
+                .font(.system(size: 14))
+                .foregroundColor(.primary)
+
             Spacer()
+
+            // RSVP pill
             Text(rsvpLabel(participant.rsvp))
-                .font(.caption)
+                .font(.system(size: 11, weight: .medium))
                 .foregroundColor(rsvpColor(participant.rsvp))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(rsvpColor(participant.rsvp).opacity(0.1))
+                .cornerRadius(8)
         }
-        .padding(.vertical, 2)
     }
+
+    // MARK: - Actions
+
+    private var actionsSection: some View {
+        VStack(spacing: 10) {
+            // Join call
+            if let roomId = meeting.matrixRoomId, !roomId.isEmpty {
+                Button {
+                    context.send(viewAction: .joinCall)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "phone.fill")
+                            .font(.system(size: 15))
+                        Text("Присоединиться к звонку")
+                            .font(.system(size: 15, weight: .semibold))
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(accentBlue)
+                    .cornerRadius(14)
+                }
+            }
+
+            // RSVP (non-creator)
+            if !context.viewState.isCreator, let myRSVP = context.viewState.myRSVP {
+                HStack(spacing: 10) {
+                    rsvpActionButton("Приму", icon: "checkmark", status: .accepted, current: myRSVP, color: .green)
+                    rsvpActionButton("Отклоню", icon: "xmark", status: .declined, current: myRSVP, color: .red)
+                }
+            }
+
+            // Edit & Delete (creator)
+            if context.viewState.isCreator {
+                HStack(spacing: 10) {
+                    Button {
+                        context.send(viewAction: .edit)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "pencil")
+                                .font(.system(size: 14))
+                            Text("Редактировать")
+                                .font(.system(size: 14, weight: .medium))
+                        }
+                        .foregroundColor(accentBlue)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(accentBlue.opacity(0.1))
+                        .cornerRadius(12)
+                    }
+
+                    Button {
+                        context.send(viewAction: .delete)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "trash")
+                                .font(.system(size: 14))
+                            Text("Удалить")
+                                .font(.system(size: 14, weight: .medium))
+                        }
+                        .foregroundColor(.red)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.red.opacity(0.08))
+                        .cornerRadius(12)
+                    }
+                }
+            }
+        }
+        .padding(.top, 4)
+    }
+
+    // MARK: - Helpers
 
     @ViewBuilder
     private func statusBadge(_ status: MeetingStatus) -> some View {
         let (text, color): (String, Color) = switch status {
-        case .scheduled: ("Запланирована", .blue)
+        case .scheduled: ("Запланирована", accentBlue)
         case .active: ("Активна", .green)
         case .completed: ("Завершена", .gray)
         case .cancelled: ("Отменена", .red)
         }
         Text(text)
-            .font(.caption.bold())
+            .font(.system(size: 12, weight: .semibold))
             .foregroundColor(color)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(color.opacity(0.12))
-            .cornerRadius(6)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(color.opacity(0.1))
+            .cornerRadius(8)
     }
 
     @ViewBuilder
-    private func rsvpButton(_ label: String, icon: String, status: RSVPStatus, current: RSVPStatus) -> some View {
-        if current == status {
-            Button {
-                context.send(viewAction: .rsvp(status))
-            } label: {
-                Label(label, systemImage: icon)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-            }
-            .buttonStyle(.borderedProminent)
-        } else {
-            Button {
-                context.send(viewAction: .rsvp(status))
-            } label: {
-                Label(label, systemImage: icon)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-            }
-            .buttonStyle(.bordered)
+    private func statusCircle(_ status: MeetingStatus) -> some View {
+        let (icon, color): (String, Color) = switch status {
+        case .scheduled: ("clock.fill", accentBlue)
+        case .active: ("phone.fill", .green)
+        case .completed: ("checkmark", .gray)
+        case .cancelled: ("xmark", .red)
         }
+        Image(systemName: icon)
+            .font(.system(size: 16))
+            .foregroundColor(color)
+            .frame(width: 40, height: 40)
+            .background(color.opacity(0.1))
+            .clipShape(Circle())
+    }
+
+    @ViewBuilder
+    private func rsvpActionButton(_ label: String, icon: String, status: RSVPStatus, current: RSVPStatus, color: Color) -> some View {
+        let isActive = current == status
+        Button {
+            context.send(viewAction: .rsvp(status))
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 14))
+                Text(label)
+                    .font(.system(size: 14, weight: .medium))
+            }
+            .foregroundColor(isActive ? .white : color)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(isActive ? color : color.opacity(0.1))
+            .cornerRadius(12)
+        }
+    }
+
+    private var durationText: String {
+        let interval = meeting.endTime.timeIntervalSince(meeting.startTime)
+        let minutes = Int(interval / 60)
+        if minutes < 60 { return "\(minutes) мин" }
+        let hours = minutes / 60
+        let rem = minutes % 60
+        if rem == 0 { return "\(hours) ч" }
+        return "\(hours) ч \(rem) мин"
     }
 
     private func rsvpColor(_ rsvp: RSVPStatus) -> Color {
@@ -261,15 +460,15 @@ struct MeetingDetailScreen: View {
         }
     }
 
-    private func attachmentIcon(_ filename: String) -> String {
-        let ext = (filename as NSString).pathExtension.lowercased()
-        switch ext {
-        case "jpg", "jpeg", "png", "gif", "heic", "webp": return "photo"
-        case "pdf": return "doc.richtext"
-        case "doc", "docx": return "doc.text"
-        case "xls", "xlsx": return "tablecells"
-        case "mp4", "mov", "avi": return "film"
-        default: return "doc"
-        }
+    private func avatarColor(for name: String) -> Color {
+        let colors: [Color] = [
+            accentBlue,
+            Color(red: 0.96, green: 0.49, blue: 0.37),
+            Color(red: 0.30, green: 0.78, blue: 0.55),
+            Color(red: 0.95, green: 0.68, blue: 0.25),
+            Color(red: 0.73, green: 0.45, blue: 0.90)
+        ]
+        let hash = abs(name.hashValue)
+        return colors[hash % colors.count]
     }
 }

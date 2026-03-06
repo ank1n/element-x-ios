@@ -54,11 +54,11 @@ struct MeetingsListScreen: View {
             .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Header
+                // Header (date + refresh)
                 headerView
                     .padding(.horizontal, 20)
-                    .padding(.top, 8)
-                    .padding(.bottom, 12)
+                    .padding(.top, 4)
+                    .padding(.bottom, 10)
 
                 // Calendar (week strip / expandable month)
                 CalendarGridView(
@@ -87,6 +87,7 @@ struct MeetingsListScreen: View {
         .refreshable {
             context.send(viewAction: .refresh)
         }
+        .navigationTitle("Календарь")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -104,30 +105,21 @@ struct MeetingsListScreen: View {
     // MARK: - Header (day number + weekday + month)
 
     private var headerView: some View {
-        HStack(alignment: .top) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(dayNumberFormatter.string(from: context.viewState.selectedDate))
-                    .font(.system(size: 40, weight: .bold))
-                    .foregroundColor(.primary)
+        HStack(alignment: .center, spacing: 10) {
+            Text(dayNumberFormatter.string(from: context.viewState.selectedDate))
+                .font(.system(size: 38, weight: .bold))
+                .foregroundColor(.primary)
 
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(weekdayFormatter.string(from: context.viewState.selectedDate).capitalized)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.secondary)
-                    Text(monthYearFormatter.string(from: context.viewState.selectedDate).capitalized)
-                        .font(.system(size: 13))
-                        .foregroundColor(.secondary)
-                }
-            }
-            Spacer()
-
-            Button {
-                context.send(viewAction: .refresh)
-            } label: {
-                Image(systemName: "arrow.triangle.2.circlepath")
-                    .font(.system(size: 18))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(weekdayFormatter.string(from: context.viewState.selectedDate).capitalized)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.secondary)
+                Text(monthYearFormatter.string(from: context.viewState.selectedDate).capitalized)
+                    .font(.system(size: 13))
                     .foregroundColor(.secondary)
             }
+
+            Spacer()
         }
     }
 
