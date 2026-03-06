@@ -49,7 +49,7 @@ struct ContactsListScreenViewStateBindings {
 }
 
 /// Contact item
-struct ContactItem: Identifiable, Equatable {
+struct ContactItem: Identifiable, Equatable, Codable {
     let id: String
     let displayName: String
     let avatarURL: URL?

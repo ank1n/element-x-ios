@@ -23,6 +23,7 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
     private var orgProfileService: OrgProfileService?
 
     private static let favoritesKey = "ru.implica.stalk.favoriteContacts"
+    private static let contactsCacheKeyPrefix = "ru.implica.stalk.cachedContacts."
     private var favoriteRoomIDs: Set<String> {
         didSet { saveFavorites() }
     }
@@ -46,6 +47,7 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
 
         setupPresenceService()
         setupOrgProfileService()
+        loadCachedContacts()
         setupSubscriptions()
     }
 
@@ -159,6 +161,27 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
 
     private func saveFavorites() {
         UserDefaults.standard.set(Array(favoriteRoomIDs), forKey: Self.favoritesKey)
+    }
+
+    // MARK: - Contact Cache
+
+    private var contactsCacheKey: String {
+        Self.contactsCacheKeyPrefix + userSession.clientProxy.userID
+    }
+
+    private func loadCachedContacts() {
+        guard let data = UserDefaults.standard.data(forKey: contactsCacheKey),
+              let cached = try? JSONDecoder().decode([ContactItem].self, from: data) else { return }
+        MXLog.info("[Contacts] Loaded \(cached.count) cached contacts")
+        state.contacts = cached
+    }
+
+    private func saveCachedContacts() {
+        let contacts = state.contacts
+        guard !contacts.isEmpty,
+              let data = try? JSONEncoder().encode(contacts) else { return }
+        UserDefaults.standard.set(data, forKey: contactsCacheKey)
+        MXLog.info("[Contacts] Saved \(contacts.count) contacts to cache")
     }
 
     private func applyPresence(_ presenceMap: [String: UserPresence]) {
@@ -298,6 +321,7 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
 
         state.contacts = contacts
         state.isLoading = false
+        saveCachedContacts()
 
         // Start or update polling with current user IDs
         if !userIDs.isEmpty {
@@ -379,6 +403,7 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
                 let filtered = newContacts.filter { !existingIDs.contains($0.id) && !existingMatrixIDs.contains($0.matrixUserID ?? "") }
                 self.state.contacts.append(contentsOf: filtered)
                 MXLog.info("[Contacts] total contacts now: \(self.state.contacts.count)")
+                self.saveCachedContacts()
             }
 
             if !newUserIDs.isEmpty {
