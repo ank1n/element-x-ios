@@ -82,10 +82,10 @@ struct MeetingsListScreen: View {
                         .padding(.horizontal, 16)
                         .padding(.bottom, 20)
                 }
+                .refreshable {
+                    context.send(viewAction: .refresh)
+                }
             }
-        }
-        .refreshable {
-            context.send(viewAction: .refresh)
         }
         .navigationTitle("Календарь")
         .navigationBarTitleDisplayMode(.inline)

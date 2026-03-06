@@ -319,7 +319,14 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
             if let heroUserID { userIDs.append(heroUserID) }
         }
 
-        state.contacts = contacts
+        // Preserve cached User Directory contacts (id starts with @) that aren't
+        // already covered by room-based contacts, so they don't disappear while
+        // fetchUserDirectory() runs in the background.
+        let roomMatrixIDs = Set(contacts.compactMap(\.matrixUserID))
+        let cachedDirectoryContacts = state.contacts.filter {
+            $0.id.hasPrefix("@") && !roomMatrixIDs.contains($0.matrixUserID ?? "")
+        }
+        state.contacts = contacts + cachedDirectoryContacts
         state.isLoading = false
         saveCachedContacts()
 
