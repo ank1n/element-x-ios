@@ -6,8 +6,9 @@
 
 import SwiftUI
 
-/// Expandable calendar: week strip (collapsed) ↔ full month grid (expanded).
-/// User can drag down on the week strip to expand, or drag up on the month grid to collapse.
+/// Expandable calendar: week strip (collapsed) <-> full month grid (expanded).
+/// Week strip: fixed highlight in center, days scroll horizontally,
+/// the day that lands in center becomes selected.
 struct CalendarGridView: View {
     @Binding var selectedDate: Date
     let datesWithMeetings: Set<String>
@@ -33,9 +34,14 @@ struct CalendarGridView: View {
         return f
     }()
 
-    // Colors matching reference design
+    // Colors
     private let accentBlue = Color(red: 0.38, green: 0.42, blue: 0.96)
     private let lightBg = Color(red: 0.94, green: 0.95, blue: 1.0)
+
+    // Cell dimensions
+    private let cellWidth: CGFloat = 52
+    private let cellSpacing: CGFloat = 8
+    private let cellHeight: CGFloat = 76
 
     var body: some View {
         VStack(spacing: 0) {
@@ -71,7 +77,6 @@ struct CalendarGridView: View {
                 }
         )
         .onChange(of: selectedDate) {
-            // Sync displayed month when selected date changes
             let selectedMonth = calendar.dateComponents([.year, .month], from: selectedDate)
             let displayedMonthComps = calendar.dateComponents([.year, .month], from: displayedMonth)
             if selectedMonth != displayedMonthComps {
@@ -80,72 +85,101 @@ struct CalendarGridView: View {
         }
     }
 
-    // MARK: - Week Strip (Collapsed)
+    // MARK: - Week Strip (Collapsed) — center-snapping horizontal scroll
 
-    private var weekStripView: some View {
-        let weekDays = currentWeekDays()
-        return ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(weekDays, id: \.self) { date in
-                        weekDayCell(date)
-                            .id(dateKeyFormatter.string(from: date))
-                    }
-                }
-                .padding(.horizontal, 16)
-            }
-            .onAppear {
-                proxy.scrollTo(dateKeyFormatter.string(from: selectedDate), anchor: .center)
+    /// Generate a wide range of days (±3 months from today)
+    private var allDays: [Date] {
+        let today = Date()
+        var days: [Date] = []
+        for offset in -90...90 {
+            if let d = calendar.date(byAdding: .day, value: offset, to: today) {
+                days.append(d)
             }
         }
+        return days
     }
 
-    private func weekDayCell(_ date: Date) -> some View {
-        let isSelected = calendar.isDate(date, inSameDayAs: selectedDate)
+    private var weekStripView: some View {
+        let days = allDays
+        let selectedIndex = days.firstIndex(where: { calendar.isDate($0, inSameDayAs: selectedDate) }) ?? 90
+
+        return GeometryReader { outerGeo in
+            let screenWidth = outerGeo.size.width
+            let sideInset = (screenWidth - cellWidth) / 2
+
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: cellSpacing) {
+                        ForEach(Array(days.enumerated()), id: \.offset) { index, date in
+                            dayCellContent(date)
+                                .id(index)
+                        }
+                    }
+                    .scrollTargetLayout()
+                    .padding(.horizontal, sideInset)
+                }
+                .scrollTargetBehavior(.viewAligned)
+                .scrollPosition(id: Binding<Int?>(
+                    get: { selectedIndex },
+                    set: { newIndex in
+                        if let newIndex, newIndex >= 0, newIndex < days.count {
+                            let newDate = days[newIndex]
+                            if !calendar.isDate(newDate, inSameDayAs: selectedDate) {
+                                selectedDate = newDate
+                            }
+                        }
+                    }
+                ))
+                .onAppear {
+                    proxy.scrollTo(selectedIndex, anchor: .center)
+                }
+            }
+            // Fixed highlight frame behind center cell
+            .background(alignment: .center) {
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(accentBlue)
+                    .frame(width: cellWidth + 8, height: cellHeight + 8)
+            }
+        }
+        .frame(height: cellHeight + 12)
+    }
+
+    private func dayCellContent(_ date: Date) -> some View {
+        let isCenter = calendar.isDate(date, inSameDayAs: selectedDate)
         let isToday = calendar.isDateInToday(date)
         let key = dateKeyFormatter.string(from: date)
         let hasMeeting = datesWithMeetings.contains(key)
         let dayNum = calendar.component(.day, from: date)
         let weekday = shortWeekday(for: date)
 
-        return Button {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                selectedDate = date
-            }
-        } label: {
-            VStack(spacing: 5) {
-                Text("\(dayNum)")
-                    .font(.system(size: isSelected ? 28 : 18, weight: isSelected ? .bold : .semibold))
-                    .foregroundColor(isSelected ? .white : .primary)
+        return VStack(spacing: 5) {
+            Text("\(dayNum)")
+                .font(.system(size: isCenter ? 24 : 18, weight: isCenter ? .bold : .semibold))
+                .foregroundColor(isCenter ? .white : .primary)
 
-                Text(weekday)
-                    .font(.system(size: isSelected ? 14 : 11, weight: .medium))
-                    .foregroundColor(isSelected ? .white.opacity(0.85) : .secondary)
+            Text(weekday)
+                .font(.system(size: isCenter ? 13 : 11, weight: .medium))
+                .foregroundColor(isCenter ? .white.opacity(0.9) : .secondary)
 
-                // Meeting dot
-                Circle()
-                    .fill(hasMeeting ? (isSelected ? Color.white : Color.orange) : Color.clear)
-                    .frame(width: 5, height: 5)
-            }
-            .frame(width: isSelected ? 60 : 48, height: isSelected ? 86 : 72)
-            .animation(.easeInOut(duration: 0.2), value: isSelected)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(isSelected ? accentBlue : (isToday ? lightBg : Color.clear))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(isToday && !isSelected ? accentBlue.opacity(0.3) : Color.clear, lineWidth: 1)
-            )
+            Circle()
+                .fill(hasMeeting ? (isCenter ? Color.white : Color.orange) : Color.clear)
+                .frame(width: 5, height: 5)
         }
-        .buttonStyle(.plain)
+        .frame(width: cellWidth, height: cellHeight)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(isToday && !isCenter ? lightBg : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(isToday && !isCenter ? accentBlue.opacity(0.3) : Color.clear, lineWidth: 1)
+        )
     }
 
     // MARK: - Month Grid (Expanded)
 
     private var monthView: some View {
         VStack(spacing: 8) {
-            // Month navigation
             HStack {
                 Button(action: previousMonth) {
                     Image(systemName: "chevron.left")
@@ -165,7 +199,6 @@ struct CalendarGridView: View {
             .padding(.horizontal, 20)
             .padding(.top, 4)
 
-            // Weekday headers
             HStack(spacing: 0) {
                 ForEach(weekdaysShort, id: \.self) { day in
                     Text(day)
@@ -176,7 +209,6 @@ struct CalendarGridView: View {
             }
             .padding(.horizontal, 12)
 
-            // Days grid
             let days = daysInMonth()
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 2) {
                 ForEach(Array(days.enumerated()), id: \.offset) { _, day in
@@ -237,24 +269,6 @@ struct CalendarGridView: View {
 
     // MARK: - Data Helpers
 
-    /// Returns 3 weeks: previous, current, next — for horizontal scrolling
-    private func currentWeekDays() -> [Date] {
-        let today = selectedDate
-        // Find Monday of current week
-        var comps = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: today)
-        comps.weekday = 2 // Monday
-        guard let monday = calendar.date(from: comps) else { return [] }
-
-        var days: [Date] = []
-        // Previous week + current week + next week
-        for offset in -7..<14 {
-            if let d = calendar.date(byAdding: .day, value: offset, to: monday) {
-                days.append(d)
-            }
-        }
-        return days
-    }
-
     private func daysInMonth() -> [Date?] {
         guard let range = calendar.range(of: .day, in: .month, for: displayedMonth),
               let firstDay = calendar.date(from: calendar.dateComponents([.year, .month], from: displayedMonth)) else {
@@ -262,7 +276,7 @@ struct CalendarGridView: View {
         }
 
         var weekday = calendar.component(.weekday, from: firstDay)
-        weekday = (weekday + 5) % 7 // Monday-based
+        weekday = (weekday + 5) % 7
 
         var days: [Date?] = Array(repeating: nil, count: weekday)
         for day in range {
