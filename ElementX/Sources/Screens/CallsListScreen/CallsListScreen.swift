@@ -233,8 +233,8 @@ struct CallsListScreen: View {
 
     private var upcomingMeetings: [Meeting] {
         context.viewState.meetings
-            .filter { !$0.isPast }
-            .sorted { $0.startTime < $1.startTime }
+            .filter { $0.isPast }
+            .sorted { $0.startTime > $1.startTime }
     }
 
     private func meetingCell(_ meeting: Meeting) -> some View {
