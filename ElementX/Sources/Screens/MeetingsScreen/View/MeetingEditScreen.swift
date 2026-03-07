@@ -227,6 +227,20 @@ struct MeetingEditScreen: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
+
+                // Предупреждение если конец раньше начала
+                if context.endDate <= context.startDate {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(.orange)
+                        Text("Время конца раньше начала — будет перенесено на следующий день")
+                            .font(.system(size: 12))
+                            .foregroundColor(.orange)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+                }
             }
         }
         .background(cardBg)

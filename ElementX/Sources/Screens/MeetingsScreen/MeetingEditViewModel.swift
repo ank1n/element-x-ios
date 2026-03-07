@@ -87,6 +87,12 @@ class MeetingEditViewModel: MeetingEditViewModelType {
             state.isLoading = true
             state.errorMessage = nil
 
+            // Автокоррекция: если конец <= начала (встреча через полночь), перенести конец на следующий день
+            var endDate = state.bindings.endDate
+            if endDate <= state.bindings.startDate {
+                endDate = Calendar.current.date(byAdding: .day, value: 1, to: endDate) ?? endDate
+            }
+
             // Generate meeting_code for new meetings (needed for shareable links)
             let meetingCode: String? = state.meetingId == nil
                 ? String(UUID().uuidString.lowercased().prefix(11))
@@ -96,7 +102,7 @@ class MeetingEditViewModel: MeetingEditViewModelType {
                 title: state.bindings.title,
                 description: state.bindings.description,
                 startTime: state.bindings.startDate,
-                endTime: state.bindings.endDate,
+                endTime: endDate,
                 isIndefinite: state.bindings.isIndefinite,
                 location: state.bindings.location,
                 participants: state.bindings.participants.map(\.userID),

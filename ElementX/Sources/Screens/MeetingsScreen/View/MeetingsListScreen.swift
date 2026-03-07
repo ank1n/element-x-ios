@@ -222,17 +222,20 @@ struct MeetingsListScreen: View {
         } else {
             let now = Date()
             let isToday = Calendar.current.isDateInToday(context.viewState.selectedDate)
-            let hasActiveMeeting = isToday && meetings.contains(where: { $0.startTime <= now && $0.endTime > now })
-            // Show standalone now-line only if no active meeting (otherwise it's on the active card's dot)
-            let nowInsertIndex: Int? = (isToday && !hasActiveMeeting) ? meetings.firstIndex(where: { $0.endTime > now }) : nil
+            let activeMeeting = isToday ? meetings.first(where: { $0.startTime <= now && $0.endTime > now }) : nil
+            // Индекс для вставки зелёного таба текущего времени (только если нет активной встречи)
+            let nowInsertIndex: Int? = (isToday && activeMeeting == nil) ? meetings.firstIndex(where: { $0.startTime > now }) : nil
+            // Следующая встреча после текущего времени (для обратного отсчёта)
+            let nextMeeting: Meeting? = isToday ? meetings.first(where: { $0.startTime > now }) : nil
 
             LazyVStack(spacing: 0) {
                 ForEach(Array(meetings.enumerated()), id: \.element.id) { index, meeting in
+                    // Зелёный таб текущего времени — между прошедшими и будущими встречами
                     if let ni = nowInsertIndex, index == ni {
-                        nowIndicator
+                        nowTab(nextMeeting: nextMeeting)
                     }
 
-                    // Gap indicator between meetings (only during working hours 09-18)
+                    // Индикатор свободного времени между встречами (рабочие часы 09-18)
                     if index > 0 {
                         let prev = meetings[index - 1]
                         let gapMinutes = Int(meeting.startTime.timeIntervalSince(prev.endTime) / 60)
@@ -249,8 +252,9 @@ struct MeetingsListScreen: View {
 
                     timelineMeetingRow(meeting, isActive: isActive, showNowDot: isActive, branchColor: myBranch, branches: branches)
                 }
-                if isToday, nowInsertIndex == nil, !hasActiveMeeting {
-                    nowIndicator
+                // Если все встречи прошли — зелёный таб в конце
+                if isToday, nowInsertIndex == nil, activeMeeting == nil {
+                    nowTab(nextMeeting: nil)
                 }
             }
         }
@@ -464,30 +468,58 @@ struct MeetingsListScreen: View {
         return m == 0 ? "\(h) ч" : "\(h) ч \(m) мин"
     }
 
-    // MARK: - Now Indicator (standalone, between meetings)
+    // MARK: - Now Tab (зелёный блок текущего времени)
 
-    private var nowIndicator: some View {
+    @ViewBuilder
+    private func nowTab(nextMeeting: Meeting?) -> some View {
         HStack(spacing: 0) {
+            // Время слева
             Text(timeFormatter.string(from: Date()))
-                .font(.system(size: 11, weight: .bold))
-                .foregroundColor(.red)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(Color(red: 0.2, green: 0.7, blue: 0.4))
                 .frame(width: 48, alignment: .trailing)
 
+            // Точка на таймлайне
             ZStack {
                 Circle()
-                    .fill(Color.red)
-                    .frame(width: 9, height: 9)
+                    .fill(Color.green)
+                    .frame(width: 10, height: 10)
                 Circle()
-                    .stroke(Color.red.opacity(0.3), lineWidth: 2)
-                    .frame(width: 15, height: 15)
+                    .stroke(Color.green.opacity(0.3), lineWidth: 2)
+                    .frame(width: 16, height: 16)
             }
             .frame(width: 24)
 
-            Rectangle()
-                .fill(Color.red.opacity(0.4))
-                .frame(height: 1.5)
+            // Карточка с обратным отсчётом
+            HStack(spacing: 8) {
+                Image(systemName: "clock.fill")
+                    .font(.system(size: 13))
+                    .foregroundColor(Color(red: 0.2, green: 0.7, blue: 0.4))
+
+                if let next = nextMeeting {
+                    let minutesLeft = max(0, Int(next.startTime.timeIntervalSince(Date()) / 60))
+                    Text("До «\(next.title)» — \(formatGapMinutes(minutesLeft))")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(Color(red: 0.2, green: 0.65, blue: 0.35))
+                        .lineLimit(1)
+                } else {
+                    Text("Встреч больше нет")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(Color(red: 0.2, green: 0.65, blue: 0.35))
+                }
+
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(Color.green.opacity(0.08))
+            .cornerRadius(12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.green.opacity(0.2), lineWidth: 1)
+            )
         }
-        .padding(.vertical, 4)
+        .padding(.bottom, 12)
     }
 
     // MARK: - Branch Curve Shape
