@@ -172,6 +172,40 @@ struct MeetingsListScreen: View {
 
     // MARK: - Meetings Content
 
+    private let branchPalette: [Color] = [
+        Color(red: 0.38, green: 0.42, blue: 0.96), // blue
+        Color(red: 0.95, green: 0.55, blue: 0.25),  // orange
+        Color(red: 0.30, green: 0.78, blue: 0.55)   // green
+    ]
+
+    /// Branch color for a meeting (nil if not parallel)
+    private func branchColor(for meeting: Meeting, in meetings: [Meeting]) -> Color? {
+        let overlapping = meetings.filter { $0.startTime < meeting.endTime && $0.endTime > meeting.startTime }
+        guard overlapping.count > 1 else { return nil }
+        let idx = overlapping.firstIndex(where: { $0.id == meeting.id }) ?? 0
+        return branchPalette[idx % branchPalette.count]
+    }
+
+    /// Info about parallel branches visible at this row
+    struct BranchInfo {
+        let color: Color
+        let isForking: Bool   // branch starts here (curve out from main)
+        let isMerging: Bool   // branch ends here (curve back into main)
+    }
+
+    /// Get branch lines that should be drawn alongside this meeting's row
+    private func branchLines(for meeting: Meeting, in meetings: [Meeting]) -> [BranchInfo] {
+        let others = meetings.filter {
+            $0.id != meeting.id && $0.startTime < meeting.endTime && $0.endTime > meeting.startTime
+        }
+        return others.compactMap { other -> BranchInfo? in
+            guard let color = branchColor(for: other, in: meetings) else { return nil }
+            let isForking = other.startTime >= meeting.startTime && other.startTime <= meeting.endTime
+            let isMerging = other.endTime >= meeting.startTime && other.endTime <= meeting.endTime
+            return BranchInfo(color: color, isForking: isForking, isMerging: isMerging)
+        }
+    }
+
     @ViewBuilder
     private var meetingsContent: some View {
         let meetings = context.viewState.meetingsForSelectedDate
@@ -188,29 +222,122 @@ struct MeetingsListScreen: View {
         } else {
             let now = Date()
             let isToday = Calendar.current.isDateInToday(context.viewState.selectedDate)
-            // Find where to insert "now" indicator (before first future meeting)
-            let nowInsertIndex: Int? = isToday ? meetings.firstIndex(where: { $0.startTime > now }) : nil
+            let hasActiveMeeting = isToday && meetings.contains(where: { $0.startTime <= now && $0.endTime > now })
+            // Show standalone now-line only if no active meeting (otherwise it's on the active card's dot)
+            let nowInsertIndex: Int? = (isToday && !hasActiveMeeting) ? meetings.firstIndex(where: { $0.endTime > now }) : nil
 
             LazyVStack(spacing: 0) {
                 ForEach(Array(meetings.enumerated()), id: \.element.id) { index, meeting in
                     if let ni = nowInsertIndex, index == ni {
                         nowIndicator
                     }
+
+                    // Gap indicator between meetings (only during working hours 09-18)
+                    if index > 0 {
+                        let prev = meetings[index - 1]
+                        let gapMinutes = Int(meeting.startTime.timeIntervalSince(prev.endTime) / 60)
+                        let prevHour = Calendar.current.component(.hour, from: prev.endTime)
+                        let curHour = Calendar.current.component(.hour, from: meeting.startTime)
+                        if gapMinutes > 0, prevHour >= 9, curHour < 18 {
+                            gapIndicator(minutes: gapMinutes)
+                        }
+                    }
+
                     let isActive = isToday && meeting.startTime <= now && meeting.endTime > now
-                    meetingRow(meeting, isActive: isActive)
+                    let myBranch = branchColor(for: meeting, in: meetings)
+                    let branches = branchLines(for: meeting, in: meetings)
+
+                    timelineMeetingRow(meeting, isActive: isActive, showNowDot: isActive, branchColor: myBranch, branches: branches)
                 }
-                // If all meetings are past today, show indicator at the end
-                if isToday, nowInsertIndex == nil {
+                if isToday, nowInsertIndex == nil, !hasActiveMeeting {
                     nowIndicator
                 }
             }
         }
     }
 
-    // MARK: - Meeting Row (Reference-style card)
+    // MARK: - Meeting Card (full style)
 
     @ViewBuilder
-    private func meetingRow(_ meeting: Meeting, isActive: Bool = false) -> some View {
+    private func meetingCard(_ meeting: Meeting, isActive: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(meeting.title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+
+                Spacer()
+
+                if isActive {
+                    Text("Сейчас")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.green)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.green.opacity(0.12))
+                        .clipShape(Capsule())
+                } else {
+                    statusIcon(meeting)
+                }
+            }
+
+            if !meeting.description.isEmpty {
+                Text(meeting.description)
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+
+            if !meeting.location.isEmpty {
+                HStack(spacing: 4) {
+                    Image(systemName: "mappin.circle.fill")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary.opacity(0.7))
+                    Text(meeting.location)
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            HStack(spacing: 12) {
+                if !meeting.participants.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "person.2.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary.opacity(0.7))
+                        Text("\(meeting.participants.count)")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                HStack(spacing: 4) {
+                    Image(systemName: "clock")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary.opacity(0.7))
+                    Text(durationText(meeting))
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+        .padding(12)
+        .background(isActive ? Color.green.opacity(0.05) : cardBg)
+        .cornerRadius(14)
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(isActive ? Color.green.opacity(0.3) : Color.clear, lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
+    }
+
+    // MARK: - Timeline Meeting Row (with branch curves for parallel meetings)
+
+    @ViewBuilder
+    private func timelineMeetingRow(_ meeting: Meeting, isActive: Bool, showNowDot: Bool = false, branchColor: Color? = nil, branches: [BranchInfo] = []) -> some View {
+        let hasParallel = branchColor != nil
+        let timelineWidth: CGFloat = branches.isEmpty ? 24 : 38
         Button {
             context.send(viewAction: .selectMeeting(meeting))
         } label: {
@@ -226,117 +353,169 @@ struct MeetingsListScreen: View {
                 }
                 .frame(width: 48, alignment: .trailing)
 
-                // Timeline dot + line
+                // Timeline column: main line + branch lines drawn as overlay
                 VStack(spacing: 0) {
-                    Circle()
-                        .fill(isActive ? Color.green : statusColor(meeting.status))
-                        .frame(width: isActive ? 10 : 8, height: isActive ? 10 : 8)
-                        .padding(.top, 6)
+                    ZStack {
+                        Circle()
+                            .fill(branchColor ?? (isActive ? Color.green : statusColor(meeting.status)))
+                            .frame(width: isActive ? 10 : 8, height: isActive ? 10 : 8)
+                        if showNowDot {
+                            Circle()
+                                .stroke(Color.red.opacity(0.4), lineWidth: 2)
+                                .frame(width: 16, height: 16)
+                            Circle()
+                                .fill(Color.red)
+                                .frame(width: 6, height: 6)
+                        }
+                    }
+                    .padding(.top, 6)
                     Rectangle()
                         .fill(isActive ? Color.green.opacity(0.3) : Color.secondary.opacity(0.15))
                         .frame(width: isActive ? 2 : 1)
                 }
-                .frame(width: 24)
+                .frame(width: timelineWidth)
+                .overlay {
+                    // Branch curves drawn as overlay (gets parent's actual size)
+                    if !branches.isEmpty {
+                        GeometryReader { geo in
+                            let h = geo.size.height
+                            let midX = timelineWidth / 2
+                            let bX = timelineWidth - 4
 
-                // Card
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text(meeting.title)
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(.primary)
-                            .lineLimit(1)
-
-                        Spacer()
-
-                        if isActive {
-                            Text("Сейчас")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundColor(.green)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(Color.green.opacity(0.12))
-                                .clipShape(Capsule())
-                        } else {
-                            statusIcon(meeting)
-                        }
-                    }
-
-                    if !meeting.description.isEmpty {
-                        Text(meeting.description)
-                            .font(.system(size: 13))
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                    }
-
-                    if !meeting.location.isEmpty {
-                        HStack(spacing: 4) {
-                            Image(systemName: "mappin.circle.fill")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary.opacity(0.7))
-                            Text(meeting.location)
-                                .font(.system(size: 12))
-                                .foregroundColor(.secondary)
-                        }
-                    }
-
-                    // Participants + duration
-                    HStack(spacing: 12) {
-                        if !meeting.participants.isEmpty {
-                            HStack(spacing: 4) {
-                                Image(systemName: "person.2.fill")
-                                    .font(.system(size: 10))
-                                    .foregroundColor(.secondary.opacity(0.7))
-                                Text("\(meeting.participants.count)")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(.secondary)
+                            ForEach(Array(branches.enumerated()), id: \.offset) { _, branch in
+                                if branch.isForking {
+                                    BranchCurve(from: CGPoint(x: midX, y: 12),
+                                                through: CGPoint(x: bX, y: 30),
+                                                to: CGPoint(x: bX, y: h),
+                                                type: .fork)
+                                        .stroke(branch.color, lineWidth: 2)
+                                } else if branch.isMerging {
+                                    BranchCurve(from: CGPoint(x: bX, y: 0),
+                                                through: CGPoint(x: bX, y: h - 18),
+                                                to: CGPoint(x: midX, y: h),
+                                                type: .merge)
+                                        .stroke(branch.color, lineWidth: 2)
+                                } else {
+                                    // Straight parallel line (no fork/merge — middle of overlap)
+                                    Path { p in
+                                        p.move(to: CGPoint(x: bX, y: 0))
+                                        p.addLine(to: CGPoint(x: bX, y: h))
+                                    }
+                                    .stroke(branch.color.opacity(0.5), lineWidth: 2)
+                                }
                             }
-                        }
-
-                        HStack(spacing: 4) {
-                            Image(systemName: "clock")
-                                .font(.system(size: 10))
-                                .foregroundColor(.secondary.opacity(0.7))
-                            Text(durationText(meeting))
-                                .font(.system(size: 12))
-                                .foregroundColor(.secondary)
                         }
                     }
                 }
-                .padding(12)
-                .background(isActive ? Color.green.opacity(0.05) : cardBg)
-                .cornerRadius(14)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(isActive ? Color.green.opacity(0.3) : Color.clear, lineWidth: 1)
-                )
-                .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
+
+                // Card (with colored left edge if parallel)
+                if hasParallel, let bc = branchColor {
+                    HStack(spacing: 0) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(bc)
+                            .frame(width: 4)
+                            .padding(.vertical, 6)
+                        meetingCard(meeting, isActive: isActive)
+                            .padding(.leading, -1)
+                    }
+                } else {
+                    meetingCard(meeting, isActive: isActive)
+                }
             }
             .padding(.bottom, 12)
         }
         .buttonStyle(.plain)
     }
 
-    // MARK: - Now Indicator
+    // MARK: - Gap Indicator (only during working hours 09-18)
+
+    private func gapIndicator(minutes: Int) -> some View {
+        HStack(spacing: 0) {
+            Color.clear
+                .frame(width: 48)
+
+            VStack(spacing: 0) {
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.1))
+                    .frame(width: 1, height: 6)
+                Circle()
+                    .fill(Color.secondary.opacity(0.15))
+                    .frame(width: 4, height: 4)
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.1))
+                    .frame(width: 1, height: 6)
+            }
+            .frame(width: 24)
+
+            Text("Свободно \(formatGapMinutes(minutes))")
+                .font(.system(size: 11))
+                .foregroundColor(.secondary.opacity(0.4))
+                .padding(.leading, 4)
+
+            Spacer()
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func formatGapMinutes(_ minutes: Int) -> String {
+        if minutes < 60 { return "\(minutes) мин" }
+        let h = minutes / 60
+        let m = minutes % 60
+        return m == 0 ? "\(h) ч" : "\(h) ч \(m) мин"
+    }
+
+    // MARK: - Now Indicator (standalone, between meetings)
 
     private var nowIndicator: some View {
         HStack(spacing: 0) {
             Text(timeFormatter.string(from: Date()))
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 11, weight: .bold))
                 .foregroundColor(.red)
                 .frame(width: 48, alignment: .trailing)
 
             ZStack {
                 Circle()
                     .fill(Color.red)
-                    .frame(width: 8, height: 8)
+                    .frame(width: 9, height: 9)
+                Circle()
+                    .stroke(Color.red.opacity(0.3), lineWidth: 2)
+                    .frame(width: 15, height: 15)
             }
             .frame(width: 24)
 
             Rectangle()
                 .fill(Color.red.opacity(0.4))
-                .frame(height: 1)
+                .frame(height: 1.5)
         }
         .padding(.vertical, 4)
+    }
+
+    // MARK: - Branch Curve Shape
+
+    private enum BranchCurveType { case fork, merge }
+
+    private struct BranchCurve: Shape {
+        let from: CGPoint
+        let through: CGPoint
+        let to: CGPoint
+        let type: BranchCurveType
+
+        func path(in rect: CGRect) -> Path {
+            var path = Path()
+            switch type {
+            case .fork:
+                // Curve out from main, then straight down
+                path.move(to: from)
+                path.addQuadCurve(to: through, control: CGPoint(x: to.x, y: from.y))
+                path.addLine(to: to)
+            case .merge:
+                // Straight down, then curve back to main
+                path.move(to: from)
+                path.addLine(to: through)
+                path.addQuadCurve(to: to, control: CGPoint(x: from.x, y: to.y))
+            }
+            return path
+        }
     }
 
     // MARK: - Status
