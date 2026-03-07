@@ -489,11 +489,7 @@ struct MeetingsListScreen: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(isActive ? Color.green.opacity(0.05) : cardBg)
         .cornerRadius(12)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(isActive ? Color.green.opacity(0.3) : accentColor.opacity(0.2), lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.04), radius: 4, y: 1)
+        .shadow(color: .black.opacity(0.05), radius: 4, y: 1)
     }
 
     // MARK: - Gap Indicator (only during working hours 09-18)
