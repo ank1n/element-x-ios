@@ -421,16 +421,20 @@ struct MeetingDetailScreen: View {
             context.send(viewAction: .rsvp(status))
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: icon)
+                Image(systemName: isActive ? "\(icon).circle.fill" : icon)
                     .font(.system(size: 14))
-                Text(label)
+                Text(isActive ? (status == .accepted ? "Принято" : "Отклонено") : label)
                     .font(.system(size: 14, weight: .medium))
             }
             .foregroundColor(isActive ? .white : color)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
-            .background(isActive ? color : color.opacity(0.1))
+            .background(isActive ? color : Color.clear)
             .cornerRadius(12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(isActive ? Color.clear : color.opacity(0.4), lineWidth: 1.5)
+            )
         }
     }
 
