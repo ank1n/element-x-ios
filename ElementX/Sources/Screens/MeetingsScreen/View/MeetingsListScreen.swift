@@ -172,56 +172,6 @@ struct MeetingsListScreen: View {
 
     // MARK: - Meetings Content
 
-    private let branchPalette: [Color] = [
-        Color(red: 0.38, green: 0.42, blue: 0.96), // blue
-        Color(red: 0.95, green: 0.55, blue: 0.25),  // orange
-        Color(red: 0.30, green: 0.78, blue: 0.55),  // green
-        Color(red: 0.73, green: 0.45, blue: 0.90),  // purple
-        Color(red: 0.95, green: 0.40, blue: 0.45)   // red
-    ]
-
-    /// Assign a lane (1-based) to each meeting — every meeting forks from the main line (lane 0)
-    private func assignLanes(_ meetings: [Meeting]) -> [Int: Int] {
-        var lanes: [Int: Int] = [:]
-        var activeLanes: [(endTime: Date, lane: Int)] = []
-        for meeting in meetings {
-            activeLanes.removeAll { $0.endTime <= meeting.startTime }
-            let usedLanes = Set(activeLanes.map(\.lane))
-            // Start from lane 1 — lane 0 is the main timeline
-            var lane = 1
-            while usedLanes.contains(lane) { lane += 1 }
-            lanes[meeting.id] = lane
-            activeLanes.append((endTime: meeting.endTime, lane: lane))
-        }
-        return lanes
-    }
-
-    /// Max lane count across all meetings (including lane 0 = main line)
-    private func maxLaneCount(_ lanes: [Int: Int]) -> Int {
-        (lanes.values.max() ?? 0) + 1
-    }
-
-    // MARK: - Row position tracking for continuous git branches
-
-    /// Each meeting row reports its Y-center and the X-center of the timeline column
-    private struct RowAnchor: Equatable {
-        let meetingId: Int
-        let minY: CGFloat  // top of the row
-        let maxY: CGFloat  // bottom of the row
-        let dotY: CGFloat  // Y of the dot center
-        let timelineMinX: CGFloat // left edge of timeline column
-        let timelineMidX: CGFloat // center X of timeline column
-    }
-
-    private struct RowAnchorPreferenceKey: PreferenceKey {
-        static var defaultValue: [RowAnchor] = []
-        static func reduce(value: inout [RowAnchor], nextValue: () -> [RowAnchor]) {
-            value.append(contentsOf: nextValue())
-        }
-    }
-
-    @State private var rowAnchors: [RowAnchor] = []
-
     @ViewBuilder
     private var meetingsContent: some View {
         let meetings = context.viewState.meetingsForSelectedDate
@@ -241,10 +191,8 @@ struct MeetingsListScreen: View {
             let activeMeeting = isToday ? meetings.first(where: { $0.startTime <= now && $0.endTime > now }) : nil
             let nowInsertIndex: Int? = (isToday && activeMeeting == nil) ? meetings.firstIndex(where: { $0.startTime > now }) : nil
             let nextMeeting: Meeting? = isToday ? meetings.first(where: { $0.startTime > now }) : nil
-            let lanes = assignLanes(meetings)
-            let maxLanes = maxLaneCount(lanes)
 
-            VStack(spacing: 0) {
+            LazyVStack(spacing: 0) {
                 ForEach(Array(meetings.enumerated()), id: \.element.id) { index, meeting in
                     if let ni = nowInsertIndex, index == ni {
                         nowTab(nextMeeting: nextMeeting)
@@ -261,28 +209,11 @@ struct MeetingsListScreen: View {
                     }
 
                     let isActive = isToday && meeting.startTime <= now && meeting.endTime > now
-                    let lane = lanes[meeting.id] ?? 1
-                    let color = branchPalette[(lane - 1) % branchPalette.count]
-
-                    timelineMeetingRow(
-                        meeting,
-                        isActive: isActive,
-                        showNowDot: isActive,
-                        branchColor: color,
-                        lane: lane,
-                        maxLanes: maxLanes
-                    )
+                    timelineMeetingRow(meeting, isActive: isActive)
                 }
                 if isToday, nowInsertIndex == nil, activeMeeting == nil {
                     nowTab(nextMeeting: nil)
                 }
-            }
-            .coordinateSpace(name: "meetingsList")
-            .onPreferenceChange(RowAnchorPreferenceKey.self) { anchors in
-                rowAnchors = anchors
-            }
-            .overlay {
-                gitBranchOverlay(meetings: meetings, lanes: lanes)
             }
         }
     }
@@ -366,10 +297,7 @@ struct MeetingsListScreen: View {
     // MARK: - Timeline Meeting Row
 
     @ViewBuilder
-    private func timelineMeetingRow(_ meeting: Meeting, isActive: Bool, showNowDot: Bool = false, branchColor: Color, lane: Int = 1, maxLanes: Int = 1) -> some View {
-        // Timeline column width adapts to number of parallel lanes
-        let timelineWidth: CGFloat = 24 + CGFloat(max(0, maxLanes - 1)) * 14
-
+    private func timelineMeetingRow(_ meeting: Meeting, isActive: Bool) -> some View {
         Button {
             context.send(viewAction: .selectMeeting(meeting))
         } label: {
@@ -385,47 +313,20 @@ struct MeetingsListScreen: View {
                 }
                 .frame(width: 48, alignment: .trailing)
 
-                // Timeline column: main line only; branches drawn by overlay
-                ZStack(alignment: .top) {
-                    // Main vertical line (lane 0)
-                    VStack(spacing: 0) {
-                        Rectangle()
-                            .fill(Color.secondary.opacity(0.2))
-                            .frame(width: 2)
-                    }
-
-                    // Dot on main line (fork point)
+                // Timeline dot + line
+                VStack(spacing: 0) {
                     Circle()
-                        .fill(branchColor)
-                        .frame(width: 8, height: 8)
+                        .fill(isActive ? Color.green : statusColor(meeting.status))
+                        .frame(width: isActive ? 10 : 8, height: isActive ? 10 : 8)
                         .padding(.top, 6)
+                    Rectangle()
+                        .fill(isActive ? Color.green.opacity(0.3) : Color.secondary.opacity(0.15))
+                        .frame(width: isActive ? 2 : 1)
                 }
-                .frame(width: timelineWidth)
-                .background(
-                    GeometryReader { geo in
-                        Color.clear.preference(
-                            key: RowAnchorPreferenceKey.self,
-                            value: [RowAnchor(
-                                meetingId: meeting.id,
-                                minY: geo.frame(in: .named("meetingsList")).minY,
-                                maxY: geo.frame(in: .named("meetingsList")).maxY,
-                                dotY: geo.frame(in: .named("meetingsList")).minY + 10,
-                                timelineMinX: geo.frame(in: .named("meetingsList")).minX,
-                                timelineMidX: geo.frame(in: .named("meetingsList")).midX
-                            )]
-                        )
-                    }
-                )
+                .frame(width: 24)
 
-                // Card with colored left edge
-                HStack(spacing: 0) {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(branchColor)
-                        .frame(width: 4)
-                        .padding(.vertical, 6)
-                    meetingCard(meeting, isActive: isActive)
-                        .padding(.leading, -1)
-                }
+                // Card
+                meetingCard(meeting, isActive: isActive)
             }
             .padding(.bottom, 12)
         }
@@ -521,70 +422,6 @@ struct MeetingsListScreen: View {
             )
         }
         .padding(.bottom, 12)
-    }
-
-    // MARK: - Git Branch Overlay (continuous branches across all rows)
-
-    @ViewBuilder
-    private func gitBranchOverlay(meetings: [Meeting], lanes: [Int: Int]) -> some View {
-        let anchors = rowAnchors
-        Canvas { ctx, size in
-            var anchorMap: [Int: RowAnchor] = [:]
-            for a in anchors { anchorMap[a.meetingId] = a }
-
-            guard let anyAnchor = anchors.first else { return }
-            // Main line X = center of timeline column (where lane 0 vertical line is)
-            let mainX = anyAnchor.timelineMinX + 12 // center of the 24pt base width
-
-            for meeting in meetings {
-                let lane = lanes[meeting.id] ?? 1
-                guard let anchor = anchorMap[meeting.id] else { continue }
-
-                let color = branchPalette[(lane - 1) % branchPalette.count]
-                let branchX = mainX + CGFloat(lane) * 14
-                let dotY = anchor.dotY
-
-                // Merge point: bottom of this row (each branch lives for the duration of its row)
-                // For a proportional git graph, extend based on meeting duration relative to row height
-                let mergeY = anchor.maxY - 6  // slightly above bottom
-
-                // Branch needs enough vertical space
-                let minHeight: CGFloat = 30
-                let actualHeight = mergeY - dotY
-                let effectiveMergeY = actualHeight < minHeight ? dotY + minHeight : mergeY
-
-                var path = Path()
-
-                // Fork: curve from main line at dot Y out to branch X
-                let forkEndY = dotY + 16
-                path.move(to: CGPoint(x: mainX, y: dotY))
-                path.addQuadCurve(
-                    to: CGPoint(x: branchX, y: forkEndY),
-                    control: CGPoint(x: branchX, y: dotY)
-                )
-
-                // Straight down on branch lane
-                let mergeStartY = effectiveMergeY - 16
-                path.addLine(to: CGPoint(x: branchX, y: max(forkEndY, mergeStartY)))
-
-                // Merge: curve back to main line
-                path.addQuadCurve(
-                    to: CGPoint(x: mainX, y: effectiveMergeY),
-                    control: CGPoint(x: branchX, y: effectiveMergeY)
-                )
-
-                ctx.stroke(path, with: .color(color), lineWidth: 2)
-
-                // Fork dot
-                let forkDot = CGRect(x: mainX - 4, y: dotY - 4, width: 8, height: 8)
-                ctx.fill(Path(ellipseIn: forkDot), with: .color(color))
-
-                // Merge dot
-                let mergeDot = CGRect(x: mainX - 3, y: effectiveMergeY - 3, width: 6, height: 6)
-                ctx.fill(Path(ellipseIn: mergeDot), with: .color(color))
-            }
-        }
-        .allowsHitTesting(false)
     }
 
     // MARK: - Status
