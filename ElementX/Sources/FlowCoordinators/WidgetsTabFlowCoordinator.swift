@@ -105,9 +105,8 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
     private func presentBuiltinApp(_ widget: WidgetItem) {
         switch widget.id {
         case "meetings-calendar":
-            guard let apiURL = widget.apiURL, !apiURL.isEmpty,
-                  let accessToken = try? userSession.clientProxy.matrixAccessToken() else {
-                MXLog.error("sTalk: Missing apiURL or accessToken for meetings-calendar")
+            guard let apiURL = widget.apiURL, !apiURL.isEmpty else {
+                MXLog.error("sTalk: Missing apiURL for meetings-calendar")
                 return
             }
             // apiURL is like "https://stalk.implica.ru/api/meetings"
@@ -118,11 +117,13 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
             } else {
                 baseURL = apiURL
             }
+            // Pass a closure so each API call gets a fresh OIDC token
+            let clientProxy = userSession.clientProxy
             let parameters = MeetingsScreenCoordinatorParameters(
                 apiURL: baseURL,
-                accessToken: accessToken,
+                accessTokenProvider: { try clientProxy.matrixAccessToken() },
                 currentUserId: userSession.clientProxy.userID,
-                clientProxy: userSession.clientProxy
+                clientProxy: clientProxy
             )
             let coordinator = MeetingsScreenCoordinator(
                 parameters: parameters,

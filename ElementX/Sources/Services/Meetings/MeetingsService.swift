@@ -127,7 +127,7 @@ struct MeetingRequest: Encodable {
 
 class MeetingsService {
     private let homeserver: String
-    private let accessToken: String
+    private let accessTokenProvider: () throws -> String
 
     let meetingsSubject = CurrentValueSubject<[Meeting], Never>([])
 
@@ -164,17 +164,29 @@ class MeetingsService {
         return d
     }()
 
-    init(homeserver: String, accessToken: String) {
+    /// Initialize with a closure that returns a fresh access token each time.
+    /// OIDC tokens expire frequently; calling matrixAccessToken() each request ensures we use a valid one.
+    init(homeserver: String, accessTokenProvider: @escaping () throws -> String) {
         self.homeserver = homeserver.hasSuffix("/") ? String(homeserver.dropLast()) : homeserver
-        self.accessToken = accessToken
-        os_log(.info, log: meetingsLog, "MeetingsService init: homeserver=%{public}@", self.homeserver)
+        self.accessTokenProvider = accessTokenProvider
+        os_log(.default, log: meetingsLog, "MeetingsService init: homeserver=%{public}@", self.homeserver)
+    }
+
+    /// Convenience init with a static token (for legacy/testing use).
+    convenience init(homeserver: String, accessToken: String) {
+        self.init(homeserver: homeserver, accessTokenProvider: { accessToken })
+    }
+
+    private func currentAccessToken() throws -> String {
+        try accessTokenProvider()
     }
 
     func fetchMeetings() async {
-        guard let url = URL(string: "\(homeserver)/api/meetings") else { return }
+        guard let url = URL(string: "\(homeserver)/api/meetings"),
+              let token = try? currentAccessToken() else { return }
 
         var request = URLRequest(url: url)
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 15
 
         do {
@@ -186,7 +198,7 @@ class MeetingsService {
 
             let decoded = try Self.decoder.decode(MeetingsListResponse.self, from: data)
             let relevant = decoded.meetings.filter { $0.status != .cancelled }
-            os_log(.info, log: meetingsLog, "fetchMeetings: %d meetings (%d relevant)", decoded.meetings.count, relevant.count)
+            os_log(.default, log: meetingsLog, "fetchMeetings: %d meetings (%d relevant)", decoded.meetings.count, relevant.count)
             meetingsSubject.send(relevant)
         } catch {
             os_log(.error, log: meetingsLog, "fetchMeetings error: %{public}@", error.localizedDescription)
@@ -195,24 +207,37 @@ class MeetingsService {
 
     /// Fetch meetings and return them (for calendar screen)
     func fetchMeetingsList() async throws -> [Meeting] {
-        guard let url = URL(string: "\(homeserver)/api/meetings") else { throw URLError(.badURL) }
+        let urlStr = "\(homeserver)/api/meetings"
+        guard let url = URL(string: urlStr) else { throw URLError(.badURL) }
 
+        os_log(.default, log: meetingsLog, "fetchMeetingsList: GET %{public}@", urlStr)
+
+        let token = try currentAccessToken()
         var request = URLRequest(url: url)
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 15
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+        os_log(.default, log: meetingsLog, "fetchMeetingsList: HTTP %d, %d bytes", statusCode, data.count)
+
+        if statusCode != 200 {
+            if let body = String(data: data.prefix(500), encoding: .utf8) {
+                os_log(.error, log: meetingsLog, "fetchMeetingsList: body=%{public}@", body)
+            }
             throw URLError(.badServerResponse)
         }
-        return try Self.decoder.decode(MeetingsListResponse.self, from: data).meetings
+        let meetings = try Self.decoder.decode(MeetingsListResponse.self, from: data).meetings
+        os_log(.default, log: meetingsLog, "fetchMeetingsList: decoded %d meetings", meetings.count)
+        return meetings
     }
 
     func fetchMeeting(id: Int) async throws -> Meeting {
         guard let url = URL(string: "\(homeserver)/api/meetings/\(id)") else { throw URLError(.badURL) }
 
+        let token = try currentAccessToken()
         var request = URLRequest(url: url)
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 15
 
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -251,7 +276,7 @@ class MeetingsService {
         do {
             let body = try JSONSerialization.data(withJSONObject: ["rsvp": rsvpResponse])
             _ = try await apiRequest("PUT", path: "/api/meetings/\(meetingId)/rsvp", body: body)
-            os_log(.info, log: meetingsLog, "RSVP %{public}@ for meeting %d", rsvpResponse, meetingId)
+            os_log(.default, log: meetingsLog, "RSVP %{public}@ for meeting %d", rsvpResponse, meetingId)
             return true
         } catch {
             os_log(.error, log: meetingsLog, "rsvp error: %{public}@", error.localizedDescription)
@@ -275,9 +300,10 @@ class MeetingsService {
     private func apiRequest(_ method: String, path: String, body: Data? = nil) async throws -> Data {
         guard let url = URL(string: "\(homeserver)\(path)") else { throw URLError(.badURL) }
 
+        let token = try currentAccessToken()
         var request = URLRequest(url: url)
         request.httpMethod = method
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 15
         request.httpBody = body

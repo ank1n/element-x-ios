@@ -517,13 +517,12 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
     // MARK: - Meetings
 
     private func setupMeetingsService() {
-        guard let concreteProxy = userSession.clientProxy as? ClientProxy,
-              let accessToken = try? concreteProxy.matrixAccessToken() else {
+        guard let concreteProxy = userSession.clientProxy as? ClientProxy else {
             return
         }
 
         let homeserver = userSession.clientProxy.homeserver
-        meetingsService = MeetingsService(homeserver: homeserver, accessToken: accessToken)
+        meetingsService = MeetingsService(homeserver: homeserver, accessTokenProvider: { try concreteProxy.matrixAccessToken() })
 
         meetingsService?.meetingsSubject
             .receive(on: DispatchQueue.main)

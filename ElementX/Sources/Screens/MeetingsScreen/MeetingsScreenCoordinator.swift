@@ -9,7 +9,7 @@ import SwiftUI
 
 struct MeetingsScreenCoordinatorParameters {
     let apiURL: String
-    let accessToken: String
+    let accessTokenProvider: () throws -> String
     let currentUserId: String
     let clientProxy: ClientProxyProtocol
 }
@@ -28,7 +28,7 @@ final class MeetingsScreenCoordinator: CoordinatorProtocol {
     init(parameters: MeetingsScreenCoordinatorParameters, navigationStackCoordinator: NavigationStackCoordinator) {
         self.parameters = parameters
         self.navigationStackCoordinator = navigationStackCoordinator
-        self.service = MeetingsService(homeserver: parameters.apiURL, accessToken: parameters.accessToken)
+        self.service = MeetingsService(homeserver: parameters.apiURL, accessTokenProvider: parameters.accessTokenProvider)
         self.listViewModel = MeetingsScreenViewModel(service: service)
 
         listViewModel.actionsPublisher
