@@ -172,6 +172,36 @@ struct MeetingsListScreen: View {
 
     // MARK: - Meetings Content
 
+    /// Group overlapping meetings into clusters
+    private func clusterMeetings(_ meetings: [Meeting]) -> [[Meeting]] {
+        guard !meetings.isEmpty else { return [] }
+        var clusters: [[Meeting]] = []
+        var current: [Meeting] = [meetings[0]]
+        var clusterEnd = meetings[0].endTime
+
+        for i in 1..<meetings.count {
+            let m = meetings[i]
+            if m.startTime < clusterEnd {
+                // Overlaps with current cluster
+                current.append(m)
+                clusterEnd = max(clusterEnd, m.endTime)
+            } else {
+                clusters.append(current)
+                current = [m]
+                clusterEnd = m.endTime
+            }
+        }
+        clusters.append(current)
+        return clusters
+    }
+
+    private let parallelColors: [Color] = [
+        Color(red: 0.38, green: 0.42, blue: 0.96), // blue
+        Color(red: 0.95, green: 0.55, blue: 0.25),  // orange
+        Color(red: 0.30, green: 0.78, blue: 0.55),  // green
+        Color(red: 0.73, green: 0.45, blue: 0.90),  // purple
+    ]
+
     @ViewBuilder
     private var meetingsContent: some View {
         let meetings = context.viewState.meetingsForSelectedDate
@@ -191,25 +221,43 @@ struct MeetingsListScreen: View {
             let activeMeeting = isToday ? meetings.first(where: { $0.startTime <= now && $0.endTime > now }) : nil
             let nowInsertIndex: Int? = (isToday && activeMeeting == nil) ? meetings.firstIndex(where: { $0.startTime > now }) : nil
             let nextMeeting: Meeting? = isToday ? meetings.first(where: { $0.startTime > now }) : nil
+            let clusters = clusterMeetings(meetings)
 
             LazyVStack(spacing: 0) {
-                ForEach(Array(meetings.enumerated()), id: \.element.id) { index, meeting in
-                    if let ni = nowInsertIndex, index == ni {
+                // Track flat index for nowTab insertion
+                var flatIndex = 0
+                ForEach(Array(clusters.enumerated()), id: \.offset) { clusterIdx, cluster in
+                    let clusterStartFlatIdx = flatIndex
+
+                    // Now tab before this cluster?
+                    if let ni = nowInsertIndex, ni >= clusterStartFlatIdx, ni < clusterStartFlatIdx + cluster.count {
                         nowTab(nextMeeting: nextMeeting)
                     }
 
-                    if index > 0 {
-                        let prev = meetings[index - 1]
-                        let gapMinutes = Int(meeting.startTime.timeIntervalSince(prev.endTime) / 60)
-                        let prevHour = Calendar.current.component(.hour, from: prev.endTime)
-                        let curHour = Calendar.current.component(.hour, from: meeting.startTime)
+                    // Gap indicator between clusters
+                    if clusterIdx > 0 {
+                        let prevCluster = clusters[clusterIdx - 1]
+                        let prevEnd = prevCluster.map(\.endTime).max() ?? Date.distantPast
+                        let curStart = cluster.first?.startTime ?? Date.distantFuture
+                        let gapMinutes = Int(curStart.timeIntervalSince(prevEnd) / 60)
+                        let prevHour = Calendar.current.component(.hour, from: prevEnd)
+                        let curHour = Calendar.current.component(.hour, from: curStart)
                         if gapMinutes > 0, prevHour >= 9, curHour < 18 {
                             gapIndicator(minutes: gapMinutes)
                         }
                     }
 
-                    let isActive = isToday && meeting.startTime <= now && meeting.endTime > now
-                    timelineMeetingRow(meeting, isActive: isActive)
+                    if cluster.count == 1 {
+                        // Single meeting — full width
+                        let meeting = cluster[0]
+                        let isActive = isToday && meeting.startTime <= now && meeting.endTime > now
+                        timelineMeetingRow(meeting, isActive: isActive)
+                    } else {
+                        // Parallel meetings — side by side
+                        parallelMeetingsRow(cluster, isToday: isToday, now: now)
+                    }
+
+                    let _ = { flatIndex += cluster.count }()
                 }
                 if isToday, nowInsertIndex == nil, activeMeeting == nil {
                     nowTab(nextMeeting: nil)
@@ -331,6 +379,121 @@ struct MeetingsListScreen: View {
             .padding(.bottom, 12)
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - Parallel Meetings Row (side-by-side mini cards)
+
+    @ViewBuilder
+    private func parallelMeetingsRow(_ meetings: [Meeting], isToday: Bool, now: Date) -> some View {
+        let earliest = meetings.map(\.startTime).min() ?? Date()
+        let latestEnd = meetings.map(\.endTime).max() ?? Date()
+
+        HStack(alignment: .top, spacing: 0) {
+            // Time column — show range of the cluster
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(timeFormatter.string(from: earliest))
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.primary)
+                Text(timeFormatter.string(from: latestEnd))
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+            .frame(width: 48, alignment: .trailing)
+
+            // Timeline dot + line
+            VStack(spacing: 0) {
+                ZStack {
+                    Circle()
+                        .fill(accentBlue)
+                        .frame(width: 8, height: 8)
+                    // Overlap indicator
+                    Circle()
+                        .stroke(Color.orange.opacity(0.6), lineWidth: 2)
+                        .frame(width: 14, height: 14)
+                }
+                .padding(.top, 6)
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.15))
+                    .frame(width: 1)
+            }
+            .frame(width: 24)
+
+            // Side-by-side mini cards
+            HStack(spacing: 6) {
+                ForEach(Array(meetings.enumerated()), id: \.element.id) { idx, meeting in
+                    let isActive = isToday && meeting.startTime <= now && meeting.endTime > now
+                    let color = parallelColors[idx % parallelColors.count]
+
+                    Button {
+                        context.send(viewAction: .selectMeeting(meeting))
+                    } label: {
+                        miniMeetingCard(meeting, isActive: isActive, accentColor: color)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.bottom, 12)
+    }
+
+    @ViewBuilder
+    private func miniMeetingCard(_ meeting: Meeting, isActive: Bool, accentColor: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            // Colored top bar
+            RoundedRectangle(cornerRadius: 2)
+                .fill(accentColor)
+                .frame(height: 3)
+
+            Text(meeting.title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.primary)
+                .lineLimit(1)
+
+            // Time range
+            Text("\(timeFormatter.string(from: meeting.startTime))–\(timeFormatter.string(from: meeting.endTime))")
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+
+            HStack(spacing: 8) {
+                if !meeting.participants.isEmpty {
+                    HStack(spacing: 2) {
+                        Image(systemName: "person.2.fill")
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary.opacity(0.7))
+                        Text("\(meeting.participants.count)")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                HStack(spacing: 2) {
+                    Image(systemName: "clock")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary.opacity(0.7))
+                    Text(durationText(meeting))
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            if isActive {
+                Text("Сейчас")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.green)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.green.opacity(0.12))
+                    .clipShape(Capsule())
+            }
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(isActive ? Color.green.opacity(0.05) : cardBg)
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(isActive ? Color.green.opacity(0.3) : accentColor.opacity(0.2), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.04), radius: 4, y: 1)
     }
 
     // MARK: - Gap Indicator (only during working hours 09-18)
