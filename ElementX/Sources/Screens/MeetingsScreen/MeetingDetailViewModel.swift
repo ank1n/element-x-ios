@@ -29,9 +29,7 @@ class MeetingDetailViewModel: MeetingDetailViewModelType {
         case .rsvp(let status):
             performRSVP(status)
         case .joinCall:
-            if let roomId = state.meeting.matrixRoomId {
-                actionsSubject.send(.joinCall(roomId: roomId))
-            }
+            joinCall()
         case .edit:
             actionsSubject.send(.editMeeting(state.meeting))
         case .delete:
@@ -47,6 +45,30 @@ class MeetingDetailViewModel: MeetingDetailViewModelType {
                     self?.state.linkCopied = false
                 }
             }
+        }
+    }
+
+    private func joinCall() {
+        // If we already have a room ID, join directly
+        if let roomId = state.meeting.matrixRoomId, !roomId.isEmpty {
+            actionsSubject.send(.joinCall(roomId: roomId))
+            return
+        }
+
+        // Otherwise, ensure room via meeting code
+        guard let code = state.meeting.meetingCode, !code.isEmpty else { return }
+
+        Task { [weak self] in
+            guard let self else { return }
+            state.isLoading = true
+            do {
+                let roomId = try await service.ensureRoom(code: code, userId: state.currentUserId)
+                state.meeting.matrixRoomId = roomId
+                actionsSubject.send(.joinCall(roomId: roomId))
+            } catch {
+                MXLog.error("sTalk: ensureRoom failed: \(error)")
+            }
+            state.isLoading = false
         }
     }
 

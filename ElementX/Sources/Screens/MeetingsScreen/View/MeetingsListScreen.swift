@@ -186,9 +186,22 @@ struct MeetingsListScreen: View {
             emptyState
                 .padding(.top, 60)
         } else {
+            let now = Date()
+            let isToday = Calendar.current.isDateInToday(context.viewState.selectedDate)
+            // Find where to insert "now" indicator (before first future meeting)
+            let nowInsertIndex: Int? = isToday ? meetings.firstIndex(where: { $0.startTime > now }) : nil
+
             LazyVStack(spacing: 0) {
-                ForEach(meetings) { meeting in
-                    meetingRow(meeting)
+                ForEach(Array(meetings.enumerated()), id: \.element.id) { index, meeting in
+                    if let ni = nowInsertIndex, index == ni {
+                        nowIndicator
+                    }
+                    let isActive = isToday && meeting.startTime <= now && meeting.endTime > now
+                    meetingRow(meeting, isActive: isActive)
+                }
+                // If all meetings are past today, show indicator at the end
+                if isToday, nowInsertIndex == nil {
+                    nowIndicator
                 }
             }
         }
@@ -197,7 +210,7 @@ struct MeetingsListScreen: View {
     // MARK: - Meeting Row (Reference-style card)
 
     @ViewBuilder
-    private func meetingRow(_ meeting: Meeting) -> some View {
+    private func meetingRow(_ meeting: Meeting, isActive: Bool = false) -> some View {
         Button {
             context.send(viewAction: .selectMeeting(meeting))
         } label: {
@@ -206,7 +219,7 @@ struct MeetingsListScreen: View {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(timeFormatter.string(from: meeting.startTime))
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.primary)
+                        .foregroundColor(isActive ? .green : .primary)
                     Text(timeFormatter.string(from: meeting.endTime))
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
@@ -216,12 +229,12 @@ struct MeetingsListScreen: View {
                 // Timeline dot + line
                 VStack(spacing: 0) {
                     Circle()
-                        .fill(statusColor(meeting.status))
-                        .frame(width: 8, height: 8)
+                        .fill(isActive ? Color.green : statusColor(meeting.status))
+                        .frame(width: isActive ? 10 : 8, height: isActive ? 10 : 8)
                         .padding(.top, 6)
                     Rectangle()
-                        .fill(Color.secondary.opacity(0.15))
-                        .frame(width: 1)
+                        .fill(isActive ? Color.green.opacity(0.3) : Color.secondary.opacity(0.15))
+                        .frame(width: isActive ? 2 : 1)
                 }
                 .frame(width: 24)
 
@@ -235,7 +248,17 @@ struct MeetingsListScreen: View {
 
                         Spacer()
 
-                        statusIcon(meeting)
+                        if isActive {
+                            Text("Сейчас")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.green)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Color.green.opacity(0.12))
+                                .clipShape(Capsule())
+                        } else {
+                            statusIcon(meeting)
+                        }
                     }
 
                     if !meeting.description.isEmpty {
@@ -256,7 +279,7 @@ struct MeetingsListScreen: View {
                         }
                     }
 
-                    // Participants + end date
+                    // Participants + duration
                     HStack(spacing: 12) {
                         if !meeting.participants.isEmpty {
                             HStack(spacing: 4) {
@@ -280,13 +303,40 @@ struct MeetingsListScreen: View {
                     }
                 }
                 .padding(12)
-                .background(cardBg)
+                .background(isActive ? Color.green.opacity(0.05) : cardBg)
                 .cornerRadius(14)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(isActive ? Color.green.opacity(0.3) : Color.clear, lineWidth: 1)
+                )
                 .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
             }
             .padding(.bottom, 12)
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - Now Indicator
+
+    private var nowIndicator: some View {
+        HStack(spacing: 0) {
+            Text(timeFormatter.string(from: Date()))
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.red)
+                .frame(width: 48, alignment: .trailing)
+
+            ZStack {
+                Circle()
+                    .fill(Color.red)
+                    .frame(width: 8, height: 8)
+            }
+            .frame(width: 24)
+
+            Rectangle()
+                .fill(Color.red.opacity(0.4))
+                .frame(height: 1)
+        }
+        .padding(.vertical, 4)
     }
 
     // MARK: - Status

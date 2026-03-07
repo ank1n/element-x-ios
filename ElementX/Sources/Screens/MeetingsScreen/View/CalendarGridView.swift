@@ -214,7 +214,7 @@ struct CalendarGridView: View {
         .frame(width: cellWidth, height: cellHeight)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(isCenter ? accentBlue : Color.clear)
+                .fill(isCenter ? accentBlue : (isToday ? accentBlue.opacity(0.12) : Color.clear))
         )
         .transaction { $0.animation = nil }
     }

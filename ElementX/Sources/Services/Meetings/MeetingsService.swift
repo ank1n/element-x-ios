@@ -30,7 +30,7 @@ struct Meeting: Identifiable, Equatable, Codable {
     var title: String
     let description: String
     let creatorId: String
-    let matrixRoomId: String?
+    var matrixRoomId: String?
     let meetingCode: String?
     let location: String
     let startTime: Date
@@ -266,6 +266,19 @@ class MeetingsService {
     func rsvp(meetingId: Int, status: RSVPStatus) async throws {
         let body = try JSONSerialization.data(withJSONObject: ["rsvp": status.rawValue])
         _ = try await apiRequest("POST", path: "/api/meetings/\(meetingId)/rsvp", body: body)
+    }
+
+    /// Ensure a Matrix room exists for a scheduled meeting (by meeting_code).
+    /// Calls meet-api's /api/meet/ensure-room endpoint.
+    func ensureRoom(code: String, userId: String) async throws -> String {
+        let body = try JSONSerialization.data(withJSONObject: ["code": code, "userId": userId])
+        let data = try await apiRequest("POST", path: "/api/meet/ensure-room", body: body)
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let roomId = json["roomId"] as? String, !roomId.isEmpty else {
+            throw URLError(.cannotParseResponse)
+        }
+        os_log(.default, log: meetingsLog, "ensureRoom: code=%{public}@ → roomId=%{public}@", code, roomId)
+        return roomId
     }
 
     func fetchHolidays() async throws -> [String] {

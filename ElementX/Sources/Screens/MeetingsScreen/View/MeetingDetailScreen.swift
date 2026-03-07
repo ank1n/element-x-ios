@@ -312,15 +312,15 @@ struct MeetingDetailScreen: View {
 
     private var actionsSection: some View {
         VStack(spacing: 10) {
-            // Join call
-            if let roomId = meeting.matrixRoomId, !roomId.isEmpty {
+            // Join call — via Matrix room or ensure-room by meeting code
+            if meeting.matrixRoomId != nil || meeting.meetingCode != nil {
                 Button {
                     context.send(viewAction: .joinCall)
                 } label: {
                     HStack(spacing: 8) {
-                        Image(systemName: "phone.fill")
+                        Image(systemName: "video.fill")
                             .font(.system(size: 15))
-                        Text("Присоединиться к звонку")
+                        Text("Начать звонок")
                             .font(.system(size: 15, weight: .semibold))
                     }
                     .foregroundColor(.white)
