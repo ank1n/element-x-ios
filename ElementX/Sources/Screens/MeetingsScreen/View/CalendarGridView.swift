@@ -6,9 +6,21 @@
 
 import SwiftUI
 
+private struct DayCenterItem: Equatable {
+    let key: String
+    let centerX: CGFloat
+}
+
+private struct DayCenterPreferenceKey: PreferenceKey {
+    static var defaultValue: [DayCenterItem] = []
+    static func reduce(value: inout [DayCenterItem], nextValue: () -> [DayCenterItem]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
 /// Expandable calendar: week strip (collapsed) <-> full month grid (expanded).
-/// Week strip: fixed highlight in center, days scroll horizontally,
-/// the day that lands in center becomes selected.
+/// Week strip: days scroll horizontally, the day closest to center gets highlighted
+/// and becomes the selected date.
 struct CalendarGridView: View {
     @Binding var selectedDate: Date
     let datesWithMeetings: Set<String>
@@ -17,14 +29,31 @@ struct CalendarGridView: View {
     @State private var isExpanded = false
     @State private var displayedMonth: Date = .now
     @State private var dragOffset: CGFloat = 0
+    @State private var scrolledDayID: String?
+    @State private var needsInitialScroll = true
+    @State private var scrollProxy: ScrollViewProxy?
 
     private let calendar = Calendar.current
     private let weekdaysShort = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 
-    private let dateKeyFormatter: DateFormatter = {
+    private static let dateKeyFormat: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
         return f
+    }()
+
+    private var dateKeyFormatter: DateFormatter { Self.dateKeyFormat }
+
+    private let days: [Date] = {
+        let cal = Calendar.current
+        let today = Date()
+        var result: [Date] = []
+        for offset in -90...90 {
+            if let d = cal.date(byAdding: .day, value: offset, to: today) {
+                result.append(d)
+            }
+        }
+        return result
     }()
 
     private let monthYearFormatter: DateFormatter = {
@@ -34,14 +63,12 @@ struct CalendarGridView: View {
         return f
     }()
 
-    // Colors
     private let accentBlue = Color(red: 0.38, green: 0.42, blue: 0.96)
     private let lightBg = Color(red: 0.94, green: 0.95, blue: 1.0)
 
-    // Cell dimensions
-    private let cellWidth: CGFloat = 52
-    private let cellSpacing: CGFloat = 8
-    private let cellHeight: CGFloat = 76
+    private let cellWidth: CGFloat = 54
+    private let cellSpacing: CGFloat = 6
+    private let cellHeight: CGFloat = 78
 
     var body: some View {
         VStack(spacing: 0) {
@@ -85,81 +112,100 @@ struct CalendarGridView: View {
         }
     }
 
-    // MARK: - Week Strip (Collapsed) — center-snapping horizontal scroll
-
-    /// Generate a wide range of days (±3 months from today)
-    private var allDays: [Date] {
-        let today = Date()
-        var days: [Date] = []
-        for offset in -90...90 {
-            if let d = calendar.date(byAdding: .day, value: offset, to: today) {
-                days.append(d)
-            }
-        }
-        return days
-    }
+    // MARK: - Week Strip — scroll with fixed center highlight
 
     private var weekStripView: some View {
-        let days = allDays
-        let selectedIndex = days.firstIndex(where: { calendar.isDate($0, inSameDayAs: selectedDate) }) ?? 90
-
-        return GeometryReader { outerGeo in
+        GeometryReader { outerGeo in
             let screenWidth = outerGeo.size.width
+            let screenMidX = screenWidth / 2
             let sideInset = (screenWidth - cellWidth) / 2
 
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: cellSpacing) {
-                        ForEach(Array(days.enumerated()), id: \.offset) { index, date in
-                            dayCellContent(date)
-                                .id(index)
+                        ForEach(days, id: \.timeIntervalSince1970) { date in
+                            let key = dateKeyFormatter.string(from: date)
+                            dayCell(date: date, isCenter: key == scrolledDayID)
+                                .id(key)
+                                .background(
+                                    GeometryReader { cellGeo in
+                                        Color.clear
+                                            .preference(
+                                                key: DayCenterPreferenceKey.self,
+                                                value: [DayCenterItem(
+                                                    key: key,
+                                                    centerX: cellGeo.frame(in: .global).midX
+                                                )]
+                                            )
+                                    }
+                                )
                         }
                     }
                     .scrollTargetLayout()
                     .padding(.horizontal, sideInset)
                 }
-                .scrollTargetBehavior(.viewAligned)
-                .scrollPosition(id: Binding<Int?>(
-                    get: { selectedIndex },
-                    set: { newIndex in
-                        if let newIndex, newIndex >= 0, newIndex < days.count {
-                            let newDate = days[newIndex]
-                            if !calendar.isDate(newDate, inSameDayAs: selectedDate) {
-                                selectedDate = newDate
-                            }
+                .scrollPosition(id: $scrolledDayID, anchor: .center)
+                .onChange(of: scrolledDayID) { _, newID in
+                    guard let newID, !needsInitialScroll else { return }
+                    if let date = days.first(where: { dateKeyFormatter.string(from: $0) == newID }) {
+                        if !calendar.isDate(date, inSameDayAs: selectedDate) {
+                            selectedDate = date
                         }
                     }
-                ))
+                }
+                .onScrollPhaseChange { _, newPhase in
+                    if newPhase == .idle, let scrolledDayID {
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
+                            proxy.scrollTo(scrolledDayID, anchor: .center)
+                        }
+                    }
+                }
                 .onAppear {
-                    proxy.scrollTo(selectedIndex, anchor: .center)
+                    scrollProxy = proxy
+                    let todayKey = dateKeyFormatter.string(from: selectedDate)
+                    scrolledDayID = todayKey
+                    proxy.scrollTo(todayKey, anchor: .center)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        needsInitialScroll = false
+                    }
                 }
             }
-            // Fixed highlight frame behind center cell
-            .background(alignment: .center) {
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(accentBlue)
-                    .frame(width: cellWidth + 8, height: cellHeight + 8)
-            }
         }
-        .frame(height: cellHeight + 12)
+        .frame(height: cellHeight + 8)
     }
 
-    private func dayCellContent(_ date: Date) -> some View {
-        let isCenter = calendar.isDate(date, inSameDayAs: selectedDate)
-        let isToday = calendar.isDateInToday(date)
+    /// Day cell with blue bg when centered. No animation on state change.
+    private func dayCell(date: Date, isCenter: Bool) -> some View {
         let key = dateKeyFormatter.string(from: date)
+        let isToday = calendar.isDateInToday(date)
+        let isHoliday = holidays.contains(key)
+        let isWeekend = calendar.isDateInWeekend(date)
         let hasMeeting = datesWithMeetings.contains(key)
         let dayNum = calendar.component(.day, from: date)
         let weekday = shortWeekday(for: date)
 
-        return VStack(spacing: 5) {
+        let dayColor: Color = {
+            if isCenter { return .white }
+            if isToday { return accentBlue }
+            if isHoliday { return .red }
+            if isWeekend { return .red.opacity(0.7) }
+            return .primary
+        }()
+
+        let weekdayColor: Color = {
+            if isCenter { return .white.opacity(0.9) }
+            if isHoliday || isWeekend { return .red.opacity(0.5) }
+            return .secondary
+        }()
+
+        return VStack(spacing: 4) {
             Text("\(dayNum)")
-                .font(.system(size: isCenter ? 24 : 18, weight: isCenter ? .bold : .semibold))
-                .foregroundColor(isCenter ? .white : .primary)
+                .font(.system(size: isCenter ? 26 : 18, weight: isCenter || isToday ? .bold : .medium))
+                .foregroundColor(dayColor)
 
             Text(weekday)
                 .font(.system(size: isCenter ? 13 : 11, weight: .medium))
-                .foregroundColor(isCenter ? .white.opacity(0.9) : .secondary)
+                .foregroundColor(weekdayColor)
 
             Circle()
                 .fill(hasMeeting ? (isCenter ? Color.white : Color.orange) : Color.clear)
@@ -167,13 +213,10 @@ struct CalendarGridView: View {
         }
         .frame(width: cellWidth, height: cellHeight)
         .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(isToday && !isCenter ? lightBg : Color.clear)
+            RoundedRectangle(cornerRadius: 16)
+                .fill(isCenter ? accentBlue : Color.clear)
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(isToday && !isCenter ? accentBlue.opacity(0.3) : Color.clear, lineWidth: 1)
-        )
+        .transaction { $0.animation = nil }
     }
 
     // MARK: - Month Grid (Expanded)
@@ -209,9 +252,9 @@ struct CalendarGridView: View {
             }
             .padding(.horizontal, 12)
 
-            let days = daysInMonth()
+            let monthDays = daysInMonth()
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 2) {
-                ForEach(Array(days.enumerated()), id: \.offset) { _, day in
+                ForEach(Array(monthDays.enumerated()), id: \.offset) { _, day in
                     if let day {
                         monthDayCell(day)
                     } else {
@@ -235,12 +278,13 @@ struct CalendarGridView: View {
         Button {
             withAnimation(.easeInOut(duration: 0.2)) {
                 selectedDate = date
+                scrolledDayID = key
             }
         } label: {
             VStack(spacing: 2) {
                 Text("\(calendar.component(.day, from: date))")
                     .font(.system(size: 14, weight: isSelected || isToday ? .bold : .regular))
-                    .foregroundColor(monthDayColor(isSelected: isSelected, isHoliday: isHoliday, isWeekend: isWeekend))
+                    .foregroundColor(monthDayColor(isSelected: isSelected, isToday: isToday, isHoliday: isHoliday, isWeekend: isWeekend))
 
                 Circle()
                     .fill(hasMeeting ? (isSelected ? Color.white : Color.orange) : Color.clear)
@@ -252,39 +296,34 @@ struct CalendarGridView: View {
                 RoundedRectangle(cornerRadius: 10)
                     .fill(isSelected ? accentBlue : Color.clear)
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(isToday && !isSelected ? accentBlue : Color.clear, lineWidth: 1)
-            )
         }
         .buttonStyle(.plain)
     }
 
-    private func monthDayColor(isSelected: Bool, isHoliday: Bool, isWeekend: Bool) -> Color {
+    private func monthDayColor(isSelected: Bool, isToday: Bool = false, isHoliday: Bool, isWeekend: Bool) -> Color {
         if isSelected { return .white }
+        if isToday { return accentBlue }
         if isHoliday { return .red }
         if isWeekend { return .red.opacity(0.7) }
         return .primary
     }
 
-    // MARK: - Data Helpers
+    // MARK: - Helpers
 
     private func daysInMonth() -> [Date?] {
         guard let range = calendar.range(of: .day, in: .month, for: displayedMonth),
               let firstDay = calendar.date(from: calendar.dateComponents([.year, .month], from: displayedMonth)) else {
             return []
         }
-
         var weekday = calendar.component(.weekday, from: firstDay)
         weekday = (weekday + 5) % 7
-
-        var days: [Date?] = Array(repeating: nil, count: weekday)
+        var result: [Date?] = Array(repeating: nil, count: weekday)
         for day in range {
             if let date = calendar.date(byAdding: .day, value: day - 1, to: firstDay) {
-                days.append(date)
+                result.append(date)
             }
         }
-        return days
+        return result
     }
 
     private func shortWeekday(for date: Date) -> String {

@@ -60,10 +60,6 @@ struct MeetingEditScreen: View {
                 .padding(.bottom, 32)
             }
 
-            // Floating search results overlay
-            if !context.viewState.searchResults.isEmpty || context.viewState.isSearching {
-                searchResultsOverlay
-            }
         }
         .navigationTitle(context.viewState.navigationTitle)
         .navigationBarTitleDisplayMode(.inline)
@@ -311,6 +307,63 @@ struct MeetingEditScreen: View {
             .background(Color(UIColor.systemGray6))
             .cornerRadius(10)
             .padding(.horizontal, 16)
+
+            // Inline search results (under search field)
+            if context.viewState.isSearching || !context.viewState.searchResults.isEmpty {
+                VStack(spacing: 0) {
+                    if context.viewState.isSearching {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                                .tint(accentBlue)
+                            Text("Поиск...")
+                                .font(.system(size: 14))
+                                .foregroundColor(.secondary)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                    }
+
+                    ForEach(context.viewState.searchResults) { user in
+                        Divider().padding(.leading, 52)
+
+                        Button {
+                            context.send(viewAction: .addParticipant(user))
+                            focusedField = nil
+                        } label: {
+                            HStack(spacing: 10) {
+                                ZStack {
+                                    Circle()
+                                        .fill(avatarColor(for: user.displayName ?? user.userID))
+                                    Text(String((user.displayName ?? user.userID).prefix(1)).uppercased())
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundColor(.white)
+                                }
+                                .frame(width: 30, height: 30)
+
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(user.displayName ?? user.userID)
+                                        .font(.system(size: 14))
+                                        .foregroundColor(.primary)
+                                    if user.displayName != nil {
+                                        Text(user.userID)
+                                            .font(.system(size: 11))
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                Spacer()
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.system(size: 18))
+                                    .foregroundColor(.green)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                        }
+                    }
+                }
+                .background(Color(UIColor.systemGray6).opacity(0.5))
+            }
 
             // Added participants
             if !context.viewState.bindings.participants.isEmpty {
