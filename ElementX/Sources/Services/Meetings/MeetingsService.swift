@@ -113,6 +113,7 @@ struct MeetingRequest: Encodable {
     var location: String = ""
     var participants: [String] = []
     var accessLevel: String = "private"
+    var meetingCode: String?
 
     enum CodingKeys: String, CodingKey {
         case title, description, location, participants
@@ -120,6 +121,7 @@ struct MeetingRequest: Encodable {
         case endTime = "end_time"
         case isIndefinite = "is_indefinite"
         case accessLevel = "access_level"
+        case meetingCode = "meeting_code"
     }
 }
 

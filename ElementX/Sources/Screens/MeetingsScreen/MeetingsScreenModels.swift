@@ -88,7 +88,7 @@ struct MeetingDetailViewState: BindableState {
 
     var meetingLink: String? {
         guard let code = meeting.meetingCode, !code.isEmpty, !homeserverURL.isEmpty else { return nil }
-        return "\(homeserverURL)/meet/\(code)"
+        return "\(homeserverURL)/meet/s/\(code)"
     }
 }
 

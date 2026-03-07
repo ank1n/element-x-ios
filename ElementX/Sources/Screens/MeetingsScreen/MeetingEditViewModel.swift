@@ -87,7 +87,12 @@ class MeetingEditViewModel: MeetingEditViewModelType {
             state.isLoading = true
             state.errorMessage = nil
 
-            let request = MeetingRequest(
+            // Generate meeting_code for new meetings (needed for shareable links)
+            let meetingCode: String? = state.meetingId == nil
+                ? String(UUID().uuidString.lowercased().prefix(11))
+                : nil
+
+            var request = MeetingRequest(
                 title: state.bindings.title,
                 description: state.bindings.description,
                 startTime: state.bindings.startDate,
@@ -95,7 +100,8 @@ class MeetingEditViewModel: MeetingEditViewModelType {
                 isIndefinite: state.bindings.isIndefinite,
                 location: state.bindings.location,
                 participants: state.bindings.participants.map(\.userID),
-                accessLevel: state.bindings.allowGuests ? "public" : "private"
+                accessLevel: state.bindings.allowGuests ? "public" : "private",
+                meetingCode: meetingCode
             )
 
             do {
