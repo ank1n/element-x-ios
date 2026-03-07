@@ -265,7 +265,7 @@ class MeetingsService {
 
     func rsvp(meetingId: Int, status: RSVPStatus) async throws {
         let body = try JSONSerialization.data(withJSONObject: ["rsvp": status.rawValue])
-        _ = try await apiRequest("PUT", path: "/api/meetings/\(meetingId)/rsvp", body: body)
+        _ = try await apiRequest("POST", path: "/api/meetings/\(meetingId)/rsvp", body: body)
     }
 
     func fetchHolidays() async throws -> [String] {
@@ -277,7 +277,7 @@ class MeetingsService {
     func rsvp(meetingId: Int, response rsvpResponse: String) async -> Bool {
         do {
             let body = try JSONSerialization.data(withJSONObject: ["rsvp": rsvpResponse])
-            _ = try await apiRequest("PUT", path: "/api/meetings/\(meetingId)/rsvp", body: body)
+            _ = try await apiRequest("POST", path: "/api/meetings/\(meetingId)/rsvp", body: body)
             os_log(.default, log: meetingsLog, "RSVP %{public}@ for meeting %d", rsvpResponse, meetingId)
             return true
         } catch {
