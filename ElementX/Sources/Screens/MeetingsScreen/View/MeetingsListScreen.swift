@@ -438,54 +438,57 @@ struct MeetingsListScreen: View {
 
     @ViewBuilder
     private func miniMeetingCard(_ meeting: Meeting, isActive: Bool, accentColor: Color) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            // Colored top bar
+        HStack(spacing: 0) {
+            // Vertical color bar on left edge
             RoundedRectangle(cornerRadius: 2)
                 .fill(accentColor)
-                .frame(height: 3)
+                .frame(width: 3)
+                .padding(.vertical, 6)
 
-            Text(meeting.title)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.primary)
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(meeting.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
 
-            // Time range
-            Text("\(timeFormatter.string(from: meeting.startTime))–\(timeFormatter.string(from: meeting.endTime))")
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
+                Text("\(timeFormatter.string(from: meeting.startTime))–\(timeFormatter.string(from: meeting.endTime))")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
 
-            HStack(spacing: 8) {
-                if !meeting.participants.isEmpty {
+                HStack(spacing: 8) {
+                    if !meeting.participants.isEmpty {
+                        HStack(spacing: 2) {
+                            Image(systemName: "person.2.fill")
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary.opacity(0.7))
+                            Text("\(meeting.participants.count)")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
+                    }
                     HStack(spacing: 2) {
-                        Image(systemName: "person.2.fill")
+                        Image(systemName: "clock")
                             .font(.system(size: 9))
                             .foregroundColor(.secondary.opacity(0.7))
-                        Text("\(meeting.participants.count)")
+                        Text(durationText(meeting))
                             .font(.system(size: 11))
                             .foregroundColor(.secondary)
                     }
                 }
-                HStack(spacing: 2) {
-                    Image(systemName: "clock")
-                        .font(.system(size: 9))
-                        .foregroundColor(.secondary.opacity(0.7))
-                    Text(durationText(meeting))
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+
+                if isActive {
+                    Text("Сейчас")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(.green)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.green.opacity(0.12))
+                        .clipShape(Capsule())
                 }
             }
-
-            if isActive {
-                Text("Сейчас")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(.green)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.green.opacity(0.12))
-                    .clipShape(Capsule())
-            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
         }
-        .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(isActive ? Color.green.opacity(0.05) : cardBg)
         .cornerRadius(12)
