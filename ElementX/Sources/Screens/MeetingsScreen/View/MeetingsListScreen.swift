@@ -7,6 +7,20 @@
 import SwiftUI
 import UIKit
 
+// MARK: - PreferenceKey for collecting dot positions
+
+private struct MeetingDotPosition: Equatable {
+    let meetingId: Int
+    let centerY: CGFloat // Y relative to timeline coordinate space
+}
+
+private struct MeetingDotPreferenceKey: PreferenceKey {
+    static var defaultValue: [MeetingDotPosition] = []
+    static func reduce(value: inout [MeetingDotPosition], nextValue: () -> [MeetingDotPosition]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
 struct MeetingsListScreen: View {
     @ObservedObject var context: MeetingsScreenViewModelType.Context
 
@@ -170,41 +184,37 @@ struct MeetingsListScreen: View {
         }
     }
 
-    // MARK: - Meetings Content
+    // MARK: - Git-style Timeline
 
     private let branchPalette: [Color] = [
-        Color(red: 0.38, green: 0.42, blue: 0.96), // blue
+        Color(red: 0.38, green: 0.42, blue: 0.96), // blue (main)
         Color(red: 0.95, green: 0.55, blue: 0.25),  // orange
-        Color(red: 0.30, green: 0.78, blue: 0.55)   // green
+        Color(red: 0.30, green: 0.78, blue: 0.55),  // green
+        Color(red: 0.73, green: 0.45, blue: 0.90)   // purple
     ]
 
-    /// Branch color for a meeting (nil if not parallel)
-    private func branchColor(for meeting: Meeting, in meetings: [Meeting]) -> Color? {
-        let overlapping = meetings.filter { $0.startTime < meeting.endTime && $0.endTime > meeting.startTime }
-        guard overlapping.count > 1 else { return nil }
-        let idx = overlapping.firstIndex(where: { $0.id == meeting.id }) ?? 0
-        return branchPalette[idx % branchPalette.count]
+    private let timeColumnWidth: CGFloat = 48
+    private let timelineColumnWidth: CGFloat = 28
+    private let mainLineX: CGFloat = 62  // timeColumnWidth(48) + timelineColumnWidth/2(14)
+    private let branchOffsetX: CGFloat = 16 // how far branch is from main
+
+    /// Assign lanes: 0 = main, 1+ = branches
+    private func assignLanes(_ meetings: [Meeting]) -> [Int: Int] {
+        var lanes: [Int: Int] = [:]
+        var activeLanes: [(endTime: Date, lane: Int)] = []
+
+        for meeting in meetings {
+            activeLanes.removeAll { $0.endTime <= meeting.startTime }
+            let usedLanes = Set(activeLanes.map(\.lane))
+            var lane = 0
+            while usedLanes.contains(lane) { lane += 1 }
+            lanes[meeting.id] = lane
+            activeLanes.append((endTime: meeting.endTime, lane: lane))
+        }
+        return lanes
     }
 
-    /// Info about parallel branches visible at this row
-    struct BranchInfo {
-        let color: Color
-        let isForking: Bool   // branch starts here (curve out from main)
-        let isMerging: Bool   // branch ends here (curve back into main)
-    }
-
-    /// Get branch lines that should be drawn alongside this meeting's row
-    private func branchLines(for meeting: Meeting, in meetings: [Meeting]) -> [BranchInfo] {
-        let others = meetings.filter {
-            $0.id != meeting.id && $0.startTime < meeting.endTime && $0.endTime > meeting.startTime
-        }
-        return others.compactMap { other -> BranchInfo? in
-            guard let color = branchColor(for: other, in: meetings) else { return nil }
-            let isForking = other.startTime >= meeting.startTime && other.startTime <= meeting.endTime
-            let isMerging = other.endTime >= meeting.startTime && other.endTime <= meeting.endTime
-            return BranchInfo(color: color, isForking: isForking, isMerging: isMerging)
-        }
-    }
+    @State private var dotPositions: [MeetingDotPosition] = []
 
     @ViewBuilder
     private var meetingsContent: some View {
@@ -223,19 +233,17 @@ struct MeetingsListScreen: View {
             let now = Date()
             let isToday = Calendar.current.isDateInToday(context.viewState.selectedDate)
             let activeMeeting = isToday ? meetings.first(where: { $0.startTime <= now && $0.endTime > now }) : nil
-            // Индекс для вставки зелёного таба текущего времени (только если нет активной встречи)
             let nowInsertIndex: Int? = (isToday && activeMeeting == nil) ? meetings.firstIndex(where: { $0.startTime > now }) : nil
-            // Следующая встреча после текущего времени (для обратного отсчёта)
             let nextMeeting: Meeting? = isToday ? meetings.first(where: { $0.startTime > now }) : nil
+            let lanes = assignLanes(meetings)
 
-            LazyVStack(spacing: 0) {
+            VStack(spacing: 0) {
                 ForEach(Array(meetings.enumerated()), id: \.element.id) { index, meeting in
-                    // Зелёный таб текущего времени — между прошедшими и будущими встречами
                     if let ni = nowInsertIndex, index == ni {
                         nowTab(nextMeeting: nextMeeting)
                     }
 
-                    // Индикатор свободного времени между встречами (рабочие часы 09-18)
+                    // Свободно между встречами (рабочие часы)
                     if index > 0 {
                         let prev = meetings[index - 1]
                         let gapMinutes = Int(meeting.startTime.timeIntervalSince(prev.endTime) / 60)
@@ -247,17 +255,162 @@ struct MeetingsListScreen: View {
                     }
 
                     let isActive = isToday && meeting.startTime <= now && meeting.endTime > now
-                    let myBranch = branchColor(for: meeting, in: meetings)
-                    let branches = branchLines(for: meeting, in: meetings)
+                    let lane = lanes[meeting.id] ?? 0
 
-                    timelineMeetingRow(meeting, isActive: isActive, showNowDot: isActive, branchColor: myBranch, branches: branches)
+                    timelineMeetingRow(meeting, isActive: isActive, lane: lane)
                 }
-                // Если все встречи прошли — зелёный таб в конце
                 if isToday, nowInsertIndex == nil, activeMeeting == nil {
                     nowTab(nextMeeting: nil)
                 }
             }
+            .coordinateSpace(name: "timeline")
+            .onPreferenceChange(MeetingDotPreferenceKey.self) { positions in
+                dotPositions = positions
+            }
+            .overlay(alignment: .topLeading) {
+                // Единый overlay для ВСЕХ линий git-графа
+                timelineOverlay(meetings: meetings, lanes: lanes, isToday: isToday, now: now)
+            }
         }
+    }
+
+    // MARK: - Timeline Overlay (рисует все линии как единый граф)
+
+    @ViewBuilder
+    private func timelineOverlay(meetings: [Meeting], lanes: [Int: Int], isToday: Bool, now: Date) -> some View {
+        Canvas { ctx, size in
+            let positions = dotPositions
+            guard !positions.isEmpty else { return }
+
+            // Sort positions by Y
+            let sorted = meetings.compactMap { m -> (meeting: Meeting, lane: Int, y: CGFloat)? in
+                guard let lane = lanes[m.id],
+                      let pos = positions.first(where: { $0.meetingId == m.id }) else { return nil }
+                return (meeting: m, lane: lane, y: pos.centerY)
+            }
+            guard !sorted.isEmpty else { return }
+
+            let mainX = mainLineX
+            let bX = mainX + branchOffsetX
+
+            // --- Draw main vertical line (through all lane-0 dots, top to bottom) ---
+            let mainPath = Path { p in
+                p.move(to: CGPoint(x: mainX, y: 0))
+                p.addLine(to: CGPoint(x: mainX, y: size.height))
+            }
+            ctx.stroke(mainPath, with: .color(Color.secondary.opacity(0.18)), lineWidth: 1.5)
+
+            // --- Draw branch lines ---
+            // Group branch meetings (lane > 0) and draw their fork + line + merge
+            for item in sorted where item.lane > 0 {
+                let laneX = mainX + CGFloat(item.lane) * branchOffsetX
+                let color = branchPalette[item.lane % branchPalette.count]
+                let y = item.y
+
+                // Find the meeting on main (lane 0) that overlaps — use it as fork/merge anchor
+                let mainOverlap = sorted.filter { $0.lane == 0 && $0.meeting.startTime < item.meeting.endTime && $0.meeting.endTime > item.meeting.startTime }
+                let forkY = mainOverlap.first.map { $0.y } ?? (y - 30)
+                let mergeY: CGFloat
+                // Find next meeting on main after this branch ends
+                let nextMain = sorted.first(where: { $0.lane == 0 && $0.y > y })
+                mergeY = nextMain.map { $0.y } ?? (y + 30)
+
+                // Fork curve: from main to branch
+                let forkPath = Path { p in
+                    p.move(to: CGPoint(x: mainX, y: forkY))
+                    p.addQuadCurve(
+                        to: CGPoint(x: laneX, y: y),
+                        control: CGPoint(x: laneX, y: forkY)
+                    )
+                }
+                ctx.stroke(forkPath, with: .color(color), lineWidth: 2)
+
+                // Merge curve: from branch back to main
+                let mergePath = Path { p in
+                    p.move(to: CGPoint(x: laneX, y: y))
+                    p.addQuadCurve(
+                        to: CGPoint(x: mainX, y: mergeY),
+                        control: CGPoint(x: laneX, y: mergeY)
+                    )
+                }
+                ctx.stroke(mergePath, with: .color(color), lineWidth: 2)
+            }
+
+            // --- Draw dots (commits) ---
+            for item in sorted {
+                let laneX = item.lane == 0 ? mainX : mainX + CGFloat(item.lane) * branchOffsetX
+                let color = branchPalette[item.lane % branchPalette.count]
+                let isActive = isToday && item.meeting.startTime <= now && item.meeting.endTime > now
+                let dotSize: CGFloat = isActive ? 10 : 8
+
+                // Dot
+                let dotRect = CGRect(x: laneX - dotSize / 2, y: item.y - dotSize / 2, width: dotSize, height: dotSize)
+                ctx.fill(Path(ellipseIn: dotRect), with: .color(isActive ? .green : color))
+
+                // Green ring for active
+                if isActive {
+                    let ringSize: CGFloat = 16
+                    let ringRect = CGRect(x: laneX - ringSize / 2, y: item.y - ringSize / 2, width: ringSize, height: ringSize)
+                    ctx.stroke(Path(ellipseIn: ringRect), with: .color(Color.green.opacity(0.4)), lineWidth: 2)
+                }
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    // MARK: - Meeting Row (clean — no lines, just time + card)
+
+    @ViewBuilder
+    private func timelineMeetingRow(_ meeting: Meeting, isActive: Bool, lane: Int) -> some View {
+        let laneColor = branchPalette[lane % branchPalette.count]
+        Button {
+            context.send(viewAction: .selectMeeting(meeting))
+        } label: {
+            HStack(alignment: .top, spacing: 0) {
+                // Time column
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(timeFormatter.string(from: meeting.startTime))
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(isActive ? .green : .primary)
+                    Text(timeFormatter.string(from: meeting.endTime))
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+                .frame(width: timeColumnWidth, alignment: .trailing)
+
+                // Timeline spacer (lines drawn in overlay) + dot position reporter
+                Color.clear
+                    .frame(width: timelineColumnWidth)
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear
+                                .preference(
+                                    key: MeetingDotPreferenceKey.self,
+                                    value: [MeetingDotPosition(
+                                        meetingId: meeting.id,
+                                        centerY: geo.frame(in: .named("timeline")).midY
+                                    )]
+                                )
+                        }
+                    )
+
+                // Card (with colored left edge for branches)
+                if lane > 0 {
+                    HStack(spacing: 0) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(laneColor)
+                            .frame(width: 4)
+                            .padding(.vertical, 6)
+                        meetingCard(meeting, isActive: isActive)
+                            .padding(.leading, -1)
+                    }
+                } else {
+                    meetingCard(meeting, isActive: isActive)
+                }
+            }
+            .padding(.bottom, 12)
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Meeting Card (full style)
@@ -336,120 +489,15 @@ struct MeetingsListScreen: View {
         .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
     }
 
-    // MARK: - Timeline Meeting Row (with branch curves for parallel meetings)
-
-    @ViewBuilder
-    private func timelineMeetingRow(_ meeting: Meeting, isActive: Bool, showNowDot: Bool = false, branchColor: Color? = nil, branches: [BranchInfo] = []) -> some View {
-        let hasParallel = branchColor != nil
-        let timelineWidth: CGFloat = branches.isEmpty ? 24 : 38
-        Button {
-            context.send(viewAction: .selectMeeting(meeting))
-        } label: {
-            HStack(alignment: .top, spacing: 0) {
-                // Time column
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text(timeFormatter.string(from: meeting.startTime))
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(isActive ? .green : .primary)
-                    Text(timeFormatter.string(from: meeting.endTime))
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                }
-                .frame(width: 48, alignment: .trailing)
-
-                // Timeline column: main line + branch lines drawn as overlay
-                VStack(spacing: 0) {
-                    ZStack {
-                        Circle()
-                            .fill(branchColor ?? (isActive ? Color.green : statusColor(meeting.status)))
-                            .frame(width: isActive ? 10 : 8, height: isActive ? 10 : 8)
-                        if showNowDot {
-                            Circle()
-                                .stroke(Color.red.opacity(0.4), lineWidth: 2)
-                                .frame(width: 16, height: 16)
-                            Circle()
-                                .fill(Color.red)
-                                .frame(width: 6, height: 6)
-                        }
-                    }
-                    .padding(.top, 6)
-                    Rectangle()
-                        .fill(isActive ? Color.green.opacity(0.3) : Color.secondary.opacity(0.15))
-                        .frame(width: isActive ? 2 : 1)
-                }
-                .frame(width: timelineWidth)
-                .overlay {
-                    // Branch curves drawn as overlay (gets parent's actual size)
-                    if !branches.isEmpty {
-                        GeometryReader { geo in
-                            let h = geo.size.height
-                            let midX = timelineWidth / 2
-                            let bX = timelineWidth - 4
-
-                            ForEach(Array(branches.enumerated()), id: \.offset) { _, branch in
-                                if branch.isForking {
-                                    BranchCurve(from: CGPoint(x: midX, y: 12),
-                                                through: CGPoint(x: bX, y: 30),
-                                                to: CGPoint(x: bX, y: h),
-                                                type: .fork)
-                                        .stroke(branch.color, lineWidth: 2)
-                                } else if branch.isMerging {
-                                    BranchCurve(from: CGPoint(x: bX, y: 0),
-                                                through: CGPoint(x: bX, y: h - 18),
-                                                to: CGPoint(x: midX, y: h),
-                                                type: .merge)
-                                        .stroke(branch.color, lineWidth: 2)
-                                } else {
-                                    // Straight parallel line (no fork/merge — middle of overlap)
-                                    Path { p in
-                                        p.move(to: CGPoint(x: bX, y: 0))
-                                        p.addLine(to: CGPoint(x: bX, y: h))
-                                    }
-                                    .stroke(branch.color.opacity(0.5), lineWidth: 2)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Card (with colored left edge if parallel)
-                if hasParallel, let bc = branchColor {
-                    HStack(spacing: 0) {
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(bc)
-                            .frame(width: 4)
-                            .padding(.vertical, 6)
-                        meetingCard(meeting, isActive: isActive)
-                            .padding(.leading, -1)
-                    }
-                } else {
-                    meetingCard(meeting, isActive: isActive)
-                }
-            }
-            .padding(.bottom, 12)
-        }
-        .buttonStyle(.plain)
-    }
-
     // MARK: - Gap Indicator (only during working hours 09-18)
 
     private func gapIndicator(minutes: Int) -> some View {
         HStack(spacing: 0) {
             Color.clear
-                .frame(width: 48)
+                .frame(width: timeColumnWidth)
 
-            VStack(spacing: 0) {
-                Rectangle()
-                    .fill(Color.secondary.opacity(0.1))
-                    .frame(width: 1, height: 6)
-                Circle()
-                    .fill(Color.secondary.opacity(0.15))
-                    .frame(width: 4, height: 4)
-                Rectangle()
-                    .fill(Color.secondary.opacity(0.1))
-                    .frame(width: 1, height: 6)
-            }
-            .frame(width: 24)
+            Color.clear
+                .frame(width: timelineColumnWidth)
 
             Text("Свободно \(formatGapMinutes(minutes))")
                 .font(.system(size: 11))
@@ -458,7 +506,7 @@ struct MeetingsListScreen: View {
 
             Spacer()
         }
-        .padding(.vertical, 2)
+        .frame(height: 20)
     }
 
     private func formatGapMinutes(_ minutes: Int) -> String {
@@ -468,29 +516,21 @@ struct MeetingsListScreen: View {
         return m == 0 ? "\(h) ч" : "\(h) ч \(m) мин"
     }
 
-    // MARK: - Now Tab (зелёный блок текущего времени)
+    // MARK: - Now Tab (green current time block)
 
     @ViewBuilder
     private func nowTab(nextMeeting: Meeting?) -> some View {
         HStack(spacing: 0) {
-            // Время слева
+            // Time
             Text(timeFormatter.string(from: Date()))
                 .font(.system(size: 14, weight: .bold))
                 .foregroundColor(Color(red: 0.2, green: 0.7, blue: 0.4))
-                .frame(width: 48, alignment: .trailing)
+                .frame(width: timeColumnWidth, alignment: .trailing)
 
-            // Точка на таймлайне
-            ZStack {
-                Circle()
-                    .fill(Color.green)
-                    .frame(width: 10, height: 10)
-                Circle()
-                    .stroke(Color.green.opacity(0.3), lineWidth: 2)
-                    .frame(width: 16, height: 16)
-            }
-            .frame(width: 24)
+            Color.clear
+                .frame(width: timelineColumnWidth)
 
-            // Карточка с обратным отсчётом
+            // Card with countdown
             HStack(spacing: 8) {
                 Image(systemName: "clock.fill")
                     .font(.system(size: 13))
@@ -498,7 +538,7 @@ struct MeetingsListScreen: View {
 
                 if let next = nextMeeting {
                     let minutesLeft = max(0, Int(next.startTime.timeIntervalSince(Date()) / 60))
-                    Text("До «\(next.title)» — \(formatGapMinutes(minutesLeft))")
+                    Text("До \"\(next.title)\" — \(formatGapMinutes(minutesLeft))")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(Color(red: 0.2, green: 0.65, blue: 0.35))
                         .lineLimit(1)
@@ -520,34 +560,6 @@ struct MeetingsListScreen: View {
             )
         }
         .padding(.bottom, 12)
-    }
-
-    // MARK: - Branch Curve Shape
-
-    private enum BranchCurveType { case fork, merge }
-
-    private struct BranchCurve: Shape {
-        let from: CGPoint
-        let through: CGPoint
-        let to: CGPoint
-        let type: BranchCurveType
-
-        func path(in rect: CGRect) -> Path {
-            var path = Path()
-            switch type {
-            case .fork:
-                // Curve out from main, then straight down
-                path.move(to: from)
-                path.addQuadCurve(to: through, control: CGPoint(x: to.x, y: from.y))
-                path.addLine(to: to)
-            case .merge:
-                // Straight down, then curve back to main
-                path.move(to: from)
-                path.addLine(to: through)
-                path.addQuadCurve(to: to, control: CGPoint(x: from.x, y: to.y))
-            }
-            return path
-        }
     }
 
     // MARK: - Status
@@ -665,4 +677,3 @@ struct MeetingsListScreen: View {
         .shimmer()
     }
 }
-
