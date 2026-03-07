@@ -29,6 +29,8 @@ struct SettingsScreen: View {
                 manageAccountSection
             }
             
+            appearanceSection
+
             generalSection
 
             storageSection
@@ -163,6 +165,24 @@ struct SettingsScreen: View {
         }
     }
     
+    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
+
+    private var appearanceSection: some View {
+        Section(header: Text("Внешний вид")) {
+            Picker(selection: $designTheme) {
+                Text("Космос").tag("cosmos")
+                Text("Классика").tag("classic")
+            } label: {
+                Label {
+                    Text("Тема дизайна")
+                } icon: {
+                    Image(systemName: "paintbrush.fill")
+                        .foregroundColor(.purple)
+                }
+            }
+        }
+    }
+
     private var generalSection: some View {
         Section(header: Text("Поддержка")) {
             ListRow(label: .default(title: L10n.commonAdvancedSettings,
