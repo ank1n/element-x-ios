@@ -39,13 +39,33 @@ struct CallsListScreen: View {
                 classicContent
             }
         }
+        .navigationTitle(isCosmos ? "Звонки" : "")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { toolbar }
+        .toolbar {
+            if isCosmos {
+                cosmosToolbar
+            } else {
+                classicToolbar
+            }
+        }
         .alert(item: $context.alertInfo)
     }
 
     @ToolbarContentBuilder
-    private var toolbar: some ToolbarContent {
+    private var cosmosToolbar: some ToolbarContent {
+        ToolbarItem(placement: .primaryAction) {
+            Button {
+                context.send(viewAction: .startNewCall)
+            } label: {
+                Image(systemName: "phone.badge.plus")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(accentBlue)
+            }
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var classicToolbar: some ToolbarContent {
         ToolbarItem(placement: .principal) {
             Picker("", selection: $selectedFilter) {
                 ForEach(CallFilter.allCases, id: \.self) { filter in
@@ -54,11 +74,6 @@ struct CallsListScreen: View {
             }
             .pickerStyle(.segmented)
             .frame(maxWidth: 220)
-        }
-        ToolbarItem(placement: .cancellationAction) {
-            Button("Изменить") {
-                // TODO: implement edit mode (delete call history)
-            }
         }
         ToolbarItem(placement: .primaryAction) {
             Button {
@@ -375,38 +390,87 @@ struct CallsListScreen: View {
     private var cosmosContent: some View {
         GeometryReader { geometry in
             ScrollView {
-                LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
-                    if context.viewState.isLoading {
-                        cosmosLoadingCells
-                    } else if groupedHistory.isEmpty {
-                        cosmosEmptyStateView(minHeight: geometry.size.height)
-                    } else {
-                        ForEach(groupedHistory, id: \.title) { group in
-                            Section {
-                                VStack(spacing: 0) {
-                                    ForEach(Array(group.items.enumerated()), id: \.element.id) { index, item in
-                                        switch item {
-                                        case .call(let call):
-                                            cosmosCallCell(call, isLast: index == group.items.count - 1)
-                                        case .meeting(let meeting):
-                                            cosmosMeetingCellInline(meeting, isLast: index == group.items.count - 1)
+                VStack(spacing: 0) {
+                    // Inline search
+                    HStack(spacing: 10) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary)
+                        TextField("Поиск", text: $context.searchQuery)
+                            .font(.system(size: 15))
+                            .autocorrectionDisabled()
+                        if !context.searchQuery.isEmpty {
+                            Button {
+                                context.searchQuery = ""
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 16))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(Color(UIColor.systemGray6))
+                    .cornerRadius(12)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+
+                    // Capsule filters
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(CallFilter.allCases, id: \.self) { filter in
+                                Button {
+                                    selectedFilter = filter
+                                } label: {
+                                    Text(filter.rawValue)
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundColor(selectedFilter == filter ? .white : .primary)
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 7)
+                                        .background(
+                                            Capsule()
+                                                .fill(selectedFilter == filter ? accentBlue : Color(UIColor.systemGray6))
+                                        )
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                    }
+
+                    // Content
+                    LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                        if context.viewState.isLoading {
+                            cosmosLoadingCells
+                        } else if groupedHistory.isEmpty {
+                            cosmosEmptyStateView(minHeight: geometry.size.height - 140)
+                        } else {
+                            ForEach(groupedHistory, id: \.title) { group in
+                                Section {
+                                    VStack(spacing: 0) {
+                                        ForEach(Array(group.items.enumerated()), id: \.element.id) { index, item in
+                                            switch item {
+                                            case .call(let call):
+                                                cosmosCallCell(call, isLast: index == group.items.count - 1)
+                                            case .meeting(let meeting):
+                                                cosmosMeetingCellInline(meeting, isLast: index == group.items.count - 1)
+                                            }
                                         }
                                     }
+                                    .background(cardBg)
+                                    .cornerRadius(14)
+                                    .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 2)
+                                    .padding(.horizontal, 16)
+                                    .padding(.bottom, 8)
+                                } header: {
+                                    cosmosDateSectionHeader(group.title)
                                 }
-                                .background(cardBg)
-                                .cornerRadius(14)
-                                .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 2)
-                                .padding(.horizontal, 16)
-                                .padding(.bottom, 8)
-                            } header: {
-                                cosmosDateSectionHeader(group.title)
                             }
                         }
                     }
                 }
-                .searchable(text: $context.searchQuery, placement: .navigationBarDrawer(displayMode: .always))
-                .compoundSearchField()
-                .disableAutocorrection(true)
+                .padding(.bottom, 20)
             }
             .scrollDismissesKeyboard(.immediately)
             .scrollBounceBehavior(context.viewState.callHistory.isEmpty ? .basedOnSize : .automatic)
@@ -561,45 +625,68 @@ struct CallsListScreen: View {
 
     private func cosmosCallCell(_ call: CallHistoryItem, isLast: Bool) -> some View {
         VStack(spacing: 0) {
-            HStack(spacing: 16) {
-                // Avatar
-                ZStack {
+            HStack(spacing: 14) {
+                // Avatar with direction badge
+                ZStack(alignment: .bottomTrailing) {
                     Circle()
-                        .fill(avatarColor(for: call.contactName))
+                        .fill(call.isMissed ? Color.red.opacity(0.15) : avatarColor(for: call.contactName))
                         .frame(width: 52, height: 52)
+                        .overlay {
+                            if call.isMissed {
+                                Image(systemName: "phone.arrow.down.left")
+                                    .font(.system(size: 20, weight: .semibold))
+                                    .foregroundColor(.red)
+                            } else {
+                                Text(String(call.contactName.prefix(1)).uppercased())
+                                    .font(.compound.headingMD)
+                                    .foregroundColor(.white)
+                            }
+                        }
 
-                    Text(String(call.contactName.prefix(1)).uppercased())
-                        .font(.compound.headingMD)
-                        .foregroundColor(.white)
+                    // Direction badge
+                    if !call.isMissed {
+                        ZStack {
+                            Circle()
+                                .fill(Color(UIColor.systemBackground))
+                                .frame(width: 22, height: 22)
+                            Circle()
+                                .fill(callDirectionColor(for: call))
+                                .frame(width: 18, height: 18)
+                            Image(systemName: callDirectionIcon(for: call))
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundColor(.white)
+                        }
+                        .offset(x: 2, y: 2)
+                    }
                 }
 
                 // Call info
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .top) {
                         Text(call.contactName)
-                            .font(.compound.bodyLGSemibold)
+                            .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(call.isMissed ? .red : .primary)
                             .lineLimit(1)
 
                         Spacer()
 
                         Text(timeAgo(from: call.timestamp))
-                            .font(.compound.bodySM)
-                            .foregroundColor(.secondary)
+                            .font(.system(size: 13))
+                            .foregroundColor(call.isMissed ? .red.opacity(0.7) : .secondary)
                     }
 
                     HStack(spacing: 4) {
                         Image(systemName: callIcon(for: call))
-                            .font(.caption)
-                            .foregroundColor(call.isMissed ? .red : .secondary)
+                            .font(.system(size: 11))
+                            .foregroundColor(call.isMissed ? .red.opacity(0.7) : .secondary)
 
                         Text(callDescription(for: call))
-                            .font(.compound.bodySM)
-                            .foregroundColor(.secondary)
+                            .font(.system(size: 13))
+                            .foregroundColor(call.isMissed ? .red.opacity(0.7) : .secondary)
 
                         if call.hasRecording {
                             Image(systemName: "waveform")
-                                .font(.caption)
+                                .font(.system(size: 11))
                                 .foregroundColor(accentBlue)
                         }
                     }
@@ -607,7 +694,6 @@ struct CallsListScreen: View {
 
                 // Action buttons
                 HStack(spacing: 8) {
-                    // Play button (if has recording)
                     if call.hasRecording {
                         Button {
                             context.send(viewAction: .playRecording(call))
@@ -631,7 +717,6 @@ struct CallsListScreen: View {
                         .buttonStyle(.plain)
                     }
 
-                    // Call button (always)
                     Button {
                         context.send(viewAction: .selectCall(call))
                     } label: {
@@ -640,9 +725,9 @@ struct CallsListScreen: View {
                                 .fill(Color(UIColor.systemGray6))
                                 .frame(width: 36, height: 36)
 
-                            Image(systemName: "phone.fill")
+                            Image(systemName: call.callType == .video ? "video.fill" : "phone.fill")
                                 .font(.system(size: 12))
-                                .foregroundColor(.primary)
+                                .foregroundColor(accentBlue)
                         }
                     }
                     .buttonStyle(.plain)
@@ -867,6 +952,22 @@ struct CallsListScreen: View {
             return "phone.arrow.up.right"
         case .video:
             return "video"
+        }
+    }
+
+    private func callDirectionIcon(for call: CallHistoryItem) -> String {
+        switch call.callType {
+        case .incoming: return "arrow.down.left"
+        case .outgoing: return "arrow.up.right"
+        case .video: return "video.fill"
+        }
+    }
+
+    private func callDirectionColor(for call: CallHistoryItem) -> Color {
+        switch call.callType {
+        case .incoming: return Color(red: 0.30, green: 0.78, blue: 0.55) // green
+        case .outgoing: return accentBlue
+        case .video: return accentBlue
         }
     }
 
