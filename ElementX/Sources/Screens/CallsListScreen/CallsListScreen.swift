@@ -76,27 +76,20 @@ struct CallsListScreen: View {
         GeometryReader { geometry in
             ScrollView {
                 LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
-                    // Meetings section
-                    if !upcomingMeetings.isEmpty {
-                        Section {
-                            ForEach(upcomingMeetings) { meeting in
-                                classicMeetingCell(meeting)
-                            }
-                        } header: {
-                            classicDateSectionHeader("Встречи")
-                        }
-                    }
-
-                    // Call history
                     if context.viewState.isLoading {
                         classicLoadingCells
-                    } else if filteredCalls.isEmpty && upcomingMeetings.isEmpty {
+                    } else if groupedHistory.isEmpty {
                         classicEmptyStateView(minHeight: geometry.size.height)
                     } else {
-                        ForEach(groupedCalls, id: \.title) { group in
+                        ForEach(groupedHistory, id: \.title) { group in
                             Section {
-                                ForEach(group.calls) { call in
-                                    classicCallCell(call)
+                                ForEach(group.items) { item in
+                                    switch item {
+                                    case .call(let call):
+                                        classicCallCell(call)
+                                    case .meeting(let meeting):
+                                        classicMeetingCell(meeting)
+                                    }
                                 }
                             } header: {
                                 classicDateSectionHeader(group.title)
@@ -184,57 +177,36 @@ struct CallsListScreen: View {
     }
 
     private func classicMeetingCell(_ meeting: Meeting) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 12) {
-                // Calendar icon
+        VStack(spacing: 0) {
+            HStack(spacing: 16) {
+                // Avatar — calendar icon style
                 ZStack {
-                    RoundedRectangle(cornerRadius: 10)
+                    Circle()
                         .fill(Color.green.opacity(0.15))
-                        .frame(width: 44, height: 44)
+                        .frame(width: 52, height: 52)
 
-                    VStack(spacing: 0) {
-                        Text(meetingDayShort(meeting.startTime))
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(.green)
-                        Text(meetingDayNumber(meeting.startTime))
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundColor(.green)
-                    }
+                    Image(systemName: "calendar")
+                        .font(.system(size: 22))
+                        .foregroundColor(.green)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(meeting.title)
-                        .font(.compound.bodyLGSemibold)
-                        .foregroundColor(.compound.textPrimary)
-                        .lineLimit(1)
+                    HStack(alignment: .top) {
+                        Text(meeting.title)
+                            .font(.compound.bodyLGSemibold)
+                            .foregroundColor(.compound.textPrimary)
+                            .lineLimit(1)
 
-                    HStack(spacing: 4) {
-                        Image(systemName: "clock")
-                            .font(.caption2)
-                            .foregroundColor(.compound.textSecondary)
+                        Spacer()
 
                         Text(meetingTimeRange(meeting))
                             .font(.compound.bodySM)
                             .foregroundColor(.compound.textSecondary)
-
-                        if !meeting.location.isEmpty {
-                            let location = meeting.location
-                            Text("·")
-                                .foregroundColor(.compound.textSecondary)
-                            Image(systemName: "mappin")
-                                .font(.caption2)
-                                .foregroundColor(.compound.textSecondary)
-                            Text(location)
-                                .font(.compound.bodySM)
-                                .foregroundColor(.compound.textSecondary)
-                                .lineLimit(1)
-                        }
                     }
 
-                    // Participant count + my RSVP status
                     HStack(spacing: 4) {
                         Image(systemName: "person.2")
-                            .font(.caption2)
+                            .font(.caption)
                             .foregroundColor(.compound.textSecondary)
                         Text("\(meeting.participants.count)")
                             .font(.compound.bodySM)
@@ -247,67 +219,26 @@ struct CallsListScreen: View {
                                 .font(.compound.bodySM)
                                 .foregroundColor(rsvpColor(myRsvp))
                         }
+
+                        if !meeting.location.isEmpty {
+                            Text("·")
+                                .foregroundColor(.compound.textSecondary)
+                            Text(meeting.location)
+                                .font(.compound.bodySM)
+                                .foregroundColor(.compound.textSecondary)
+                                .lineLimit(1)
+                        }
                     }
                 }
-
-                Spacer()
-
-                // RSVP buttons
-                classicRsvpButtons(for: meeting)
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .padding(.vertical, 12)
         }
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(Color.compound.borderDisabled)
                 .frame(height: 1 / UIScreen.main.scale)
-                .padding(.leading, 72)
-        }
-    }
-
-    @ViewBuilder
-    private func classicRsvpButtons(for meeting: Meeting) -> some View {
-        let myRsvp = myRSVP(for: meeting)
-
-        if myRsvp == nil || myRsvp == .pending {
-            HStack(spacing: 6) {
-                Button {
-                    context.send(viewAction: .rsvpMeeting(meetingId: meeting.id, response: "accepted"))
-                } label: {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(width: 30, height: 30)
-                        .background(Color.green)
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    context.send(viewAction: .rsvpMeeting(meetingId: meeting.id, response: "declined"))
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.compound.textSecondary)
-                        .frame(width: 30, height: 30)
-                        .background(Color.compound.bgSubtleSecondary)
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-            }
-        } else if meeting.matrixRoomId != nil {
-            Button {
-                context.send(viewAction: .joinMeeting(meeting))
-            } label: {
-                Image(systemName: "video.fill")
-                    .font(.system(size: 12))
-                    .foregroundColor(.compound.iconPrimary)
-                    .frame(width: 30, height: 30)
-                    .background(Color.compound.bgSubtleSecondary)
-                    .clipShape(Circle())
-            }
-            .buttonStyle(.plain)
+                .padding(.leading, 84)
         }
     }
 
@@ -445,32 +376,21 @@ struct CallsListScreen: View {
         GeometryReader { geometry in
             ScrollView {
                 LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
-                    // Meetings section
-                    if !upcomingMeetings.isEmpty {
-                        Section {
-                            VStack(spacing: 8) {
-                                ForEach(upcomingMeetings) { meeting in
-                                    cosmosMeetingCell(meeting)
-                                }
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                        } header: {
-                            cosmosDateSectionHeader("Встречи")
-                        }
-                    }
-
-                    // Call history
                     if context.viewState.isLoading {
                         cosmosLoadingCells
-                    } else if filteredCalls.isEmpty && upcomingMeetings.isEmpty {
+                    } else if groupedHistory.isEmpty {
                         cosmosEmptyStateView(minHeight: geometry.size.height)
                     } else {
-                        ForEach(groupedCalls, id: \.title) { group in
+                        ForEach(groupedHistory, id: \.title) { group in
                             Section {
                                 VStack(spacing: 0) {
-                                    ForEach(Array(group.calls.enumerated()), id: \.element.id) { index, call in
-                                        cosmosCallCell(call, isLast: index == group.calls.count - 1)
+                                    ForEach(Array(group.items.enumerated()), id: \.element.id) { index, item in
+                                        switch item {
+                                        case .call(let call):
+                                            cosmosCallCell(call, isLast: index == group.items.count - 1)
+                                        case .meeting(let meeting):
+                                            cosmosMeetingCellInline(meeting, isLast: index == group.items.count - 1)
+                                        }
                                     }
                                 }
                                 .background(cardBg)
@@ -571,58 +491,38 @@ struct CallsListScreen: View {
         .frame(minHeight: minHeight - 100)
     }
 
-    private func cosmosMeetingCell(_ meeting: Meeting) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 12) {
-                // Calendar icon
+    /// Meeting cell rendered inline inside the grouped card (same style as call cells)
+    private func cosmosMeetingCellInline(_ meeting: Meeting, isLast: Bool) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 16) {
+                // Avatar — calendar icon
                 ZStack {
-                    RoundedRectangle(cornerRadius: 10)
+                    Circle()
                         .fill(Color.green.opacity(0.15))
-                        .frame(width: 44, height: 44)
+                        .frame(width: 52, height: 52)
 
-                    VStack(spacing: 0) {
-                        Text(meetingDayShort(meeting.startTime))
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(.green)
-                        Text(meetingDayNumber(meeting.startTime))
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundColor(.green)
-                    }
+                    Image(systemName: "calendar")
+                        .font(.system(size: 22))
+                        .foregroundColor(.green)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(meeting.title)
-                        .font(.compound.bodyLGSemibold)
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
+                    HStack(alignment: .top) {
+                        Text(meeting.title)
+                            .font(.compound.bodyLGSemibold)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
 
-                    HStack(spacing: 4) {
-                        Image(systemName: "clock")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
+                        Spacer()
 
                         Text(meetingTimeRange(meeting))
                             .font(.compound.bodySM)
                             .foregroundColor(.secondary)
-
-                        if !meeting.location.isEmpty {
-                            let location = meeting.location
-                            Text("·")
-                                .foregroundColor(.secondary)
-                            Image(systemName: "mappin")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                            Text(location)
-                                .font(.compound.bodySM)
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                        }
                     }
 
-                    // Participant count + my RSVP status
                     HStack(spacing: 4) {
                         Image(systemName: "person.2")
-                            .font(.caption2)
+                            .font(.caption)
                             .foregroundColor(.secondary)
                         Text("\(meeting.participants.count)")
                             .font(.compound.bodySM)
@@ -635,64 +535,27 @@ struct CallsListScreen: View {
                                 .font(.compound.bodySM)
                                 .foregroundColor(rsvpColor(myRsvp))
                         }
+
+                        if !meeting.location.isEmpty {
+                            Text("·")
+                                .foregroundColor(.secondary)
+                            Text(meeting.location)
+                                .font(.compound.bodySM)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
                     }
                 }
-
-                Spacer()
-
-                // RSVP buttons
-                cosmosRsvpButtons(for: meeting)
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-        }
-        .background(cardBg)
-        .cornerRadius(14)
-        .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 2)
-    }
+            .padding(.vertical, 12)
 
-    @ViewBuilder
-    private func cosmosRsvpButtons(for meeting: Meeting) -> some View {
-        let myRsvp = myRSVP(for: meeting)
-
-        if myRsvp == nil || myRsvp == .pending {
-            HStack(spacing: 6) {
-                Button {
-                    context.send(viewAction: .rsvpMeeting(meetingId: meeting.id, response: "accepted"))
-                } label: {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(width: 30, height: 30)
-                        .background(Color.green)
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    context.send(viewAction: .rsvpMeeting(meetingId: meeting.id, response: "declined"))
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.secondary)
-                        .frame(width: 30, height: 30)
-                        .background(Color(UIColor.systemGray6))
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
+            if !isLast {
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.15))
+                    .frame(height: 1 / UIScreen.main.scale)
+                    .padding(.leading, 84)
             }
-        } else if meeting.matrixRoomId != nil {
-            Button {
-                context.send(viewAction: .joinMeeting(meeting))
-            } label: {
-                Image(systemName: "video.fill")
-                    .font(.system(size: 12))
-                    .foregroundColor(.primary)
-                    .frame(width: 30, height: 30)
-                    .background(Color(UIColor.systemGray6))
-                    .clipShape(Circle())
-            }
-            .buttonStyle(.plain)
         }
     }
 
@@ -827,35 +690,6 @@ struct CallsListScreen: View {
 
     // MARK: - Shared Data
 
-    private struct CallGroup: Equatable {
-        let title: String
-        let calls: [CallHistoryItem]
-    }
-
-    private var groupedCalls: [CallGroup] {
-        let calendar = Calendar.current
-        var groups: [(String, [CallHistoryItem])] = []
-        var currentTitle = ""
-        var currentCalls: [CallHistoryItem] = []
-
-        for call in filteredCalls {
-            let title = dateGroupTitle(for: call.timestamp, calendar: calendar)
-            if title != currentTitle {
-                if !currentCalls.isEmpty {
-                    groups.append((currentTitle, currentCalls))
-                }
-                currentTitle = title
-                currentCalls = [call]
-            } else {
-                currentCalls.append(call)
-            }
-        }
-        if !currentCalls.isEmpty {
-            groups.append((currentTitle, currentCalls))
-        }
-        return groups.map { CallGroup(title: $0.0, calls: $0.1) }
-    }
-
     private func dateGroupTitle(for date: Date, calendar: Calendar) -> String {
         if calendar.isDateInToday(date) {
             return "Сегодня"
@@ -896,12 +730,85 @@ struct CallsListScreen: View {
         return calls
     }
 
-    // MARK: - Meetings
+    // MARK: - Unified History
 
-    private var upcomingMeetings: [Meeting] {
-        context.viewState.meetings
-            .filter { $0.isPast }
-            .sorted { $0.startTime > $1.startTime }
+    /// Wrapper that merges calls and past meetings into one timeline
+    private enum HistoryItem: Identifiable {
+        case call(CallHistoryItem)
+        case meeting(Meeting)
+
+        var id: String {
+            switch self {
+            case .call(let c): return "call-\(c.id)"
+            case .meeting(let m): return "meeting-\(m.id)"
+            }
+        }
+
+        var date: Date {
+            switch self {
+            case .call(let c): return c.timestamp
+            case .meeting(let m): return m.startTime
+            }
+        }
+
+        var isMissedCall: Bool {
+            if case .call(let c) = self { return c.isMissed }
+            return false
+        }
+    }
+
+    private var unifiedHistory: [HistoryItem] {
+        var items: [HistoryItem] = []
+
+        // Past meetings where I'm the creator or was a participant
+        let myID = context.viewState.userID
+        let pastMeetings = context.viewState.meetings.filter { meeting in
+            meeting.isPast && (
+                meeting.creatorId == myID ||
+                meeting.participants.contains(where: { $0.userId == myID })
+            )
+        }
+        items += pastMeetings.map { .meeting($0) }
+
+        // Calls (filtered by search & missed filter)
+        items += filteredCalls.map { .call($0) }
+
+        // Sort by date descending
+        items.sort { $0.date > $1.date }
+        return items
+    }
+
+    private struct HistoryGroup: Equatable {
+        let title: String
+        let items: [HistoryItem]
+
+        static func == (lhs: HistoryGroup, rhs: HistoryGroup) -> Bool {
+            lhs.title == rhs.title && lhs.items.map(\.id) == rhs.items.map(\.id)
+        }
+    }
+
+    private var groupedHistory: [HistoryGroup] {
+        let calendar = Calendar.current
+        var groups: [(String, [HistoryItem])] = []
+        var currentTitle = ""
+        var currentItems: [HistoryItem] = []
+
+        for item in unifiedHistory {
+            let title = dateGroupTitle(for: item.date, calendar: calendar)
+            if title != currentTitle {
+                if !currentItems.isEmpty {
+                    groups.append((currentTitle, currentItems))
+                }
+                currentTitle = title
+                currentItems = [item]
+            } else {
+                currentItems.append(item)
+            }
+        }
+        if !currentItems.isEmpty {
+            groups.append((currentTitle, currentItems))
+        }
+        return groups.map { HistoryGroup(title: $0.0, items: $0.1) }
     }
 
     private func myRSVP(for meeting: Meeting) -> RSVPStatus? {
@@ -922,19 +829,6 @@ struct CallsListScreen: View {
         case .declined: return .red
         case .pending: return isCosmos ? .secondary : .compound.textSecondary
         }
-    }
-
-    private func meetingDayShort(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "ru_RU")
-        formatter.dateFormat = "EEE"
-        return formatter.string(from: date).uppercased()
-    }
-
-    private func meetingDayNumber(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "d"
-        return formatter.string(from: date)
     }
 
     private func meetingTimeRange(_ meeting: Meeting) -> String {
