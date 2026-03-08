@@ -9,13 +9,39 @@ import SwiftUI
 
 struct ContactsListScreen: View {
     @ObservedObject var context: ContactsListScreenViewModelType.Context
+    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
+
+    private var isCosmos: Bool { designTheme == "cosmos" }
+
+    // MARK: - Cosmos Colors
+
+    private let accentBlue = Color(red: 0.38, green: 0.42, blue: 0.96)
+    private let bgGradientTop = Color(red: 0.90, green: 0.92, blue: 1.0)
+    private let bgGradientBottom = Color(red: 0.95, green: 0.96, blue: 1.0)
+    private let cardBg = Color(UIColor.systemBackground)
+
+    // MARK: - Body
 
     var body: some View {
-        content
-            .navigationTitle("Контакты")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { toolbar }
-            .background(Color.compound.bgCanvasDefault.ignoresSafeArea())
+        Group {
+            if isCosmos {
+                ZStack {
+                    LinearGradient(
+                        colors: [bgGradientTop, bgGradientBottom, Color(UIColor.systemGroupedBackground)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .ignoresSafeArea()
+                    cosmosContent
+                }
+            } else {
+                classicContent
+                    .background(Color.compound.bgCanvasDefault.ignoresSafeArea())
+            }
+        }
+        .navigationTitle("Контакты")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { toolbar }
     }
 
     @ToolbarContentBuilder
@@ -30,6 +56,7 @@ struct ContactsListScreen: View {
                 }
             } label: {
                 Image(systemName: "arrow.up.arrow.down")
+                    .foregroundColor(isCosmos ? accentBlue : nil)
             }
         }
         ToolbarItem(placement: .primaryAction) {
@@ -37,22 +64,112 @@ struct ContactsListScreen: View {
                 context.send(viewAction: .addContact)
             } label: {
                 Image(systemName: "plus")
+                    .foregroundColor(isCosmos ? accentBlue : nil)
             }
         }
     }
 
+    // MARK: - Shared Data
+
+    private struct ContactGroup {
+        let letter: String
+        let contacts: [ContactItem]
+    }
+
+    private var filteredContacts: [ContactItem] {
+        var contacts = context.viewState.contacts
+
+        // Apply filter
+        switch context.viewState.selectedFilter {
+        case .all:
+            break
+        case .online:
+            contacts = contacts.filter { $0.isOnline }
+        case .favorites:
+            contacts = contacts.filter { $0.isFavorite }
+        }
+
+        // Apply search
+        if !context.searchQuery.isEmpty {
+            contacts = contacts.filter {
+                $0.displayName.localizedCaseInsensitiveContains(context.searchQuery)
+            }
+        }
+
+        return contacts
+    }
+
+    private var groupedContacts: [ContactGroup] {
+        let sorted = filteredContacts.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+        var groups: [String: [ContactItem]] = [:]
+        for contact in sorted {
+            let firstChar = String(contact.displayName.prefix(1)).uppercased()
+            let letter = firstChar.isEmpty ? "#" : firstChar
+            groups[letter, default: []].append(contact)
+        }
+        return groups.keys.sorted().map { ContactGroup(letter: $0, contacts: groups[$0]!) }
+    }
+
+    // MARK: - Shared Helpers
+
+    private func contactOrgSubtitle(_ contact: ContactItem) -> String? {
+        let parts = [contact.jobTitle, contact.department].compactMap { $0?.isEmpty == true ? nil : $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    private func contactLastSeen(_ contact: ContactItem) -> String {
+        guard let lastSeen = contact.lastSeenDate else {
+            return "не в сети"
+        }
+        let interval = Date().timeIntervalSince(lastSeen)
+        if interval < 60 {
+            return "был(а) только что"
+        } else if interval < 3600 {
+            let minutes = Int(interval / 60)
+            return "был(а) \(minutes) мин. назад"
+        } else if interval < 86400 {
+            let hours = Int(interval / 3600)
+            return "был(а) \(hours) ч. назад"
+        } else {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "ru_RU")
+            formatter.dateFormat = "d MMM"
+            return "был(а) \(formatter.string(from: lastSeen))"
+        }
+    }
+
+    /// Stable avatar color using djb2 hash (hashValue is randomized per launch)
+    private func avatarColor(for name: String) -> Color {
+        let colors: [Color] = [
+            Color(red: 0.2, green: 0.6, blue: 0.9),
+            Color(red: 0.3, green: 0.7, blue: 0.4),
+            Color(red: 0.9, green: 0.5, blue: 0.2),
+            Color(red: 0.6, green: 0.3, blue: 0.8),
+            Color(red: 0.9, green: 0.3, blue: 0.4),
+            Color(red: 0.2, green: 0.7, blue: 0.7),
+        ]
+        var hash: UInt64 = 5381
+        for char in name.unicodeScalars {
+            hash = ((hash &<< 5) &+ hash) &+ UInt64(char.value)
+        }
+        let index = Int(hash % UInt64(colors.count))
+        return colors[index]
+    }
+
+    // MARK: - Classic Design
+
     @ViewBuilder
-    private var content: some View {
+    private var classicContent: some View {
         GeometryReader { geometry in
             ScrollViewReader { scrollProxy in
                 ScrollView {
                     LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
-                        filtersSection
+                        classicFiltersSection
 
                         if context.viewState.isLoading {
-                            loadingCells
+                            classicLoadingCells
                         } else if filteredContacts.isEmpty {
-                            emptyStateView(minHeight: geometry.size.height)
+                            classicEmptyStateView(minHeight: geometry.size.height)
                         } else {
                             ForEach(groupedContacts, id: \.letter) { group in
                                 Section {
@@ -68,11 +185,11 @@ struct ContactsListScreen: View {
                                                 }
                                             ]
                                         ) {
-                                            contactCell(contact)
+                                            classicContactCell(contact)
                                         }
                                     }
                                 } header: {
-                                    sectionHeader(group.letter)
+                                    classicSectionHeader(group.letter)
                                         .id(group.letter)
                                 }
                             }
@@ -86,17 +203,15 @@ struct ContactsListScreen: View {
                 .scrollBounceBehavior(context.viewState.contacts.isEmpty ? .basedOnSize : .automatic)
                 .overlay(alignment: .trailing) {
                     if !groupedContacts.isEmpty && context.searchQuery.isEmpty {
-                        alphabetScrubber(scrollProxy: scrollProxy)
+                        classicAlphabetScrubber(scrollProxy: scrollProxy)
                     }
                 }
             }
         }
     }
 
-    // MARK: - Alphabet Scrubber
-
     @ViewBuilder
-    private func alphabetScrubber(scrollProxy: ScrollViewProxy) -> some View {
+    private func classicAlphabetScrubber(scrollProxy: ScrollViewProxy) -> some View {
         let letters = groupedContacts.map(\.letter)
         VStack(spacing: 0) {
             ForEach(letters, id: \.self) { letter in
@@ -122,7 +237,7 @@ struct ContactsListScreen: View {
         )
     }
 
-    private func sectionHeader(_ letter: String) -> some View {
+    private func classicSectionHeader(_ letter: String) -> some View {
         Text(letter)
             .font(.system(size: 14, weight: .semibold))
             .foregroundColor(.compound.textSecondary)
@@ -132,24 +247,8 @@ struct ContactsListScreen: View {
             .background(Color.compound.bgSubtleSecondary)
     }
 
-    private struct ContactGroup {
-        let letter: String
-        let contacts: [ContactItem]
-    }
-
-    private var groupedContacts: [ContactGroup] {
-        let sorted = filteredContacts.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
-        var groups: [String: [ContactItem]] = [:]
-        for contact in sorted {
-            let firstChar = String(contact.displayName.prefix(1)).uppercased()
-            let letter = firstChar.isEmpty ? "#" : firstChar
-            groups[letter, default: []].append(contact)
-        }
-        return groups.keys.sorted().map { ContactGroup(letter: $0, contacts: groups[$0]!) }
-    }
-
     @ViewBuilder
-    private var filtersSection: some View {
+    private var classicFiltersSection: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 GenericFilterView(
@@ -180,15 +279,15 @@ struct ContactsListScreen: View {
         .background(Color.compound.bgCanvasDefault)
     }
 
-    private var loadingCells: some View {
+    private var classicLoadingCells: some View {
         ForEach(0..<5, id: \.self) { _ in
-            skeletonCell
+            classicSkeletonCell
         }
         .redacted(reason: .placeholder)
         .shimmer()
     }
 
-    private var skeletonCell: some View {
+    private var classicSkeletonCell: some View {
         HStack(spacing: 16) {
             Circle()
                 .fill(Color.compound.bgSubtleSecondary)
@@ -210,7 +309,7 @@ struct ContactsListScreen: View {
         .padding(.vertical, 12)
     }
 
-    private func emptyStateView(minHeight: CGFloat) -> some View {
+    private func classicEmptyStateView(minHeight: CGFloat) -> some View {
         VStack(spacing: 16) {
             Spacer()
 
@@ -233,30 +332,7 @@ struct ContactsListScreen: View {
         .frame(minHeight: minHeight - 100)
     }
 
-    private var filteredContacts: [ContactItem] {
-        var contacts = context.viewState.contacts
-
-        // Apply filter
-        switch context.viewState.selectedFilter {
-        case .all:
-            break
-        case .online:
-            contacts = contacts.filter { $0.isOnline }
-        case .favorites:
-            contacts = contacts.filter { $0.isFavorite }
-        }
-
-        // Apply search
-        if !context.searchQuery.isEmpty {
-            contacts = contacts.filter {
-                $0.displayName.localizedCaseInsensitiveContains(context.searchQuery)
-            }
-        }
-
-        return contacts
-    }
-
-    private func contactCell(_ contact: ContactItem) -> some View {
+    private func classicContactCell(_ contact: ContactItem) -> some View {
         HStack(spacing: 12) {
             LoadableAvatarImage(url: contact.avatarURL,
                                 name: contact.displayName,
@@ -306,30 +382,279 @@ struct ContactsListScreen: View {
         }
     }
 
-    private func contactOrgSubtitle(_ contact: ContactItem) -> String? {
-        let parts = [contact.jobTitle, contact.department].compactMap { $0?.isEmpty == true ? nil : $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    // MARK: - Cosmos Design
+
+    @ViewBuilder
+    private var cosmosContent: some View {
+        GeometryReader { geometry in
+            ScrollViewReader { scrollProxy in
+                ScrollView {
+                    VStack(spacing: 0) {
+                        // Search
+                        HStack(spacing: 10) {
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 14))
+                                .foregroundColor(.secondary)
+                            TextField("Поиск контактов", text: $context.searchQuery)
+                                .font(.system(size: 15))
+                                .autocorrectionDisabled()
+                            if !context.searchQuery.isEmpty {
+                                Button {
+                                    context.searchQuery = ""
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 16))
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(Color(UIColor.systemGray6))
+                        .cornerRadius(12)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+
+                        // Filters
+                        cosmosFiltersSection
+
+                        // Contacts
+                        if context.viewState.isLoading {
+                            cosmosLoadingCells
+                                .padding(.horizontal, 16)
+                        } else if filteredContacts.isEmpty {
+                            cosmosEmptyStateView(minHeight: geometry.size.height)
+                        } else {
+                            LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                                ForEach(groupedContacts, id: \.letter) { group in
+                                    Section {
+                                        LazyVStack(spacing: 10) {
+                                            ForEach(group.contacts) { contact in
+                                                SwipeActionView(
+                                                    trailingActions: [
+                                                        SwipeAction(
+                                                            title: contact.isFavorite ? "Убрать" : "Избранное",
+                                                            icon: contact.isFavorite ? "star.slash" : "star.fill",
+                                                            color: .orange
+                                                        ) {
+                                                            context.send(viewAction: .toggleFavorite(contact))
+                                                        }
+                                                    ]
+                                                ) {
+                                                    cosmosContactCell(contact)
+                                                }
+                                            }
+                                        }
+                                        .padding(.horizontal, 16)
+                                        .padding(.bottom, 6)
+                                    } header: {
+                                        cosmosSectionHeader(group.letter)
+                                            .id(group.letter)
+                                    }
+                                }
+                            }
+                            .padding(.bottom, 20)
+                        }
+                    }
+                }
+                .scrollDismissesKeyboard(.immediately)
+                .scrollBounceBehavior(context.viewState.contacts.isEmpty ? .basedOnSize : .automatic)
+                .overlay(alignment: .trailing) {
+                    if !groupedContacts.isEmpty && context.searchQuery.isEmpty {
+                        cosmosAlphabetScrubber(scrollProxy: scrollProxy)
+                    }
+                }
+            }
+        }
     }
 
-    private func contactLastSeen(_ contact: ContactItem) -> String {
-        guard let lastSeen = contact.lastSeenDate else {
-            return "не в сети"
+    // MARK: - Cosmos Filters
+
+    @ViewBuilder
+    private var cosmosFiltersSection: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                cosmosFilterButton(
+                    title: "Все \(context.viewState.contacts.count)",
+                    isActive: context.viewState.selectedFilter == .all
+                ) {
+                    context.send(viewAction: .selectFilter(.all))
+                }
+                cosmosFilterButton(
+                    title: "В сети \(context.viewState.onlineCount)",
+                    isActive: context.viewState.selectedFilter == .online
+                ) {
+                    context.send(viewAction: .selectFilter(.online))
+                }
+                cosmosFilterButton(
+                    title: "Избранные \(context.viewState.favoritesCount)",
+                    isActive: context.viewState.selectedFilter == .favorites
+                ) {
+                    context.send(viewAction: .selectFilter(.favorites))
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
         }
-        let interval = Date().timeIntervalSince(lastSeen)
-        if interval < 60 {
-            return "был(а) только что"
-        } else if interval < 3600 {
-            let minutes = Int(interval / 60)
-            return "был(а) \(minutes) мин. назад"
-        } else if interval < 86400 {
-            let hours = Int(interval / 3600)
-            return "был(а) \(hours) ч. назад"
-        } else {
-            let formatter = DateFormatter()
-            formatter.locale = Locale(identifier: "ru_RU")
-            formatter.dateFormat = "d MMM"
-            return "был(а) \(formatter.string(from: lastSeen))"
+    }
+
+    private func cosmosFilterButton(title: String, isActive: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(isActive ? .white : .primary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background(
+                    Capsule()
+                        .fill(isActive ? accentBlue : Color(UIColor.systemGray6))
+                )
         }
+    }
+
+    // MARK: - Cosmos Section Header
+
+    private func cosmosSectionHeader(_ letter: String) -> some View {
+        Text(letter)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundColor(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 4)
+    }
+
+    // MARK: - Cosmos Alphabet Scrubber
+
+    @ViewBuilder
+    private func cosmosAlphabetScrubber(scrollProxy: ScrollViewProxy) -> some View {
+        let letters = groupedContacts.map(\.letter)
+        VStack(spacing: 0) {
+            ForEach(letters, id: \.self) { letter in
+                Text(letter)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .frame(width: 16, height: 14)
+            }
+        }
+        .padding(.trailing, 2)
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 1)
+                .onChanged { value in
+                    let index = Int(value.location.y / 14)
+                    if index >= 0, index < letters.count {
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            scrollProxy.scrollTo(letters[index], anchor: .top)
+                        }
+                    }
+                }
+        )
+    }
+
+    // MARK: - Cosmos Loading
+
+    private var cosmosLoadingCells: some View {
+        VStack(spacing: 10) {
+            ForEach(0..<5, id: \.self) { _ in
+                cosmosSkeletonCell
+            }
+        }
+        .redacted(reason: .placeholder)
+        .shimmer()
+    }
+
+    private var cosmosSkeletonCell: some View {
+        HStack(spacing: 14) {
+            Circle()
+                .fill(Color.secondary.opacity(0.12))
+                .frame(width: 44, height: 44)
+
+            VStack(alignment: .leading, spacing: 6) {
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.secondary.opacity(0.12))
+                    .frame(width: 140, height: 14)
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.secondary.opacity(0.08))
+                    .frame(width: 100, height: 12)
+            }
+            Spacer()
+        }
+        .padding(12)
+        .background(cardBg)
+        .cornerRadius(14)
+    }
+
+    // MARK: - Cosmos Empty State
+
+    private func cosmosEmptyStateView(minHeight: CGFloat) -> some View {
+        VStack(spacing: 12) {
+            Spacer()
+
+            Image(systemName: "person.2")
+                .font(.system(size: 48))
+                .foregroundColor(.secondary.opacity(0.35))
+
+            Text("Нет контактов")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(.primary)
+
+            Text("Начните чат с кем-нибудь, чтобы добавить контакт")
+                .font(.system(size: 14))
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+
+            Spacer()
+        }
+        .frame(minHeight: minHeight - 100)
+    }
+
+    // MARK: - Cosmos Contact Cell
+
+    private func cosmosContactCell(_ contact: ContactItem) -> some View {
+        HStack(spacing: 12) {
+            LoadableAvatarImage(url: contact.avatarURL,
+                                name: contact.displayName,
+                                contentID: contact.id,
+                                avatarSize: .custom(44),
+                                mediaProvider: context.mediaProvider)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(contact.displayName)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+
+                if let orgSubtitle = contactOrgSubtitle(contact) {
+                    Text(orgSubtitle)
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+
+                Text(contact.isOnline ? "в сети" : contactLastSeen(contact))
+                    .font(.system(size: 13))
+                    .foregroundColor(contact.isOnline ? .stalkOnlineGreen : .secondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                context.send(viewAction: .selectContact(contact))
+            }
+
+            if contact.isOnline {
+                Circle()
+                    .fill(Color.stalkOnlineGreen)
+                    .frame(width: 10, height: 10)
+            }
+        }
+        .padding(12)
+        .background(cardBg)
+        .cornerRadius(14)
+        .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
     }
 }
 
