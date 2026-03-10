@@ -345,8 +345,8 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
     // MARK: - Lottie Tab Bar (Stalk-style)
 
     private var lottieTabBarBody: some View {
-        VStack(spacing: 0) {
-            // Content area
+        ZStack(alignment: .bottom) {
+            // Content area — extends behind tab bar
             ZStack {
                 ForEach(navigationTabCoordinator.tabModules.indices, id: \.self) { index in
                     let module = navigationTabCoordinator.tabModules[index]
@@ -358,7 +358,7 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            // Custom Lottie Tab Bar
+            // Custom Lottie Tab Bar — overlays content
             StalkTabBar(
                 items: navigationTabCoordinator.tabModules.map { module in
                     StalkTabItem(

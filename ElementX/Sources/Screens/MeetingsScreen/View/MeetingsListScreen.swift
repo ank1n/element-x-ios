@@ -490,9 +490,14 @@ struct MeetingsListScreen: View {
             .padding(.vertical, 8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(isActive ? Color.green.opacity(0.05) : cardBg)
-        .cornerRadius(12)
-        .shadow(color: .black.opacity(0.05), radius: 4, y: 1)
+        .background(
+            ZStack {
+                cardBg
+                if isActive { Color.green.opacity(0.05) }
+            }
+        )
+        .cornerRadius(14)
+        .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
     }
 
     // MARK: - Gap Indicator (only during working hours 09-18)
@@ -554,34 +559,37 @@ struct MeetingsListScreen: View {
             }
             .frame(width: 24)
 
-            // Карточка с обратным отсчётом
-            HStack(spacing: 8) {
-                Image(systemName: "clock.fill")
-                    .font(.system(size: 13))
-                    .foregroundColor(Color(red: 0.2, green: 0.7, blue: 0.4))
+            // Карточка с обратным отсчётом — стиль как meetingCard
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Image(systemName: "clock.fill")
+                        .font(.system(size: 13))
+                        .foregroundColor(Color(red: 0.2, green: 0.7, blue: 0.4))
 
-                if let next = nextMeeting {
-                    let minutesLeft = max(0, Int(next.startTime.timeIntervalSince(Date()) / 60))
-                    Text("До «\(next.title)» — \(formatGapMinutes(minutesLeft))")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(Color(red: 0.2, green: 0.65, blue: 0.35))
-                        .lineLimit(1)
-                } else {
-                    Text("Встреч больше нет")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(Color(red: 0.2, green: 0.65, blue: 0.35))
+                    if let next = nextMeeting {
+                        let minutesLeft = max(0, Int(next.startTime.timeIntervalSince(Date()) / 60))
+                        Text("До «\(next.title)» — \(formatGapMinutes(minutesLeft))")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(Color(red: 0.2, green: 0.65, blue: 0.35))
+                            .lineLimit(1)
+                    } else {
+                        Text("Встреч больше нет")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(Color(red: 0.2, green: 0.65, blue: 0.35))
+                    }
+
+                    Spacer()
                 }
-
-                Spacer()
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(Color.green.opacity(0.08))
-            .cornerRadius(12)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.green.opacity(0.2), lineWidth: 1)
+            .padding(12)
+            .background(
+                ZStack {
+                    cardBg
+                    Color.green.opacity(0.05)
+                }
             )
+            .cornerRadius(14)
+            .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
         }
         .padding(.bottom, 12)
     }

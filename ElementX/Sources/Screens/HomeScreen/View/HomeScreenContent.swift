@@ -12,21 +12,42 @@ import SwiftUI
 
 struct HomeScreenContent: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
-    @FocusState private var isSearchFocused: Bool
     @State private var isArchiveRevealed = false
+    @State private var areFiltersVisible = true
+    @State private var lastScrollOffset: CGFloat = 0
+    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
 
     @ObservedObject var context: HomeScreenViewModel.Context
     let scrollViewAdapter: ScrollViewAdapter
+
+    private var isCosmos: Bool { designTheme == "cosmos" }
+
+    // Cosmos colors
+    private let bgGradientTop = Color(red: 0.90, green: 0.92, blue: 1.0)
+    private let bgGradientBottom = Color(red: 0.95, green: 0.96, blue: 1.0)
+    private let cardBg = Color(UIColor.systemBackground)
     
     var body: some View {
-        roomList
-            .onChange(of: isSearchFocused) {
-                context.isSearchFieldFocused = isSearchFocused
+        ZStack {
+            if isCosmos {
+                LinearGradient(colors: [bgGradientTop, bgGradientBottom, Color(UIColor.systemGroupedBackground)],
+                               startPoint: .top, endPoint: .bottom)
+                    .ignoresSafeArea()
             }
-            .onChange(of: context.isSearchFieldFocused) {
-                isSearchFocused = context.isSearchFieldFocused
+            VStack(spacing: 0) {
+                // Filters outside ScrollView — hide on scroll up, show on pull down
+                if context.viewState.shouldShowFilters, areFiltersVisible {
+                    RoomListFiltersView(state: $context.filtersState)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+                roomList
             }
-            .sentryTrace("\(Self.self)")
+            .animation(.easeInOut(duration: 0.25), value: areFiltersVisible)
+        }
+        .searchable(text: $context.searchQuery, isPresented: $context.isSearchFieldFocused, placement: .navigationBarDrawer(displayMode: .always))
+        .compoundSearchField()
+        .disableAutocorrection(true)
+        .sentryTrace("\(Self.self)")
     }
     
     private var roomList: some View {
@@ -79,6 +100,7 @@ struct HomeScreenContent: View {
             .onReceive(scrollViewAdapter.didScroll) { _ in
                 updateVisibleRange()
                 checkOverscrollForArchive()
+                trackScrollDirection()
             }
             .onReceive(scrollViewAdapter.isScrolling) { _ in
                 updateVisibleRange()
@@ -121,12 +143,12 @@ struct HomeScreenContent: View {
             .overlay {
                 if context.viewState.shouldShowEmptyFilterState {
                     RoomListFiltersEmptyStateView(state: context.filtersState)
-                        .background(.compound.bgCanvasDefault)
+                        .background(isCosmos ? Color.clear : .compound.bgCanvasDefault)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if context.viewState.shouldHideRoomList, !context.viewState.recentSearchQueries.isEmpty {
                     recentSearchesView
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                        .background(.compound.bgCanvasDefault)
+                        .background(isCosmos ? Color.clear : .compound.bgCanvasDefault)
                 }
             }
             .scrollDismissesKeyboard(.immediately)
@@ -145,45 +167,13 @@ struct HomeScreenContent: View {
     @ViewBuilder
     private var topSection: some View {
         VStack(spacing: 0) {
-            // Search bar
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 16))
-                    .foregroundColor(.compound.iconTertiary)
-
-                TextField("Поиск", text: $context.searchQuery)
-                    .font(.compound.bodyLG)
-                    .disableAutocorrection(true)
-                    .focused($isSearchFocused)
-
-                if !context.searchQuery.isEmpty {
-                    Button {
-                        context.searchQuery = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 16))
-                            .foregroundColor(.compound.iconTertiary)
-                    }
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(Color.compound.bgSubtleSecondary)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-
-            if context.viewState.shouldShowFilters {
-                RoomListFiltersView(state: $context.filtersState)
-            }
-
             if case let .show(state) = context.viewState.securityBannerMode {
                 HomeScreenRecoveryKeyConfirmationBanner(state: state, context: context)
             } else if context.viewState.shouldShowNewSoundBanner {
                 HomeScreenNewSoundBanner { context.send(viewAction: .dismissNewSoundBanner) }
             }
         }
-        .background(Color.compound.bgCanvasDefault)
+        .background(isCosmos ? Color.clear : Color.compound.bgCanvasDefault)
     }
     
     // MARK: - Archive Row
@@ -218,8 +208,12 @@ struct HomeScreenContent: View {
                 Spacer()
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .background(Color.compound.bgCanvasDefault)
+            .padding(.vertical, isCosmos ? 8 : 12)
+            .background(isCosmos ? Color(UIColor.systemBackground) : Color.compound.bgCanvasDefault)
+            .cornerRadius(isCosmos ? 12 : 0)
+            .shadow(color: isCosmos ? .black.opacity(0.03) : .clear, radius: 2, y: 1)
+            .padding(.horizontal, isCosmos ? 8 : 0)
+            .padding(.vertical, isCosmos ? 2 : 0)
         }
     }
 
@@ -264,6 +258,23 @@ struct HomeScreenContent: View {
     }
 
     /// Detects pull-down overscroll to reveal / scroll-up to hide the archive row (Telegram-style)
+    private func trackScrollDirection() {
+        guard let scrollView = scrollViewAdapter.scrollView else { return }
+        let currentOffset = scrollView.contentOffset.y
+        let delta = currentOffset - lastScrollOffset
+
+        // Threshold to avoid jitter
+        if delta > 8, currentOffset > 50 {
+            // Scrolling up (content moving up) → hide filters
+            areFiltersVisible = false
+        } else if delta < -8 {
+            // Scrolling down (pulling down) → show filters
+            areFiltersVisible = true
+        }
+
+        lastScrollOffset = currentOffset
+    }
+
     private func checkOverscrollForArchive() {
         guard context.viewState.archiveRoomCount > 0,
               context.viewState.roomListMode == .rooms,

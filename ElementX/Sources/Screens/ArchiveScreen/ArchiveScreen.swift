@@ -10,6 +10,12 @@ import SwiftUI
 
 struct ArchiveScreen: View {
     @ObservedObject var context: ArchiveScreenViewModel.Context
+    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
+
+    private var isCosmos: Bool { designTheme == "cosmos" }
+
+    private let bgGradientTop = Color(red: 0.90, green: 0.92, blue: 1.0)
+    private let bgGradientBottom = Color(red: 0.95, green: 0.96, blue: 1.0)
 
     var body: some View {
         content
@@ -44,22 +50,33 @@ struct ArchiveScreen: View {
     }
 
     private var roomList: some View {
-        ScrollView {
-            LazyVStack(spacing: 0) {
-                ForEach(context.viewState.rooms) { room in
-                    switch room.type {
-                    case .room:
-                        ArchiveRoomSwipeView(room: room, context: context) {
-                            HomeScreenRoomCell(room: room, isSelected: false, mediaProvider: context.mediaProvider) { action in
-                                switch action {
-                                case .selectRoom(let id):
-                                    context.send(viewAction: .selectRoom(roomIdentifier: id))
-                                default:
-                                    break
+        ZStack {
+            if isCosmos {
+                LinearGradient(colors: [bgGradientTop, bgGradientBottom, Color(UIColor.systemGroupedBackground)],
+                               startPoint: .top, endPoint: .bottom)
+                    .ignoresSafeArea()
+            }
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(context.viewState.rooms) { room in
+                        switch room.type {
+                        case .room:
+                            ArchiveRoomSwipeView(room: room, context: context) {
+                                HomeScreenRoomCell(room: room, isSelected: false, mediaProvider: context.mediaProvider) { action in
+                                    switch action {
+                                    case .selectRoom(let id):
+                                        context.send(viewAction: .selectRoom(roomIdentifier: id))
+                                    default:
+                                        break
+                                    }
                                 }
                             }
-                        }
-                        .contextMenu {
+                            .background(isCosmos ? Color(UIColor.systemBackground) : Color.clear)
+                            .clipShape(RoundedRectangle(cornerRadius: isCosmos ? 14 : 0))
+                            .shadow(color: isCosmos ? .black.opacity(0.05) : .clear, radius: 6, y: 2)
+                            .padding(.horizontal, isCosmos ? 12 : 0)
+                            .padding(.vertical, isCosmos ? 3 : 0)
+                            .contextMenu {
                             Button {
                                 context.send(viewAction: .unarchiveRoom(roomIdentifier: room.id))
                             } label: {
@@ -80,11 +97,17 @@ struct ArchiveScreen: View {
                         }
                     default:
                         HomeScreenRoomCell(room: room, isSelected: false, mediaProvider: context.mediaProvider) { _ in }
+                            .background(isCosmos ? Color(UIColor.systemBackground) : Color.clear)
+                            .clipShape(RoundedRectangle(cornerRadius: isCosmos ? 14 : 0))
+                            .shadow(color: isCosmos ? .black.opacity(0.05) : .clear, radius: 6, y: 2)
+                            .padding(.horizontal, isCosmos ? 12 : 0)
+                            .padding(.vertical, isCosmos ? 3 : 0)
                     }
                 }
             }
         }
-        .background(Color.compound.bgCanvasDefault)
+        .background(isCosmos ? Color.clear : Color.compound.bgCanvasDefault)
+        }
     }
 
     // MARK: - Leave Room Alert

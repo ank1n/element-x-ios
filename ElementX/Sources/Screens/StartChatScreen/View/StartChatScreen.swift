@@ -11,16 +11,32 @@ import SwiftUI
 
 struct StartChatScreen: View {
     @ObservedObject var context: StartChatScreenViewModel.Context
-    
+    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
+
+    private var isCosmos: Bool { designTheme == "cosmos" }
+
+    private let bgGradientTop = Color(red: 0.90, green: 0.92, blue: 1.0)
+    private let bgGradientBottom = Color(red: 0.95, green: 0.96, blue: 1.0)
+
     var body: some View {
-        Form {
-            if !context.viewState.isSearching {
-                mainContent
-            } else {
-                searchContent
+        ZStack {
+            if isCosmos {
+                LinearGradient(colors: [bgGradientTop, bgGradientBottom, Color(UIColor.systemGroupedBackground)],
+                               startPoint: .top, endPoint: .bottom)
+                    .ignoresSafeArea()
             }
+
+            Form {
+                if !context.viewState.isSearching {
+                    mainContent
+                } else {
+                    searchContent
+                }
+            }
+            .environment(\.defaultMinListRowHeight, 48)
+            .scrollContentBackground(.hidden)
+            .background(isCosmos ? Color.clear.ignoresSafeArea() : Color.compound.bgSubtleSecondaryLevel0.ignoresSafeArea())
         }
-        .compoundList()
         .track(screen: .StartChat)
         .scrollDismissesKeyboard(.immediately)
         .navigationTitle(L10n.actionStartChat)
@@ -53,7 +69,6 @@ struct StartChatScreen: View {
         if context.viewState.isRoomDirectoryEnabled {
             roomDirectorySearch
         }
-        inviteFriendsSection
         joinRoomByAddressSection
         usersSection
     }

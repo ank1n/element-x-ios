@@ -25,6 +25,7 @@ struct HomeScreen: View {
             .navigationTitle("Чаты")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarVisibility(.visible, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar { toolbar }
             .disableAutocorrection(true)
             .background(Color.compound.bgCanvasDefault.ignoresSafeArea())

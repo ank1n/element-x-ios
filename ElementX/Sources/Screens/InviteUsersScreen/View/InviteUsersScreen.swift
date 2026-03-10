@@ -11,17 +11,33 @@ import SwiftUI
 
 struct InviteUsersScreen: View {
     @ObservedObject var context: InviteUsersScreenViewModel.Context
-    
+    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
+
     @State private var formWidth = CGFloat.zero
-    
+
+    private var isCosmos: Bool { designTheme == "cosmos" }
+
+    private let bgGradientTop = Color(red: 0.90, green: 0.92, blue: 1.0)
+    private let bgGradientBottom = Color(red: 0.95, green: 0.96, blue: 1.0)
+
     var showTopSection: Bool {
         !context.viewState.selectedUsers.isEmpty || context.viewState.isSearching
     }
-    
+
     var body: some View {
-        mainContent
-            .compoundList()
-            .scrollDismissesKeyboard(.immediately)
+        ZStack {
+            if isCosmos {
+                LinearGradient(colors: [bgGradientTop, bgGradientBottom, Color(UIColor.systemGroupedBackground)],
+                               startPoint: .top, endPoint: .bottom)
+                    .ignoresSafeArea()
+            }
+
+            mainContent
+                .environment(\.defaultMinListRowHeight, 48)
+                .scrollContentBackground(.hidden)
+                .background(isCosmos ? Color.clear.ignoresSafeArea() : Color.compound.bgSubtleSecondaryLevel0.ignoresSafeArea())
+        }
+        .scrollDismissesKeyboard(.immediately)
             .navigationTitle(L10n.screenCreateRoomAddPeopleTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbar }

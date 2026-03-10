@@ -41,6 +41,7 @@ struct CallsListScreen: View {
         }
         .navigationTitle(isCosmos ? "Звонки" : "")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
             if isCosmos {
                 cosmosToolbar
@@ -391,31 +392,6 @@ struct CallsListScreen: View {
         GeometryReader { geometry in
             ScrollView {
                 VStack(spacing: 0) {
-                    // Inline search
-                    HStack(spacing: 10) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 14))
-                            .foregroundColor(.secondary)
-                        TextField("Поиск", text: $context.searchQuery)
-                            .font(.system(size: 15))
-                            .autocorrectionDisabled()
-                        if !context.searchQuery.isEmpty {
-                            Button {
-                                context.searchQuery = ""
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.system(size: 16))
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(Color(UIColor.systemGray6))
-                    .cornerRadius(12)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-
                     // Capsule filters
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
@@ -472,6 +448,9 @@ struct CallsListScreen: View {
                 }
                 .padding(.bottom, 20)
             }
+            .searchable(text: $context.searchQuery, placement: .navigationBarDrawer(displayMode: .always))
+            .compoundSearchField()
+            .disableAutocorrection(true)
             .scrollDismissesKeyboard(.immediately)
             .scrollBounceBehavior(context.viewState.callHistory.isEmpty ? .basedOnSize : .automatic)
             .refreshable {

@@ -35,16 +35,33 @@ struct CreateRoomScreen: View {
         })
     }
     
+    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
+
+    private var isCosmos: Bool { designTheme == "cosmos" }
+
+    private let bgGradientTop = Color(red: 0.90, green: 0.92, blue: 1.0)
+    private let bgGradientBottom = Color(red: 0.95, green: 0.96, blue: 1.0)
+
     var body: some View {
-        Form {
-            roomSection
-            topicSection
-            roomAccessSection
-            if !context.selectedAccessType.isPrivate {
-                roomAliasSection
+        ZStack {
+            if isCosmos {
+                LinearGradient(colors: [bgGradientTop, bgGradientBottom, Color(UIColor.systemGroupedBackground)],
+                               startPoint: .top, endPoint: .bottom)
+                    .ignoresSafeArea()
             }
+
+            Form {
+                roomSection
+                topicSection
+                roomAccessSection
+                if !context.selectedAccessType.isPrivate {
+                    roomAliasSection
+                }
+            }
+            .environment(\.defaultMinListRowHeight, 48)
+            .scrollContentBackground(.hidden)
+            .background(isCosmos ? Color.clear.ignoresSafeArea() : Color.compound.bgSubtleSecondaryLevel0.ignoresSafeArea())
         }
-        .compoundList()
         .track(screen: .CreateRoom)
         .scrollDismissesKeyboard(.immediately)
         .navigationTitle(context.viewState.isSpace ? L10n.screenCreateRoomNewSpaceTitle : L10n.screenCreateRoomNewRoomTitle)

@@ -12,90 +12,184 @@ import SwiftUI
 
 struct SettingsScreen: View {
     let context: SettingsScreenViewModel.Context
-    
+    @AppStorage("stalk_design_theme") private var settingsDesignTheme: String = "cosmos"
+
+    private var isCosmos: Bool { settingsDesignTheme == "cosmos" }
+
+    private let bgGradientTop = Color(red: 0.90, green: 0.92, blue: 1.0)
+    private let bgGradientBottom = Color(red: 0.95, green: 0.96, blue: 1.0)
+
     private var shouldHideManageAccountSection: Bool {
         context.viewState.accountProfileURL == nil &&
             context.viewState.accountSessionsListURL == nil &&
             !context.viewState.showBlockedUsers
     }
-    
+
     var body: some View {
-        Form {
-            userSection
-            
-            manageMyAppSection
-            
-            if !shouldHideManageAccountSection {
-                manageAccountSection
+        ZStack {
+            if isCosmos {
+                LinearGradient(colors: [bgGradientTop, bgGradientBottom, Color(UIColor.systemGroupedBackground)],
+                               startPoint: .top, endPoint: .bottom)
+                    .ignoresSafeArea()
             }
-            
-            appearanceSection
 
-            generalSection
+            Form {
+                userSection
 
-            storageSection
+                manageMyAppSection
 
-            signOutSection
-            
-            if context.viewState.showDeveloperOptions {
-                developerOptionsSection
+                if !shouldHideManageAccountSection {
+                    manageAccountSection
+                }
+
+                appearanceSection
+
+                generalSection
+
+                storageSection
+
+                signOutSection
+
+                if context.viewState.showDeveloperOptions {
+                    developerOptionsSection
+                }
             }
+            .environment(\.defaultMinListRowHeight, 48)
+            .scrollContentBackground(.hidden)
+            .background(isCosmos ? Color.clear.ignoresSafeArea() : Color.compound.bgSubtleSecondaryLevel0.ignoresSafeArea())
         }
-        .compoundList()
         .navigationTitle("Настройки")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.visible, for: .navigationBar)
     }
     
+    private let accentBlue = Color(red: 0.38, green: 0.42, blue: 0.96)
+
+    @ViewBuilder
     private var userSection: some View {
         Section {
-            ListRow(kind: .custom {
-                VStack(spacing: 8) {
-                    LoadableAvatarImage(url: context.viewState.userAvatarURL,
-                                        name: context.viewState.userDisplayName,
-                                        contentID: context.viewState.userID,
-                                        avatarSize: .custom(80),
-                                        mediaProvider: context.mediaProvider)
-                        .accessibilityHidden(true)
-
-                    Text(context.viewState.userDisplayName ?? "")
-                        .font(.system(size: 22, weight: .bold))
-                        .foregroundColor(.compound.textPrimary)
-
-                    Text(context.viewState.userID)
-                        .font(.compound.bodySM)
-                        .foregroundColor(.compound.textSecondary)
-
-                    HStack(spacing: 12) {
-                        Button {
-                            context.send(viewAction: .userDetails)
-                        } label: {
-                            Label("Изменить фото", systemImage: "camera")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(.accentColor)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
-                                .background(Color.accentColor.opacity(0.12))
-                                .clipShape(Capsule())
-                        }
-
-                        Button {
-                            context.send(viewAction: .userDetails)
-                        } label: {
-                            Label("Изменить имя", systemImage: "pencil")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(.accentColor)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
-                                .background(Color.accentColor.opacity(0.12))
-                                .clipShape(Capsule())
-                        }
-                    }
-                    .padding(.top, 4)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-            })
+            if isCosmos {
+                ListRow(kind: .custom { cosmosProfileCard })
+            } else {
+                ListRow(kind: .custom { classicProfileCard })
+            }
         }
+    }
+
+    private var cosmosProfileCard: some View {
+        VStack(spacing: 16) {
+            // Avatar with ring
+            LoadableAvatarImage(url: context.viewState.userAvatarURL,
+                                name: context.viewState.userDisplayName,
+                                contentID: context.viewState.userID,
+                                avatarSize: .custom(88),
+                                mediaProvider: context.mediaProvider)
+                .accessibilityHidden(true)
+                .overlay(
+                    Circle()
+                        .stroke(accentBlue.opacity(0.2), lineWidth: 3)
+                        .frame(width: 94, height: 94)
+                )
+                .shadow(color: accentBlue.opacity(0.15), radius: 8, y: 2)
+
+            VStack(spacing: 4) {
+                Text(context.viewState.userDisplayName ?? "")
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundColor(.primary)
+
+                Text(context.viewState.userID)
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+            }
+
+            // Action buttons
+            HStack(spacing: 10) {
+                Button {
+                    context.send(viewAction: .userDetails)
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "camera")
+                            .font(.system(size: 13, weight: .medium))
+                        Text("Фото")
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 9)
+                    .background(accentBlue)
+                    .clipShape(Capsule())
+                    .shadow(color: accentBlue.opacity(0.3), radius: 4, y: 2)
+                }
+
+                Button {
+                    context.send(viewAction: .userDetails)
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 13, weight: .medium))
+                        Text("Имя")
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                    .foregroundColor(accentBlue)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 9)
+                    .background(Color(UIColor.systemBackground))
+                    .clipShape(Capsule())
+                    .overlay(Capsule().stroke(accentBlue.opacity(0.3), lineWidth: 1.5))
+                    .shadow(color: .black.opacity(0.04), radius: 4, y: 2)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 20)
+    }
+
+    private var classicProfileCard: some View {
+        VStack(spacing: 8) {
+            LoadableAvatarImage(url: context.viewState.userAvatarURL,
+                                name: context.viewState.userDisplayName,
+                                contentID: context.viewState.userID,
+                                avatarSize: .custom(80),
+                                mediaProvider: context.mediaProvider)
+                .accessibilityHidden(true)
+
+            Text(context.viewState.userDisplayName ?? "")
+                .font(.system(size: 22, weight: .bold))
+                .foregroundColor(.compound.textPrimary)
+
+            Text(context.viewState.userID)
+                .font(.compound.bodySM)
+                .foregroundColor(.compound.textSecondary)
+
+            HStack(spacing: 12) {
+                Button {
+                    context.send(viewAction: .userDetails)
+                } label: {
+                    Label("Изменить фото", systemImage: "camera")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.accentColor)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color.accentColor.opacity(0.12))
+                        .clipShape(Capsule())
+                }
+
+                Button {
+                    context.send(viewAction: .userDetails)
+                } label: {
+                    Label("Изменить имя", systemImage: "pencil")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.accentColor)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color.accentColor.opacity(0.12))
+                        .clipShape(Capsule())
+                }
+            }
+            .padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 16)
     }
     
     private var manageMyAppSection: some View {
@@ -165,11 +259,9 @@ struct SettingsScreen: View {
         }
     }
     
-    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
-
     private var appearanceSection: some View {
         Section(header: Text("Внешний вид")) {
-            Picker(selection: $designTheme) {
+            Picker(selection: $settingsDesignTheme) {
                 Text("Космос").tag("cosmos")
                 Text("Классика").tag("classic")
             } label: {

@@ -41,6 +41,7 @@ struct ContactsListScreen: View {
         }
         .navigationTitle("Контакты")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.visible, for: .navigationBar)
         .toolbar { toolbar }
     }
 
@@ -390,31 +391,6 @@ struct ContactsListScreen: View {
             ScrollViewReader { scrollProxy in
                 ScrollView {
                     VStack(spacing: 0) {
-                        // Search
-                        HStack(spacing: 10) {
-                            Image(systemName: "magnifyingglass")
-                                .font(.system(size: 14))
-                                .foregroundColor(.secondary)
-                            TextField("Поиск контактов", text: $context.searchQuery)
-                                .font(.system(size: 15))
-                                .autocorrectionDisabled()
-                            if !context.searchQuery.isEmpty {
-                                Button {
-                                    context.searchQuery = ""
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .font(.system(size: 16))
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                        .background(Color(UIColor.systemGray6))
-                        .cornerRadius(12)
-                        .padding(.horizontal, 16)
-                        .padding(.top, 8)
-
                         // Filters
                         cosmosFiltersSection
 
@@ -457,6 +433,9 @@ struct ContactsListScreen: View {
                         }
                     }
                 }
+                .searchable(text: $context.searchQuery, placement: .navigationBarDrawer(displayMode: .always))
+                .compoundSearchField()
+                .disableAutocorrection(true)
                 .scrollDismissesKeyboard(.immediately)
                 .scrollBounceBehavior(context.viewState.contacts.isEmpty ? .basedOnSize : .automatic)
                 .overlay(alignment: .trailing) {

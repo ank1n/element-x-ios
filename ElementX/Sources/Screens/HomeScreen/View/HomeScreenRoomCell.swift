@@ -13,12 +13,14 @@ import SwiftUI
 struct HomeScreenRoomCell: View {
     @Environment(\.dynamicTypeSize) var dynamicTypeSize
     @Environment(\.redactionReasons) private var redactionReasons
-    
+    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
+
     let room: HomeScreenRoom
     let isSelected: Bool
     let mediaProvider: MediaProviderProtocol!
     let action: (HomeScreenViewAction) -> Void
-    
+
+    private var isCosmos: Bool { designTheme == "cosmos" }
     private let verticalInsets = 12.0
     private let horizontalInsets = 16.0
     
@@ -32,12 +34,14 @@ struct HomeScreenRoomCell: View {
                 avatar
                 
                 content
-                    .padding(.vertical, verticalInsets)
+                    .padding(.vertical, isCosmos ? 4 : verticalInsets)
                     .overlay(alignment: .bottom) {
-                        Rectangle()
-                            .fill(Color.compound.borderDisabled)
-                            .frame(height: 1 / UIScreen.main.scale)
-                            .padding(.trailing, -horizontalInsets)
+                        if !isCosmos {
+                            Rectangle()
+                                .fill(Color.compound.borderDisabled)
+                                .frame(height: 1 / UIScreen.main.scale)
+                                .padding(.trailing, -horizontalInsets)
+                        }
                     }
             }
             .padding(.horizontal, horizontalInsets)
@@ -185,10 +189,13 @@ struct HomeScreenRoomCell: View {
 
 struct HomeScreenRoomCellButtonStyle: ButtonStyle {
     let isSelected: Bool
-    
+    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
+
+    private var isCosmos: Bool { designTheme == "cosmos" }
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .background(isSelected ? Color.compound.bgSubtleSecondary : Color.compound.bgCanvasDefault)
+            .background(isSelected ? Color.compound.bgSubtleSecondary : (isCosmos ? Color(UIColor.systemBackground) : Color.compound.bgCanvasDefault))
             .contentShape(Rectangle())
             .animation(isSelected ? .none : .easeOut(duration: 0.1).disabledDuringTests(), value: isSelected)
     }

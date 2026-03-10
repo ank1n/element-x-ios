@@ -11,12 +11,22 @@ import SwiftUI
 struct RoomListFilterView: View {
     let filter: RoomListFilter
     @Binding var isActive: Bool
+    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
+
+    private var isCosmos: Bool { designTheme == "cosmos" }
 
     var body: some View {
-        Toggle(isOn: $isActive) {
-            Text(filter.localizedName)
+        if isCosmos {
+            Toggle(isOn: $isActive) {
+                Text(filter.localizedName)
+            }
+            .toggleStyle(CosmosCapsuleToggleStyle())
+        } else {
+            Toggle(isOn: $isActive) {
+                Text(filter.localizedName)
+            }
+            .toggleStyle(FilterToggleStyle())
         }
-        .toggleStyle(FilterToggleStyle())
     }
 }
 
@@ -45,6 +55,29 @@ struct FilterToggleStyle: ToggleStyle {
                     .fill(configuration.isOn ? Color.accentColor : Color.clear)
                     .frame(height: 2)
             }
+            .animation(.easeInOut(duration: 0.2), value: configuration.isOn)
+            .onTapGesture {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    configuration.isOn.toggle()
+                }
+            }
+    }
+}
+
+/// Cosmos capsule filter style — matching Calls/Apps/Contacts screens
+struct CosmosCapsuleToggleStyle: ToggleStyle {
+    private let accentBlue = Color(red: 0.38, green: 0.42, blue: 0.96)
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13, weight: .medium))
+            .foregroundColor(configuration.isOn ? .white : .primary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+            .background(
+                Capsule()
+                    .fill(configuration.isOn ? accentBlue : Color(UIColor.systemGray6))
+            )
             .animation(.easeInOut(duration: 0.2), value: configuration.isOn)
             .onTapGesture {
                 withAnimation(.easeInOut(duration: 0.2)) {

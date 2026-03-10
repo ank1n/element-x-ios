@@ -133,10 +133,10 @@ struct MeetingDetailScreen: View {
                 }
             }
         }
-        .padding(16)
+        .padding(14)
         .background(cardBg)
-        .cornerRadius(16)
-        .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
+        .cornerRadius(14)
+        .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
     }
 
     // MARK: - Date & Time Card
@@ -225,8 +225,8 @@ struct MeetingDetailScreen: View {
             }
         }
         .background(cardBg)
-        .cornerRadius(16)
-        .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
+        .cornerRadius(14)
+        .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
     }
 
     // MARK: - Description Card
@@ -248,10 +248,10 @@ struct MeetingDetailScreen: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
+        .padding(14)
         .background(cardBg)
-        .cornerRadius(16)
-        .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
+        .cornerRadius(14)
+        .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
     }
 
     // MARK: - Participants Card
@@ -272,10 +272,10 @@ struct MeetingDetailScreen: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
+        .padding(14)
         .background(cardBg)
-        .cornerRadius(16)
-        .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
+        .cornerRadius(14)
+        .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
     }
 
     @ViewBuilder
@@ -328,6 +328,7 @@ struct MeetingDetailScreen: View {
                     .padding(.vertical, 14)
                     .background(accentBlue)
                     .cornerRadius(14)
+                    .shadow(color: accentBlue.opacity(0.3), radius: 6, y: 2)
                 }
             }
 
@@ -353,9 +354,10 @@ struct MeetingDetailScreen: View {
                         }
                         .foregroundColor(accentBlue)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(accentBlue.opacity(0.1))
-                        .cornerRadius(12)
+                        .padding(.vertical, 13)
+                        .background(cardBg)
+                        .cornerRadius(14)
+                        .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
                     }
 
                     Button {
@@ -369,9 +371,10 @@ struct MeetingDetailScreen: View {
                         }
                         .foregroundColor(.red)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Color.red.opacity(0.08))
-                        .cornerRadius(12)
+                        .padding(.vertical, 13)
+                        .background(cardBg)
+                        .cornerRadius(14)
+                        .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
                     }
                 }
             }
@@ -428,13 +431,10 @@ struct MeetingDetailScreen: View {
             }
             .foregroundColor(isActive ? .white : color)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(isActive ? color : Color.clear)
-            .cornerRadius(12)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(isActive ? Color.clear : color.opacity(0.4), lineWidth: 1.5)
-            )
+            .padding(.vertical, 13)
+            .background(isActive ? color : cardBg)
+            .cornerRadius(14)
+            .shadow(color: isActive ? color.opacity(0.3) : .black.opacity(0.05), radius: 6, y: 2)
         }
     }
 
@@ -472,7 +472,12 @@ struct MeetingDetailScreen: View {
             Color(red: 0.95, green: 0.68, blue: 0.25),
             Color(red: 0.73, green: 0.45, blue: 0.90)
         ]
-        let hash = abs(name.hashValue)
-        return colors[hash % colors.count]
+        // Stable hash — djb2 algorithm (hashValue is randomized per launch)
+        var hash: UInt64 = 5381
+        for char in name.unicodeScalars {
+            hash = ((hash &<< 5) &+ hash) &+ UInt64(char.value)
+        }
+        let index = Int(hash % UInt64(colors.count))
+        return colors[index]
     }
 }

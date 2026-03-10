@@ -147,6 +147,9 @@ struct SwipeActionView<Content: View>: View {
 
 struct HomeScreenRoomList: View {
     @ObservedObject var context: HomeScreenViewModel.Context
+    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
+
+    private var isCosmos: Bool { designTheme == "cosmos" }
 
     var body: some View {
         if !context.viewState.shouldHideRoomList {
@@ -174,6 +177,11 @@ struct HomeScreenRoomList: View {
                 ) {
                     HomeScreenRoomCell(room: room, isSelected: isSelected, mediaProvider: context.mediaProvider, action: context.send)
                 }
+                .background(isCosmos ? Color(UIColor.systemBackground) : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: isCosmos ? 14 : 0))
+                .shadow(color: isCosmos ? .black.opacity(0.05) : .clear, radius: 6, y: 2)
+                .padding(.horizontal, isCosmos ? 12 : 0)
+                .padding(.vertical, isCosmos ? 3 : 0)
                 .contextMenu {
                     if room.badges.isDotShown {
                         Button {

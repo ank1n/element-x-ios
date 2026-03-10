@@ -215,6 +215,7 @@ struct CalendarGridView: View {
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(isCenter ? accentBlue : (isToday ? accentBlue.opacity(0.12) : Color.clear))
+                .shadow(color: isCenter ? accentBlue.opacity(0.35) : .clear, radius: 8, y: 3)
         )
         .transaction { $0.animation = nil }
     }
@@ -295,6 +296,7 @@ struct CalendarGridView: View {
             .background(
                 RoundedRectangle(cornerRadius: 10)
                     .fill(isSelected ? accentBlue : Color.clear)
+                    .shadow(color: isSelected ? accentBlue.opacity(0.35) : .clear, radius: 6, y: 2)
             )
         }
         .buttonStyle(.plain)
