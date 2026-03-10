@@ -65,7 +65,8 @@ struct StalkTabItem: Identifiable {
 struct NotchTabBarShape: Shape {
     var notchFraction: CGFloat
     var circleRadius: CGFloat = 38
-    var circleOffsetY: CGFloat = 6
+    /// Circle center Y relative to bar top (positive = below bar top)
+    var circleCenterY: CGFloat = 24
     var gapSize: CGFloat = 5
     var cornerRadius: CGFloat = 30
 
@@ -81,12 +82,13 @@ struct NotchTabBarShape: Shape {
 
         // Arc matches circle center and curvature + gap
         let arcR = circleRadius + gapSize
-        let arcCY = top - circleOffsetY // arc center Y (above bar top)
+        let arcCY = top + circleCenterY // arc center Y matches actual circle center
 
-        // Arc spans from 150° to 30° (wrapping bottom ~240° of the circle)
-        // In SwiftUI Y-down coords: 0°=right, clockwise positive
-        let arcStart = Angle.degrees(155)
-        let arcEnd = Angle.degrees(25)
+        // Arc wraps from equator (middle) of circle, around the top, back to equator
+        // clockwise:true in CG = counter-clockwise on screen (Y-down)
+        // 180° = left equator, 360° = right equator, passing through 270° (top)
+        let arcStart = Angle.degrees(183)
+        let arcEnd = Angle.degrees(357)
 
         // Compute arc start/end points
         let startPt = CGPoint(
@@ -98,10 +100,13 @@ struct NotchTabBarShape: Shape {
             y: arcCY + arcR * CGFloat(sin(arcEnd.radians))
         )
 
-        // Shoulder: extra width for smooth bezier transition from flat to arc
-        let shoulder: CGFloat = 18
+        // Wide shoulder for gradual descent from flat top into arc around FAB
+        let shoulder: CGFloat = 44
         let entryX = startPt.x - shoulder
         let exitX = endPt.x + shoulder
+
+        // How far the arc start/end dip below bar top
+        let dipY = max(startPt.y - top, 1)
 
         var path = Path()
 
@@ -113,19 +118,21 @@ struct NotchTabBarShape: Shape {
             control: CGPoint(x: rect.minX, y: top)
         )
 
-        // Flat top to left shoulder
+        // Flat top to left shoulder entry
         if entryX > rect.minX + cr {
             path.addLine(to: CGPoint(x: entryX, y: top))
         }
 
-        // Left bezier: smooth S from flat top down to arc start point
+        // Left bezier: gradual descent — starts flat, slowly dips, then wraps into arc
+        // cp1 stays on top line far along → long flat run before dipping
+        // cp2 near arc entry with gradual vertical approach
         path.addCurve(
             to: startPt,
-            control1: CGPoint(x: entryX + shoulder * 0.7, y: top),
-            control2: CGPoint(x: startPt.x - shoulder * 0.1, y: startPt.y - 4)
+            control1: CGPoint(x: entryX + shoulder * 0.65, y: top),
+            control2: CGPoint(x: startPt.x - shoulder * 0.08, y: top + dipY * 0.55)
         )
 
-        // Arc tightly following circle curvature (clockwise around bottom)
+        // Arc wrapping around the circle
         path.addArc(
             center: CGPoint(x: centerX, y: arcCY),
             radius: arcR,
@@ -134,11 +141,11 @@ struct NotchTabBarShape: Shape {
             clockwise: true
         )
 
-        // Right bezier: smooth S from arc end back up to flat top
+        // Right bezier: mirror — gradual ascent from arc back to flat top
         path.addCurve(
             to: CGPoint(x: exitX, y: top),
-            control1: CGPoint(x: endPt.x + shoulder * 0.1, y: endPt.y - 4),
-            control2: CGPoint(x: exitX - shoulder * 0.7, y: top)
+            control1: CGPoint(x: endPt.x + shoulder * 0.08, y: top + dipY * 0.55),
+            control2: CGPoint(x: exitX - shoulder * 0.65, y: top)
         )
 
         // Flat top to right corner
@@ -179,13 +186,13 @@ struct StalkTabBar: View {
     // MARK: - Cosmos design
 
     private let barHeight: CGFloat = 74
-    private let barPadH: CGFloat = 0 // edge to edge horizontally and down
-    private let barCorner: CGFloat = 0 // edge to edge, no rounding
+    private let barPadH: CGFloat = 0 // edge to edge
+    private let barCorner: CGFloat = 0 // no corner rounding, edge to edge
     private let circleSize: CGFloat = 61
 
     // Circle center ABOVE bar top — ~55% above, 45% inside
     private let circleOffset: CGFloat = -6
-    private let notchGap: CGFloat = 4 // gap between circle edge and bar edge
+    private let notchGap: CGFloat = 5 // small visible gap between FAB circle and bar notch
 
     // Active circle: white background with blue icon
     private let accentCircle = Color.white
@@ -225,7 +232,7 @@ struct StalkTabBar: View {
             NotchTabBarShape(
                 notchFraction: selectedFraction,
                 circleRadius: circleSize / 2,
-                circleOffsetY: abs(circleOffset),
+                circleCenterY: circleSize / 2 + circleOffset, // actual circle center Y from bar top
                 gapSize: notchGap,
                 cornerRadius: barCorner
             )
