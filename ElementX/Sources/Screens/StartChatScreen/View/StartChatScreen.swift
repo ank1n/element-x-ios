@@ -66,10 +66,6 @@ struct StartChatScreen: View {
     @ViewBuilder
     private var mainContent: some View {
         createRoomSection
-        if context.viewState.isRoomDirectoryEnabled {
-            roomDirectorySearch
-        }
-        joinRoomByAddressSection
         usersSection
     }
     

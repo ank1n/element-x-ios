@@ -10,6 +10,7 @@ import SwiftState
 
 enum CallsTabFlowCoordinatorAction {
     case showSettings
+    case startCall(roomID: String)
 }
 
 class CallsTabFlowCoordinator: FlowCoordinatorProtocol {
@@ -95,8 +96,8 @@ class CallsTabFlowCoordinator: FlowCoordinatorProtocol {
             case .showSettings:
                 self.actionsSubject.send(.showSettings)
             case .startCall(let userId):
-                // TODO: Start call
-                MXLog.info("Start call with: \(userId)")
+                MXLog.info("sTalk: Start call from history with roomID: \(userId)")
+                self.actionsSubject.send(.startCall(roomID: userId))
             }
         }
         .store(in: &cancellables)

@@ -80,7 +80,7 @@ struct MeetingsListScreen: View {
                 ScrollView {
                     meetingsContent
                         .padding(.horizontal, 16)
-                        .padding(.bottom, 20)
+                        .padding(.bottom, 70)
                 }
                 .refreshable {
                     context.send(viewAction: .refresh)

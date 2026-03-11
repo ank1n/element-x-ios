@@ -106,6 +106,7 @@ enum CallScreenViewAction {
     case toggleMute
     case toggleVideo
     case showSpeakerPicker
+    case toggleSpeaker
     case toggleHandRaise
     case handRaiseStateChanged(raised: Bool)
     /// sTalk: Restore from minimized mini-window to fullscreen

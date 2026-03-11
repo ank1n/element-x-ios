@@ -8,7 +8,7 @@
 
 import SwiftUI
 
-// MARK: - Swipe Action Infrastructure
+// MARK: - Swipe Action (used by ContactsListScreen)
 
 struct SwipeAction {
     let title: String
@@ -22,12 +22,6 @@ struct SwipeActionView<Content: View>: View {
     let trailingActions: [SwipeAction]
     let content: () -> Content
 
-    @State private var offset: CGFloat = 0
-    @State private var prevOffset: CGFloat = 0
-
-    private let actionButtonWidth: CGFloat = 74
-    private let snapThreshold: CGFloat = 0.4
-
     init(leadingActions: [SwipeAction] = [],
          trailingActions: [SwipeAction] = [],
          @ViewBuilder content: @escaping () -> Content) {
@@ -36,110 +30,8 @@ struct SwipeActionView<Content: View>: View {
         self.content = content
     }
 
-    private var maxLeadingOffset: CGFloat {
-        CGFloat(leadingActions.count) * actionButtonWidth
-    }
-
-    private var maxTrailingOffset: CGFloat {
-        CGFloat(trailingActions.count) * actionButtonWidth
-    }
-
     var body: some View {
-        ZStack(alignment: .center) {
-            // Leading actions (revealed when swiping right)
-            if !leadingActions.isEmpty, offset > 0 {
-                HStack(spacing: 0) {
-                    ForEach(leadingActions.indices, id: \.self) { index in
-                        actionButton(action: leadingActions[index])
-                    }
-                    Spacer()
-                }
-            }
-
-            // Trailing actions (revealed when swiping left)
-            if !trailingActions.isEmpty, offset < 0 {
-                HStack(spacing: 0) {
-                    Spacer()
-                    ForEach(trailingActions.indices, id: \.self) { index in
-                        actionButton(action: trailingActions[index])
-                    }
-                }
-            }
-
-            // Main content
-            content()
-                .offset(x: offset)
-                .allowsHitTesting(offset == 0)
-        }
-        .clipped()
-        .contentShape(Rectangle())
-        .highPriorityGesture(
-            DragGesture(minimumDistance: 20, coordinateSpace: .local)
-                .onChanged { value in
-                    let translation = value.translation.width + prevOffset
-                    if translation > 0 {
-                        if leadingActions.isEmpty {
-                            offset = translation * 0.2
-                        } else {
-                            let limit = maxLeadingOffset
-                            offset = translation > limit ? limit + (translation - limit) * 0.2 : translation
-                        }
-                    } else {
-                        if trailingActions.isEmpty {
-                            offset = translation * 0.2
-                        } else {
-                            let limit = -maxTrailingOffset
-                            offset = translation < limit ? limit + (translation - limit) * 0.2 : translation
-                        }
-                    }
-                }
-                .onEnded { value in
-                    let velocity = value.predictedEndTranslation.width - value.translation.width
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        if offset > 0 {
-                            if offset > maxLeadingOffset * snapThreshold || velocity > 200 {
-                                offset = maxLeadingOffset
-                                prevOffset = maxLeadingOffset
-                            } else {
-                                offset = 0
-                                prevOffset = 0
-                            }
-                        } else if offset < 0 {
-                            if -offset > maxTrailingOffset * snapThreshold || velocity < -200 {
-                                offset = -maxTrailingOffset
-                                prevOffset = -maxTrailingOffset
-                            } else {
-                                offset = 0
-                                prevOffset = 0
-                            }
-                        } else {
-                            offset = 0
-                            prevOffset = 0
-                        }
-                    }
-                }
-        )
-    }
-
-    private func actionButton(action: SwipeAction) -> some View {
-        Button {
-            withAnimation(.easeOut(duration: 0.2)) {
-                offset = 0
-                prevOffset = 0
-            }
-            action.action()
-        } label: {
-            VStack(spacing: 4) {
-                Image(systemName: action.icon)
-                    .font(.system(size: 20))
-                Text(action.title)
-                    .font(.system(size: 11))
-            }
-            .foregroundColor(.white)
-            .frame(maxHeight: .infinity)
-            .frame(width: actionButtonWidth)
-            .background(action.color)
-        }
+        content()
     }
 }
 
@@ -165,23 +57,19 @@ struct HomeScreenRoomList: View {
                 HomeScreenRoomCell(room: room, isSelected: false, mediaProvider: context.mediaProvider, action: context.send)
                     .redacted(reason: .placeholder)
             case .invite:
-                HomeScreenInviteCell(room: room, context: context, hideInviteAvatars: context.viewState.hideInviteAvatars)
+                cosmosCellWrapper {
+                    HomeScreenInviteCell(room: room, context: context, hideInviteAvatars: context.viewState.hideInviteAvatars)
+                }
             case .knock:
-                HomeScreenKnockedCell(room: room, context: context)
+                cosmosCellWrapper {
+                    HomeScreenKnockedCell(room: room, context: context)
+                }
             case .room:
                 let isSelected = context.viewState.selectedRoomID == room.id
 
-                SwipeActionView(
-                    leadingActions: leadingActions(for: room),
-                    trailingActions: trailingActions(for: room)
-                ) {
+                cosmosCellWrapper {
                     HomeScreenRoomCell(room: room, isSelected: isSelected, mediaProvider: context.mediaProvider, action: context.send)
                 }
-                .background(isCosmos ? Color(UIColor.systemBackground) : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: isCosmos ? 14 : 0))
-                .shadow(color: isCosmos ? .black.opacity(0.05) : .clear, radius: 6, y: 2)
-                .padding(.horizontal, isCosmos ? 12 : 0)
-                .padding(.vertical, isCosmos ? 3 : 0)
                 .contextMenu {
                     if room.badges.isDotShown {
                         Button {
@@ -235,50 +123,19 @@ struct HomeScreenRoomList: View {
         }
     }
 
-    // MARK: - Swipe Actions
+    // MARK: - Cosmos Card Wrapper
 
-    private func leadingActions(for room: HomeScreenRoom) -> [SwipeAction] {
-        [
-            SwipeAction(
-                title: room.isFavourite ? L10n.commonFavourited : L10n.commonFavourite,
-                icon: room.isFavourite ? "star.fill" : "star",
-                color: .orange
-            ) {
-                context.send(viewAction: .markRoomAsFavourite(roomIdentifier: room.id, isFavourite: !room.isFavourite))
-            }
-        ]
-    }
-
-    private func trailingActions(for room: HomeScreenRoom) -> [SwipeAction] {
-        [
-            SwipeAction(
-                title: "Архив",
-                icon: "archivebox",
-                color: .purple
-            ) {
-                context.send(viewAction: .archiveRoom(roomIdentifier: room.id))
-            },
-            SwipeAction(
-                title: room.badges.isMuteShown ? "Вкл. звук" : "Без звука",
-                icon: room.badges.isMuteShown ? "bell.slash.fill" : "bell.slash",
-                color: room.badges.isMuteShown ? .green : .orange
-            ) {
-                context.send(viewAction: .toggleMuteRoom(roomIdentifier: room.id, isMuted: room.badges.isMuteShown))
-            },
-            SwipeAction(
-                title: L10n.commonSettings,
-                icon: "gearshape",
-                color: Color(.systemGray)
-            ) {
-                context.send(viewAction: .showRoomDetails(roomIdentifier: room.id))
-            },
-            SwipeAction(
-                title: "Удалить",
-                icon: "trash",
-                color: .red
-            ) {
-                context.send(viewAction: .leaveRoom(roomIdentifier: room.id))
-            }
-        ]
+    @ViewBuilder
+    private func cosmosCellWrapper<C: View>(@ViewBuilder content: () -> C) -> some View {
+        if isCosmos {
+            content()
+                .background(Color(UIColor.systemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 3)
+        } else {
+            content()
+        }
     }
 }

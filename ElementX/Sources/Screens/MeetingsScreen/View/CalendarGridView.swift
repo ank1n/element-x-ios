@@ -126,6 +126,7 @@ struct CalendarGridView: View {
                         ForEach(days, id: \.timeIntervalSince1970) { date in
                             let key = dateKeyFormatter.string(from: date)
                             dayCell(date: date, isCenter: key == scrolledDayID)
+                                .padding(.vertical, 10) // room for shadow
                                 .id(key)
                                 .background(
                                     GeometryReader { cellGeo in
@@ -171,7 +172,7 @@ struct CalendarGridView: View {
                 }
             }
         }
-        .frame(height: cellHeight + 8)
+        .frame(height: cellHeight + 24) // extra space for shadow to not clip
     }
 
     /// Day cell with blue bg when centered. No animation on state change.

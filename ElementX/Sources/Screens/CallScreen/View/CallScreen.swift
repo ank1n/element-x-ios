@@ -177,13 +177,13 @@ struct CallScreen: View {
                 context.send(viewAction: .toggleMute)
             }
 
-            // Speaker
+            // Speaker toggle (Телефон ↔ Динамик, like Telegram)
             CallControlButton(
                 icon: context.viewState.isSpeakerOn ? "speaker.wave.3.fill" : "speaker.fill",
-                label: "динамик",
+                label: context.viewState.isSpeakerOn ? "динамик" : "телефон",
                 isActive: context.viewState.isSpeakerOn
             ) {
-                context.send(viewAction: .showSpeakerPicker)
+                context.send(viewAction: .toggleSpeaker)
             }
 
             // End call
@@ -328,7 +328,12 @@ private struct CallView: UIViewRepresentable {
         private var routePickerView: AVRoutePickerView!
 
         /// Minimal wrapper returned to SwiftUI — WebView needs non-zero frame for JS/getUserMedia.
-        let webViewWrapper = WebViewWrapper(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
+        let webViewWrapper: WebViewWrapper = {
+            let v = WebViewWrapper(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
+            v.backgroundColor = .black
+            v.isOpaque = false
+            return v
+        }()
 
         // sTalk: WebView in same hierarchy but CSS injection hides all visual content.
 
@@ -397,11 +402,11 @@ private struct CallView: UIViewRepresentable {
             webView.isOpaque = false
             webView.backgroundColor = .clear
             
-            // This button is always hidden and is only used to be programmaticaly tapped
-            routePickerView = AVRoutePickerView(frame: .zero)
+            // This button is always hidden and is only used to be programmatically tapped
+            routePickerView = AVRoutePickerView(frame: CGRect(x: 0, y: 0, width: 0, height: 0))
             routePickerView.isHidden = true
             routePickerView.isUserInteractionEnabled = false
-            webView.addSubview(routePickerView)
+            webViewWrapper.addSubview(routePickerView)
             
             // sTalk: Place WebView in a SEPARATE off-screen UIWindow.
             // WKWebView IOSurface compositing happens at the system compositor level

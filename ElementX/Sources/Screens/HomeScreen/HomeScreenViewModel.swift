@@ -398,7 +398,22 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
             rooms.append(room)
         }
         
-        state.rooms = rooms
+        // Invites and knocks first, then regular rooms
+        let sorted = rooms.sorted { a, b in
+            let aIsInvite: Bool = {
+                if case .invite = a.type { return true }
+                if case .knock = a.type { return true }
+                return false
+            }()
+            let bIsInvite: Bool = {
+                if case .invite = b.type { return true }
+                if case .knock = b.type { return true }
+                return false
+            }()
+            if aIsInvite != bIsInvite { return aIsInvite }
+            return false // preserve server order within group
+        }
+        state.rooms = sorted
     }
     
     private func markRoomAsFavourite(_ roomID: String, isFavourite: Bool) async {

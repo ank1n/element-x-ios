@@ -125,7 +125,7 @@ struct HomeScreenViewState: BindableState {
         if roomListMode == .skeletons {
             return placeholderRooms
         }
-        
+
         return rooms
     }
         

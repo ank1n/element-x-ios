@@ -268,10 +268,11 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
         let ownUserID = userSession.clientProxy.userID
         let presenceMap = presenceService?.presenceSubject.value ?? [:]
 
-        // Source 1: DM rooms (isDirect)
+        // Source 1: DM rooms (isDirect, exactly 2 members = 1-on-1)
         for summary in summaries where summary.isDirect {
-            guard summary.activeMembersCount >= 2,
+            guard summary.activeMembersCount == 2,
                   !summary.name.hasPrefix("Empty Room"),
+                  !summary.name.hasSuffix(" people"),
                   !seen.contains(summary.id) else { continue }
             seen.insert(summary.id)
 

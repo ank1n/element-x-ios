@@ -326,6 +326,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             Task { await toggleVideo() }
         case .showSpeakerPicker:
             state.bindings.showSpeakerPickerHandler?()
+        case .toggleSpeaker:
+            Task { await toggleSpeaker() }
         case .toggleHandRaise:
             Task { await toggleHandRaise() }
         case .handRaiseStateChanged(let raised):
@@ -637,6 +639,20 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
 
         // Also notify Widget API for MatrixRTC state sync
         await setAudioEnabled(!newMuted)
+    }
+
+    private func toggleSpeaker() async {
+        let newSpeakerOn = !state.isSpeakerOn
+        state.isSpeakerOn = newSpeakerOn
+
+        do {
+            try await liveKitRoomManager.setSpeaker(enabled: newSpeakerOn)
+            MXLog.info("sTalk: Speaker toggled to \(newSpeakerOn ? "ON" : "OFF")")
+        } catch {
+            MXLog.error("sTalk: Failed to toggle speaker: \(error)")
+            // Revert state on failure
+            state.isSpeakerOn = !newSpeakerOn
+        }
     }
 
     private func toggleVideo() async {

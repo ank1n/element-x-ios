@@ -344,6 +344,13 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
 
     // MARK: - Lottie Tab Bar (Stalk-style)
 
+    /// Whether the tab bar should be hidden (e.g. when viewing a room detail on compact layout)
+    private var shouldHideTabBar: Bool {
+        guard selectedIndex < navigationTabCoordinator.tabModules.count else { return false }
+        let details = navigationTabCoordinator.tabModules[selectedIndex].details
+        return details.barVisibility(in: horizontalSizeClass) == .hidden
+    }
+
     private var lottieTabBarBody: some View {
         ZStack(alignment: .bottom) {
             // Content area — extends behind tab bar
@@ -358,21 +365,25 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            // Custom Lottie Tab Bar — overlays content
-            StalkTabBar(
-                items: navigationTabCoordinator.tabModules.map { module in
-                    StalkTabItem(
-                        id: "\(module.details.tag)",
-                        title: module.details.title,
-                        sfSymbol: module.details.sfSymbol,
-                        sfSymbolSelected: module.details.sfSymbolSelected,
-                        lottieAnimation: module.details.lottieAnimation,
-                        badgeCount: module.details.badgeCount
-                    )
-                },
-                selectedIndex: $selectedIndex
-            )
+            // Custom Lottie Tab Bar — overlays content, hidden when inside a room
+            if !shouldHideTabBar {
+                StalkTabBar(
+                    items: navigationTabCoordinator.tabModules.map { module in
+                        StalkTabItem(
+                            id: "\(module.details.tag)",
+                            title: module.details.title,
+                            sfSymbol: module.details.sfSymbol,
+                            sfSymbolSelected: module.details.sfSymbolSelected,
+                            lottieAnimation: module.details.lottieAnimation,
+                            badgeCount: module.details.badgeCount
+                        )
+                    },
+                    selectedIndex: $selectedIndex
+                )
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
+        .animation(.easeInOut(duration: 0.25), value: shouldHideTabBar)
         .onChange(of: selectedIndex) { _, newValue in
             guard newValue < navigationTabCoordinator.tabModules.count else { return }
             navigationTabCoordinator.selectedTab = navigationTabCoordinator.tabModules[newValue].details.tag
@@ -486,6 +497,7 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
                 )
                 .offset(miniCallDragOffset)
         }
+        .ignoresSafeArea(.all)
     }
 
     @State private var miniCallOffset: CGSize = .zero

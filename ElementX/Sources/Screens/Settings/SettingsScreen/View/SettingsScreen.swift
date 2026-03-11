@@ -57,6 +57,9 @@ struct SettingsScreen: View {
             .environment(\.defaultMinListRowHeight, 48)
             .scrollContentBackground(.hidden)
             .background(isCosmos ? Color.clear.ignoresSafeArea() : Color.compound.bgSubtleSecondaryLevel0.ignoresSafeArea())
+            .safeAreaInset(edge: .bottom) {
+                Spacer().frame(height: 70)
+            }
         }
         .navigationTitle("Настройки")
         .navigationBarTitleDisplayMode(.inline)

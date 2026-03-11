@@ -90,6 +90,10 @@ struct HomeScreenContent: View {
                         } header: {
                             topSection
                         }
+
+                        // Space for StalkTabBar so last item isn't hidden
+                        Spacer()
+                            .frame(height: 70)
                     }
                 }
             }
@@ -121,18 +125,17 @@ struct HomeScreenContent: View {
                 //
                 // As a last attempt we will manually force it to update by shifting the
                 // inner scroll view by a point every time the room list is updated
-                DispatchQueue.main.async {
-                    guard !scrollViewAdapter.isScrolling.value, let scrollView = scrollViewAdapter.scrollView else {
-                        return
-                    }
-
-                    let oldOffset = scrollView.contentOffset
-                    var newOffset = scrollView.contentOffset
-                    newOffset.y += 1
-
-                    scrollView.setContentOffset(newOffset, animated: false)
-                    scrollView.setContentOffset(oldOffset, animated: false)
-                }
+                // Disabled: 1pt scroll hack causes visible jitter with cosmos card styling
+                // DispatchQueue.main.async {
+                //     guard !scrollViewAdapter.isScrolling.value, let scrollView = scrollViewAdapter.scrollView else {
+                //         return
+                //     }
+                //     let oldOffset = scrollView.contentOffset
+                //     var newOffset = scrollView.contentOffset
+                //     newOffset.y += 1
+                //     scrollView.setContentOffset(newOffset, animated: false)
+                //     scrollView.setContentOffset(oldOffset, animated: false)
+                // }
             }
             .background {
                 Button("") {
@@ -262,6 +265,17 @@ struct HomeScreenContent: View {
         guard let scrollView = scrollViewAdapter.scrollView else { return }
         let currentOffset = scrollView.contentOffset.y
         let delta = currentOffset - lastScrollOffset
+
+        // Detect bounce zones
+        let maxOffset = scrollView.contentSize.height - scrollView.bounds.height + scrollView.contentInset.bottom
+        let isInBottomBounce = currentOffset > maxOffset - 10
+
+        // In bottom bounce: don't hide filters (prevents layout feedback loop)
+        // But still allow showing them when scrolling back up
+        if isInBottomBounce {
+            lastScrollOffset = currentOffset
+            return
+        }
 
         // Threshold to avoid jitter
         if delta > 8, currentOffset > 50 {

@@ -226,6 +226,8 @@ final class LiveKitRoomManager: ObservableObject {
                 mode: .voiceChat,
                 options: [.defaultToSpeaker, .allowBluetoothHFP, .allowBluetoothA2DP]
             )
+            try session.setPreferredIOBufferDuration(0.005) // 5ms — reduces crackling
+            try session.setPreferredSampleRate(48000)
             try session.setActive(true, options: .notifyOthersOnDeactivation)
             MXLog.info("sTalk LiveKit: Audio session configured for VoIP")
         } catch {

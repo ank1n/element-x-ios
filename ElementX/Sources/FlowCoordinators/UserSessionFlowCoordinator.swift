@@ -99,7 +99,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                                                           flowParameters: flowParameters)
         chatsTabDetails = .init(tag: HomeTab.chats, title: "Чаты", icon: \.chat, selectedIcon: \.chatSolid, sfSymbol: "message", sfSymbolSelected: "message.fill", lottieAnimation: "TabChats")
         chatsTabDetails.navigationSplitCoordinator = chatsSplitCoordinator
-        chatsTabDetails.barVisibilityOverride = .visible
+        // chatsTabDetails.barVisibilityOverride = .visible  // Let auto-hide work when detail is shown
 
         // 4. Apps tab
         let appsStackCoordinator = NavigationStackCoordinator()
@@ -253,6 +253,8 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                 switch action {
                 case .showSettings:
                     navigationTabCoordinator.selectedTab = .profile
+                case .startCall(let roomID):
+                    Task { await self.presentCallScreen(roomID: roomID) }
                 }
             }
             .store(in: &cancellables)
