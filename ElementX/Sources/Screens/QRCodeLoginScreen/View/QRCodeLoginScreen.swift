@@ -11,10 +11,16 @@ import SwiftUI
 
 struct QRCodeLoginScreen: View {
     @ObservedObject var context: QRCodeLoginScreenViewModel.Context
-    
+    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
+
     @State private var qrFrame = CGRect.zero
     @FocusState private var checkCodeInputFocus
-    
+
+    private var isCosmos: Bool { designTheme == "cosmos" }
+    private let accentBlue = Color(red: 0.38, green: 0.42, blue: 0.96)
+    private let bgGradientTop = Color(red: 0.90, green: 0.92, blue: 1.0)
+    private let bgGradientBottom = Color(red: 0.95, green: 0.96, blue: 1.0)
+
     var backgroundStyle: Color {
         if case .error = context.viewState.state {
             .compound.bgCanvasDefault
@@ -22,15 +28,22 @@ struct QRCodeLoginScreen: View {
             .compound.bgSubtleSecondary
         }
     }
-    
+
     var body: some View {
-        mainContent
-            .toolbar { toolbar }
-            .toolbar(.visible, for: .navigationBar)
-            .background()
-            .backgroundStyle(backgroundStyle)
-            .interactiveDismissDisabled()
-            .navigationBarBackButtonHidden(!context.viewState.shouldDisplayBackButton)
+        ZStack {
+            if isCosmos {
+                LinearGradient(colors: [bgGradientTop, bgGradientBottom, Color(UIColor.systemGroupedBackground)],
+                               startPoint: .top, endPoint: .bottom)
+                    .ignoresSafeArea()
+            }
+            mainContent
+        }
+        .toolbar { toolbar }
+        .toolbar(.visible, for: .navigationBar)
+        .background()
+        .backgroundStyle(isCosmos ? Color.clear : backgroundStyle)
+        .interactiveDismissDisabled()
+        .navigationBarBackButtonHidden(!context.viewState.shouldDisplayBackButton)
     }
     
     @ViewBuilder
@@ -58,35 +71,58 @@ struct QRCodeLoginScreen: View {
     private var loginInstructionsContent: some View {
         FullscreenDialog(topPadding: 24, horizontalPadding: 24) {
             VStack(alignment: .leading, spacing: 40) {
-                TitleAndIcon(title: L10n.screenQrCodeLoginInitialStateTitle(InfoPlistReader.main.productionAppName),
-                             subtitle: L10n.screenQrCodeLoginInitialStateSubtitle,
-                             icon: \.computer,
-                             iconStyle: .default)
-                
+                if isCosmos {
+                    cosmosHeader(title: L10n.screenQrCodeLoginInitialStateTitle(InfoPlistReader.main.productionAppName),
+                                 subtitle: L10n.screenQrCodeLoginInitialStateSubtitle,
+                                 icon: "desktopcomputer")
+                } else {
+                    TitleAndIcon(title: L10n.screenQrCodeLoginInitialStateTitle(InfoPlistReader.main.productionAppName),
+                                 subtitle: L10n.screenQrCodeLoginInitialStateSubtitle,
+                                 icon: \.computer,
+                                 iconStyle: .default)
+                }
+
                 SFNumberedListView(items: context.viewState.instructions.loginItems)
             }
         } bottomContent: {
-            Button(L10n.screenQrCodeLoginInitialStateButtonTitle) {
-                context.send(viewAction: .startScan)
+            if isCosmos {
+                cosmosButton(L10n.screenQrCodeLoginInitialStateButtonTitle) {
+                    context.send(viewAction: .startScan)
+                }
+            } else {
+                Button(L10n.screenQrCodeLoginInitialStateButtonTitle) {
+                    context.send(viewAction: .startScan)
+                }
+                .buttonStyle(.compound(.primary))
             }
-            .buttonStyle(.compound(.primary))
         }
     }
     
     private var linkDesktopInstructionsContent: some View {
         FullscreenDialog(topPadding: 24, horizontalPadding: 24) {
             VStack(alignment: .leading, spacing: 40) {
-                TitleAndIcon(title: L10n.screenLinkNewDeviceDesktopTitle(InfoPlistReader.main.productionAppName),
-                             icon: \.computer,
-                             iconStyle: .default)
-                
+                if isCosmos {
+                    cosmosHeader(title: L10n.screenLinkNewDeviceDesktopTitle(InfoPlistReader.main.productionAppName),
+                                 icon: "desktopcomputer")
+                } else {
+                    TitleAndIcon(title: L10n.screenLinkNewDeviceDesktopTitle(InfoPlistReader.main.productionAppName),
+                                 icon: \.computer,
+                                 iconStyle: .default)
+                }
+
                 SFNumberedListView(items: context.viewState.instructions.linkDesktopItems)
             }
         } bottomContent: {
-            Button(L10n.screenLinkNewDeviceDesktopSubmit) {
-                context.send(viewAction: .startScan)
+            if isCosmos {
+                cosmosButton(L10n.screenLinkNewDeviceDesktopSubmit) {
+                    context.send(viewAction: .startScan)
+                }
+            } else {
+                Button(L10n.screenLinkNewDeviceDesktopSubmit) {
+                    context.send(viewAction: .startScan)
+                }
+                .buttonStyle(.compound(.primary))
             }
-            .buttonStyle(.compound(.primary))
         }
     }
     
@@ -286,6 +322,48 @@ struct QRCodeLoginScreen: View {
                     context.send(viewAction: .dismiss)
                 }
             }
+        }
+    }
+
+    // MARK: - Cosmos helpers
+
+    private func cosmosHeader(title: String, subtitle: String? = nil, icon: String) -> some View {
+        VStack(spacing: 16) {
+            ZStack {
+                Circle()
+                    .fill(accentBlue.opacity(0.1))
+                    .frame(width: 72, height: 72)
+                Image(systemName: icon)
+                    .font(.system(size: 32))
+                    .foregroundColor(accentBlue)
+            }
+
+            VStack(spacing: 8) {
+                Text(title)
+                    .font(.system(size: 22, weight: .bold))
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(.primary)
+
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 15))
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func cosmosButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(accentBlue)
+                .cornerRadius(14)
         }
     }
 }
