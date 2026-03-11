@@ -41,4 +41,13 @@ protocol KeychainControllerProtocol: ClientSessionDelegate {
     func pinCodeBiometricState() -> Data?
     /// Removes the App Lock PIN code biometric state.
     func removePINCodeBiometricState()
+
+    // MARK: Saved Login
+
+    /// Saves login credentials for auto-fill on next launch.
+    func setSavedLogin(username: String, password: String)
+    /// Returns saved login credentials, if any.
+    func savedLogin() -> (username: String, password: String)?
+    /// Removes saved login credentials.
+    func removeSavedLogin()
 }

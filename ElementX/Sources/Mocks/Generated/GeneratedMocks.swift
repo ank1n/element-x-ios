@@ -10617,6 +10617,35 @@ class KeychainControllerMock: KeychainControllerProtocol, @unchecked Sendable {
         removePINCodeBiometricStateCallsCount += 1
         removePINCodeBiometricStateClosure?()
     }
+    //MARK: - setSavedLogin
+
+    var setSavedLoginUsernamePasswordCallsCount = 0
+    var setSavedLoginUsernamePasswordClosure: ((String, String) -> Void)?
+
+    func setSavedLogin(username: String, password: String) {
+        setSavedLoginUsernamePasswordCallsCount += 1
+        setSavedLoginUsernamePasswordClosure?(username, password)
+    }
+    //MARK: - savedLogin
+
+    var savedLoginReturnValue: (username: String, password: String)?
+    var savedLoginClosure: (() -> (username: String, password: String)?)?
+
+    func savedLogin() -> (username: String, password: String)? {
+        if let savedLoginClosure {
+            return savedLoginClosure()
+        }
+        return savedLoginReturnValue
+    }
+    //MARK: - removeSavedLogin
+
+    var removeSavedLoginCallsCount = 0
+    var removeSavedLoginClosure: (() -> Void)?
+
+    func removeSavedLogin() {
+        removeSavedLoginCallsCount += 1
+        removeSavedLoginClosure?()
+    }
 }
 class KnockRequestProxyMock: KnockRequestProxyProtocol, @unchecked Sendable {
     var eventID: String {

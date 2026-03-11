@@ -32,6 +32,8 @@ final class KeychainController: KeychainControllerProtocol {
     private enum Key: String {
         case appLockPINCode
         case appLockBiometricState
+        case savedLoginUsername
+        case savedLoginPassword
     }
 
     init(service: KeychainControllerService, accessGroup: String) {
@@ -185,6 +187,39 @@ final class KeychainController: KeychainControllerProtocol {
             try mainKeychain.remove(Key.appLockBiometricState.rawValue)
         } catch {
             MXLog.error("Failed removing the PIN code biometric state.")
+        }
+    }
+
+    // MARK: - Saved Login Credentials
+
+    func setSavedLogin(username: String, password: String) {
+        do {
+            try mainKeychain.set(username, key: Key.savedLoginUsername.rawValue)
+            try mainKeychain.set(password, key: Key.savedLoginPassword.rawValue)
+        } catch {
+            MXLog.error("Failed saving login credentials: \(error)")
+        }
+    }
+
+    func savedLogin() -> (username: String, password: String)? {
+        do {
+            guard let username = try mainKeychain.getString(Key.savedLoginUsername.rawValue),
+                  let password = try mainKeychain.getString(Key.savedLoginPassword.rawValue) else {
+                return nil
+            }
+            return (username, password)
+        } catch {
+            MXLog.error("Failed retrieving saved login: \(error)")
+            return nil
+        }
+    }
+
+    func removeSavedLogin() {
+        do {
+            try mainKeychain.remove(Key.savedLoginUsername.rawValue)
+            try mainKeychain.remove(Key.savedLoginPassword.rawValue)
+        } catch {
+            MXLog.error("Failed removing saved login: \(error)")
         }
     }
 }

@@ -6,11 +6,14 @@
 
 import Combine
 import Foundation
+@preconcurrency import KeychainAccess
 
 class NativeLoginScreenViewModel: NativeLoginScreenViewModelType {
     private let authenticationService: AuthenticationServiceProtocol
     private let oidcData: OIDCAuthorizationDataProxy
     private let headlessAuthenticator = HeadlessOIDCAuthenticator()
+
+    private static let credentialsKeychain = Keychain(service: InfoPlistReader.main.baseBundleIdentifier + ".savedLogin")
 
     private let actionsSubject: PassthroughSubject<NativeLoginScreenViewModelAction, Never> = .init()
     var actionsPublisher: AnyPublisher<NativeLoginScreenViewModelAction, Never> {
@@ -21,6 +24,20 @@ class NativeLoginScreenViewModel: NativeLoginScreenViewModelType {
         self.authenticationService = authenticationService
         self.oidcData = oidcData
         super.init(initialViewState: NativeLoginScreenViewState())
+        loadSavedCredentials()
+    }
+
+    private func loadSavedCredentials() {
+        if let username = try? Self.credentialsKeychain.getString("username"),
+           let password = try? Self.credentialsKeychain.getString("password") {
+            state.bindings.username = username
+            state.bindings.password = password
+        }
+    }
+
+    private func saveCredentials(username: String, password: String) {
+        try? Self.credentialsKeychain.set(username, key: "username")
+        try? Self.credentialsKeychain.set(password, key: "password")
     }
 
     override func process(viewAction: NativeLoginScreenViewAction) {
@@ -62,6 +79,7 @@ class NativeLoginScreenViewModel: NativeLoginScreenViewModelType {
                 switch await authenticationService.loginWithOIDCCallback(finalURL) {
                 case .success(let userSession):
                     MXLog.info("sTalk NativeLogin: Login successful!")
+                    self.saveCredentials(username: username, password: password)
                     actionsSubject.send(.signedIn(userSession))
                 case .failure(let error):
                     MXLog.error("sTalk NativeLogin: SDK login failed: \(error)")
