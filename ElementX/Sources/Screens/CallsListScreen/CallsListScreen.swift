@@ -416,7 +416,7 @@ struct CallsListScreen: View {
                     }
 
                     // Content
-                    LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    LazyVStack(spacing: 0) {
                         if context.viewState.isLoading {
                             cosmosLoadingCells
                         } else if groupedHistory.isEmpty {
@@ -469,10 +469,6 @@ struct CallsListScreen: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
             .padding(.vertical, 6)
-            .background(
-                LinearGradient(colors: [bgGradientTop.opacity(0.9), bgGradientBottom.opacity(0.9)],
-                               startPoint: .top, endPoint: .bottom)
-            )
     }
 
     private var cosmosLoadingCells: some View {
