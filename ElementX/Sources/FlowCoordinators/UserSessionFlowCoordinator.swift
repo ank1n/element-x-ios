@@ -84,6 +84,9 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                                                                  flowParameters: flowParameters)
         contactsTabDetails = .init(tag: HomeTab.contacts, title: "Контакты", icon: \.userProfile, selectedIcon: \.userProfileSolid, sfSymbol: "person", sfSymbolSelected: "person.fill", lottieAnimation: "TabContacts")
         contactsTabDetails.barVisibilityOverride = .visible
+        contactsTabFlowCoordinator.onTabBarVisibilityChange = { [weak contactsTabDetails] visibility in
+            contactsTabDetails?.barVisibilityOverride = visibility
+        }
 
         // 2. Calls tab
         let callsStackCoordinator = NavigationStackCoordinator()
@@ -474,6 +477,22 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
     }
     
     private var callScreenPictureInPictureController: AVPictureInPictureController?
+    private var minimizedCallTimer: Timer?
+
+    private func startMinimizedCallTimer(coordinator: CallScreenCoordinator) {
+        stopMinimizedCallTimer()
+        minimizedCallTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.navigationTabCoordinator.minimizedCallElapsedTime = coordinator.callElapsedTime
+            }
+        }
+    }
+
+    private func stopMinimizedCallTimer() {
+        minimizedCallTimer?.invalidate()
+        minimizedCallTimer = nil
+    }
     private func presentCallScreen(configuration: ElementCallConfiguration, startWithVideoEnabled: Bool = true) {
         guard flowParameters.ongoingCallRoomIDPublisher.value != configuration.callRoomID else {
             MXLog.info("Returning to existing call.")
@@ -522,12 +541,19 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                     navigationTabCoordinator.setOverlayPresentationMode(.minimized)
                 case .pictureInPictureStopped:
                     MXLog.info("Restoring call after PiP presentation.")
+                    self.stopMinimizedCallTimer()
                     navigationTabCoordinator.setOverlayPresentationMode(.fullScreen)
                 case .minimizeCall:
                     MXLog.info("sTalk: minimizeCall received — setting minimized mode")
-                    // sTalk: Set display name for minimized call bar
+                    // sTalk: Set display name and elapsed time for minimized call banner
                     if case .roomCall(let roomProxy, _, _, _, _, _) = configuration.kind {
                         self.navigationTabCoordinator.minimizedCallDisplayName = roomProxy.infoPublisher.value.displayName ?? "Звонок"
+                    }
+                    self.navigationTabCoordinator.minimizedCallElapsedTime = callScreenCoordinator.callElapsedTime
+                    self.startMinimizedCallTimer(coordinator: callScreenCoordinator)
+                    self.navigationTabCoordinator.restoreCallHandler = { [weak self] in
+                        callScreenCoordinator.restoreFromMinimized()
+                        self?.stopMinimizedCallTimer()
                     }
                     navigationTabCoordinator.setOverlayPresentationMode(.minimized)
                 case .dismiss:
@@ -537,6 +563,8 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                     }
                     callScreenPictureInPictureController = nil
                     self.navigationTabCoordinator.minimizedCallDisplayName = nil
+                    self.navigationTabCoordinator.restoreCallHandler = nil
+                    self.stopMinimizedCallTimer()
                     navigationTabCoordinator.setOverlayCoordinator(nil)
                 }
             }

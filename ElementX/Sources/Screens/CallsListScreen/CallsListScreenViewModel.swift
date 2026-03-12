@@ -102,7 +102,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         MXLog.info("📞 Updating call history from local: \(localCalls.count) calls, server recordings: \(serverRecordings.count)")
 
         // Конвертируем локальные записи в CallHistoryItem
-        var calls = localCalls.map { local -> CallHistoryItem in
+        var calls = localCalls.map { (local: LocalCallHistoryItem) -> CallHistoryItem in
             // Определяем тип звонка
             let callType: CallHistoryItem.CallType
             switch local.direction {
@@ -160,6 +160,45 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         state.callHistory = calls
         applyListenedStatus()
         state.isLoading = false
+
+        // Resolve avatar URLs from room proxies
+        resolveAvatars()
+    }
+
+    /// Resolves avatar URLs for call history items from Matrix room data
+    private func resolveAvatars() {
+        Task {
+            var updated = false
+            for i in state.callHistory.indices {
+                guard state.callHistory[i].avatarURL == nil else { continue }
+                let roomID = state.callHistory[i].contactId
+                // Get room proxy to find avatar
+                if let roomProxyType = await userSession.clientProxy.roomForIdentifier(roomID),
+                   case .joined(let roomProxy) = roomProxyType {
+                    let info = roomProxy.infoPublisher.value
+                    // Use info.avatar which handles DM rooms via heroes (other user's profile pic)
+                    let resolvedURL: URL? = switch info.avatar {
+                    case .heroes(let heroes) where heroes.count == 1:
+                        heroes[0].avatarURL
+                    case .room(_, _, let url):
+                        url
+                    case .space(_, _, let url):
+                        url
+                    default:
+                        nil
+                    }
+                    if let resolvedURL {
+                        await MainActor.run {
+                            self.state.callHistory[i].avatarURL = resolvedURL
+                        }
+                        updated = true
+                    }
+                }
+            }
+            if updated {
+                MXLog.info("📞 Resolved avatars for call history (including DM heroes)")
+            }
+        }
     }
 
     /// Находит запись с сервера, соответствующую локальному звонку

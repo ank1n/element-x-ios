@@ -15,6 +15,7 @@ struct HomeScreenContent: View {
     @State private var isArchiveRevealed = false
     @State private var areFiltersVisible = true
     @State private var lastScrollOffset: CGFloat = 0
+    @State private var lastFilterToggleTime: Date = .distantPast
     @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
 
     @ObservedObject var context: HomeScreenViewModel.Context
@@ -55,16 +56,54 @@ struct HomeScreenContent: View {
             ScrollView {
                 switch context.viewState.roomListMode {
                 case .skeletons:
-                    LazyVStack(spacing: 0) {
-                        ForEach(context.viewState.visibleRooms) { room in
-                            HomeScreenRoomCell(room: room, isSelected: false, mediaProvider: context.mediaProvider, action: context.send)
-                                .redacted(reason: .placeholder)
-                                .shimmer() // Putting this directly on the LazyVStack creates an accordion animation on iOS 16.
+                    if isCosmos {
+                        VStack(spacing: 0) {
+                            ForEach(0..<8, id: \.self) { i in
+                                HStack(spacing: 14) {
+                                    Circle()
+                                        .fill(Color.secondary.opacity(0.12))
+                                        .frame(width: 52, height: 52)
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        RoundedRectangle(cornerRadius: 4)
+                                            .fill(Color.secondary.opacity(0.12))
+                                            .frame(width: CGFloat.random(in: 100...180), height: 16)
+                                        RoundedRectangle(cornerRadius: 4)
+                                            .fill(Color.secondary.opacity(0.08))
+                                            .frame(width: CGFloat.random(in: 80...220), height: 14)
+                                    }
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+
+                                if i < 7 {
+                                    Rectangle()
+                                        .fill(Color.secondary.opacity(0.15))
+                                        .frame(height: 1 / UIScreen.main.scale)
+                                        .padding(.leading, 82)
+                                }
+                            }
                         }
-                    }
-                    .disabled(true)
-                    .accessibilityRepresentation {
-                        Text(L10n.commonLoading)
+                        .background(Color(UIColor.systemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(Color.black.opacity(0.06), lineWidth: 0.5)
+                        )
+                        .padding(.horizontal, 12)
+                        .padding(.top, 4)
+                        .redacted(reason: .placeholder)
+                        .shimmer()
+                        .disabled(true)
+                    } else {
+                        LazyVStack(spacing: 0) {
+                            ForEach(context.viewState.visibleRooms) { room in
+                                HomeScreenRoomCell(room: room, isSelected: false, mediaProvider: context.mediaProvider, action: context.send)
+                                    .redacted(reason: .placeholder)
+                                    .shimmer()
+                            }
+                        }
+                        .disabled(true)
                     }
                 case .empty:
                     HomeScreenEmptyStateLayout(minHeight: geometry.size.height) {
@@ -85,7 +124,19 @@ struct HomeScreenContent: View {
                             }
 
                             if !context.viewState.shouldShowEmptyFilterState {
-                                HomeScreenRoomList(context: context)
+                                if isCosmos {
+                                    HomeScreenRoomList(context: context)
+                                        .background(Color(UIColor.systemBackground))
+                                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 14)
+                                                .stroke(Color.black.opacity(0.06), lineWidth: 0.5)
+                                        )
+                                        .padding(.horizontal, 12)
+                                        .padding(.top, 4)
+                                } else {
+                                    HomeScreenRoomList(context: context)
+                                }
                             }
                         } header: {
                             topSection
@@ -214,7 +265,6 @@ struct HomeScreenContent: View {
             .padding(.vertical, isCosmos ? 8 : 12)
             .background(isCosmos ? Color(UIColor.systemBackground) : Color.compound.bgCanvasDefault)
             .cornerRadius(isCosmos ? 12 : 0)
-            .shadow(color: isCosmos ? .black.opacity(0.03) : .clear, radius: 2, y: 1)
             .padding(.horizontal, isCosmos ? 8 : 0)
             .padding(.vertical, isCosmos ? 2 : 0)
         }
@@ -266,24 +316,40 @@ struct HomeScreenContent: View {
         let currentOffset = scrollView.contentOffset.y
         let delta = currentOffset - lastScrollOffset
 
-        // Detect bounce zones
+        // Bounce zones — не менять фильтры в bounce (верх и низ)
+        let topInset = scrollView.adjustedContentInset.top
+        let isInTopBounce = currentOffset < -topInset + 5
         let maxOffset = scrollView.contentSize.height - scrollView.bounds.height + scrollView.contentInset.bottom
         let isInBottomBounce = currentOffset > maxOffset - 10
 
-        // In bottom bounce: don't hide filters (prevents layout feedback loop)
-        // But still allow showing them when scrolling back up
-        if isInBottomBounce {
+        if isInTopBounce || isInBottomBounce {
             lastScrollOffset = currentOffset
             return
         }
 
-        // Threshold to avoid jitter
-        if delta > 8, currentOffset > 50 {
-            // Scrolling up (content moving up) → hide filters
-            areFiltersVisible = false
-        } else if delta < -8 {
-            // Scrolling down (pulling down) → show filters
-            areFiltersVisible = true
+        // Debounce: минимум 0.8с между изменениями фильтров — предотвращает петлю
+        let now = Date()
+        let timeSinceLastToggle = now.timeIntervalSince(lastFilterToggleTime)
+        guard timeSinceLastToggle > 0.8 else {
+            lastScrollOffset = currentOffset
+            return
+        }
+
+        // Высокий порог delta — не реагировать на мелкие движения и сдвиги от анимации фильтров
+        let newVisible: Bool?
+        if delta > 30, currentOffset > 100 {
+            // Скролл вверх (контент уходит вверх) → прячем фильтры
+            newVisible = false
+        } else if delta < -30 {
+            // Скролл вниз (тянем вниз) → показываем фильтры
+            newVisible = true
+        } else {
+            newVisible = nil
+        }
+
+        if let newVisible, newVisible != areFiltersVisible {
+            lastFilterToggleTime = now
+            areFiltersVisible = newVisible
         }
 
         lastScrollOffset = currentOffset

@@ -7,9 +7,14 @@
 import Compound
 import SwiftUI
 
+private enum ContactSortOrder: String {
+    case name, lastSeen
+}
+
 struct ContactsListScreen: View {
     @ObservedObject var context: ContactsListScreenViewModelType.Context
     @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
+    @AppStorage("stalk_contacts_sort") private var sortOrder: String = ContactSortOrder.name.rawValue
 
     private var isCosmos: Bool { designTheme == "cosmos" }
 
@@ -49,11 +54,15 @@ struct ContactsListScreen: View {
     private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .cancellationAction) {
             Menu {
-                Button { /* TODO: sort by name */ } label: {
-                    Label("По имени", systemImage: "textformat")
+                Button {
+                    sortOrder = ContactSortOrder.name.rawValue
+                } label: {
+                    Label("По имени", systemImage: sortOrder == ContactSortOrder.name.rawValue ? "checkmark" : "textformat")
                 }
-                Button { /* TODO: sort by last seen */ } label: {
-                    Label("По времени", systemImage: "clock")
+                Button {
+                    sortOrder = ContactSortOrder.lastSeen.rawValue
+                } label: {
+                    Label("По времени", systemImage: sortOrder == ContactSortOrder.lastSeen.rawValue ? "checkmark" : "clock")
                 }
             } label: {
                 Image(systemName: "arrow.up.arrow.down")
@@ -101,7 +110,21 @@ struct ContactsListScreen: View {
     }
 
     private var groupedContacts: [ContactGroup] {
-        let sorted = filteredContacts.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+        let contacts = filteredContacts
+
+        if sortOrder == ContactSortOrder.lastSeen.rawValue {
+            // Сортировка по времени последнего визита: онлайн первые, потом по дате убывания
+            let sorted = contacts.sorted { a, b in
+                if a.isOnline != b.isOnline { return a.isOnline }
+                let aDate = a.lastSeenDate ?? .distantPast
+                let bDate = b.lastSeenDate ?? .distantPast
+                return aDate > bDate
+            }
+            return [ContactGroup(letter: "Все", contacts: sorted)]
+        }
+
+        // Сортировка по имени (по умолчанию) — группировка по буквам
+        let sorted = contacts.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
         var groups: [String: [ContactItem]] = [:]
         for contact in sorted {
             let firstChar = String(contact.displayName.prefix(1)).uppercased()
@@ -366,10 +389,17 @@ struct ContactsListScreen: View {
                 context.send(viewAction: .selectContact(contact))
             }
 
-            if contact.isOnline {
-                Circle()
-                    .fill(Color.stalkOnlineGreen)
-                    .frame(width: 10, height: 10)
+            HStack(spacing: 6) {
+                if contact.isFavorite {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(.orange)
+                }
+                if contact.isOnline {
+                    Circle()
+                        .fill(Color.stalkOnlineGreen)
+                        .frame(width: 10, height: 10)
+                }
             }
         }
         .padding(.horizontal, 16)
@@ -415,7 +445,8 @@ struct ContactsListScreen: View {
                                                         ) {
                                                             context.send(viewAction: .toggleFavorite(contact))
                                                         }
-                                                    ]
+                                                    ],
+                                                    cornerRadius: 14
                                                 ) {
                                                     cosmosContactCell(contact)
                                                 }
@@ -624,10 +655,17 @@ struct ContactsListScreen: View {
                 context.send(viewAction: .selectContact(contact))
             }
 
-            if contact.isOnline {
-                Circle()
-                    .fill(Color.stalkOnlineGreen)
-                    .frame(width: 10, height: 10)
+            HStack(spacing: 6) {
+                if contact.isFavorite {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(.orange)
+                }
+                if contact.isOnline {
+                    Circle()
+                        .fill(Color.stalkOnlineGreen)
+                        .frame(width: 10, height: 10)
+                }
             }
         }
         .padding(12)

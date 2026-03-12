@@ -280,10 +280,13 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
             if let heroUserID { seenUserIDs.insert(heroUserID) }
             let presence = heroUserID.flatMap { presenceMap[$0] }
 
+            // For DMs, use hero's avatar (user profile pic) if room has no avatar
+            let contactAvatarURL = summary.avatarURL ?? summary.heroes.first?.avatarURL
+
             contacts.append(ContactItem(
                 id: summary.id,
                 displayName: summary.name,
-                avatarURL: summary.avatarURL,
+                avatarURL: contactAvatarURL,
                 matrixUserID: heroUserID,
                 isOnline: presence?.isOnline ?? false,
                 lastSeenDate: presence?.lastSeenDate,
@@ -307,10 +310,13 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
             if let heroUserID { seenUserIDs.insert(heroUserID) }
             let presence = heroUserID.flatMap { presenceMap[$0] }
 
+            // For 2-member rooms, use hero's avatar if room has no avatar
+            let contactAvatarURL = summary.avatarURL ?? summary.heroes.first?.avatarURL
+
             contacts.append(ContactItem(
                 id: summary.id,
                 displayName: summary.name,
-                avatarURL: summary.avatarURL,
+                avatarURL: contactAvatarURL,
                 matrixUserID: heroUserID,
                 isOnline: presence?.isOnline ?? false,
                 lastSeenDate: presence?.lastSeenDate,

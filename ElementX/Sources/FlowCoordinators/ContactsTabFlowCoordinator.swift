@@ -7,6 +7,7 @@
 import Combine
 import Foundation
 import SwiftState
+import SwiftUI
 
 enum ContactsTabFlowCoordinatorAction {
     case showSettings
@@ -17,6 +18,8 @@ class ContactsTabFlowCoordinator: FlowCoordinatorProtocol {
     private let userSession: UserSessionProtocol
     private var flowParameters: CommonFlowParameters
     private let navigationStackCoordinator: NavigationStackCoordinator
+    /// Для управления видимостью таб-бара при навигации в комнату
+    var onTabBarVisibilityChange: ((Visibility) -> Void)?
 
     private var contactsListCoordinator: ContactsListScreenCoordinator?
     private var roomFlowCoordinator: RoomFlowCoordinator?
@@ -105,6 +108,8 @@ class ContactsTabFlowCoordinator: FlowCoordinatorProtocol {
                 actionsSubject.send(.presentCallScreen(roomProxy: roomProxy, videoEnabled: videoEnabled))
             case .finished:
                 self.roomFlowCoordinator = nil
+                // Показываем таб-бар при возврате из комнаты
+                self.onTabBarVisibilityChange?(.visible)
             default:
                 break
             }
@@ -112,6 +117,8 @@ class ContactsTabFlowCoordinator: FlowCoordinatorProtocol {
         .store(in: &cancellables)
 
         self.roomFlowCoordinator = roomFlowCoordinator
+        // Скрываем таб-бар при входе в комнату
+        onTabBarVisibilityChange?(.hidden)
         roomFlowCoordinator.handleAppRoute(.room(roomID: roomID, via: []), animated: true)
     }
 }
