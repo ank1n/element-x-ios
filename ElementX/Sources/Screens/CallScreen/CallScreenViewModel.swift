@@ -327,7 +327,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         case .showSpeakerPicker:
             state.bindings.showSpeakerPickerHandler?()
         case .toggleSpeaker:
-            Task { await toggleSpeaker() }
+            toggleSpeaker()
         case .toggleHandRaise:
             Task { await toggleHandRaise() }
         case .handRaiseStateChanged(let raised):
@@ -543,7 +543,10 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
 
         // Step 1: Connect to SFU (critical — if this fails, we can't proceed)
         do {
-            try await liveKitRoomManager.connect(wsURL: wsURL, token: token)
+            // 1:1 calls → earpiece (like Telegram), group calls → speaker
+            let useSpeaker = !state.isDirect
+            try await liveKitRoomManager.connect(wsURL: wsURL, token: token, speakerByDefault: useSpeaker)
+            state.isSpeakerOn = useSpeaker
             MXLog.info("sTalk LiveKit: Native connection established")
         } catch {
             MXLog.error("sTalk LiveKit: Failed to connect to SFU: \(error)")
@@ -641,18 +644,11 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         await setAudioEnabled(!newMuted)
     }
 
-    private func toggleSpeaker() async {
+    private func toggleSpeaker() {
         let newSpeakerOn = !state.isSpeakerOn
         state.isSpeakerOn = newSpeakerOn
-
-        do {
-            try await liveKitRoomManager.setSpeaker(enabled: newSpeakerOn)
-            MXLog.info("sTalk: Speaker toggled to \(newSpeakerOn ? "ON" : "OFF")")
-        } catch {
-            MXLog.error("sTalk: Failed to toggle speaker: \(error)")
-            // Revert state on failure
-            state.isSpeakerOn = !newSpeakerOn
-        }
+        liveKitRoomManager.setSpeaker(enabled: newSpeakerOn)
+        MXLog.info("sTalk: Speaker toggled to \(newSpeakerOn ? "ON (speaker)" : "OFF (earpiece)")")
     }
 
     private func toggleVideo() async {

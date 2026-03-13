@@ -48,7 +48,12 @@ final class LiveKitRoomManager: ObservableObject {
     /// - Parameters:
     ///   - wsURL: Full WebSocket URL from Element Call (wss://sfu.host/rtc?access_token=...)
     ///   - token: The extracted access_token JWT
-    func connect(wsURL: String, token: String) async throws {
+    /// Connect to LiveKit SFU.
+    /// - Parameters:
+    ///   - wsURL: Full WebSocket URL from Element Call
+    ///   - token: The extracted access_token JWT
+    ///   - speakerByDefault: If true, start with speaker; if false, earpiece (1:1 calls)
+    func connect(wsURL: String, token: String, speakerByDefault: Bool = false) async throws {
         let baseURL = extractBaseURL(from: wsURL)
         MXLog.info("sTalk LiveKit: Connecting to \(baseURL)")
 
@@ -57,7 +62,7 @@ final class LiveKitRoomManager: ObservableObject {
         reconnectToken = token
 
         // Configure iOS audio session for VoIP BEFORE connecting
-        configureAudioSession()
+        configureAudioSession(speakerByDefault: speakerByDefault)
 
         let connectOptions = ConnectOptions(
             autoSubscribe: true
@@ -218,18 +223,32 @@ final class LiveKitRoomManager: ObservableObject {
 
     /// Configure AVAudioSession for VoIP call before LiveKit connects.
     /// This ensures the native SDK has exclusive control over the audio hardware.
-    private func configureAudioSession() {
+    /// - Parameter speakerByDefault: If true, route audio to speaker initially (for group calls).
+    ///   If false, route to earpiece (for 1:1 calls, like Telegram).
+    func configureAudioSession(speakerByDefault: Bool = false) {
         let session = AVAudioSession.sharedInstance()
         do {
+            var options: AVAudioSession.CategoryOptions = [.allowBluetoothHFP, .allowBluetoothA2DP]
+            if speakerByDefault {
+                options.insert(.defaultToSpeaker)
+            }
             try session.setCategory(
                 .playAndRecord,
                 mode: .voiceChat,
-                options: [.defaultToSpeaker, .allowBluetoothHFP, .allowBluetoothA2DP]
+                options: options
             )
             try session.setPreferredIOBufferDuration(0.005) // 5ms — reduces crackling
             try session.setPreferredSampleRate(48000)
             try session.setActive(true, options: .notifyOthersOnDeactivation)
-            MXLog.info("sTalk LiveKit: Audio session configured for VoIP")
+
+            // Explicitly set output route
+            if speakerByDefault {
+                try session.overrideOutputAudioPort(.speaker)
+            } else {
+                try session.overrideOutputAudioPort(.none) // earpiece
+            }
+
+            MXLog.info("sTalk LiveKit: Audio session configured — speaker=\(speakerByDefault)")
         } catch {
             MXLog.error("sTalk LiveKit: Failed to configure audio session: \(error)")
         }

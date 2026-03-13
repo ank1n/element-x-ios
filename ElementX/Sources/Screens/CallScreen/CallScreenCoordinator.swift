@@ -43,6 +43,16 @@ enum CallScreenCoordinatorAction {
 final class CallScreenCoordinator: CoordinatorProtocol {
     private var viewModel: CallScreenViewModelProtocol
     private let actionsSubject: PassthroughSubject<CallScreenCoordinatorAction, Never> = .init()
+
+    /// sTalk: Current call elapsed time (for banner display)
+    var callElapsedTime: TimeInterval {
+        viewModel.context.viewState.callElapsedTime
+    }
+
+    /// sTalk: Restore call from minimized state (triggered by banner tap)
+    func restoreFromMinimized() {
+        viewModel.context.send(viewAction: .restoreFromMinimized)
+    }
     
     private var cancellables: Set<AnyCancellable> = .init()
     var actions: AnyPublisher<CallScreenCoordinatorAction, Never> {

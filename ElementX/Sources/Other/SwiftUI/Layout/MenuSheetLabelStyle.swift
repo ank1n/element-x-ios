@@ -17,11 +17,17 @@ extension ButtonStyle where Self == MenuSheetButtonStyle {
 /// a sheet such as `TimelineItemMenu`.
 struct MenuSheetButtonStyle: ButtonStyle {
     @Environment(\.accessibilityShowButtonShapes) private var accessibilityShowButtonShapes
-    
+    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
+
+    private var isCosmos: Bool { designTheme == "cosmos" }
+    private let stalkAccent = Color(red: 0.38, green: 0.42, blue: 0.96)
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .labelStyle(MenuSheetLabelStyle())
-            .foregroundStyle(configuration.role == .destructive ? .compound.textCriticalPrimary : .compound.textActionPrimary)
+            .foregroundStyle(configuration.role == .destructive
+                ? .compound.textCriticalPrimary
+                : (isCosmos ? stalkAccent : .compound.textActionPrimary))
             .contentShape(.rect)
             .opacity(configuration.isPressed ? 0.3 : 1)
             .background {
@@ -46,6 +52,7 @@ private struct MenuSheetLabelStyle: LabelStyle {
         .multilineTextAlignment(.leading)
         .frame(maxWidth: .infinity, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
-        .padding(16)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
     }
 }

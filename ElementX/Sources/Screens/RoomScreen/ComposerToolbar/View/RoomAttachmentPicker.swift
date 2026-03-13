@@ -12,14 +12,13 @@ import WysiwygComposer
 
 struct RoomAttachmentPicker: View {
     @ObservedObject var context: ComposerToolbarViewModel.Context
-    
+
     @Environment(\.isEnabled) private var isEnabled
-    
+    @State private var showingPicker = false
+
     var body: some View {
-        // Use a menu instead of the popover/sheet shown in Figma because overriding the colour scheme
-        // results in a rendering bug on 17.1: https://github.com/element-hq/element-x-ios/issues/2157
-        Menu {
-            menuContent
+        Button {
+            showingPicker = true
         } label: {
             CompoundIcon(asset: Asset.Images.composerAttachment, size: .custom(30), relativeTo: .compound.headingLG)
                 .scaledPadding(7, relativeTo: .compound.headingLG)
@@ -30,54 +29,120 @@ struct RoomAttachmentPicker: View {
         .buttonStyle(RoomAttachmentPickerButtonStyle())
         .accessibilityLabel(L10n.actionAddToTimeline)
         .accessibilityIdentifier(A11yIdentifiers.roomScreen.composerToolbar.openComposeOptions)
+        .sheet(isPresented: $showingPicker) {
+            AttachmentPickerSheet(context: context, isPresented: $showingPicker)
+                .presentationDetents([.height(200)])
+                .presentationCornerRadius(20)
+                .presentationDragIndicator(.visible)
+                .presentationBackground(Color(UIColor.systemBackground))
+        }
     }
-    
-    var menuContent: some View {
-        VStack(alignment: .leading, spacing: 0.0) {
-            Button {
-                context.send(viewAction: .enableTextFormatting)
-            } label: {
-                Label(L10n.screenRoomAttachmentTextFormatting, icon: \.textFormatting)
+}
+
+// MARK: - Custom Sheet
+
+private struct AttachmentPickerSheet: View {
+    @ObservedObject var context: ComposerToolbarViewModel.Context
+    @Binding var isPresented: Bool
+
+    private let stalkAccent = Color(red: 0.38, green: 0.42, blue: 0.96)
+
+    private let columns = [
+        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12)
+    ]
+
+    var body: some View {
+        LazyVGrid(columns: columns, spacing: 14) {
+            attachmentButton(
+                icon: "camera.fill",
+                color: .orange,
+                title: "Камера"
+            ) {
+                isPresented = false
+                context.send(viewAction: .attach(.camera))
             }
-            .accessibilityIdentifier(A11yIdentifiers.roomScreen.attachmentPickerTextFormatting)
-            
-            Button {
-                context.send(viewAction: .attach(.poll))
-            } label: {
-                Label(L10n.screenRoomAttachmentSourcePoll, icon: \.polls)
+            .accessibilityIdentifier(A11yIdentifiers.roomScreen.attachmentPickerCamera)
+
+            attachmentButton(
+                icon: "photo.fill",
+                color: .purple,
+                title: "Галерея"
+            ) {
+                isPresented = false
+                context.send(viewAction: .attach(.photoLibrary))
             }
-            .accessibilityIdentifier(A11yIdentifiers.roomScreen.attachmentPickerPoll)
-            
+            .accessibilityIdentifier(A11yIdentifiers.roomScreen.attachmentPickerPhotoLibrary)
+
+            attachmentButton(
+                icon: "doc.fill",
+                color: stalkAccent,
+                title: "Файл"
+            ) {
+                isPresented = false
+                context.send(viewAction: .attach(.file))
+            }
+            .accessibilityIdentifier(A11yIdentifiers.roomScreen.attachmentPickerDocuments)
+
             if context.viewState.isLocationSharingEnabled {
-                Button {
+                attachmentButton(
+                    icon: "location.fill",
+                    color: .green,
+                    title: "Локация"
+                ) {
+                    isPresented = false
                     context.send(viewAction: .attach(.location))
-                } label: {
-                    Label(L10n.screenRoomAttachmentSourceLocation, icon: \.locationPin)
                 }
                 .accessibilityIdentifier(A11yIdentifiers.roomScreen.attachmentPickerLocation)
             }
-            
-            Button {
-                context.send(viewAction: .attach(.file))
-            } label: {
-                Label(L10n.screenRoomAttachmentSourceFiles, icon: \.attachment)
+
+            attachmentButton(
+                icon: "chart.bar.fill",
+                color: .cyan,
+                title: "Опрос"
+            ) {
+                isPresented = false
+                context.send(viewAction: .attach(.poll))
             }
-            .accessibilityIdentifier(A11yIdentifiers.roomScreen.attachmentPickerDocuments)
-            
-            Button {
-                context.send(viewAction: .attach(.photoLibrary))
-            } label: {
-                Label(L10n.screenRoomAttachmentSourceGallery, icon: \.image)
+            .accessibilityIdentifier(A11yIdentifiers.roomScreen.attachmentPickerPoll)
+
+            attachmentButton(
+                icon: "textformat",
+                color: .pink,
+                title: "Формат"
+            ) {
+                isPresented = false
+                context.send(viewAction: .enableTextFormatting)
             }
-            .accessibilityIdentifier(A11yIdentifiers.roomScreen.attachmentPickerPhotoLibrary)
-            
-            Button {
-                context.send(viewAction: .attach(.camera))
-            } label: {
-                Label(L10n.screenRoomAttachmentSourceCamera, icon: \.takePhoto)
-            }
-            .accessibilityIdentifier(A11yIdentifiers.roomScreen.attachmentPickerCamera)
+            .accessibilityIdentifier(A11yIdentifiers.roomScreen.attachmentPickerTextFormatting)
         }
+        .padding(.horizontal, 24)
+        .padding(.top, 8)
+    }
+
+    @ViewBuilder
+    private func attachmentButton(icon: String, color: Color, title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                ZStack {
+                    Circle()
+                        .fill(color.opacity(0.12))
+                        .frame(width: 50, height: 50)
+
+                    Image(systemName: icon)
+                        .font(.system(size: 20))
+                        .foregroundColor(color)
+                }
+
+                Text(title)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .buttonStyle(.plain)
     }
 }
 

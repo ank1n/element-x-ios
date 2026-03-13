@@ -168,18 +168,18 @@ struct CallScreen: View {
                 context.send(viewAction: .toggleVideo)
             }
 
-            // Microphone
+            // Microphone — muted: перечёркнутый микрофон (белый фон), active: микрофон (прозрачный фон)
             CallControlButton(
                 icon: context.viewState.isMuted ? "mic.slash.fill" : "mic.fill",
-                label: "микрофон",
+                label: context.viewState.isMuted ? "вкл. микр." : "микрофон",
                 isActive: !context.viewState.isMuted
             ) {
                 context.send(viewAction: .toggleMute)
             }
 
-            // Speaker toggle (Телефон ↔ Динамик, like Telegram)
+            // Speaker toggle — earpiece (phone icon) ↔ speaker (speaker icon), like Telegram
             CallControlButton(
-                icon: context.viewState.isSpeakerOn ? "speaker.wave.3.fill" : "speaker.fill",
+                icon: context.viewState.isSpeakerOn ? "speaker.wave.3.fill" : "phone.fill",
                 label: context.viewState.isSpeakerOn ? "динамик" : "телефон",
                 isActive: context.viewState.isSpeakerOn
             ) {

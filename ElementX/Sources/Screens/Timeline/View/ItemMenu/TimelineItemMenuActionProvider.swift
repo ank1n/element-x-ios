@@ -81,10 +81,6 @@ struct TimelineItemMenuActionProvider {
             }
         }
         
-        if item.isRemoteMessage {
-            actions.append(.copyPermalink)
-        }
-        
         if canCurrentUserPin, let eventID = item.id.eventID {
             actions.append(pinnedEventIDs.contains(eventID) ? .unpin : .pin)
         }
@@ -103,10 +99,6 @@ struct TimelineItemMenuActionProvider {
         
         if item.isEditable, item.hasMediaCaption {
             actions.append(.removeCaption)
-        }
-        
-        if isViewSourceEnabled {
-            actions.append(.viewSource)
         }
         
         if !item.isOutgoing {
@@ -146,11 +138,7 @@ struct TimelineItemMenuActionProvider {
     }
     
     private func makeEncryptedItemActions(_ encryptedItem: EncryptedRoomTimelineItem) -> TimelineItemMenuActions? {
-        var actions: [TimelineItemMenuAction] = [.copyPermalink]
-
-        if isViewSourceEnabled {
-            actions.append(.viewSource)
-        }
+        let actions: [TimelineItemMenuAction] = []
                 
         return .init(isReactable: false,
                      actions: actions,

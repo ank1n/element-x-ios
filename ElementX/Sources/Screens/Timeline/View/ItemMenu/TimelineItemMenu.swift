@@ -20,47 +20,49 @@ struct TimelineItemMenu: View {
     let actions: TimelineItemMenuActions
     private let feedbackGenerator = UIImpactFeedbackGenerator(style: .heavy)
     
+    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
+    private var isCosmos: Bool { designTheme == "cosmos" }
+
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             messagePreview
                 .padding(.horizontal, 16)
-                .padding(.top, 32.0)
-                .padding(.bottom, 4.0)
-                .frame(idealWidth: 300.0)
-            
+                .padding(.top, 14.0)
+                .padding(.bottom, 2.0)
+
             Divider()
-                .background(Color.compound.bgSubtlePrimary)
-            
+                .background(isCosmos ? Color.secondary.opacity(0.2) : Color.compound.bgSubtlePrimary)
+
             ScrollView {
                 VStack(alignment: .leading, spacing: 0.0) {
                     if !actions.reactions.isEmpty {
                         reactionsSection
-                            .padding(.bottom, 8.0)
+                            .padding(.bottom, 6.0)
 
                         Divider()
-                            .background(Color.compound.bgSubtlePrimary)
+                            .background(isCosmos ? Color.secondary.opacity(0.2) : Color.compound.bgSubtlePrimary)
                     }
 
                     if !actions.actions.isEmpty {
                         viewsForActions(actions.actions)
 
                         Divider()
-                            .background(Color.compound.bgSubtlePrimary)
+                            .background(isCosmos ? Color.secondary.opacity(0.2) : Color.compound.bgSubtlePrimary)
                     }
-                    
+
                     viewsForActions(actions.secondaryActions)
                 }
             }
         }
         .accessibilityIdentifier(A11yIdentifiers.roomScreen.timelineItemActionMenu)
-        .presentationSizing(.page)
-        .presentationDetents([.medium, .large])
-        .presentationBackground(Color.compound.bgCanvasDefault)
+        .presentationDetents([.fraction(0.4), .medium])
+        .presentationBackground(isCosmos ? Color(UIColor.systemBackground) : Color.compound.bgCanvasDefault)
         .presentationDragIndicator(.visible)
+        .presentationCornerRadius(20)
     }
     
     private var messagePreview: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 0.0) {
                 LoadableAvatarImage(url: item.sender.avatarURL,
                                     name: item.sender.displayName,

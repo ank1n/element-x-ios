@@ -244,6 +244,12 @@ import SwiftUI
 
     /// sTalk: Explicitly tracks whether a call is minimized (shown as floating bar)
     var isCallMinimized = false
+
+    /// sTalk: Elapsed time for minimized call banner
+    var minimizedCallElapsedTime: TimeInterval = 0
+
+    /// sTalk: Callback to restore call from minimized state
+    var restoreCallHandler: (() -> Void)?
     
     /// Present an overlay on top of the tab view
     /// - Parameters:
@@ -459,43 +465,59 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
 
     /// Single-instance call overlay that switches between fullscreen and mini-window
     /// without recreating the WKWebView (structural identity preserved).
+    /// When minimized, also shows a green "call in progress" banner at the top.
     @ViewBuilder
     private func callOverlay(coordinator: any CoordinatorProtocol) -> some View {
         let minimized = navigationTabCoordinator.isCallMinimized
-        GeometryReader { geometry in
-            coordinator.toPresentable()
-                .frame(
-                    width: minimized ? 140 : geometry.size.width,
-                    height: minimized ? 200 : geometry.size.height
+        ZStack(alignment: .top) {
+            // Mini floating video window or fullscreen call
+            GeometryReader { geometry in
+                coordinator.toPresentable()
+                    .frame(
+                        width: minimized ? 140 : geometry.size.width,
+                        height: minimized ? 200 : geometry.size.height
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: minimized ? 14 : 0))
+                    .shadow(color: minimized ? .black.opacity(0.4) : .clear, radius: minimized ? 10 : 0, x: 0, y: 4)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(Color.white.opacity(0.15), lineWidth: minimized ? 0.5 : 0)
+                    )
+                    .position(
+                        x: minimized
+                            ? geometry.size.width - 82 + miniCallOffset.width
+                            : geometry.size.width / 2,
+                        y: minimized
+                            ? geometry.size.height - 190 + miniCallOffset.height
+                            : geometry.size.height / 2
+                    )
+                    .gesture(
+                        minimized
+                            ? DragGesture()
+                                .onChanged { value in
+                                    miniCallDragOffset = value.translation
+                                }
+                                .onEnded { value in
+                                    miniCallOffset.width += value.translation.width
+                                    miniCallOffset.height += value.translation.height
+                                    miniCallDragOffset = .zero
+                                }
+                            : nil
+                    )
+                    .offset(miniCallDragOffset)
+            }
+
+            // sTalk: Green "call in progress" banner at top — only when minimized
+            if minimized, let callName = navigationTabCoordinator.minimizedCallDisplayName {
+                ActiveCallBanner(
+                    displayName: callName,
+                    elapsedTime: navigationTabCoordinator.minimizedCallElapsedTime,
+                    onTap: {
+                        navigationTabCoordinator.restoreCallHandler?()
+                    }
                 )
-                .clipShape(RoundedRectangle(cornerRadius: minimized ? 14 : 0))
-                .shadow(color: minimized ? .black.opacity(0.4) : .clear, radius: minimized ? 10 : 0, x: 0, y: 4)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(Color.white.opacity(0.15), lineWidth: minimized ? 0.5 : 0)
-                )
-                .position(
-                    x: minimized
-                        ? geometry.size.width - 82 + miniCallOffset.width
-                        : geometry.size.width / 2,
-                    y: minimized
-                        ? geometry.size.height - 190 + miniCallOffset.height
-                        : geometry.size.height / 2
-                )
-                .gesture(
-                    minimized
-                        ? DragGesture()
-                            .onChanged { value in
-                                miniCallDragOffset = value.translation
-                            }
-                            .onEnded { value in
-                                miniCallOffset.width += value.translation.width
-                                miniCallOffset.height += value.translation.height
-                                miniCallDragOffset = .zero
-                            }
-                        : nil
-                )
-                .offset(miniCallDragOffset)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
         }
         .ignoresSafeArea(.all)
     }
@@ -509,6 +531,79 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
         standardAppearance.compactInlineLayoutAppearance.normal.badgeBackgroundColor = .compound.iconAccentPrimary
         standardAppearance.inlineLayoutAppearance.normal.badgeBackgroundColor = .compound.iconAccentPrimary
         tabBarController.tabBar.standardAppearance = standardAppearance
+    }
+}
+
+// MARK: - sTalk Active Call Banner
+
+/// Green banner showing active call — like Telegram/WhatsApp.
+/// Displayed at top of screen on all tabs when call is minimized.
+private struct ActiveCallBanner: View {
+    let displayName: String
+    let elapsedTime: TimeInterval
+    let onTap: () -> Void
+
+    private var timeString: String {
+        let m = Int(elapsedTime) / 60
+        let s = Int(elapsedTime) % 60
+        return String(format: "%d:%02d", m, s)
+    }
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 8) {
+                // Pulsing red dot
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: 8, height: 8)
+                    .modifier(PulseAnimation())
+
+                Image(systemName: "phone.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white)
+
+                Text(displayName)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+
+                Text(timeString)
+                    .font(.system(size: 13, weight: .medium).monospacedDigit())
+                    .foregroundColor(.white.opacity(0.85))
+
+                Spacer()
+
+                Text("Вернуться")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.white.opacity(0.7))
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(
+                LinearGradient(
+                    colors: [Color(red: 0.18, green: 0.8, blue: 0.44), Color(red: 0.13, green: 0.68, blue: 0.38)],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Pulsing animation modifier for the call indicator dot
+private struct PulseAnimation: ViewModifier {
+    @State private var isPulsing = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(isPulsing ? 0.3 : 1.0)
+            .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: isPulsing)
+            .onAppear { isPulsing = true }
     }
 }
 
