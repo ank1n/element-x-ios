@@ -41,9 +41,8 @@ struct LottieTabBarIcon: UIViewRepresentable {
     let isSelected: Bool
     let playAnimation: Bool
     var iconSize: CGFloat = 30
-
-    private let activeColor: UIColor = UIColor(red: 0.38, green: 0.42, blue: 0.96, alpha: 1) // sTalk blue
-    private let inactiveColor: UIColor = .white
+    var activeColor: UIColor = UIColor(red: 0.38, green: 0.42, blue: 0.96, alpha: 1) // sTalk blue
+    var inactiveColor: UIColor = .systemGray
 
     func makeUIView(context: Context) -> LottieContainerView {
         let container = LottieContainerView(name: animationName, size: iconSize)

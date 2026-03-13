@@ -211,7 +211,7 @@ struct StalkTabBar: View {
     }
 
     // Icon colors
-    private let iconInactive = Color.white
+    private let iconInactive = Color(red: 0.45, green: 0.45, blue: 0.60)
     private let iconActive = Color(white: 0.12)
 
     private var selectedFraction: CGFloat {
@@ -371,21 +371,25 @@ struct StalkTabBar: View {
         if let lottie = item.lottieAnimation {
             let lottieSize: CGFloat = isCosmos ? (isActive ? 17 : 30) : 36
             let lottieScale: CGFloat = isCosmos ? (isActive ? 0.83 : 1.52) : 1.54
+            let lottieActiveUIColor = UIColor(iconColor)
+            let lottieInactiveUIColor: UIColor = isCosmos
+                ? UIColor(red: 0.45, green: 0.45, blue: 0.60, alpha: 1)
+                : .systemGray
             LottieTabBarIcon(
                 animationName: lottie,
                 isSelected: isActive,
                 playAnimation: animatingIndex == index,
-                iconSize: lottieSize
+                iconSize: lottieSize,
+                activeColor: lottieActiveUIColor,
+                inactiveColor: lottieInactiveUIColor
             )
             .scaleEffect(lottieScale)
-            .shadow(color: isCosmos && !isActive ? Color(red: 0.25, green: 0.25, blue: 0.45).opacity(0.6) : .clear, radius: 1, y: 1)
         } else if let sfSymbol = item.sfSymbol {
             let name = isActive ? (item.sfSymbolSelected ?? sfSymbol) : sfSymbol
             let fontSize: CGFloat = isCosmos ? (isActive ? 15 : 27) : 26
             Image(systemName: name)
                 .font(.system(size: fontSize, weight: .light))
                 .foregroundColor(iconColor)
-                .shadow(color: isCosmos && !isActive ? Color(red: 0.25, green: 0.25, blue: 0.45).opacity(0.6) : .clear, radius: 1, y: 1)
         }
     }
 
