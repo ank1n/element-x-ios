@@ -50,6 +50,9 @@ struct CallsListScreen: View {
             }
         }
         .alert(item: $context.alertInfo)
+        .sheet(isPresented: $context.isNewCallSheetPresented) {
+            newCallSheet
+        }
     }
 
     @ToolbarContentBuilder
@@ -262,14 +265,14 @@ struct CallsListScreen: View {
         VStack(spacing: 0) {
             HStack(spacing: 16) {
                 // Avatar
-                ZStack {
-                    Circle()
-                        .fill(avatarColor(for: call.contactName))
-                        .frame(width: 52, height: 52)
-
-                    Text(String(call.contactName.prefix(1)).uppercased())
-                        .font(.compound.headingMD)
-                        .foregroundColor(.compound.textOnSolidPrimary)
+                if call.isGroupCall {
+                    groupCallAvatars(call)
+                } else {
+                    LoadableAvatarImage(url: call.avatarURL,
+                                        name: call.contactName,
+                                        contentID: call.contactId,
+                                        avatarSize: .custom(52),
+                                        mediaProvider: context.mediaProvider)
                 }
 
                 // Call info
@@ -603,20 +606,25 @@ struct CallsListScreen: View {
             HStack(spacing: 14) {
                 // Avatar with direction badge
                 ZStack(alignment: .bottomTrailing) {
-                    Circle()
-                        .fill(call.isMissed ? Color.red.opacity(0.15) : avatarColor(for: call.contactName))
-                        .frame(width: 52, height: 52)
-                        .overlay {
-                            if call.isMissed {
+                    if call.isMissed {
+                        Circle()
+                            .fill(Color.red.opacity(0.15))
+                            .frame(width: 52, height: 52)
+                            .overlay {
                                 Image(systemName: "phone.arrow.down.left")
                                     .font(.system(size: 20, weight: .semibold))
                                     .foregroundColor(.red)
-                            } else {
-                                Text(String(call.contactName.prefix(1)).uppercased())
-                                    .font(.compound.headingMD)
-                                    .foregroundColor(.white)
                             }
-                        }
+                    } else if call.isGroupCall {
+                        // Наложенные аватарки для группового звонка
+                        groupCallAvatars(call)
+                    } else {
+                        LoadableAvatarImage(url: call.avatarURL,
+                                            name: call.contactName,
+                                            contentID: call.contactId,
+                                            avatarSize: .custom(52),
+                                            mediaProvider: context.mediaProvider)
+                    }
 
                     // Direction badge
                     if !call.isMissed {
@@ -746,6 +754,55 @@ struct CallsListScreen: View {
                     .padding(.leading, 84)
             }
         }
+    }
+
+    // MARK: - Group Call Avatars
+
+    /// Наложенные аватарки для группового звонка (2 аватарки + бейдж "+N")
+    @ViewBuilder
+    private func groupCallAvatars(_ call: CallHistoryItem) -> some View {
+        let urls = call.participantAvatarURLs
+        let count = call.participantCount
+        let names = call.contactName.components(separatedBy: ", ")
+
+        let url0 = urls.first
+        let url1 = urls.count > 1 ? urls[1] : nil
+        let name0 = names.first ?? "?"
+        let name1 = names.count > 1 ? names[1] : "?"
+
+        return ZStack {
+            // Второй аватар (сзади, сдвинут вправо-вверх)
+            LoadableAvatarImage(url: url1,
+                                name: name1,
+                                contentID: "\(call.contactId)-1",
+                                avatarSize: .custom(34),
+                                mediaProvider: context.mediaProvider)
+                .offset(x: 12, y: -8)
+
+            // Первый аватар (спереди, сдвинут влево-вниз)
+            LoadableAvatarImage(url: url0,
+                                name: name0,
+                                contentID: "\(call.contactId)-0",
+                                avatarSize: .custom(34),
+                                mediaProvider: context.mediaProvider)
+                .overlay(
+                    Circle()
+                        .stroke(Color(UIColor.systemBackground), lineWidth: 2)
+                )
+                .offset(x: -8, y: 8)
+
+            // Бейдж "+N" если > 3 участников (2 аватарки уже видны)
+            if count > 3 {
+                Text("+\(count - 2)")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.gray.opacity(0.8)))
+                    .offset(x: 16, y: 16)
+            }
+        }
+        .frame(width: 52, height: 52)
     }
 
     // MARK: - Shared Data
@@ -949,13 +1006,17 @@ struct CallsListScreen: View {
     private func callDescription(for call: CallHistoryItem) -> String {
         var parts: [String] = []
 
-        switch call.callType {
-        case .incoming:
-            parts.append(call.isMissed ? "Пропущенный" : "Входящий")
-        case .outgoing:
-            parts.append("Исходящий")
-        case .video:
-            parts.append(call.isMissed ? "Пропущенный видеозвонок" : "Видеозвонок")
+        if call.isGroupCall {
+            parts.append("Групповой • \(call.participantCount) уч.")
+        } else {
+            switch call.callType {
+            case .incoming:
+                parts.append(call.isMissed ? "Пропущенный" : "Входящий")
+            case .outgoing:
+                parts.append("Исходящий")
+            case .video:
+                parts.append(call.isMissed ? "Пропущенный видеозвонок" : "Видеозвонок")
+            }
         }
 
         if let duration = call.duration {
@@ -976,6 +1037,230 @@ struct CallsListScreen: View {
 
     private func isPlayingCall(_ call: CallHistoryItem) -> Bool {
         context.viewState.playingCallId == call.id && context.viewState.playbackState == .playing
+    }
+
+    // MARK: - New Call Sheet
+
+    private var selectedNewCallContacts: [NewCallContact] {
+        let ids = context.selectedNewCallContactIDs
+        return context.viewState.newCallContacts.filter { ids.contains($0.id) }
+    }
+
+    private var filteredNewCallContacts: [NewCallContact] {
+        let query = context.newCallSearchQuery
+        guard !query.isEmpty else { return context.viewState.newCallContacts }
+        return context.viewState.newCallContacts.filter {
+            $0.displayName.localizedCaseInsensitiveContains(query) ||
+            ($0.matrixUserID?.localizedCaseInsensitiveContains(query) ?? false)
+        }
+    }
+
+    /// Короткий username из @user:server → @user
+    private func shortUsername(_ matrixUserID: String?) -> String? {
+        guard let uid = matrixUserID else { return nil }
+        let parts = uid.components(separatedBy: ":")
+        return parts.first // @user
+    }
+
+    /// Текст кнопки "Позвонить"
+    private var callButtonTitle: String {
+        let selected = selectedNewCallContacts
+        if selected.isEmpty {
+            return "Позвонить"
+        } else if selected.count == 1 {
+            return "Позвонить \(selected[0].displayName)"
+        } else {
+            return "Позвонить (\(selected.count))"
+        }
+    }
+
+    @ViewBuilder
+    private var newCallSheet: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                // Чипсы выбранных контактов + поле поиска
+                newCallChipsAndSearch
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 4)
+
+                // Список контактов
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(filteredNewCallContacts) { contact in
+                            newCallContactRow(contact)
+                        }
+                    }
+                }
+
+                // Нижняя панель: Видеозвонок + кнопка
+                VStack(spacing: 12) {
+                    // Видеозвонок toggle
+                    Button {
+                        context.isVideoCall.toggle()
+                    } label: {
+                        HStack(spacing: 8) {
+                            ZStack {
+                                Circle()
+                                    .stroke(context.isVideoCall ? accentBlue : Color(UIColor.systemGray3), lineWidth: 2)
+                                    .frame(width: 22, height: 22)
+                                if context.isVideoCall {
+                                    Circle()
+                                        .fill(accentBlue)
+                                        .frame(width: 14, height: 14)
+                                }
+                            }
+                            Text("Видеозвонок")
+                                .font(.system(size: 16))
+                                .foregroundColor(.primary)
+                        }
+                    }
+
+                    // Кнопка "Позвонить"
+                    Button {
+                        startCallWithSelectedContacts()
+                    } label: {
+                        Text(callButtonTitle)
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .fill(selectedNewCallContacts.isEmpty ? Color.gray : accentBlue)
+                            )
+                    }
+                    .disabled(selectedNewCallContacts.isEmpty)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(Color(UIColor.systemBackground))
+            }
+            .navigationTitle("Новый звонок")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button {
+                        context.isNewCallSheetPresented = false
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.primary)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var newCallChipsAndSearch: some View {
+        let selected = selectedNewCallContacts
+
+        VStack(alignment: .leading, spacing: 6) {
+            // Чипсы выбранных контактов
+            if !selected.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(selected) { contact in
+                            HStack(spacing: 4) {
+                                LoadableAvatarImage(url: contact.avatarURL,
+                                                    name: contact.displayName,
+                                                    contentID: contact.id,
+                                                    avatarSize: .custom(24),
+                                                    mediaProvider: context.mediaProvider)
+                                Text(contact.displayName)
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.primary)
+                                    .lineLimit(1)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color(UIColor.systemGray6))
+                            .cornerRadius(16)
+                        }
+                    }
+                }
+            }
+
+            // Поле поиска
+            TextField("Поиск", text: $context.newCallSearchQuery)
+                .disableAutocorrection(true)
+                .font(.system(size: 16))
+        }
+        .padding(10)
+        .background(Color(UIColor.systemGray6).opacity(0.5))
+        .cornerRadius(12)
+    }
+
+    private func newCallContactRow(_ contact: NewCallContact) -> some View {
+        let isSelected = context.selectedNewCallContactIDs.contains(contact.id)
+
+        return Button {
+            if isSelected {
+                context.selectedNewCallContactIDs.remove(contact.id)
+            } else {
+                context.selectedNewCallContactIDs.insert(contact.id)
+            }
+        } label: {
+            HStack(spacing: 12) {
+                // Чекбокс
+                ZStack {
+                    Circle()
+                        .stroke(isSelected ? accentBlue : Color(UIColor.systemGray3), lineWidth: 2)
+                        .frame(width: 24, height: 24)
+                    if isSelected {
+                        Circle()
+                            .fill(accentBlue)
+                            .frame(width: 24, height: 24)
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.white)
+                    }
+                }
+
+                // Аватар
+                LoadableAvatarImage(url: contact.avatarURL,
+                                    name: contact.displayName,
+                                    contentID: contact.id,
+                                    avatarSize: .custom(44),
+                                    mediaProvider: context.mediaProvider)
+
+                // Имя и @username
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 4) {
+                        Text(contact.displayName)
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+
+                        if contact.isFavorite {
+                            Image(systemName: "star.fill")
+                                .font(.system(size: 12))
+                                .foregroundColor(accentBlue)
+                        }
+                    }
+
+                    if let username = shortUsername(contact.matrixUserID) {
+                        Text(username)
+                            .font(.system(size: 13))
+                            .foregroundColor(accentBlue)
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+        }
+    }
+
+    private func startCallWithSelectedContacts() {
+        let selected = selectedNewCallContacts
+        guard !selected.isEmpty else { return }
+        context.isNewCallSheetPresented = false
+        let contactIDs = selected.map(\.id)
+        context.send(viewAction: .makeCall(contactIDs: contactIDs, isVideo: context.isVideoCall))
     }
 }
 

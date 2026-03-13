@@ -147,23 +147,33 @@ struct ComposerToolbar: View {
         .accessibilityIdentifier(A11yIdentifiers.roomScreen.composerToolbar.closeFormattingOptions)
     }
     
+    private let stalkAccentBlue = Color(red: 0.38, green: 0.42, blue: 0.96)
+
     private var sendButton: some View {
         Group {
             if context.viewState.composerMode.isEdit {
                 Button(action: sendMessage) {
-                    CompoundIcon(\.check, size: .medium, relativeTo: .compound.headingLG)
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 16, weight: .bold))
                         .foregroundColor(.white)
-                        .scaledPadding(6, relativeTo: .compound.headingLG)
-                        .background(.compound.iconAccentTertiary, in: Circle())
+                        .frame(width: 34, height: 34)
+                        .background(stalkAccentBlue, in: Circle())
                         .accessibilityLabel(L10n.actionConfirm)
                 }
             } else {
-                SendButton(action: sendMessage)
-                    .accessibilityLabel(L10n.actionSend)
+                Button(action: sendMessage) {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(width: 34, height: 34)
+                        .background(stalkAccentBlue, in: Circle())
+                }
+                .accessibilityLabel(L10n.actionSend)
             }
         }
-        .scaledPadding(4, relativeTo: .compound.headingLG)
+        .padding(4)
         .disabled(context.viewState.sendButtonDisabled)
+        .opacity(context.viewState.sendButtonDisabled ? 0.4 : 1.0)
         .animation(.linear(duration: 0.1).disabledDuringTests(), value: context.viewState.sendButtonDisabled)
         .keyboardShortcut(.return, modifiers: [.command])
         .accessibilityIdentifier(A11yIdentifiers.roomScreen.sendButton)

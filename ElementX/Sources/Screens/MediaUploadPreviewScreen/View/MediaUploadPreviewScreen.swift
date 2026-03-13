@@ -87,8 +87,14 @@ struct MediaUploadPreviewScreen: View {
             }
             .messageComposerStyle()
             
-            SendButton {
+            Button {
                 context.send(viewAction: .send)
+            } label: {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(.white)
+                    .frame(width: 34, height: 34)
+                    .background(Color(red: 0.38, green: 0.42, blue: 0.96), in: Circle())
             }
         }
     }

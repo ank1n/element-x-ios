@@ -274,9 +274,12 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
                   !summary.name.hasPrefix("Empty Room"),
                   !summary.name.hasSuffix(" people"),
                   !seen.contains(summary.id) else { continue }
-            seen.insert(summary.id)
 
+            // Дедупликация по userID — один юзер может иметь несколько DM комнат
             let heroUserID = summary.heroes.first?.userID
+            if let heroUserID, seenUserIDs.contains(heroUserID) { continue }
+
+            seen.insert(summary.id)
             if let heroUserID { seenUserIDs.insert(heroUserID) }
             let presence = heroUserID.flatMap { presenceMap[$0] }
 

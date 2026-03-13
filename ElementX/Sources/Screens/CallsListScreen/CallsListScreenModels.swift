@@ -10,6 +10,7 @@ enum CallsListScreenViewAction {
     case showSettings
     case selectCall(CallHistoryItem)
     case startNewCall
+    case makeCall(contactIDs: [String], isVideo: Bool)
     case playRecording(CallHistoryItem)
     case seekPlayback(progress: Double)
     case refresh
@@ -21,12 +22,26 @@ enum CallsListScreenViewAction {
 enum CallsListScreenViewModelAction {
     case showSettings
     case startCall(userId: String)
+    case startGroupCall(userIDs: [String], isVideo: Bool)
+}
+
+/// Контакт для экрана "Новый звонок"
+struct NewCallContact: Identifiable {
+    let id: String       // roomID
+    let displayName: String
+    let avatarURL: URL?
+    let matrixUserID: String?  // @user:server
+    let isOnline: Bool
+    let isFavorite: Bool
 }
 
 struct CallsListScreenViewState: BindableState {
     var callHistory: [CallHistoryItem] = []
     var isLoading: Bool = false
     var searchQuery = ""
+
+    // Новый звонок
+    var newCallContacts: [NewCallContact] = []
 
     // User info for avatar
     var userID: String = ""
@@ -52,6 +67,10 @@ struct CallsListScreenViewState: BindableState {
 struct CallsListScreenViewStateBindings {
     var searchQuery = ""
     var alertInfo: AlertInfo<UUID>?
+    var isNewCallSheetPresented = false
+    var newCallSearchQuery = ""
+    var selectedNewCallContactIDs: Set<String> = []
+    var isVideoCall = false
 }
 
 /// Call history item
@@ -64,11 +83,21 @@ struct CallHistoryItem: Identifiable, Equatable, Codable {
     let duration: TimeInterval?
     let isMissed: Bool
     let recordingURL: URL?
+    /// Avatar URL from Matrix (mxc:// or https://)
+    var avatarURL: URL?
     /// Whether the recording has been listened to
     var isListened: Bool = false
+    /// Количество участников (для групповых звонков)
+    var participantCount: Int = 2
+    /// Avatar URLs участников (для наложенных аватарок)
+    var participantAvatarURLs: [URL] = []
 
     var hasRecording: Bool {
         recordingURL != nil
+    }
+
+    var isGroupCall: Bool {
+        participantCount > 2
     }
 
     enum CallType: String, Codable {
@@ -206,6 +235,8 @@ struct CallHistoryAPIItem: Codable {
         // Use matrixRoomId if available, otherwise fallback to roomName
         let contactId = matrixRoomId ?? roomName
 
+        let participantCount = (participants?.count ?? 0) + 1  // +1 для инициатора
+
         return CallHistoryItem(
             id: egressId,
             contactName: displayName,
@@ -214,7 +245,8 @@ struct CallHistoryAPIItem: Codable {
             timestamp: startDate,
             duration: callDuration,
             isMissed: false,
-            recordingURL: playbackURL
+            recordingURL: playbackURL,
+            participantCount: max(participantCount, 2)
         )
     }
 

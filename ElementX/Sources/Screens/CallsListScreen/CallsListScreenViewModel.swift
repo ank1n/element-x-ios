@@ -67,7 +67,13 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         case .selectCall(let call):
             actionsSubject.send(.startCall(userId: call.contactId))
         case .startNewCall:
-            break
+            loadNewCallContacts()
+            state.bindings.selectedNewCallContactIDs = []
+            state.bindings.newCallSearchQuery = ""
+            state.bindings.isVideoCall = false
+            state.bindings.isNewCallSheetPresented = true
+        case .makeCall(let contactIDs, let isVideo):
+            handleMakeCall(contactIDs: contactIDs, isVideo: isVideo)
         case .playRecording(let call):
             handlePlayRecording(call)
         case .seekPlayback(let progress):
@@ -165,38 +171,75 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         resolveAvatars()
     }
 
-    /// Resolves avatar URLs for call history items from Matrix room data
+    /// Resolves avatar URLs and participant info for call history items from Matrix room data
     private func resolveAvatars() {
+        let ownUserID = userSession.clientProxy.userID
         Task {
             var updated = false
             for i in state.callHistory.indices {
-                guard state.callHistory[i].avatarURL == nil else { continue }
                 let roomID = state.callHistory[i].contactId
-                // Get room proxy to find avatar
-                if let roomProxyType = await userSession.clientProxy.roomForIdentifier(roomID),
-                   case .joined(let roomProxy) = roomProxyType {
-                    let info = roomProxy.infoPublisher.value
-                    // Use info.avatar which handles DM rooms via heroes (other user's profile pic)
-                    let resolvedURL: URL? = switch info.avatar {
-                    case .heroes(let heroes) where heroes.count == 1:
-                        heroes[0].avatarURL
-                    case .room(_, _, let url):
-                        url
-                    case .space(_, _, let url):
-                        url
-                    default:
-                        nil
+                guard let roomProxyType = await userSession.clientProxy.roomForIdentifier(roomID),
+                      case .joined(let roomProxy) = roomProxyType else { continue }
+
+                let info = roomProxy.infoPublisher.value
+                let memberCount = Int(info.activeMembersCount)
+
+                // Обновляем participantCount
+                if memberCount != state.callHistory[i].participantCount {
+                    await MainActor.run {
+                        self.state.callHistory[i].participantCount = memberCount
                     }
-                    if let resolvedURL {
+                    updated = true
+                }
+
+                // Для групповых комнат (>2 участников) — загружаем аватарки участников
+                if memberCount > 2 {
+                    // Загружаем список участников для аватарок
+                    if let members = await roomProxy.members() {
+                        let otherMembers = members.filter { $0.userID != ownUserID }
+                        let avatarURLs = otherMembers.compactMap(\.avatarURL)
+                        let memberNames = otherMembers.compactMap(\.displayName)
+
                         await MainActor.run {
-                            self.state.callHistory[i].avatarURL = resolvedURL
+                            self.state.callHistory[i].participantAvatarURLs = avatarURLs
+                            // Обновляем имя — показываем имена участников
+                            if !memberNames.isEmpty, self.state.callHistory[i].contactName == "Звонок" || self.state.callHistory[i].contactName == "Видеозвонок" {
+                                if memberNames.count <= 2 {
+                                    self.state.callHistory[i].contactName = memberNames.joined(separator: ", ")
+                                } else {
+                                    let firstTwo = memberNames.prefix(2).joined(separator: ", ")
+                                    self.state.callHistory[i].contactName = "\(firstTwo) +\(memberNames.count - 2)"
+                                }
+                            }
                         }
                         updated = true
+                    }
+                } else {
+                    // DM — один аватар
+                    if case .heroes(let heroes) = info.avatar, heroes.count == 1 {
+                        if let heroURL = heroes[0].avatarURL, self.state.callHistory[i].avatarURL == nil {
+                            await MainActor.run {
+                                self.state.callHistory[i].avatarURL = heroURL
+                            }
+                            updated = true
+                        }
+                    } else if self.state.callHistory[i].avatarURL == nil {
+                        let resolvedURL: URL? = switch info.avatar {
+                        case .room(_, _, let url): url
+                        case .space(_, _, let url): url
+                        default: nil
+                        }
+                        if let resolvedURL {
+                            await MainActor.run {
+                                self.state.callHistory[i].avatarURL = resolvedURL
+                            }
+                            updated = true
+                        }
                     }
                 }
             }
             if updated {
-                MXLog.info("📞 Resolved avatars for call history (including DM heroes)")
+                MXLog.info("📞 Resolved avatars and participant counts for call history")
             }
         }
     }
@@ -584,6 +627,91 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
             // Refresh meetings to reflect updated RSVP
             await meetingsService?.fetchMeetings()
         }
+    }
+
+    // MARK: - New Call
+
+    private func handleMakeCall(contactIDs: [String], isVideo: Bool) {
+        guard !contactIDs.isEmpty else { return }
+
+        if contactIDs.count == 1 {
+            // Один контакт — звоним в его DM roomID
+            actionsSubject.send(.startCall(userId: contactIDs[0]))
+        } else {
+            // Несколько контактов — собираем matrixUserIDs и создаём комнату
+            let matrixUserIDs = contactIDs.compactMap { roomID -> String? in
+                state.newCallContacts.first(where: { $0.id == roomID })?.matrixUserID
+            }
+
+            guard !matrixUserIDs.isEmpty else {
+                // Fallback — звоним первому
+                actionsSubject.send(.startCall(userId: contactIDs[0]))
+                return
+            }
+
+            Task { [weak self] in
+                guard let self else { return }
+                let names = contactIDs.compactMap { roomID in
+                    self.state.newCallContacts.first(where: { $0.id == roomID })?.displayName
+                }
+                let roomName = names.joined(separator: ", ")
+
+                let result = await userSession.clientProxy.createRoom(
+                    name: roomName,
+                    topic: nil,
+                    accessType: .private,
+                    isSpace: false,
+                    userIDs: matrixUserIDs,
+                    avatarURL: nil,
+                    aliasLocalPart: nil
+                )
+
+                switch result {
+                case .success(let roomID):
+                    MXLog.info("[Calls] Created group room \(roomID) for call with \(matrixUserIDs.count) users")
+                    actionsSubject.send(.startCall(userId: roomID))
+                case .failure(let error):
+                    MXLog.error("[Calls] Failed to create group room: \(error)")
+                    // Fallback — звоним первому
+                    actionsSubject.send(.startCall(userId: contactIDs[0]))
+                }
+            }
+        }
+    }
+
+    private func loadNewCallContacts() {
+        let summaries = userSession.clientProxy.roomSummaryProvider.roomListPublisher.value
+        let ownUserID = userSession.clientProxy.userID
+        var seen = Set<String>()
+        var contacts: [NewCallContact] = []
+
+        for summary in summaries where summary.isDirect {
+            guard summary.activeMembersCount == 2,
+                  !summary.name.hasPrefix("Empty Room"),
+                  !seen.contains(summary.id) else { continue }
+
+            let heroUserID = summary.heroes.first?.userID
+            if let heroUserID, heroUserID == ownUserID { continue }
+            if let heroUserID, seen.contains(heroUserID) { continue }
+
+            seen.insert(summary.id)
+            if let heroUserID { seen.insert(heroUserID) }
+
+            let avatarURL = summary.avatarURL ?? summary.heroes.first?.avatarURL
+
+            // Извлекаем username из matrixUserID: @user:server → @user
+            contacts.append(NewCallContact(
+                id: summary.id,
+                displayName: summary.name,
+                avatarURL: avatarURL,
+                matrixUserID: heroUserID,
+                isOnline: false,
+                isFavorite: false
+            ))
+        }
+
+        contacts.sort { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+        state.newCallContacts = contacts
     }
 
     // MARK: - Private

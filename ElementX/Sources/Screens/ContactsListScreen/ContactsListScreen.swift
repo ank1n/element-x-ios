@@ -69,14 +69,6 @@ struct ContactsListScreen: View {
                     .foregroundColor(isCosmos ? accentBlue : nil)
             }
         }
-        ToolbarItem(placement: .primaryAction) {
-            Button {
-                context.send(viewAction: .addContact)
-            } label: {
-                Image(systemName: "plus")
-                    .foregroundColor(isCosmos ? accentBlue : nil)
-            }
-        }
     }
 
     // MARK: - Shared Data

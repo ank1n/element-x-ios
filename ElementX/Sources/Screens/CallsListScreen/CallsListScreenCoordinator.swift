@@ -44,6 +44,12 @@ final class CallsListScreenCoordinator: CoordinatorProtocol {
                 self.actionsSubject.send(.showSettings)
             case .startCall(let userId):
                 self.actionsSubject.send(.startCall(userId: userId))
+            case .startGroupCall(let userIDs, _):
+                // Групповой звонок обрабатывается в ViewModel — создаёт комнату и шлёт startCall
+                // Это fallback на случай если комната уже создана
+                if let first = userIDs.first {
+                    self.actionsSubject.send(.startCall(userId: first))
+                }
             }
         }
         .store(in: &cancellables)

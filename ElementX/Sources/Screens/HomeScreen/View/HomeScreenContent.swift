@@ -13,9 +13,6 @@ import SwiftUI
 struct HomeScreenContent: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var isArchiveRevealed = false
-    @State private var areFiltersVisible = true
-    @State private var lastScrollOffset: CGFloat = 0
-    @State private var lastFilterToggleTime: Date = .distantPast
     @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
 
     @ObservedObject var context: HomeScreenViewModel.Context
@@ -36,14 +33,11 @@ struct HomeScreenContent: View {
                     .ignoresSafeArea()
             }
             VStack(spacing: 0) {
-                // Filters outside ScrollView — hide on scroll up, show on pull down
-                if context.viewState.shouldShowFilters, areFiltersVisible {
+                if context.viewState.shouldShowFilters {
                     RoomListFiltersView(state: $context.filtersState)
-                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
                 roomList
             }
-            .animation(.easeInOut(duration: 0.25), value: areFiltersVisible)
         }
         .searchable(text: $context.searchQuery, isPresented: $context.isSearchFieldFocused, placement: .navigationBarDrawer(displayMode: .always))
         .compoundSearchField()
@@ -155,7 +149,6 @@ struct HomeScreenContent: View {
             .onReceive(scrollViewAdapter.didScroll) { _ in
                 updateVisibleRange()
                 checkOverscrollForArchive()
-                trackScrollDirection()
             }
             .onReceive(scrollViewAdapter.isScrolling) { _ in
                 updateVisibleRange()
@@ -206,9 +199,8 @@ struct HomeScreenContent: View {
                 }
             }
             .scrollDismissesKeyboard(.immediately)
-            .scrollDisabled(context.viewState.roomListMode == .skeletons)
             .scrollBounceBehavior(context.viewState.roomListMode == .empty ? .basedOnSize : .automatic)
-            .animation(.elementDefault, value: context.viewState.roomListMode)
+            .animation(.none, value: context.viewState.roomListMode)
             .animation(.none, value: context.viewState.visibleRooms)
             .onChange(of: context.viewState.roomListMode) { _, newMode in
                 if newMode != .rooms {
@@ -308,51 +300,6 @@ struct HomeScreenContent: View {
                 }
             }
         }
-    }
-
-    /// Detects pull-down overscroll to reveal / scroll-up to hide the archive row (Telegram-style)
-    private func trackScrollDirection() {
-        guard let scrollView = scrollViewAdapter.scrollView else { return }
-        let currentOffset = scrollView.contentOffset.y
-        let delta = currentOffset - lastScrollOffset
-
-        // Bounce zones — не менять фильтры в bounce (верх и низ)
-        let topInset = scrollView.adjustedContentInset.top
-        let isInTopBounce = currentOffset < -topInset + 5
-        let maxOffset = scrollView.contentSize.height - scrollView.bounds.height + scrollView.contentInset.bottom
-        let isInBottomBounce = currentOffset > maxOffset - 10
-
-        if isInTopBounce || isInBottomBounce {
-            lastScrollOffset = currentOffset
-            return
-        }
-
-        // Debounce: минимум 0.8с между изменениями фильтров — предотвращает петлю
-        let now = Date()
-        let timeSinceLastToggle = now.timeIntervalSince(lastFilterToggleTime)
-        guard timeSinceLastToggle > 0.8 else {
-            lastScrollOffset = currentOffset
-            return
-        }
-
-        // Высокий порог delta — не реагировать на мелкие движения и сдвиги от анимации фильтров
-        let newVisible: Bool?
-        if delta > 30, currentOffset > 100 {
-            // Скролл вверх (контент уходит вверх) → прячем фильтры
-            newVisible = false
-        } else if delta < -30 {
-            // Скролл вниз (тянем вниз) → показываем фильтры
-            newVisible = true
-        } else {
-            newVisible = nil
-        }
-
-        if let newVisible, newVisible != areFiltersVisible {
-            lastFilterToggleTime = now
-            areFiltersVisible = newVisible
-        }
-
-        lastScrollOffset = currentOffset
     }
 
     private func checkOverscrollForArchive() {
