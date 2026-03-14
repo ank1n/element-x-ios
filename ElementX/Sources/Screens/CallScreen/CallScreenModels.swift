@@ -56,7 +56,7 @@ struct CallScreenViewState: BindableState {
     var callStatusText: String {
         switch callStatus {
         case .connecting:
-            return "Вызов..."
+            return SL10n.callCalling
         case .connected:
             let m = Int(callElapsedTime) / 60
             let s = Int(callElapsedTime) % 60
@@ -67,7 +67,7 @@ struct CallScreenViewState: BindableState {
                 return "\(timeStr) · \(callParticipantsCount) из \(totalMembersCount) участников"
             }
         case .reconnecting:
-            return "Переподключение..."
+            return SL10n.callReconnecting
         }
     }
 

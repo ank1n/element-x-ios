@@ -18,12 +18,19 @@ struct CallsListScreen: View {
 
     private let bgGradientTop = Color(red: 0.90, green: 0.92, blue: 1.0)
     private let bgGradientBottom = Color(red: 0.95, green: 0.96, blue: 1.0)
-    private let accentBlue = Color(red: 0.38, green: 0.42, blue: 0.96)
+    private let accentBlue = StalkTheme.accent
     private let cardBg = Color(UIColor.systemBackground)
 
-    enum CallFilter: String, CaseIterable {
-        case all = "Все"
-        case missed = "Пропущенные"
+    enum CallFilter: CaseIterable {
+        case all
+        case missed
+
+        var title: String {
+            switch self {
+            case .all: return SL10n.callsAll
+            case .missed: return SL10n.callsMissed
+            }
+        }
     }
 
     var body: some View {
@@ -39,7 +46,7 @@ struct CallsListScreen: View {
                 classicContent
             }
         }
-        .navigationTitle(isCosmos ? "Звонки" : "")
+        .navigationTitle(isCosmos ? SL10n.tabCalls : "")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
@@ -73,7 +80,7 @@ struct CallsListScreen: View {
         ToolbarItem(placement: .principal) {
             Picker("", selection: $selectedFilter) {
                 ForEach(CallFilter.allCases, id: \.self) { filter in
-                    Text(filter.rawValue).tag(filter)
+                    Text(filter.title).tag(filter)
                 }
             }
             .pickerStyle(.segmented)
@@ -180,11 +187,11 @@ struct CallsListScreen: View {
                 .font(.system(size: 64))
                 .foregroundColor(.compound.textSecondary)
 
-            Text("Нет звонков")
+            Text(SL10n.callsEmpty)
                 .font(.compound.headingLG)
                 .foregroundColor(.compound.textPrimary)
 
-            Text("История звонков будет отображаться здесь")
+            Text(SL10n.callsEmptyHint)
                 .font(.compound.bodyMD)
                 .foregroundColor(.compound.textSecondary)
                 .multilineTextAlignment(.center)
@@ -402,7 +409,7 @@ struct CallsListScreen: View {
                                 Button {
                                     selectedFilter = filter
                                 } label: {
-                                    Text(filter.rawValue)
+                                    Text(filter.title)
                                         .font(.system(size: 13, weight: .medium))
                                         .foregroundColor(selectedFilter == filter ? .white : .primary)
                                         .padding(.horizontal, 14)
@@ -518,11 +525,11 @@ struct CallsListScreen: View {
                 .font(.system(size: 64))
                 .foregroundColor(.secondary)
 
-            Text("Нет звонков")
+            Text(SL10n.callsEmpty)
                 .font(.compound.headingLG)
                 .foregroundColor(.primary)
 
-            Text("История звонков будет отображаться здесь")
+            Text(SL10n.callsEmptyHint)
                 .font(.compound.bodyMD)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)

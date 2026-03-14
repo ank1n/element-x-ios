@@ -34,7 +34,7 @@ struct CalendarGridView: View {
     @State private var scrollProxy: ScrollViewProxy?
 
     private let calendar = Calendar.current
-    private let weekdaysShort = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+    private let weekdaysShort = SL10n.calendarWeekdays
 
     private static let dateKeyFormat: DateFormatter = {
         let f = DateFormatter()

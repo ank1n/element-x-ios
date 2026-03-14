@@ -19,7 +19,7 @@ struct ArchiveScreen: View {
 
     var body: some View {
         content
-            .navigationTitle("Архив")
+            .navigationTitle(SL10n.archiveTitle)
             .navigationBarTitleDisplayMode(.inline)
             .alert(item: $context.alertInfo)
             .alert(item: $context.leaveRoomAlertItem,
@@ -41,7 +41,7 @@ struct ArchiveScreen: View {
             Image(systemName: "archivebox")
                 .font(.system(size: 48))
                 .foregroundColor(.compound.iconSecondary)
-            Text("Архив пуст")
+            Text(SL10n.archiveEmpty)
                 .font(.compound.bodyLG)
                 .foregroundColor(.compound.textSecondary)
         }
@@ -80,7 +80,7 @@ struct ArchiveScreen: View {
                             Button {
                                 context.send(viewAction: .unarchiveRoom(roomIdentifier: room.id))
                             } label: {
-                                Label("Разархивировать", systemImage: "tray.and.arrow.up")
+                                Label(SL10n.actionUnarchive, systemImage: "tray.and.arrow.up")
                             }
 
                             Button {
@@ -148,7 +148,7 @@ private struct ArchiveRoomSwipeView<Content: View>: View {
     private var leadingActions: [ArchiveSwipeAction] {
         [
             ArchiveSwipeAction(
-                title: "Разархив.",
+                title: SL10n.actionUnarchiveShort,
                 icon: "tray.and.arrow.up",
                 color: .green
             ) {
@@ -167,7 +167,7 @@ private struct ArchiveRoomSwipeView<Content: View>: View {
                 context.send(viewAction: .showRoomDetails(roomIdentifier: room.id))
             },
             ArchiveSwipeAction(
-                title: "Удалить",
+                title: SL10n.actionDelete,
                 icon: "trash",
                 color: .red
             ) {

@@ -15,7 +15,7 @@ struct NativeLoginScreen: View {
     @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
 
     private var isCosmos: Bool { designTheme == "cosmos" }
-    private let accentBlue = Color(red: 0.38, green: 0.42, blue: 0.96)
+    private let accentBlue = StalkTheme.accent
     private let bgGradientTop = Color(red: 0.90, green: 0.92, blue: 1.0)
     private let bgGradientBottom = Color(red: 0.95, green: 0.96, blue: 1.0)
 
@@ -42,7 +42,7 @@ struct NativeLoginScreen: View {
 
                     // Login form
                     VStack(spacing: 16) {
-                        TextField("Имя пользователя", text: $context.username)
+                        TextField(SL10n.authUsername, text: $context.username)
                             .textContentType(.username)
                             .autocapitalization(.none)
                             .autocorrectionDisabled()
@@ -57,7 +57,7 @@ struct NativeLoginScreen: View {
                                     .stroke(isCosmos ? accentBlue.opacity(0.15) : Color.clear, lineWidth: 1)
                             )
 
-                        SecureField("Пароль", text: $context.password)
+                        SecureField(SL10n.authPassword, text: $context.password)
                             .textContentType(.password)
                             .focused($focusedField, equals: .password)
                             .submitLabel(.go)
@@ -82,7 +82,7 @@ struct NativeLoginScreen: View {
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 16)
                             } else {
-                                Text("Войти")
+                                Text(SL10n.authLogin)
                                     .font(.system(size: 17, weight: .semibold))
                                     .foregroundColor(.white)
                                     .frame(maxWidth: .infinity)
@@ -103,7 +103,7 @@ struct NativeLoginScreen: View {
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 14)
                             } else {
-                                Text("Войти")
+                                Text(SL10n.authLogin)
                                     .font(.body.bold())
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 14)
@@ -123,7 +123,7 @@ struct NativeLoginScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Отмена") {
+                Button(SL10n.actionCancel) {
                     context.send(viewAction: .cancel)
                 }
             }
@@ -150,7 +150,7 @@ struct NativeLoginScreen: View {
                 .foregroundColor(.accentColor)
             Text("sTalk")
                 .font(.title.bold())
-            Text("Вход в аккаунт")
+            Text(SL10n.authLoginTitle)
                 .font(.subheadline)
                 .foregroundColor(.secondary)
         }
@@ -178,7 +178,7 @@ struct NativeLoginScreen: View {
                 .frame(height: 28)
                 .padding(.horizontal, 50)
 
-            Text("Вход в аккаунт")
+            Text(SL10n.authLoginTitle)
                 .font(.system(size: 15))
                 .foregroundColor(.secondary)
                 .padding(.top, 4)

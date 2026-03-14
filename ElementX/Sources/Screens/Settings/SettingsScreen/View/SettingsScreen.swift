@@ -61,12 +61,12 @@ struct SettingsScreen: View {
                 Spacer().frame(height: 70)
             }
         }
-        .navigationTitle("Настройки")
+        .navigationTitle(SL10n.tabSettings)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.visible, for: .navigationBar)
     }
     
-    private let accentBlue = Color(red: 0.38, green: 0.42, blue: 0.96)
+    private let accentBlue = StalkTheme.accent
 
     @ViewBuilder
     private var userSection: some View {
@@ -113,7 +113,7 @@ struct SettingsScreen: View {
                     HStack(spacing: 6) {
                         Image(systemName: "camera")
                             .font(.system(size: 13, weight: .medium))
-                        Text("Фото")
+                        Text(SL10n.settingsPhoto)
                             .font(.system(size: 13, weight: .medium))
                     }
                     .foregroundColor(.white)
@@ -130,7 +130,7 @@ struct SettingsScreen: View {
                     HStack(spacing: 6) {
                         Image(systemName: "pencil")
                             .font(.system(size: 13, weight: .medium))
-                        Text("Имя")
+                        Text(SL10n.settingsName)
                             .font(.system(size: 13, weight: .medium))
                     }
                     .foregroundColor(accentBlue)
@@ -168,7 +168,7 @@ struct SettingsScreen: View {
                 Button {
                     context.send(viewAction: .userDetails)
                 } label: {
-                    Label("Изменить фото", systemImage: "camera")
+                    Label(SL10n.settingsChangePhoto, systemImage: "camera")
                         .font(.system(size: 14, weight: .medium))
                         .foregroundColor(.accentColor)
                         .padding(.horizontal, 16)
@@ -180,7 +180,7 @@ struct SettingsScreen: View {
                 Button {
                     context.send(viewAction: .userDetails)
                 } label: {
-                    Label("Изменить имя", systemImage: "pencil")
+                    Label(SL10n.settingsChangeName, systemImage: "pencil")
                         .font(.system(size: 14, weight: .medium))
                         .foregroundColor(.accentColor)
                         .padding(.horizontal, 16)
@@ -196,7 +196,7 @@ struct SettingsScreen: View {
     }
     
     private var manageMyAppSection: some View {
-        Section(header: Text("Аккаунт")) {
+        Section(header: Text(SL10n.settingsAccount)) {
             ListRow(label: .default(title: L10n.screenNotificationSettingsTitle,
                                     icon: \.notifications),
                     kind: .navigationLink {
@@ -225,7 +225,7 @@ struct SettingsScreen: View {
     }
     
     private var manageAccountSection: some View {
-        Section(header: Text("Приватность")) {
+        Section(header: Text(SL10n.settingsPrivacy)) {
             if context.viewState.showLinkNewDeviceButton {
                 ListRow(label: .default(title: L10n.commonLinkNewDevice,
                                         icon: \.devices),
@@ -263,13 +263,13 @@ struct SettingsScreen: View {
     }
     
     private var appearanceSection: some View {
-        Section(header: Text("Внешний вид")) {
+        Section(header: Text(SL10n.settingsAppearance)) {
             Picker(selection: $settingsDesignTheme) {
-                Text("Космос").tag("cosmos")
-                Text("Классика").tag("classic")
+                Text(SL10n.settingsThemeCosmos).tag("cosmos")
+                Text(SL10n.settingsThemeClassic).tag("classic")
             } label: {
                 Label {
-                    Text("Тема дизайна")
+                    Text(SL10n.settingsThemeDesign)
                 } icon: {
                     Image(systemName: "paintbrush.fill")
                         .foregroundColor(.purple)
@@ -279,7 +279,7 @@ struct SettingsScreen: View {
     }
 
     private var generalSection: some View {
-        Section(header: Text("Поддержка")) {
+        Section(header: Text(SL10n.settingsSupport)) {
             ListRow(label: .default(title: L10n.commonAdvancedSettings,
                                     icon: \.settings),
                     kind: .navigationLink {
@@ -321,8 +321,8 @@ struct SettingsScreen: View {
     }
     
     private var storageSection: some View {
-        Section(header: Text("Хранилище")) {
-            ListRow(label: .default(title: "Кеш и данные",
+        Section(header: Text(SL10n.settingsStorage)) {
+            ListRow(label: .default(title: SL10n.settingsCacheAndData,
                                     icon: \.host),
                     kind: .navigationLink {
                         context.send(viewAction: .cacheAndStorage)

@@ -258,14 +258,14 @@ struct HomeScreenRoomList: View {
     private func leadingSwipeActions(for room: HomeScreenRoom) -> [SwipeAction] {
         [
             SwipeAction(
-                title: room.isFavourite ? "Убрать" : "Избранное",
+                title: room.isFavourite ? SL10n.actionRemoveFavorite : SL10n.actionAddFavorite,
                 icon: room.isFavourite ? "star.fill" : "star",
                 color: .orange
             ) {
                 context.send(viewAction: .markRoomAsFavourite(roomIdentifier: room.id, isFavourite: !room.isFavourite))
             },
             SwipeAction(
-                title: "Архив",
+                title: SL10n.actionArchive,
                 icon: "archivebox",
                 color: .purple
             ) {
@@ -278,21 +278,21 @@ struct HomeScreenRoomList: View {
     private func trailingSwipeActions(for room: HomeScreenRoom) -> [SwipeAction] {
         [
             SwipeAction(
-                title: room.badges.isMuteShown ? "Вкл. звук" : "Без звука",
+                title: room.badges.isMuteShown ? SL10n.actionUnmute : SL10n.actionMute,
                 icon: room.badges.isMuteShown ? "bell.slash.fill" : "bell.slash",
                 color: room.badges.isMuteShown ? .green : .orange
             ) {
                 context.send(viewAction: .toggleMuteRoom(roomIdentifier: room.id, isMuted: room.badges.isMuteShown))
             },
             SwipeAction(
-                title: "Настройки",
+                title: SL10n.actionSettings,
                 icon: "gearshape",
                 color: Color(.systemGray)
             ) {
                 context.send(viewAction: .showRoomDetails(roomIdentifier: room.id))
             },
             SwipeAction(
-                title: "Удалить",
+                title: SL10n.actionDelete,
                 icon: "trash",
                 color: .red
             ) {

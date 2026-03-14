@@ -114,11 +114,8 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
                 MXLog.info("sTalk: Updated \(widgets.count) widgets from server")
             } catch {
                 MXLog.error("sTalk: Failed to fetch widgets: \(error)")
-                // Only show fallback if no cached data either
-                if self.state.widgets.isEmpty {
-                    self.state.widgets = self.fallbackWidgets()
-                }
-                self.state.isLoading = false
+                // Keep loading state if no cached data — retry on next refresh
+                self.state.isLoading = self.state.widgets.isEmpty
             }
         }
     }
@@ -188,8 +185,8 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
         return [
             WidgetItem(
                 id: "stats",
-                name: "Статистика",
-                description: "Статистика использования системы",
+                name: SL10n.appsStatistics,
+                description: SL10n.appsStatisticsDesc,
                 icon: "chart.bar.fill",
                 url: "\(baseURL)/stats/?userId=\(encodedUserId)",
                 category: .tools

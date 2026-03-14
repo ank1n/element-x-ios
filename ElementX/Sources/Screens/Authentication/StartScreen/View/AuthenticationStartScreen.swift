@@ -74,7 +74,7 @@ struct AuthenticationStartScreen: View {
                     Text("sTalk")
                         .font(.system(size: 48, weight: .bold))
                         .foregroundColor(.white)
-                    Text("Корпоративный мессенджер с видеозвонками\nдля команд, которые ценят безопасность\nи контроль над данными")
+                    Text(SL10n.authTagline)
                         .font(.compound.bodyMD)
                         .foregroundColor(.white.opacity(0.8))
                         .multilineTextAlignment(.center)
@@ -132,7 +132,7 @@ struct AuthenticationStartScreen: View {
 
     var versionText: Text {
         let shortVersionString = ProcessInfo.isRunningTests ? "0.0.0" : InfoPlistReader.main.bundleShortVersionString
-        return Text("Версия \(shortVersionString)")
+        return Text(SL10n.authVersion(shortVersionString))
     }
 }
 

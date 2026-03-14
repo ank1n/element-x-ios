@@ -50,7 +50,7 @@ class WidgetService: WidgetServiceProtocol {
             MatrixWidget(
                 id: "stats_widget_1",
                 type: "customwidget",
-                name: "Статистика",
+                name: SL10n.appsStatistics,
                 url: "https://stats.stalk.implica.ru/?roomId=$matrix_room_id&userId=$matrix_user_id",
                 creatorUserId: roomProxy.ownUserID,
                 waitForIframeLoad: true,

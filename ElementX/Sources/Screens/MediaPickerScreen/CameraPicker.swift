@@ -230,8 +230,8 @@ final class StalkCameraViewController: UIViewController {
         bottomBar.addSubview(flipButton)
 
         // Mode selector (ВИДЕО / ФОТО)
-        photoModeButton = makeModeButton(title: "ФОТО")
-        videoModeButton = makeModeButton(title: "ВИДЕО")
+        photoModeButton = makeModeButton(title: SL10n.cameraPhoto)
+        videoModeButton = makeModeButton(title: SL10n.cameraVideo)
         photoModeButton.addTarget(self, action: #selector(selectPhotoMode), for: .touchUpInside)
         videoModeButton.addTarget(self, action: #selector(selectVideoMode), for: .touchUpInside)
 

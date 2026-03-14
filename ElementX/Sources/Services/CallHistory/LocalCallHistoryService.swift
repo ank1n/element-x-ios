@@ -33,7 +33,7 @@ struct LocalCallHistoryItem: Codable, Identifiable, Equatable {
 
         let names = participantDisplayNames.values.sorted()
         if names.isEmpty {
-            return "Звонок"
+            return SL10n.callDefault
         } else if names.count == 1 {
             return names[0]
         } else {

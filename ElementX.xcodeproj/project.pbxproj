@@ -537,6 +537,7 @@
 		5C164551F7D26E24F09083D3 /* StaticLocationScreenViewModelProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = C616D90B1E2F033CAA325439 /* StaticLocationScreenViewModelProtocol.swift */; };
 		5C33976A720B64094CBC56B1 /* VideoMediaEventsTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B1FB56520A847DD2532D5C8 /* VideoMediaEventsTimelineView.swift */; };
 		5C5B47A3CCC1961ACB71DCAB /* StalkTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 956D61EA8EFAC35522DEDC1B /* StalkTabBar.swift */; };
+		EE053D8CFCB8453C86A52356 /* StalkTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC30519DF0E046838D9C9A96 /* StalkTheme.swift */; };
 		5C61810ED7B7CB48346B1B9D /* portrait_test_video.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = E5E7D4EE7CA295E5039FDA21 /* portrait_test_video.mp4 */; };
 		5C8804B4F25903516E2DAB81 /* RoomInfoProxy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40A66E8BC8D9AE4A08EFB2DF /* RoomInfoProxy.swift */; };
 		5CEA0BF496F00339A9E4486B /* TimelineItemProviderProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 829D3CE4F6C4DF6CC02D33C3 /* TimelineItemProviderProtocol.swift */; };
@@ -2468,6 +2469,7 @@
 		955336CBD5ED73C792D1F580 /* EncryptionAuthenticity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EncryptionAuthenticity.swift; sourceTree = "<group>"; };
 		95547A6C69606B5282C765D3 /* RemoveItemButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoveItemButton.swift; sourceTree = "<group>"; };
 		956D61EA8EFAC35522DEDC1B /* StalkTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StalkTabBar.swift; sourceTree = "<group>"; };
+		EC30519DF0E046838D9C9A96 /* StalkTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StalkTheme.swift; sourceTree = "<group>"; };
 		95A2E4BD7C0CAD25EF924A4C /* GeneratedPreviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneratedPreviewTests.swift; sourceTree = "<group>"; };
 		95BAC0F6C9644336E9567EE6 /* NSRegularExpresion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NSRegularExpresion.swift; sourceTree = "<group>"; };
 		95DF44AD49167A41F0C4CDEC /* NativeLoginScreenCoordinator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NativeLoginScreenCoordinator.swift; sourceTree = "<group>"; };
@@ -3883,6 +3885,7 @@
 				A8558D41DD4B553A752C868A /* StackedAvatarsView.swift */,
 				AA1234567890LOTTIETAB0002 /* LottieTabBarIcon.swift */,
 				956D61EA8EFAC35522DEDC1B /* StalkTabBar.swift */,
+				EC30519DF0E046838D9C9A96 /* StalkTheme.swift */,
 				E10765FBC83B34A3BC4ADB23 /* TimelineScrollToBottomButton.swift */,
 				16D353E10A64172D863769BF /* TombstonedAvatarImage.swift */,
 				510DA63AB273A68D659CEC95 /* ToolbarButton.swift */,
@@ -9036,6 +9039,7 @@
 				DF004A5B2EABBD0574D06A04 /* SplashScreenCoordinator.swift in Sources */,
 				E1C67E5D9E22135A8FEBBD60 /* StackedAvatarsView.swift in Sources */,
 				5C5B47A3CCC1961ACB71DCAB /* StalkTabBar.swift in Sources */,
+				EE053D8CFCB8453C86A52356 /* StalkTheme.swift in Sources */,
 				AA1234567890LOTTIETAB0001 /* LottieTabBarIcon.swift in Sources */,
 				9FC79DA30AE0E1502DAEBD51 /* StartChatFlowCoordinator.swift in Sources */,
 				3DAF325D8AE461F7CDB282BD /* StartChatScreen.swift in Sources */,

@@ -11,14 +11,14 @@ struct MeetingsListScreen: View {
     @ObservedObject var context: MeetingsScreenViewModelType.Context
 
     // Colors matching reference design
-    private let accentBlue = Color(red: 0.38, green: 0.42, blue: 0.96)
+    private let accentBlue = StalkTheme.accent
     private let bgGradientTop = Color(red: 0.90, green: 0.92, blue: 1.0)
     private let bgGradientBottom = Color(red: 0.95, green: 0.96, blue: 1.0)
     private let cardBg = Color(UIColor.systemBackground)
 
     private let timeFormatter: DateFormatter = {
         let f = DateFormatter()
-        f.locale = Locale(identifier: "ru_RU")
+        f.locale = Locale.current
         f.dateFormat = "HH:mm"
         return f
     }()
@@ -31,14 +31,14 @@ struct MeetingsListScreen: View {
 
     private let weekdayFormatter: DateFormatter = {
         let f = DateFormatter()
-        f.locale = Locale(identifier: "ru_RU")
+        f.locale = Locale.current
         f.dateFormat = "EEE"
         return f
     }()
 
     private let monthYearFormatter: DateFormatter = {
         let f = DateFormatter()
-        f.locale = Locale(identifier: "ru_RU")
+        f.locale = Locale.current
         f.dateFormat = "MMM yyyy"
         return f
     }()
@@ -90,7 +90,7 @@ struct MeetingsListScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Text("Календарь")
+                Text(SL10n.meetingCalendar)
                     .font(.system(size: 20, weight: .bold))
             }
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -131,15 +131,15 @@ struct MeetingsListScreen: View {
     // MARK: - Filter Row
 
     @State private var selectedFilterIndex = 0
-    private let filters = ["all", "Встреча", "Звонок"]
+    private let filters = ["all", SL10n.meetingTitle, SL10n.meetingCall]
 
     private var filterRow: some View {
         HStack {
-            Text("Время")
+            Text(SL10n.meetingTime)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundColor(.secondary)
 
-            Text("Событие")
+            Text(SL10n.meetingEvent)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundColor(.secondary)
 
@@ -147,13 +147,13 @@ struct MeetingsListScreen: View {
 
             Menu {
                 ForEach(Array(filters.enumerated()), id: \.offset) { idx, filter in
-                    Button(filter == "all" ? "Все" : filter) {
+                    Button(filter == "all" ? SL10n.meetingAll : filter) {
                         selectedFilterIndex = idx
                     }
                 }
             } label: {
                 HStack(spacing: 4) {
-                    Text(selectedFilterIndex == 0 ? "Все" : filters[selectedFilterIndex])
+                    Text(selectedFilterIndex == 0 ? SL10n.meetingAll : filters[selectedFilterIndex])
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(accentBlue)
                     Image(systemName: "chevron.down")
@@ -196,7 +196,7 @@ struct MeetingsListScreen: View {
     }
 
     private let parallelColors: [Color] = [
-        Color(red: 0.38, green: 0.42, blue: 0.96), // blue
+        StalkTheme.accent, // blue
         Color(red: 0.95, green: 0.55, blue: 0.25),  // orange
         Color(red: 0.30, green: 0.78, blue: 0.55),  // green
         Color(red: 0.73, green: 0.45, blue: 0.90),  // purple
@@ -280,7 +280,7 @@ struct MeetingsListScreen: View {
                 Spacer()
 
                 if isActive {
-                    Text("Сейчас")
+                    Text(SL10n.meetingNow)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(.green)
                         .padding(.horizontal, 8)
@@ -477,7 +477,7 @@ struct MeetingsListScreen: View {
                 }
 
                 if isActive {
-                    Text("Сейчас")
+                    Text(SL10n.meetingNow)
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundColor(.green)
                         .padding(.horizontal, 6)
@@ -520,7 +520,7 @@ struct MeetingsListScreen: View {
             }
             .frame(width: 24)
 
-            Text("Свободно \(formatGapMinutes(minutes))")
+            Text(SL10n.meetingFree(formatGapMinutes(minutes)))
                 .font(.system(size: 11))
                 .foregroundColor(.secondary.opacity(0.4))
                 .padding(.leading, 4)
@@ -568,12 +568,12 @@ struct MeetingsListScreen: View {
 
                     if let next = nextMeeting {
                         let minutesLeft = max(0, Int(next.startTime.timeIntervalSince(Date()) / 60))
-                        Text("До «\(next.title)» — \(formatGapMinutes(minutesLeft))")
+                        Text(SL10n.meetingUntil(next.title, formatGapMinutes(minutesLeft)))
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundColor(Color(red: 0.2, green: 0.65, blue: 0.35))
                             .lineLimit(1)
                     } else {
-                        Text("Встреч больше нет")
+                        Text(SL10n.meetingNoMore)
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundColor(Color(red: 0.2, green: 0.65, blue: 0.35))
                     }
@@ -654,13 +654,13 @@ struct MeetingsListScreen: View {
             Image(systemName: "calendar.badge.plus")
                 .font(.system(size: 48))
                 .foregroundColor(.secondary.opacity(0.35))
-            Text("Нет событий на этот день")
+            Text(SL10n.meetingNoEvents)
                 .font(.system(size: 15))
                 .foregroundColor(.secondary)
             Button {
                 context.send(viewAction: .createMeeting)
             } label: {
-                Text("Создать встречу")
+                Text(SL10n.meetingCreate)
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(accentBlue)
                     .padding(.horizontal, 20)

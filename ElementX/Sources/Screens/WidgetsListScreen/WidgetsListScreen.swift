@@ -14,14 +14,23 @@ struct WidgetsListScreen: View {
 
     private var isCosmos: Bool { designTheme == "cosmos" }
 
-    enum AppCategory: String, CaseIterable {
-        case all = "Все"
-        case productivity = "Продуктивность"
-        case communication = "Связь"
-        case tools = "Инструменты"
+    enum AppCategory: CaseIterable {
+        case all
+        case productivity
+        case communication
+        case tools
+
+        var rawValue: String {
+            switch self {
+            case .all: return SL10n.appsAll
+            case .productivity: return SL10n.appsProductivity
+            case .communication: return SL10n.appsCommunication
+            case .tools: return SL10n.appsTools
+            }
+        }
     }
 
-    private let accentBlue = Color(red: 0.38, green: 0.42, blue: 0.96)
+    private let accentBlue = StalkTheme.accent
     private let bgGradientTop = Color(red: 0.90, green: 0.92, blue: 1.0)
     private let bgGradientBottom = Color(red: 0.95, green: 0.96, blue: 1.0)
     private let cardBg = Color(UIColor.systemBackground)
@@ -43,7 +52,7 @@ struct WidgetsListScreen: View {
                     .background(Color(UIColor.systemGroupedBackground).ignoresSafeArea())
             }
         }
-        .navigationTitle("Приложения")
+        .navigationTitle(SL10n.tabApps)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbar { toolbar }
@@ -141,9 +150,9 @@ struct WidgetsListScreen: View {
             Image(systemName: "square.grid.2x2")
                 .font(.system(size: 64))
                 .foregroundColor(.secondary)
-            Text("Нет приложений")
+            Text(SL10n.appsEmpty)
                 .font(.system(size: 20, weight: .bold))
-            Text("Приложения будут отображаться здесь")
+            Text(SL10n.appsEmptyHint)
                 .font(.system(size: 15))
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
@@ -287,11 +296,11 @@ struct WidgetsListScreen: View {
                 .font(.system(size: 48))
                 .foregroundColor(.secondary.opacity(0.35))
 
-            Text("Нет приложений")
+            Text(SL10n.appsEmpty)
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundColor(.primary)
 
-            Text("Приложения будут отображаться здесь")
+            Text(SL10n.appsEmptyHint)
                 .font(.system(size: 14))
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)

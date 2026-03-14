@@ -6,10 +6,18 @@
 
 import Foundation
 
-enum ContactFilter: String, CaseIterable {
-    case all = "Все"
-    case online = "В сети"
-    case favorites = "Избранные"
+enum ContactFilter: CaseIterable {
+    case all
+    case online
+    case favorites
+
+    var title: String {
+        switch self {
+        case .all: return SL10n.contactsAll
+        case .online: return SL10n.contactsOnline
+        case .favorites: return SL10n.contactsFavorites
+        }
+    }
 }
 
 enum ContactsListScreenViewAction {

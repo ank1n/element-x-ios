@@ -82,7 +82,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         let contactsStackCoordinator = NavigationStackCoordinator()
         contactsTabFlowCoordinator = ContactsTabFlowCoordinator(navigationStackCoordinator: contactsStackCoordinator,
                                                                  flowParameters: flowParameters)
-        contactsTabDetails = .init(tag: HomeTab.contacts, title: "Контакты", icon: \.userProfile, selectedIcon: \.userProfileSolid, sfSymbol: "person", sfSymbolSelected: "person.fill", lottieAnimation: "TabContacts")
+        contactsTabDetails = .init(tag: HomeTab.contacts, title: SL10n.tabContacts, icon: \.userProfile, selectedIcon: \.userProfileSolid, sfSymbol: "person", sfSymbolSelected: "person.fill", lottieAnimation: "TabContacts")
         contactsTabDetails.barVisibilityOverride = .visible
         contactsTabFlowCoordinator.onTabBarVisibilityChange = { [weak contactsTabDetails] visibility in
             contactsTabDetails?.barVisibilityOverride = visibility
@@ -92,7 +92,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         let callsStackCoordinator = NavigationStackCoordinator()
         callsTabFlowCoordinator = CallsTabFlowCoordinator(navigationStackCoordinator: callsStackCoordinator,
                                                           flowParameters: flowParameters)
-        callsTabDetails = .init(tag: HomeTab.calls, title: "Звонки", icon: \.voiceCall, selectedIcon: \.voiceCallSolid, sfSymbol: "phone", sfSymbolSelected: "phone.fill", lottieAnimation: "TabCalls")
+        callsTabDetails = .init(tag: HomeTab.calls, title: SL10n.tabCalls, icon: \.voiceCall, selectedIcon: \.voiceCallSolid, sfSymbol: "phone", sfSymbolSelected: "phone.fill", lottieAnimation: "TabCalls")
         callsTabDetails.barVisibilityOverride = .visible
 
         // 3. Chats tab
@@ -100,7 +100,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         chatsTabFlowCoordinator = ChatsTabFlowCoordinator(isNewLogin: isNewLogin,
                                                           navigationSplitCoordinator: chatsSplitCoordinator,
                                                           flowParameters: flowParameters)
-        chatsTabDetails = .init(tag: HomeTab.chats, title: "Чаты", icon: \.chat, selectedIcon: \.chatSolid, sfSymbol: "message", sfSymbolSelected: "message.fill", lottieAnimation: "TabChats")
+        chatsTabDetails = .init(tag: HomeTab.chats, title: SL10n.tabChats, icon: \.chat, selectedIcon: \.chatSolid, sfSymbol: "message", sfSymbolSelected: "message.fill", lottieAnimation: "TabChats")
         chatsTabDetails.navigationSplitCoordinator = chatsSplitCoordinator
         // chatsTabDetails.barVisibilityOverride = .visible  // Let auto-hide work when detail is shown
 
@@ -108,7 +108,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         let appsStackCoordinator = NavigationStackCoordinator()
         appsTabFlowCoordinator = WidgetsTabFlowCoordinator(navigationStackCoordinator: appsStackCoordinator,
                                                            flowParameters: flowParameters)
-        appsTabDetails = .init(tag: HomeTab.apps, title: "Приложения", icon: \.extensions, selectedIcon: \.extensionsSolid, sfSymbol: "square.grid.2x2", sfSymbolSelected: "square.grid.2x2.fill", lottieAnimation: "TabApps")
+        appsTabDetails = .init(tag: HomeTab.apps, title: SL10n.tabApps, icon: \.extensions, selectedIcon: \.extensionsSolid, sfSymbol: "square.grid.2x2", sfSymbolSelected: "square.grid.2x2.fill", lottieAnimation: "TabApps")
         appsTabDetails.barVisibilityOverride = .visible
 
         // 5. Profile tab (uses SettingsFlowCoordinator)
@@ -117,7 +117,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         profileTabFlowCoordinator = SettingsFlowCoordinator(appLockService: appLockService,
                                                              navigationStackCoordinator: profileStack,
                                                              flowParameters: flowParameters)
-        profileTabDetails = .init(tag: HomeTab.profile, title: "Настройки", icon: \.userProfile, selectedIcon: \.userProfileSolid, sfSymbol: "gearshape", sfSymbolSelected: "gearshape.fill", lottieAnimation: "TabSettings")
+        profileTabDetails = .init(tag: HomeTab.profile, title: SL10n.tabSettings, icon: \.userProfile, selectedIcon: \.userProfileSolid, sfSymbol: "gearshape", sfSymbolSelected: "gearshape.fill", lottieAnimation: "TabSettings")
         profileTabDetails.barVisibilityOverride = .visible
 
         onboardingStackCoordinator = NavigationStackCoordinator()
@@ -536,7 +536,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                     MXLog.info("Hiding call for PiP presentation.")
                     // sTalk: Set display name for minimized call bar (PiP path)
                     if case .roomCall(let roomProxy, _, _, _, _, _) = configuration.kind {
-                        self.navigationTabCoordinator.minimizedCallDisplayName = roomProxy.infoPublisher.value.displayName ?? "Звонок"
+                        self.navigationTabCoordinator.minimizedCallDisplayName = roomProxy.infoPublisher.value.displayName ?? SL10n.callDefault
                     }
                     navigationTabCoordinator.setOverlayPresentationMode(.minimized)
                 case .pictureInPictureStopped:
@@ -547,7 +547,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                     MXLog.info("sTalk: minimizeCall received — setting minimized mode")
                     // sTalk: Set display name and elapsed time for minimized call banner
                     if case .roomCall(let roomProxy, _, _, _, _, _) = configuration.kind {
-                        self.navigationTabCoordinator.minimizedCallDisplayName = roomProxy.infoPublisher.value.displayName ?? "Звонок"
+                        self.navigationTabCoordinator.minimizedCallDisplayName = roomProxy.infoPublisher.value.displayName ?? SL10n.callDefault
                     }
                     self.navigationTabCoordinator.minimizedCallElapsedTime = callScreenCoordinator.callElapsedTime
                     self.startMinimizedCallTimer(coordinator: callScreenCoordinator)

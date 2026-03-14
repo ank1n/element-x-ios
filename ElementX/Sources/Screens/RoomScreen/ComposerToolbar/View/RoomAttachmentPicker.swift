@@ -45,8 +45,6 @@ private struct AttachmentPickerSheet: View {
     @ObservedObject var context: ComposerToolbarViewModel.Context
     @Binding var isPresented: Bool
 
-    private let stalkAccent = Color(red: 0.38, green: 0.42, blue: 0.96)
-
     private let columns = [
         GridItem(.flexible(), spacing: 12),
         GridItem(.flexible(), spacing: 12),
@@ -59,7 +57,7 @@ private struct AttachmentPickerSheet: View {
             attachmentButton(
                 icon: "camera.fill",
                 color: .orange,
-                title: "Камера"
+                title: SL10n.attachCamera
             ) {
                 isPresented = false
                 context.send(viewAction: .attach(.camera))
@@ -69,7 +67,7 @@ private struct AttachmentPickerSheet: View {
             attachmentButton(
                 icon: "photo.fill",
                 color: .purple,
-                title: "Галерея"
+                title: SL10n.attachGallery
             ) {
                 isPresented = false
                 context.send(viewAction: .attach(.photoLibrary))
@@ -78,8 +76,8 @@ private struct AttachmentPickerSheet: View {
 
             attachmentButton(
                 icon: "doc.fill",
-                color: stalkAccent,
-                title: "Файл"
+                color: StalkTheme.accent,
+                title: SL10n.attachFile
             ) {
                 isPresented = false
                 context.send(viewAction: .attach(.file))
@@ -90,7 +88,7 @@ private struct AttachmentPickerSheet: View {
                 attachmentButton(
                     icon: "location.fill",
                     color: .green,
-                    title: "Локация"
+                    title: SL10n.attachLocation
                 ) {
                     isPresented = false
                     context.send(viewAction: .attach(.location))
@@ -101,7 +99,7 @@ private struct AttachmentPickerSheet: View {
             attachmentButton(
                 icon: "chart.bar.fill",
                 color: .cyan,
-                title: "Опрос"
+                title: SL10n.attachPoll
             ) {
                 isPresented = false
                 context.send(viewAction: .attach(.poll))
@@ -111,7 +109,7 @@ private struct AttachmentPickerSheet: View {
             attachmentButton(
                 icon: "textformat",
                 color: .pink,
-                title: "Формат"
+                title: SL10n.attachFormat
             ) {
                 isPresented = false
                 context.send(viewAction: .enableTextFormatting)

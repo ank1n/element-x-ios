@@ -44,7 +44,7 @@ struct AuthenticationStartScreenViewState: BindableState {
     
     var loginButtonTitle: String {
         if hideBrandChrome {
-            "Войти"
+            SL10n.authLogin
         } else if let serverName {
             L10n.screenOnboardingSignInTo(serverName)
         } else {

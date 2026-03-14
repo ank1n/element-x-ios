@@ -118,7 +118,7 @@ struct MeetingEditViewState: BindableState {
     var isSearching = false
 
     var isEditing: Bool { meetingId != nil }
-    var navigationTitle: String { isEditing ? "Редактировать" : "Новая встреча" }
+    var navigationTitle: String { isEditing ? SL10n.meetingEdit : SL10n.meetingNew }
 }
 
 struct MeetingEditViewStateBindings {

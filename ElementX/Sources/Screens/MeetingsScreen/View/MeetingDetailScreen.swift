@@ -74,7 +74,7 @@ struct MeetingDetailScreen: View {
                 .padding(.bottom, 32)
             }
         }
-        .navigationTitle("Встреча")
+        .navigationTitle(SL10n.meetingTitle)
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -126,7 +126,7 @@ struct MeetingDetailScreen: View {
                         Image(systemName: "globe")
                             .font(.system(size: 12))
                             .foregroundColor(.orange)
-                        Text("Открытая")
+                        Text(SL10n.meetingOpen)
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
                     }
@@ -237,7 +237,7 @@ struct MeetingDetailScreen: View {
                 Image(systemName: "text.alignleft")
                     .font(.system(size: 13))
                     .foregroundColor(accentBlue)
-                Text("Описание")
+                Text(SL10n.meetingDescription)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.secondary)
             }
@@ -262,7 +262,7 @@ struct MeetingDetailScreen: View {
                 Image(systemName: "person.2.fill")
                     .font(.system(size: 13))
                     .foregroundColor(accentBlue)
-                Text("Участники (\(meeting.participants.count))")
+                Text(SL10n.meetingParticipants(meeting.participants.count))
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.secondary)
             }
@@ -320,7 +320,7 @@ struct MeetingDetailScreen: View {
                     HStack(spacing: 8) {
                         Image(systemName: "video.fill")
                             .font(.system(size: 15))
-                        Text("Начать звонок")
+                        Text(SL10n.meetingStartCall)
                             .font(.system(size: 15, weight: .semibold))
                     }
                     .foregroundColor(.white)
@@ -335,8 +335,8 @@ struct MeetingDetailScreen: View {
             // RSVP (non-creator)
             if !context.viewState.isCreator, let myRSVP = context.viewState.myRSVP {
                 HStack(spacing: 10) {
-                    rsvpActionButton("Приму", icon: "checkmark", status: .accepted, current: myRSVP, color: .green)
-                    rsvpActionButton("Отклоню", icon: "xmark", status: .declined, current: myRSVP, color: .red)
+                    rsvpActionButton(SL10n.meetingAccept, icon: "checkmark", status: .accepted, current: myRSVP, color: .green)
+                    rsvpActionButton(SL10n.meetingDecline, icon: "xmark", status: .declined, current: myRSVP, color: .red)
                 }
             }
 
@@ -349,7 +349,7 @@ struct MeetingDetailScreen: View {
                         HStack(spacing: 6) {
                             Image(systemName: "pencil")
                                 .font(.system(size: 14))
-                            Text("Редактировать")
+                            Text(SL10n.meetingEdit)
                                 .font(.system(size: 14, weight: .medium))
                         }
                         .foregroundColor(accentBlue)
@@ -366,7 +366,7 @@ struct MeetingDetailScreen: View {
                         HStack(spacing: 6) {
                             Image(systemName: "trash")
                                 .font(.system(size: 14))
-                            Text("Удалить")
+                            Text(SL10n.actionDelete)
                                 .font(.system(size: 14, weight: .medium))
                         }
                         .foregroundColor(.red)
@@ -387,10 +387,10 @@ struct MeetingDetailScreen: View {
     @ViewBuilder
     private func statusBadge(_ status: MeetingStatus) -> some View {
         let (text, color): (String, Color) = switch status {
-        case .scheduled: ("Запланирована", accentBlue)
-        case .active: ("Активна", .green)
-        case .completed: ("Завершена", .gray)
-        case .cancelled: ("Отменена", .red)
+        case .scheduled: (SL10n.meetingStatusScheduled, accentBlue)
+        case .active: (SL10n.meetingStatusActive, .green)
+        case .completed: (SL10n.meetingStatusCompleted, .gray)
+        case .cancelled: (SL10n.meetingStatusCancelled, .red)
         }
         Text(text)
             .font(.system(size: 12, weight: .semibold))
@@ -426,7 +426,7 @@ struct MeetingDetailScreen: View {
             HStack(spacing: 6) {
                 Image(systemName: isActive ? "\(icon).circle.fill" : icon)
                     .font(.system(size: 14))
-                Text(isActive ? (status == .accepted ? "Принято" : "Отклонено") : label)
+                Text(isActive ? (status == .accepted ? SL10n.meetingAccepted : SL10n.meetingDeclined) : label)
                     .font(.system(size: 14, weight: .medium))
             }
             .foregroundColor(isActive ? .white : color)
@@ -458,9 +458,9 @@ struct MeetingDetailScreen: View {
 
     private func rsvpLabel(_ rsvp: RSVPStatus) -> String {
         switch rsvp {
-        case .accepted: return "Принял"
-        case .declined: return "Отклонил"
-        case .pending: return "Ожидает"
+        case .accepted: return SL10n.meetingRsvpAccepted
+        case .declined: return SL10n.meetingRsvpDeclined
+        case .pending: return SL10n.meetingRsvpPending
         }
     }
 

@@ -28,7 +28,7 @@ struct WidgetWebViewScreen: View {
                         .progressViewStyle(.circular)
                         .scaleEffect(1.5)
 
-                    Text("Загрузка...")
+                    Text(SL10n.appsLoading)
                         .font(.compound.bodyMD)
                         .foregroundColor(.compound.textSecondary)
 

@@ -22,7 +22,7 @@ struct HomeScreen: View {
             .alert(item: $context.leaveRoomAlertItem,
                    actions: leaveRoomAlertActions,
                    message: leaveRoomAlertMessage)
-            .navigationTitle("Чаты")
+            .navigationTitle(SL10n.tabChats)
             .navigationBarTitleDisplayMode(.inline)
             .toolbarVisibility(.visible, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)

@@ -122,7 +122,7 @@ class MeetingEditViewModel: MeetingEditViewModelType {
                 actionsSubject.send(.saved(meeting))
             } catch {
                 MXLog.error("sTalk: Save meeting failed: \(error)")
-                state.errorMessage = "Не удалось сохранить встречу"
+                state.errorMessage = SL10n.meetingSaveError
             }
             state.isLoading = false
         }

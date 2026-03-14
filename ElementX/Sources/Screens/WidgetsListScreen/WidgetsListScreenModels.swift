@@ -37,9 +37,17 @@ struct WidgetsListScreenViewStateBindings {
 
 /// Widget category for filtering
 enum WidgetCategory: String, CaseIterable, Codable {
-    case productivity = "Продуктивность"
-    case communication = "Связь"
-    case tools = "Инструменты"
+    case productivity
+    case communication
+    case tools
+
+    var displayName: String {
+        switch self {
+        case .productivity: return SL10n.appsProductivity
+        case .communication: return SL10n.appsCommunication
+        case .tools: return SL10n.appsTools
+        }
+    }
 
     /// Map API "category" field to local category
     init(apiCategory: String) {

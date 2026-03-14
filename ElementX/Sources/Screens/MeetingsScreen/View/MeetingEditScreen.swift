@@ -18,7 +18,7 @@ struct MeetingEditScreen: View {
     }
 
     // Colors matching calendar screens
-    private let accentBlue = Color(red: 0.38, green: 0.42, blue: 0.96)
+    private let accentBlue = StalkTheme.accent
     private let bgGradientTop = Color(red: 0.90, green: 0.92, blue: 1.0)
     private let bgGradientBottom = Color(red: 0.95, green: 0.96, blue: 1.0)
     private let cardBg = Color(UIColor.systemBackground)
@@ -65,7 +65,7 @@ struct MeetingEditScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Отмена") {
+                Button(SL10n.actionCancel) {
                     context.send(viewAction: .cancel)
                 }
                 .foregroundColor(.secondary)
@@ -74,7 +74,7 @@ struct MeetingEditScreen: View {
                 Button {
                     context.send(viewAction: .save)
                 } label: {
-                    Text("Сохранить")
+                    Text(SL10n.actionSave)
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(context.title.isEmpty ? .secondary : accentBlue)
                 }
@@ -99,7 +99,7 @@ struct MeetingEditScreen: View {
         VStack(spacing: 0) {
             cardField(
                 icon: "pencil.line",
-                placeholder: "Название встречи",
+                placeholder: SL10n.meetingNamePlaceholder,
                 text: $context.title,
                 field: .title
             )
@@ -108,7 +108,7 @@ struct MeetingEditScreen: View {
 
             cardFieldMultiline(
                 icon: "text.alignleft",
-                placeholder: "Описание",
+                placeholder: SL10n.meetingDescription,
                 text: $context.description
             )
 
@@ -116,7 +116,7 @@ struct MeetingEditScreen: View {
 
             cardField(
                 icon: "mappin",
-                placeholder: "Место или ссылка",
+                placeholder: SL10n.meetingLocation,
                 text: $context.location,
                 field: .location
             )
@@ -171,7 +171,7 @@ struct MeetingEditScreen: View {
                     .foregroundColor(accentBlue)
                     .frame(width: 24)
 
-                Text("Бессрочная")
+                Text(SL10n.meetingUnlimited)
                     .font(.system(size: 15))
 
                 Spacer()
@@ -193,7 +193,7 @@ struct MeetingEditScreen: View {
                         .foregroundColor(accentBlue)
                         .frame(width: 24)
 
-                    Text("Начало")
+                    Text(SL10n.meetingStart)
                         .font(.system(size: 15))
                         .foregroundColor(.secondary)
 
@@ -215,7 +215,7 @@ struct MeetingEditScreen: View {
                         .foregroundColor(accentBlue)
                         .frame(width: 24)
 
-                    Text("Конец")
+                    Text(SL10n.meetingEnd)
                         .font(.system(size: 15))
                         .foregroundColor(.secondary)
 
@@ -234,7 +234,7 @@ struct MeetingEditScreen: View {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.system(size: 12))
                             .foregroundColor(.orange)
-                        Text("Время конца раньше начала — будет перенесено на следующий день")
+                        Text(SL10n.meetingEndBeforeStart)
                             .font(.system(size: 12))
                             .foregroundColor(.orange)
                     }
@@ -257,7 +257,7 @@ struct MeetingEditScreen: View {
                 .foregroundColor(accentBlue)
                 .frame(width: 24)
 
-            Text("Разрешить гостей")
+            Text(SL10n.meetingAllowGuests)
                 .font(.system(size: 15))
 
             Spacer()
@@ -282,7 +282,7 @@ struct MeetingEditScreen: View {
                 Image(systemName: "person.2.fill")
                     .font(.system(size: 13))
                     .foregroundColor(accentBlue)
-                Text("Участники (\(context.viewState.bindings.participants.count))")
+                Text(SL10n.meetingParticipants(context.viewState.bindings.participants.count))
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.secondary)
             }
@@ -296,7 +296,7 @@ struct MeetingEditScreen: View {
                     .font(.system(size: 14))
                     .foregroundColor(.secondary)
 
-                TextField("Добавить участника...", text: $context.participantSearchQuery)
+                TextField(SL10n.meetingAddParticipant, text: $context.participantSearchQuery)
                     .font(.system(size: 14))
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
@@ -330,7 +330,7 @@ struct MeetingEditScreen: View {
                             ProgressView()
                                 .scaleEffect(0.8)
                                 .tint(accentBlue)
-                            Text("Поиск...")
+                            Text(SL10n.meetingSearch)
                                 .font(.system(size: 14))
                                 .foregroundColor(.secondary)
                             Spacer()
@@ -443,7 +443,7 @@ struct MeetingEditScreen: View {
                         ProgressView()
                             .scaleEffect(0.8)
                             .tint(accentBlue)
-                        Text("Поиск...")
+                        Text(SL10n.meetingSearch)
                             .font(.system(size: 14))
                             .foregroundColor(.secondary)
                         Spacer()

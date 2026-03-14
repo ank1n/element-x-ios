@@ -239,9 +239,9 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
                 let indicatorID = "archiveUndo-\(roomIdentifier)"
                 let indicator = UserIndicator(id: indicatorID,
                                               type: .toast,
-                                              title: "Чат архивирован",
+                                              title: SL10n.chatArchived,
                                               iconName: "archivebox",
-                                              actionTitle: "Отменить",
+                                              actionTitle: SL10n.actionUndo,
                                               action: { [weak self] in
                     guard let self else { return }
                     self.userIndicatorController.retractIndicatorWithId(indicatorID)

@@ -85,22 +85,22 @@ class NativeLoginScreenViewModel: NativeLoginScreenViewModelType {
                     MXLog.error("sTalk NativeLogin: SDK login failed: \(error)")
                     state.bindings.alertInfo = AlertInfo(
                         id: UUID(),
-                        title: "Ошибка входа",
-                        message: "Не удалось завершить авторизацию: \(error.localizedDescription)"
+                        title: SL10n.authLoginError,
+                        message: SL10n.authLoginFailed(error.localizedDescription)
                     )
                 }
             } catch let error as HeadlessOIDCAuthenticator.AuthError {
                 MXLog.error("sTalk NativeLogin: Headless auth failed: \(error)")
                 state.bindings.alertInfo = AlertInfo(
                     id: UUID(),
-                    title: "Ошибка входа",
-                    message: error.errorDescription ?? "Неизвестная ошибка"
+                    title: SL10n.authLoginError,
+                    message: error.errorDescription ?? SL10n.authUnknownError
                 )
             } catch {
                 MXLog.error("sTalk NativeLogin: Unexpected error: \(error)")
                 state.bindings.alertInfo = AlertInfo(
                     id: UUID(),
-                    title: "Ошибка",
+                    title: SL10n.authError,
                     message: error.localizedDescription
                 )
             }

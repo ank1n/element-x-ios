@@ -152,7 +152,7 @@ struct CallScreen: View {
             if !context.viewState.isDirect {
                 CallControlButton(
                     icon: "hand.raised.fill",
-                    label: "рука",
+                    label: SL10n.callHand,
                     isActive: context.viewState.isHandRaised
                 ) {
                     context.send(viewAction: .toggleHandRaise)
@@ -162,7 +162,7 @@ struct CallScreen: View {
             // Camera
             CallControlButton(
                 icon: context.viewState.isVideoEnabled ? "video.fill" : "video.slash.fill",
-                label: "камера",
+                label: SL10n.callCamera,
                 isActive: context.viewState.isVideoEnabled
             ) {
                 context.send(viewAction: .toggleVideo)
@@ -171,7 +171,7 @@ struct CallScreen: View {
             // Microphone — muted: перечёркнутый микрофон (белый фон), active: микрофон (прозрачный фон)
             CallControlButton(
                 icon: context.viewState.isMuted ? "mic.slash.fill" : "mic.fill",
-                label: context.viewState.isMuted ? "вкл. микр." : "микрофон",
+                label: context.viewState.isMuted ? SL10n.callMicOn : SL10n.callMic,
                 isActive: !context.viewState.isMuted
             ) {
                 context.send(viewAction: .toggleMute)
@@ -180,7 +180,7 @@ struct CallScreen: View {
             // Speaker toggle — earpiece (phone icon) ↔ speaker (speaker icon), like Telegram
             CallControlButton(
                 icon: context.viewState.isSpeakerOn ? "speaker.wave.3.fill" : "phone.fill",
-                label: context.viewState.isSpeakerOn ? "динамик" : "телефон",
+                label: context.viewState.isSpeakerOn ? SL10n.callSpeaker : SL10n.callPhone,
                 isActive: context.viewState.isSpeakerOn
             ) {
                 context.send(viewAction: .toggleSpeaker)
@@ -189,7 +189,7 @@ struct CallScreen: View {
             // End call
             CallControlButton(
                 icon: "phone.down.fill",
-                label: "завершить",
+                label: SL10n.callEnd,
                 style: .destructive
             ) {
                 context.send(viewAction: .endCall)
@@ -204,7 +204,7 @@ struct CallScreen: View {
                 HStack(spacing: 4) {
                     Image(systemSymbol: .chevronBackward)
                         .fontWeight(.semibold)
-                    Text("Назад")
+                    Text(SL10n.callBack)
                         .font(.system(size: 16))
                 }
             }

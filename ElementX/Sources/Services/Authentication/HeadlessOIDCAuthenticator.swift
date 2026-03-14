@@ -21,11 +21,11 @@ final class HeadlessOIDCAuthenticator {
 
         var errorDescription: String? {
             switch self {
-            case .noLoginFormFound: return "Не удалось найти форму входа"
+            case .noLoginFormFound: return NSLocalizedString("stalk_auth_no_login_form", tableName: "Localizable", value: "Не удалось найти форму входа", comment: "No login form found error")
             case .loginFailed(let msg): return msg
-            case .networkError(let err): return "Ошибка сети: \(err.localizedDescription)"
-            case .invalidResponse: return "Некорректный ответ сервера"
-            case .redirectNotFound: return "Не получен redirect с кодом авторизации"
+            case .networkError(let err): return String(format: NSLocalizedString("stalk_auth_network_error", tableName: "Localizable", value: "Ошибка сети: %@", comment: "Network error"), err.localizedDescription)
+            case .invalidResponse: return NSLocalizedString("stalk_auth_invalid_response", tableName: "Localizable", value: "Некорректный ответ сервера", comment: "Invalid server response")
+            case .redirectNotFound: return NSLocalizedString("stalk_auth_redirect_not_found", tableName: "Localizable", value: "Не получен redirect с кодом авторизации", comment: "Redirect not found")
             }
         }
     }
@@ -90,7 +90,7 @@ final class HeadlessOIDCAuthenticator {
         if postHTTPResponse.statusCode == 200 {
             let responseHTML = String(data: postData, encoding: .utf8) ?? ""
             let errorMsg = parseKeycloakError(html: responseHTML)
-            throw AuthError.loginFailed(errorMsg ?? "Неверный логин или пароль")
+            throw AuthError.loginFailed(errorMsg ?? SL10n.authInvalidCredentials)
         }
 
         // Log unexpected response for debugging

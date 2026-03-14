@@ -57,7 +57,7 @@ class MeetingsScreenViewModel: MeetingsScreenViewModelType {
             } catch {
                 MXLog.error("sTalk: Failed to fetch meetings: \(error)")
                 state.isLoading = false
-                state.errorMessage = "Не удалось загрузить встречи"
+                state.errorMessage = SL10n.meetingLoadError
             }
         }
     }

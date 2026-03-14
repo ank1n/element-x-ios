@@ -203,7 +203,7 @@ struct RoomScreen: View {
                     Image(systemName: "phone.fill")
                         .frame(minWidth: 32, minHeight: 32)
                 }
-                .accessibilityLabel("Голосовой вызов")
+                .accessibilityLabel(SL10n.callVoiceCall)
 
                 Button {
                     context.send(viewAction: .displayCall)

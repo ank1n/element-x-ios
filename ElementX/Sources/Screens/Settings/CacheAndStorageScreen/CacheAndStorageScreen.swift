@@ -19,30 +19,30 @@ struct CacheAndStorageScreen: View {
 
     var body: some View {
         Form {
-            Section(header: Text("Использование")) {
+            Section(header: Text(SL10n.cacheUsage)) {
                 HStack {
-                    Label("Кеш API данных", systemImage: "doc.text")
+                    Label(SL10n.cacheApiData, systemImage: "doc.text")
                     Spacer()
                     Text(apiCacheSize)
                         .foregroundColor(.secondary)
                 }
 
                 HStack {
-                    Label("Кеш изображений", systemImage: "photo")
+                    Label(SL10n.cacheImages, systemImage: "photo")
                     Spacer()
                     Text(imageCacheSize)
                         .foregroundColor(.secondary)
                 }
 
                 HStack {
-                    Label("Скачанные записи", systemImage: "waveform")
+                    Label(SL10n.cacheRecordings, systemImage: "waveform")
                     Spacer()
                     Text(downloadedRecordingsSize)
                         .foregroundColor(.secondary)
                 }
 
                 HStack {
-                    Label("Всего", systemImage: "internaldrive")
+                    Label(SL10n.cacheTotal, systemImage: "internaldrive")
                         .fontWeight(.semibold)
                     Spacer()
                     Text(totalSize)
@@ -55,36 +55,36 @@ struct CacheAndStorageScreen: View {
                 Button(role: .destructive) {
                     clearAPIAndRecordingsCache()
                 } label: {
-                    Label("Очистить кеш API и записи", systemImage: "trash")
+                    Label(SL10n.cacheClearApi, systemImage: "trash")
                 }
 
                 Button(role: .destructive) {
                     clearImageCache()
                 } label: {
-                    Label("Очистить кеш изображений", systemImage: "photo.on.rectangle.angled")
+                    Label(SL10n.cacheClearImages, systemImage: "photo.on.rectangle.angled")
                 }
 
                 Button(role: .destructive) {
                     showClearConfirmation = true
                 } label: {
-                    Label("Очистить все данные и перезагрузить", systemImage: "arrow.counterclockwise")
+                    Label(SL10n.cacheClearAll, systemImage: "arrow.counterclockwise")
                 }
             } header: {
-                Text("Действия")
+                Text(SL10n.cacheActions)
             } footer: {
-                Text("Очистка всех данных удалит кеш, скачанные файлы и синхронизированные данные. Приложение перезагрузится.")
+                Text(SL10n.cacheClearAllWarning)
             }
         }
         .compoundList()
-        .navigationTitle("Кеш и данные")
+        .navigationTitle(SL10n.settingsCacheAndData)
         .navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog("Очистить все данные?", isPresented: $showClearConfirmation, titleVisibility: .visible) {
-            Button("Очистить и перезагрузить", role: .destructive) {
+        .confirmationDialog(SL10n.cacheClearAllConfirm, isPresented: $showClearConfirmation, titleVisibility: .visible) {
+            Button(SL10n.cacheClearAndRestart, role: .destructive) {
                 onClearAllCache()
             }
-            Button("Отмена", role: .cancel) { }
+            Button(SL10n.actionCancel, role: .cancel) { }
         } message: {
-            Text("Все кешированные данные будут удалены. Приложение перезагрузится для повторной синхронизации.")
+            Text(SL10n.cacheClearConfirmMessage)
         }
         .task {
             await calculateSizes()

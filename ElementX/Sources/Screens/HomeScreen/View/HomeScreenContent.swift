@@ -239,7 +239,7 @@ struct HomeScreenContent: View {
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Архив")
+                    Text(SL10n.actionArchive)
                         .font(.compound.bodyLGSemibold)
                         .foregroundColor(.compound.textPrimary)
 
@@ -267,14 +267,14 @@ struct HomeScreenContent: View {
     private var recentSearchesView: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Недавние")
+                Text(SL10n.chatsRecent)
                     .font(.compound.bodySMSemibold)
                     .foregroundColor(.compound.textSecondary)
                 Spacer()
                 Button {
                     context.send(viewAction: .clearRecentSearches)
                 } label: {
-                    Text("Очистить")
+                    Text(SL10n.actionClear)
                         .font(.compound.bodySM)
                         .foregroundColor(.compound.textActionAccent)
                 }

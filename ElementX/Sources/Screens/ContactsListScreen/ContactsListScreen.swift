@@ -20,7 +20,7 @@ struct ContactsListScreen: View {
 
     // MARK: - Cosmos Colors
 
-    private let accentBlue = Color(red: 0.38, green: 0.42, blue: 0.96)
+    private let accentBlue = StalkTheme.accent
     private let bgGradientTop = Color(red: 0.90, green: 0.92, blue: 1.0)
     private let bgGradientBottom = Color(red: 0.95, green: 0.96, blue: 1.0)
     private let cardBg = Color(UIColor.systemBackground)
@@ -44,7 +44,7 @@ struct ContactsListScreen: View {
                     .background(Color.compound.bgCanvasDefault.ignoresSafeArea())
             }
         }
-        .navigationTitle("Контакты")
+        .navigationTitle(SL10n.tabContacts)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbar { toolbar }
@@ -57,12 +57,12 @@ struct ContactsListScreen: View {
                 Button {
                     sortOrder = ContactSortOrder.name.rawValue
                 } label: {
-                    Label("По имени", systemImage: sortOrder == ContactSortOrder.name.rawValue ? "checkmark" : "textformat")
+                    Label(SL10n.contactsSortByName, systemImage: sortOrder == ContactSortOrder.name.rawValue ? "checkmark" : "textformat")
                 }
                 Button {
                     sortOrder = ContactSortOrder.lastSeen.rawValue
                 } label: {
-                    Label("По времени", systemImage: sortOrder == ContactSortOrder.lastSeen.rawValue ? "checkmark" : "clock")
+                    Label(SL10n.contactsSortByTime, systemImage: sortOrder == ContactSortOrder.lastSeen.rawValue ? "checkmark" : "clock")
                 }
             } label: {
                 Image(systemName: "arrow.up.arrow.down")
@@ -112,7 +112,7 @@ struct ContactsListScreen: View {
                 let bDate = b.lastSeenDate ?? .distantPast
                 return aDate > bDate
             }
-            return [ContactGroup(letter: "Все", contacts: sorted)]
+            return [ContactGroup(letter: SL10n.contactsAll, contacts: sorted)]
         }
 
         // Сортировка по имени (по умолчанию) — группировка по буквам
@@ -135,22 +135,22 @@ struct ContactsListScreen: View {
 
     private func contactLastSeen(_ contact: ContactItem) -> String {
         guard let lastSeen = contact.lastSeenDate else {
-            return "не в сети"
+            return SL10n.contactsOffline
         }
         let interval = Date().timeIntervalSince(lastSeen)
         if interval < 60 {
-            return "был(а) только что"
+            return SL10n.contactsJustNow
         } else if interval < 3600 {
             let minutes = Int(interval / 60)
-            return "был(а) \(minutes) мин. назад"
+            return SL10n.contactsMinutesAgo(minutes)
         } else if interval < 86400 {
             let hours = Int(interval / 3600)
-            return "был(а) \(hours) ч. назад"
+            return SL10n.contactsHoursAgo(hours)
         } else {
             let formatter = DateFormatter()
             formatter.locale = Locale(identifier: "ru_RU")
             formatter.dateFormat = "d MMM"
-            return "был(а) \(formatter.string(from: lastSeen))"
+            return SL10n.contactsLastSeen(formatter.string(from: lastSeen))
         }
     }
 
@@ -193,7 +193,7 @@ struct ContactsListScreen: View {
                                         SwipeActionView(
                                             trailingActions: [
                                                 SwipeAction(
-                                                    title: contact.isFavorite ? "Убрать" : "Избранное",
+                                                    title: contact.isFavorite ? SL10n.actionRemoveFavorite : SL10n.actionAddFavorite,
                                                     icon: contact.isFavorite ? "star.slash" : "star.fill",
                                                     color: .orange
                                                 ) {
@@ -268,21 +268,21 @@ struct ContactsListScreen: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 GenericFilterView(
-                    title: "Все \(context.viewState.contacts.count)",
+                    title: SL10n.contactsAllCount(context.viewState.contacts.count),
                     isActive: Binding(
                         get: { context.viewState.selectedFilter == .all },
                         set: { if $0 { context.send(viewAction: .selectFilter(.all)) } }
                     )
                 )
                 GenericFilterView(
-                    title: "В сети \(context.viewState.onlineCount)",
+                    title: SL10n.contactsOnlineCount(context.viewState.onlineCount),
                     isActive: Binding(
                         get: { context.viewState.selectedFilter == .online },
                         set: { if $0 { context.send(viewAction: .selectFilter(.online)) } }
                     )
                 )
                 GenericFilterView(
-                    title: "Избранные \(context.viewState.favoritesCount)",
+                    title: SL10n.contactsFavoritesCount(context.viewState.favoritesCount),
                     isActive: Binding(
                         get: { context.viewState.selectedFilter == .favorites },
                         set: { if $0 { context.send(viewAction: .selectFilter(.favorites)) } }
@@ -333,11 +333,11 @@ struct ContactsListScreen: View {
                 .font(.system(size: 64))
                 .foregroundColor(.compound.textSecondary)
 
-            Text("Нет контактов")
+            Text(SL10n.contactsNoContacts)
                 .font(.compound.headingLG)
                 .foregroundColor(.compound.textPrimary)
 
-            Text("Начните чат с кем-нибудь, чтобы добавить контакт")
+            Text(SL10n.contactsEmptyHint)
                 .font(.compound.bodyMD)
                 .foregroundColor(.compound.textSecondary)
                 .multilineTextAlignment(.center)
@@ -370,7 +370,7 @@ struct ContactsListScreen: View {
                         .lineLimit(1)
                 }
 
-                Text(contact.isOnline ? "в сети" : contactLastSeen(contact))
+                Text(contact.isOnline ? SL10n.contactsOnlineStatus : contactLastSeen(contact))
                     .font(.compound.bodySM)
                     .foregroundColor(contact.isOnline ? .stalkOnlineGreen : .compound.textSecondary)
                     .lineLimit(1)
@@ -431,7 +431,7 @@ struct ContactsListScreen: View {
                                                 SwipeActionView(
                                                     trailingActions: [
                                                         SwipeAction(
-                                                            title: contact.isFavorite ? "Убрать" : "Избранное",
+                                                            title: contact.isFavorite ? SL10n.actionRemoveFavorite : SL10n.actionAddFavorite,
                                                             icon: contact.isFavorite ? "star.slash" : "star.fill",
                                                             color: .orange
                                                         ) {
@@ -477,19 +477,19 @@ struct ContactsListScreen: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 cosmosFilterButton(
-                    title: "Все \(context.viewState.contacts.count)",
+                    title: SL10n.contactsAllCount(context.viewState.contacts.count),
                     isActive: context.viewState.selectedFilter == .all
                 ) {
                     context.send(viewAction: .selectFilter(.all))
                 }
                 cosmosFilterButton(
-                    title: "В сети \(context.viewState.onlineCount)",
+                    title: SL10n.contactsOnlineCount(context.viewState.onlineCount),
                     isActive: context.viewState.selectedFilter == .online
                 ) {
                     context.send(viewAction: .selectFilter(.online))
                 }
                 cosmosFilterButton(
-                    title: "Избранные \(context.viewState.favoritesCount)",
+                    title: SL10n.contactsFavoritesCount(context.viewState.favoritesCount),
                     isActive: context.viewState.selectedFilter == .favorites
                 ) {
                     context.send(viewAction: .selectFilter(.favorites))
@@ -597,11 +597,11 @@ struct ContactsListScreen: View {
                 .font(.system(size: 48))
                 .foregroundColor(.secondary.opacity(0.35))
 
-            Text("Нет контактов")
+            Text(SL10n.contactsNoContacts)
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundColor(.primary)
 
-            Text("Начните чат с кем-нибудь, чтобы добавить контакт")
+            Text(SL10n.contactsEmptyHint)
                 .font(.system(size: 14))
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
@@ -636,7 +636,7 @@ struct ContactsListScreen: View {
                         .lineLimit(1)
                 }
 
-                Text(contact.isOnline ? "в сети" : contactLastSeen(contact))
+                Text(contact.isOnline ? SL10n.contactsOnlineStatus : contactLastSeen(contact))
                     .font(.system(size: 13))
                     .foregroundColor(contact.isOnline ? .stalkOnlineGreen : .secondary)
                     .lineLimit(1)
