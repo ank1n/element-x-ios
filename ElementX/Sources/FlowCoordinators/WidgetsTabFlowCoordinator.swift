@@ -10,6 +10,7 @@ import SwiftState
 
 enum WidgetsTabFlowCoordinatorAction {
     case showSettings
+    case startCall(roomID: String)
 }
 
 class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
@@ -129,6 +130,14 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
                 parameters: parameters,
                 navigationStackCoordinator: navigationStackCoordinator
             )
+            coordinator.actionsPublisher
+                .sink { [weak self] action in
+                    switch action {
+                    case .startCall(let roomID):
+                        self?.actionsSubject.send(.startCall(roomID: roomID))
+                    }
+                }
+                .store(in: &cancellables)
             navigationStackCoordinator.push(coordinator)
         default:
             MXLog.warning("sTalk: Unknown builtin app: \(widget.id)")

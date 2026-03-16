@@ -7,6 +7,10 @@
 import Combine
 import SwiftUI
 
+enum MeetingsScreenCoordinatorAction {
+    case startCall(roomID: String)
+}
+
 struct MeetingsScreenCoordinatorParameters {
     let apiURL: String
     let accessTokenProvider: () throws -> String
@@ -24,6 +28,11 @@ final class MeetingsScreenCoordinator: CoordinatorProtocol {
     private var editViewModel: MeetingEditViewModel?
 
     private let navigationStackCoordinator: NavigationStackCoordinator
+
+    private let actionsSubject: PassthroughSubject<MeetingsScreenCoordinatorAction, Never> = .init()
+    var actionsPublisher: AnyPublisher<MeetingsScreenCoordinatorAction, Never> {
+        actionsSubject.eraseToAnyPublisher()
+    }
 
     init(parameters: MeetingsScreenCoordinatorParameters, navigationStackCoordinator: NavigationStackCoordinator) {
         self.parameters = parameters
@@ -75,7 +84,7 @@ final class MeetingsScreenCoordinator: CoordinatorProtocol {
                     navigationStackCoordinator.pop()
                 case .joinCall(let roomId):
                     MXLog.info("sTalk: Join call for room \(roomId)")
-                    // TODO: Navigate to call screen
+                    self.actionsSubject.send(.startCall(roomID: roomId))
                 }
             }
             .store(in: &cancellables)

@@ -238,6 +238,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                     let callParticipants = roomInfo.activeRoomCallParticipants
                     let prevCount = self.state.callParticipantsCount
                     self.state.callParticipantsCount = callParticipants.count
+                    self.state.activeCallParticipantIDs = callParticipants.map { $0 }
                     if callParticipants.count != prevCount {
                         MXLog.info("sTalk: MatrixRTC participants changed: \(prevCount) → \(callParticipants.count), users=\(callParticipants), liveKit remote=\(self.liveKitRoomManager.remoteParticipants.count)")
                     }

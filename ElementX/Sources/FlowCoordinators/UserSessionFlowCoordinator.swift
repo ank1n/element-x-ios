@@ -269,6 +269,8 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                 switch action {
                 case .showSettings:
                     navigationTabCoordinator.selectedTab = .profile
+                case .startCall(let roomID):
+                    Task { await self.presentCallScreen(roomID: roomID) }
                 }
             }
             .store(in: &cancellables)

@@ -40,6 +40,7 @@ struct CallScreenViewState: BindableState {
     var totalMembersCount: Int = 0
     var callParticipantsCount: Int = 0
     var participants: [CallParticipantInfo] = []
+    var activeCallParticipantIDs: [String] = []
     var mediaProvider: MediaProviderProtocol?
 
     // sTalk: native call control state

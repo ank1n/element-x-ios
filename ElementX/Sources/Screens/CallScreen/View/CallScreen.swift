@@ -16,6 +16,7 @@ import WebKit
 struct CallScreen: View {
     @ObservedObject var context: CallScreenViewModel.Context
     @State private var showRecordingConsent = false
+    @State private var showParticipants = false
 
     private var isMinimized: Bool { context.viewState.isMinimized }
 
@@ -71,6 +72,17 @@ struct CallScreen: View {
                 }
             )
             .presentationDetents([.medium])
+        }
+        .sheet(isPresented: $showParticipants) {
+            CallParticipantsSheet(
+                participants: context.viewState.participants,
+                activeParticipantIDs: Set(context.viewState.activeCallParticipantIDs),
+                mediaProvider: context.viewState.mediaProvider
+            )
+            .presentationDetents([.medium, .large])
+            .presentationCornerRadius(20)
+            .presentationDragIndicator(.visible)
+            .presentationBackground(Color(UIColor.systemBackground))
         }
     }
 
@@ -222,6 +234,25 @@ struct CallScreen: View {
                 Text(context.viewState.callStatusText)
                     .font(.system(size: 12))
                     .foregroundColor(.white.opacity(0.7))
+            }
+        }
+
+        // sTalk: Participants button
+        if !context.viewState.isDirect {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showParticipants = true } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "person.2.fill")
+                            .font(.system(size: 13))
+                        Text("\(context.viewState.callParticipantsCount)")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.white.opacity(0.2))
+                    .clipShape(Capsule())
+                }
             }
         }
 
