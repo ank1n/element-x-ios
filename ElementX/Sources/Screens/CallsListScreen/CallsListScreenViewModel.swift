@@ -203,7 +203,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
                         await MainActor.run {
                             self.state.callHistory[i].participantAvatarURLs = avatarURLs
                             // Обновляем имя — показываем имена участников
-                            if !memberNames.isEmpty, self.state.callHistory[i].contactName == "Звонок" || self.state.callHistory[i].contactName == "Видеозвонок" {
+                            if !memberNames.isEmpty, self.state.callHistory[i].contactName == SL10n.callDefault || self.state.callHistory[i].contactName == SL10n.callsVideoCall {
                                 if memberNames.count <= 2 {
                                     self.state.callHistory[i].contactName = memberNames.joined(separator: ", ")
                                 } else {
@@ -379,7 +379,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
                     state.playbackState = .error
                     state.playingCallId = nil
                     stopProgressTimer()
-                    state.bindings.alertInfo = AlertInfo(id: UUID(), title: "Ошибка воспроизведения", message: "\(error)")
+                    state.bindings.alertInfo = AlertInfo(id: UUID(), title: SL10n.callsPlayError, message: "\(error)")
                 }
             }
             .store(in: &callsCancellables)
@@ -445,7 +445,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
                 await MainActor.run {
                     state.playbackState = .error
                     state.playingCallId = nil
-                    state.bindings.alertInfo = AlertInfo(id: UUID(), title: "Ошибка загрузки", message: "\(error.localizedDescription)")
+                    state.bindings.alertInfo = AlertInfo(id: UUID(), title: SL10n.callsDownloadError, message: "\(error.localizedDescription)")
                 }
             }
         }

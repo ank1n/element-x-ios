@@ -221,7 +221,7 @@ struct CallHistoryAPIItem: Codable {
                 displayName = "\(firstTwo) +\(names.count - 2)"
             }
         } else {
-            displayName = "Видеозвонок"
+            displayName = SL10n.callsVideoCall
         }
 
         // Determine call direction from initiatedBy

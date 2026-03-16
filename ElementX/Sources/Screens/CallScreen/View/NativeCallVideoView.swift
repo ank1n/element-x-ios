@@ -197,7 +197,7 @@ private struct GroupCallLayout: View {
             items.append(ParticipantItem(
                 id: local.identity?.stringValue ?? "local",
                 videoTrack: roomManager.localVideoTrack,
-                displayName: "Вы",
+                displayName: SL10n.callsYou,
                 isLocal: true,
                 isSpeaking: local.isSpeaking,
                 isAudioMuted: local.firstAudioPublication?.isMuted ?? true

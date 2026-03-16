@@ -118,10 +118,10 @@ struct RecordingConsentView: View {
                     .frame(width: 20, height: 20)
             }
 
-            Text("Начать запись?")
+            Text(SL10n.recordingTitle)
                 .font(.title2.bold())
 
-            Text("Звонок будет записан. Все участники будут уведомлены о начале записи.")
+            Text(SL10n.recordingMessage)
                 .font(.body)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
@@ -129,7 +129,7 @@ struct RecordingConsentView: View {
 
             VStack(spacing: 12) {
                 Button(action: onConfirm) {
-                    Text("Начать запись")
+                    Text(SL10n.recordingStart)
                         .font(.headline)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
@@ -139,7 +139,7 @@ struct RecordingConsentView: View {
                 }
 
                 Button(action: onCancel) {
-                    Text("Отмена")
+                    Text(SL10n.actionCancel)
                         .font(.headline)
                         .foregroundColor(.primary)
                         .frame(maxWidth: .infinity)

@@ -234,6 +234,39 @@ enum SL10n {
         String(format: NSLocalizedString("stalk_meeting_until", tableName: "Localizable", value: "До «%@» — %@", comment: "Time until next meeting"), title, time)
     }
 
+    // MARK: - Calls List
+    static let callsToday = NSLocalizedString("stalk_calls_today", tableName: "Localizable", value: "Сегодня", comment: "Today section header")
+    static let callsYesterday = NSLocalizedString("stalk_calls_yesterday", tableName: "Localizable", value: "Вчера", comment: "Yesterday section header")
+    static let callsVideoCall = NSLocalizedString("stalk_calls_video_call", tableName: "Localizable", value: "Видеозвонок", comment: "Video call label")
+    static let callsPlayError = NSLocalizedString("stalk_calls_play_error", tableName: "Localizable", value: "Ошибка воспроизведения", comment: "Playback error")
+    static let callsDownloadError = NSLocalizedString("stalk_calls_download_error", tableName: "Localizable", value: "Ошибка загрузки", comment: "Download error")
+    static let callsIncoming = NSLocalizedString("stalk_calls_incoming", tableName: "Localizable", value: "Входящий", comment: "Incoming call")
+    static let callsOutgoing = NSLocalizedString("stalk_calls_outgoing", tableName: "Localizable", value: "Исходящий", comment: "Outgoing call")
+    static let callsMissedCall = NSLocalizedString("stalk_calls_missed_call", tableName: "Localizable", value: "Пропущенный", comment: "Missed call")
+    static let callsMissedVideo = NSLocalizedString("stalk_calls_missed_video", tableName: "Localizable", value: "Пропущенный видеозвонок", comment: "Missed video call")
+    static let callsNewCall = NSLocalizedString("stalk_calls_new_call", tableName: "Localizable", value: "Новый звонок", comment: "New call screen title")
+    static let callsSearch = NSLocalizedString("stalk_calls_search", tableName: "Localizable", value: "Поиск", comment: "Search placeholder")
+    static let callsYou = NSLocalizedString("stalk_calls_you", tableName: "Localizable", value: "Вы", comment: "You label for local participant")
+
+    static func callsGroup(_ count: Int) -> String {
+        String(format: NSLocalizedString("stalk_calls_group", tableName: "Localizable", value: "Групповой • %d уч.", comment: "Group call label"), count)
+    }
+
+    static func callsCallButton(_ name: String) -> String {
+        String(format: NSLocalizedString("stalk_calls_call_button", tableName: "Localizable", value: "Позвонить %@", comment: "Call button with name"), name)
+    }
+
+    static func callsCallButtonCount(_ count: Int) -> String {
+        String(format: NSLocalizedString("stalk_calls_call_button_count", tableName: "Localizable", value: "Позвонить (%d)", comment: "Call button with count"), count)
+    }
+
+    static let callsCallButtonDefault = NSLocalizedString("stalk_calls_call_button_default", tableName: "Localizable", value: "Позвонить", comment: "Call button default")
+
+    // MARK: - Recording
+    static let recordingTitle = NSLocalizedString("stalk_recording_title", tableName: "Localizable", value: "Начать запись?", comment: "Recording consent title")
+    static let recordingMessage = NSLocalizedString("stalk_recording_message", tableName: "Localizable", value: "Звонок будет записан. Все участники будут уведомлены о начале записи.", comment: "Recording consent message")
+    static let recordingStart = NSLocalizedString("stalk_recording_start", tableName: "Localizable", value: "Начать запись", comment: "Start recording button")
+
     // MARK: - Calendar
     static let calendarWeekdays: [String] = {
         let keys = ["stalk_weekday_mon", "stalk_weekday_tue", "stalk_weekday_wed", "stalk_weekday_thu", "stalk_weekday_fri", "stalk_weekday_sat", "stalk_weekday_sun"]

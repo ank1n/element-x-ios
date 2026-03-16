@@ -816,14 +816,14 @@ struct CallsListScreen: View {
 
     private func dateGroupTitle(for date: Date, calendar: Calendar) -> String {
         if calendar.isDateInToday(date) {
-            return "Сегодня"
+            return SL10n.callsToday
         } else if calendar.isDateInYesterday(date) {
-            return "Вчера"
+            return SL10n.callsYesterday
         } else {
             let daysAgo = calendar.dateComponents([.day], from: date, to: Date()).day ?? 0
             if daysAgo < 7 {
                 let formatter = DateFormatter()
-                formatter.locale = Locale(identifier: "ru_RU")
+                formatter.locale = Locale.current
                 formatter.dateFormat = "EEEE"
                 return formatter.string(from: date).capitalized
             } else {
@@ -941,9 +941,9 @@ struct CallsListScreen: View {
 
     private func rsvpLabel(_ rsvp: RSVPStatus) -> String {
         switch rsvp {
-        case .accepted: return "Принято"
-        case .declined: return "Отклонено"
-        case .pending: return "Ожидает"
+        case .accepted: return SL10n.meetingAccepted
+        case .declined: return SL10n.meetingDeclined
+        case .pending: return SL10n.meetingRsvpPending
         }
     }
 
@@ -1014,15 +1014,15 @@ struct CallsListScreen: View {
         var parts: [String] = []
 
         if call.isGroupCall {
-            parts.append("Групповой • \(call.participantCount) уч.")
+            parts.append(SL10n.callsGroup(call.participantCount))
         } else {
             switch call.callType {
             case .incoming:
-                parts.append(call.isMissed ? "Пропущенный" : "Входящий")
+                parts.append(call.isMissed ? SL10n.callsMissedCall : SL10n.callsIncoming)
             case .outgoing:
-                parts.append("Исходящий")
+                parts.append(SL10n.callsOutgoing)
             case .video:
-                parts.append(call.isMissed ? "Пропущенный видеозвонок" : "Видеозвонок")
+                parts.append(call.isMissed ? SL10n.callsMissedVideo : SL10n.callsVideoCall)
             }
         }
 
@@ -1037,7 +1037,7 @@ struct CallsListScreen: View {
 
     private func timeAgo(from date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "ru_RU")
+        formatter.locale = Locale.current
         formatter.dateFormat = "d MMM, HH:mm"
         return formatter.string(from: date)
     }
@@ -1069,15 +1069,14 @@ struct CallsListScreen: View {
         return parts.first // @user
     }
 
-    /// Текст кнопки "Позвонить"
     private var callButtonTitle: String {
         let selected = selectedNewCallContacts
         if selected.isEmpty {
-            return "Позвонить"
+            return SL10n.callsCallButtonDefault
         } else if selected.count == 1 {
-            return "Позвонить \(selected[0].displayName)"
+            return SL10n.callsCallButton(selected[0].displayName)
         } else {
-            return "Позвонить (\(selected.count))"
+            return SL10n.callsCallButtonCount(selected.count)
         }
     }
 
@@ -1117,13 +1116,13 @@ struct CallsListScreen: View {
                                         .frame(width: 14, height: 14)
                                 }
                             }
-                            Text("Видеозвонок")
+                            Text(SL10n.callsVideoCall)
                                 .font(.system(size: 16))
                                 .foregroundColor(.primary)
                         }
                     }
 
-                    // Кнопка "Позвонить"
+                    // Call button
                     Button {
                         startCallWithSelectedContacts()
                     } label: {
@@ -1143,7 +1142,7 @@ struct CallsListScreen: View {
                 .padding(.vertical, 12)
                 .background(Color(UIColor.systemBackground))
             }
-            .navigationTitle("Новый звонок")
+            .navigationTitle(SL10n.callsNewCall)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -1190,7 +1189,7 @@ struct CallsListScreen: View {
             }
 
             // Поле поиска
-            TextField("Поиск", text: $context.newCallSearchQuery)
+            TextField(SL10n.callsSearch, text: $context.newCallSearchQuery)
                 .disableAutocorrection(true)
                 .font(.system(size: 16))
         }
