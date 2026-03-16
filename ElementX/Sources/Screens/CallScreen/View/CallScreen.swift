@@ -157,9 +157,9 @@ struct CallScreen: View {
         }
     }
     
-    // sTalk: Native call control buttons (5 for group, 4 for direct)
+    // sTalk: Native call control buttons
     var callControlButtons: some View {
-        HStack(spacing: 20) {
+        HStack(spacing: context.viewState.isDirect ? 20 : 14) {
             // Hand raise (group only)
             if !context.viewState.isDirect {
                 CallControlButton(
@@ -168,6 +168,17 @@ struct CallScreen: View {
                     isActive: context.viewState.isHandRaised
                 ) {
                     context.send(viewAction: .toggleHandRaise)
+                }
+            }
+
+            // Screen share (group only)
+            if !context.viewState.isDirect {
+                CallControlButton(
+                    icon: context.viewState.isScreenSharing ? "rectangle.inset.filled.and.person.filled" : "rectangle.on.rectangle",
+                    label: SL10n.callScreenShare,
+                    isActive: context.viewState.isScreenSharing
+                ) {
+                    context.send(viewAction: .toggleScreenShare)
                 }
             }
 

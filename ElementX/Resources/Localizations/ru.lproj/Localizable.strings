@@ -1706,3 +1706,4 @@
 "stalk_recording_title" = "Начать запись?";
 "stalk_recording_message" = "Звонок будет записан. Все участники будут уведомлены о начале записи.";
 "stalk_recording_start" = "Начать запись";
+"stalk_call_screen_share" = "экран";

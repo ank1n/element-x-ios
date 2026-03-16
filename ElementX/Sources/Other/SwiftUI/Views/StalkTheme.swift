@@ -89,6 +89,7 @@ enum SL10n {
     static let callMic = NSLocalizedString("stalk_call_mic", tableName: "Localizable", value: "микрофон", comment: "Microphone label")
     static let callSpeaker = NSLocalizedString("stalk_call_speaker", tableName: "Localizable", value: "динамик", comment: "Speaker label")
     static let callPhone = NSLocalizedString("stalk_call_phone", tableName: "Localizable", value: "телефон", comment: "Phone speaker label")
+    static let callScreenShare = NSLocalizedString("stalk_call_screen_share", tableName: "Localizable", value: "экран", comment: "Screen share button")
     static let callEnd = NSLocalizedString("stalk_call_end", tableName: "Localizable", value: "завершить", comment: "End call button")
     static let callBack = NSLocalizedString("stalk_call_back", tableName: "Localizable", value: "Назад", comment: "Back button on call screen")
     static let callCalling = NSLocalizedString("stalk_call_calling", tableName: "Localizable", value: "Вызов...", comment: "Calling state")

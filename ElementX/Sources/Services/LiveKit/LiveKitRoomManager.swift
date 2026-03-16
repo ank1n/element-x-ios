@@ -132,6 +132,19 @@ final class LiveKitRoomManager: ObservableObject {
         #endif
     }
 
+    /// Toggle screen sharing
+    @Published private(set) var isScreenSharing: Bool = false
+
+    func setScreenShare(enabled: Bool) async throws {
+        #if targetEnvironment(simulator)
+        MXLog.warning("sTalk LiveKit: Screen sharing not available on simulator")
+        #else
+        try await room.localParticipant.setScreenShare(enabled: enabled)
+        isScreenSharing = enabled
+        MXLog.info("sTalk LiveKit: Screen share \(enabled ? "started" : "stopped")")
+        #endif
+    }
+
     /// Switch between speaker and earpiece
     func setSpeaker(enabled: Bool) {
         let session = AVAudioSession.sharedInstance()

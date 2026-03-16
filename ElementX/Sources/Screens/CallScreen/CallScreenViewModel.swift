@@ -331,6 +331,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             toggleSpeaker()
         case .toggleHandRaise:
             Task { await toggleHandRaise() }
+        case .toggleScreenShare:
+            Task { await toggleScreenShare() }
         case .handRaiseStateChanged(let raised):
             state.isHandRaised = raised
         case .restoreFromMinimized:
@@ -877,6 +879,17 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             _ = try await state.bindings.javaScriptEvaluator?("window.stalkToggleHandRaise()")
         } catch {
             MXLog.error("Failed to toggle hand raise: \(error)")
+        }
+    }
+
+    private func toggleScreenShare() async {
+        let newValue = !state.isScreenSharing
+        do {
+            try await liveKitRoomManager.setScreenShare(enabled: newValue)
+            state.isScreenSharing = newValue
+            MXLog.info("sTalk: Screen sharing \(newValue ? "started" : "stopped")")
+        } catch {
+            MXLog.error("sTalk: Failed to toggle screen share: \(error)")
         }
     }
 

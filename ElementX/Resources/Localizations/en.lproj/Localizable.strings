@@ -1706,3 +1706,4 @@
 "stalk_recording_title" = "Start recording?";
 "stalk_recording_message" = "The call will be recorded. All participants will be notified.";
 "stalk_recording_start" = "Start recording";
+"stalk_call_screen_share" = "screen";
