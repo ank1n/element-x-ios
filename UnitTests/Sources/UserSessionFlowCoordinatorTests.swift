@@ -72,7 +72,7 @@ class UserSessionFlowCoordinatorTests: XCTestCase {
     }
     
     func testSettingsPresentation() async throws {
-        try await process(route: .settings, expectedUserSessionState: .settingsScreen)
+        try await process(route: .settings, expectedUserSessionState: .tabBar)
         XCTAssertTrue((tabCoordinator?.sheetCoordinator as? NavigationStackCoordinator)?.rootCoordinator is SettingsScreenCoordinator)
     }
     
@@ -83,7 +83,7 @@ class UserSessionFlowCoordinatorTests: XCTestCase {
     }
     
     func testRoomPresentationClearsSettings() async throws {
-        try await process(route: .settings, expectedUserSessionState: .settingsScreen)
+        try await process(route: .settings, expectedUserSessionState: .tabBar)
         XCTAssertTrue((tabCoordinator?.sheetCoordinator as? NavigationStackCoordinator)?.rootCoordinator is SettingsScreenCoordinator)
         XCTAssertNil(detailCoordinator)
         
@@ -109,7 +109,7 @@ class UserSessionFlowCoordinatorTests: XCTestCase {
     }
     
     func testShareMediaRouteWithoutRoom() async throws {
-        try await process(route: .settings, expectedUserSessionState: .settingsScreen)
+        try await process(route: .settings, expectedUserSessionState: .tabBar)
         XCTAssertTrue((tabCoordinator?.sheetCoordinator as? NavigationStackCoordinator)?.rootCoordinator is SettingsScreenCoordinator)
         XCTAssertNil(chatsSplitCoordinator?.sheetCoordinator)
 
@@ -137,7 +137,7 @@ class UserSessionFlowCoordinatorTests: XCTestCase {
     }
     
     func testShareTextRouteWithoutRoom() async throws {
-        try await process(route: .settings, expectedUserSessionState: .settingsScreen)
+        try await process(route: .settings, expectedUserSessionState: .tabBar)
         XCTAssertTrue((tabCoordinator?.sheetCoordinator as? NavigationStackCoordinator)?.rootCoordinator is SettingsScreenCoordinator)
         XCTAssertNil(chatsSplitCoordinator?.sheetCoordinator)
 
