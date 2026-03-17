@@ -21,8 +21,6 @@ jobs:
         working-directory: .
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: true
 
       - name: Build for Simulator
         run: |
@@ -44,8 +42,6 @@ jobs:
         working-directory: .
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: true
 
       - name: Run Unit Tests (sTalk)
         run: |
@@ -71,8 +67,6 @@ jobs:
         working-directory: .
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: true
 
       - name: Build & Install App
         run: |
@@ -110,8 +104,6 @@ jobs:
         working-directory: .
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: true
 
       - name: Build for iPhone
         run: |
