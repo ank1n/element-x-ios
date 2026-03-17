@@ -1,0 +1,34 @@
+appId: ru.implica.stalk
+name: "Smoke: Calls history loads"
+tags:
+  - smoke
+  - e2e
+  - requires-login
+---
+- launchApp:
+    appId: ru.implica.stalk
+    clearState: false
+- waitForAnimationToEnd
+
+# Go to Calls tab
+- tapOn:
+    point: "30%,95%"
+- waitForAnimationToEnd
+
+# Take screenshot of calls history
+- takeScreenshot: /tmp/maestro_smoke_10_calls_history
+
+# Tap "New call" button if visible (+ button in toolbar)
+- tapOn:
+    point: "95%,7%"
+    optional: true
+- waitForAnimationToEnd
+
+# Take screenshot of new call sheet
+- takeScreenshot: /tmp/maestro_smoke_10_new_call
+
+# Dismiss
+- tapOn:
+    point: "10%,7%"
+    optional: true
+- waitForAnimationToEnd

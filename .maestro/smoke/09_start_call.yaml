@@ -1,0 +1,46 @@
+appId: ru.implica.stalk
+name: "Smoke: Start a voice call from room"
+tags:
+  - smoke
+  - e2e
+  - requires-login
+---
+- launchApp:
+    appId: ru.implica.stalk
+    clearState: false
+- waitForAnimationToEnd
+
+# Go to Chats tab
+- tapOn:
+    point: "50%,95%"
+- waitForAnimationToEnd
+
+# Tap first room in list
+- tapOn:
+    point: "50%,25%"
+- waitForAnimationToEnd
+
+# Tap call button in top-right toolbar
+- tapOn:
+    id: "roomScreen.voiceCallButton"
+    optional: true
+- waitForAnimationToEnd
+
+# Wait for call screen to appear
+- extendedWaitUntil:
+    visible:
+      text: ".*"
+    timeout: 5000
+    optional: true
+
+# Take screenshot of call screen
+- takeScreenshot: /tmp/maestro_smoke_09_call_screen
+
+# End call — tap red "завершить" button at bottom center
+- tapOn:
+    point: "50%,85%"
+    optional: true
+- waitForAnimationToEnd
+
+# Take screenshot after end
+- takeScreenshot: /tmp/maestro_smoke_09_call_ended

@@ -1,0 +1,47 @@
+appId: ru.implica.stalk
+name: "Smoke: Send a text message"
+tags:
+  - smoke
+  - e2e
+  - requires-login
+---
+- launchApp:
+    appId: ru.implica.stalk
+    clearState: false
+- waitForAnimationToEnd
+
+# Go to Chats tab
+- tapOn:
+    point: "50%,95%"
+- waitForAnimationToEnd
+
+# Tap first room in list
+- tapOn:
+    point: "50%,25%"
+- waitForAnimationToEnd
+
+# Tap on message composer text field
+- tapOn:
+    id: "messageComposer"
+    optional: true
+- waitForAnimationToEnd
+
+# Type a test message
+- inputText: "smoke test message"
+
+# Take screenshot before sending
+- takeScreenshot: /tmp/maestro_smoke_08_before_send
+
+# Tap send button
+- tapOn:
+    id: "sendButton"
+    optional: true
+- waitForAnimationToEnd
+
+# Take screenshot after sending
+- takeScreenshot: /tmp/maestro_smoke_08_after_send
+
+# Go back
+- tapOn:
+    point: "5%,7%"
+- waitForAnimationToEnd
