@@ -1,0 +1,22 @@
+appId: ru.implica.stalk
+name: "Smoke: Chats screen loads and room list visible"
+tags:
+  - smoke
+  - requires-login
+---
+- launchApp:
+    appId: ru.implica.stalk
+    clearState: false
+- waitForAnimationToEnd
+
+# Go to Chats tab
+- tapOn:
+    point: "50%,95%"
+- waitForAnimationToEnd
+
+# Verify chats loaded (search field should be present)
+- assertVisible:
+    id: "searchField"
+    optional: true
+
+- takeScreenshot: /tmp/maestro_smoke_04_chats

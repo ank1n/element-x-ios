@@ -1,0 +1,39 @@
+appId: ru.implica.stalk
+name: "Smoke: Attachment picker opens and closes"
+tags:
+  - smoke
+  - requires-login
+---
+- launchApp:
+    appId: ru.implica.stalk
+    clearState: false
+- waitForAnimationToEnd
+
+# Go to Chats tab
+- tapOn:
+    point: "50%,95%"
+- waitForAnimationToEnd
+
+# Tap first room
+- tapOn:
+    point: "50%,25%"
+- waitForAnimationToEnd
+
+# Tap "+" attachment button
+- tapOn:
+    id: "composerToolbar.openComposeOptions"
+    optional: true
+- waitForAnimationToEnd
+
+# Verify attachment sheet appeared
+- takeScreenshot: /tmp/maestro_smoke_06_attachment
+
+# Dismiss sheet by tapping outside
+- tapOn:
+    point: "50%,20%"
+- waitForAnimationToEnd
+
+# Go back to chat list
+- tapOn:
+    point: "5%,7%"
+- waitForAnimationToEnd

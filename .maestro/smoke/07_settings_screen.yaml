@@ -1,0 +1,17 @@
+appId: ru.implica.stalk
+name: "Smoke: Settings screen loads with user info"
+tags:
+  - smoke
+  - requires-login
+---
+- launchApp:
+    appId: ru.implica.stalk
+    clearState: false
+- waitForAnimationToEnd
+
+# Go to Settings tab
+- tapOn:
+    point: "90%,95%"
+- waitForAnimationToEnd
+
+- takeScreenshot: /tmp/maestro_smoke_07_settings

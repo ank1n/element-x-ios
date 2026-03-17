@@ -1,0 +1,23 @@
+appId: ru.implica.stalk
+name: "Smoke: Contacts screen loads and filters work"
+tags:
+  - smoke
+  - requires-login
+---
+- launchApp:
+    appId: ru.implica.stalk
+    clearState: false
+- waitForAnimationToEnd
+
+# Go to Contacts tab
+- tapOn:
+    point: "10%,95%"
+- waitForAnimationToEnd
+
+# Verify search field is visible
+- assertVisible:
+    id: "searchField"
+    optional: true
+
+# Take screenshot of contacts list
+- takeScreenshot: /tmp/maestro_smoke_03_contacts

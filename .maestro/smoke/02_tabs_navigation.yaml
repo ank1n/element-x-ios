@@ -1,0 +1,41 @@
+appId: ru.implica.stalk
+name: "Smoke: Tab navigation works"
+tags:
+  - smoke
+  - requires-login
+---
+# Precondition: user is logged in and on main screen
+- launchApp:
+    appId: ru.implica.stalk
+    clearState: false
+- waitForAnimationToEnd
+
+# Contacts tab (first tab)
+- tapOn:
+    point: "10%,95%"
+- waitForAnimationToEnd
+- takeScreenshot: /tmp/maestro_smoke_02_contacts
+
+# Calls tab (second tab)
+- tapOn:
+    point: "30%,95%"
+- waitForAnimationToEnd
+- takeScreenshot: /tmp/maestro_smoke_02_calls
+
+# Chats tab (third tab - center)
+- tapOn:
+    point: "50%,95%"
+- waitForAnimationToEnd
+- takeScreenshot: /tmp/maestro_smoke_02_chats
+
+# Apps tab (fourth tab)
+- tapOn:
+    point: "70%,95%"
+- waitForAnimationToEnd
+- takeScreenshot: /tmp/maestro_smoke_02_apps
+
+# Settings tab (fifth tab)
+- tapOn:
+    point: "90%,95%"
+- waitForAnimationToEnd
+- takeScreenshot: /tmp/maestro_smoke_02_settings

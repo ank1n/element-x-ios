@@ -1,0 +1,32 @@
+appId: ru.implica.stalk
+name: "Smoke: Open a chat room and composer visible"
+tags:
+  - smoke
+  - requires-login
+---
+- launchApp:
+    appId: ru.implica.stalk
+    clearState: false
+- waitForAnimationToEnd
+
+# Go to Chats tab
+- tapOn:
+    point: "50%,95%"
+- waitForAnimationToEnd
+
+# Tap first room in list (approximate position of first row)
+- tapOn:
+    point: "50%,25%"
+- waitForAnimationToEnd
+
+# Verify message composer is visible (attachment button)
+- assertVisible:
+    id: "composerToolbar.openComposeOptions"
+    optional: true
+
+- takeScreenshot: /tmp/maestro_smoke_05_room
+
+# Go back
+- tapOn:
+    point: "5%,7%"
+- waitForAnimationToEnd

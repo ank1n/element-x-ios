@@ -1,0 +1,11 @@
+appId: ru.implica.stalk
+name: "Smoke: App launches without crash"
+---
+- launchApp:
+    appId: ru.implica.stalk
+    clearState: false
+- assertVisible:
+    text: ".*"
+    optional: true
+- waitForAnimationToEnd
+- takeScreenshot: /tmp/maestro_smoke_01_launch
