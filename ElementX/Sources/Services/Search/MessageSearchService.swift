@@ -47,8 +47,9 @@ final class MessageSearchService {
             ]
         ]
 
-        // Build URL
-        var urlString = "\(homeserverURL)/_matrix/client/v3/search"
+        // Build URL (trim trailing slash from homeserver)
+        let baseURL = homeserverURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        var urlString = "\(baseURL)/_matrix/client/v3/search"
         if let nextBatch {
             urlString += "?next_batch=\(nextBatch.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? nextBatch)"
         }

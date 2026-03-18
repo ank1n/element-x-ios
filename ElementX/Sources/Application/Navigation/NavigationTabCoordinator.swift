@@ -336,8 +336,11 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
 
     // MARK: - Lottie Tab Bar (Stalk-style)
 
-    /// Whether the tab bar should be hidden (e.g. when viewing a room detail on compact layout)
+    @AppStorage("stalk_search_active") private var isSearchActive = false
+
+    /// Whether the tab bar should be hidden (e.g. when viewing a room detail on compact layout, or search is active)
     private var shouldHideTabBar: Bool {
+        if isSearchActive { return true }
         guard selectedIndex < navigationTabCoordinator.tabModules.count else { return false }
         let details = navigationTabCoordinator.tabModules[selectedIndex].details
         return details.barVisibility(in: horizontalSizeClass) == .hidden

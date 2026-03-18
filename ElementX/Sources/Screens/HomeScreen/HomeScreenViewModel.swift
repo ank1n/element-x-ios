@@ -317,28 +317,8 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
             return
         }
 
-        state.isMessageSearchLoading = true
-        MXLog.info("sTalk: Starting message search for '\(trimmed)', homeserver=\(userSession.clientProxy.homeserver)")
-        os_log(.info, "sTalk: Starting message search for '%{public}@', homeserver=%{public}@", trimmed, userSession.clientProxy.homeserver)
-        messageSearchTask = Task { [weak self] in
-            guard let self else { return }
-            do {
-                let response = try await self.messageSearchService.searchMessages(query: trimmed, limit: 10)
-                guard !Task.isCancelled else { return }
-                MXLog.info("sTalk: Message search returned \(response.results.count) results (total: \(response.totalCount))")
-                await MainActor.run {
-                    self.state.messageSearchResults = response.results
-                    self.state.isMessageSearchLoading = false
-                }
-            } catch {
-                guard !Task.isCancelled else { return }
-                MXLog.error("sTalk: Message search error: \(error)")
-                await MainActor.run {
-                    self.state.messageSearchResults = []
-                    self.state.isMessageSearchLoading = false
-                }
-            }
-        }
+        // Server-side search doesn't work for E2EE rooms (Synapse can't search encrypted content)
+        // Message search is available per-room via 🔍 button in room toolbar (local with pagination)
     }
 
     private func updateFilter() {

@@ -117,12 +117,7 @@ struct HomeScreenContent: View {
                                     .transition(.move(edge: .top).combined(with: .opacity))
                             }
 
-                            // Message search results section
-                            if context.viewState.bindings.isSearchFieldFocused && !context.viewState.bindings.searchQuery.isEmpty {
-                                messageSearchSection
-                            }
-
-                            if context.viewState.shouldShowEmptySearchState && context.viewState.messageSearchResults.isEmpty && !context.viewState.isMessageSearchLoading {
+                            if context.viewState.shouldShowEmptySearchState {
                                 VStack(spacing: 12) {
                                     Spacer().frame(height: 60)
                                     Image(systemName: "magnifyingglass")
@@ -173,6 +168,9 @@ struct HomeScreenContent: View {
             .onChange(of: context.searchQuery) {
                 updateVisibleRange()
                 context.send(viewAction: .searchQueryChanged(context.searchQuery))
+            }
+            .onChange(of: context.isSearchFieldFocused) {
+                UserDefaults.standard.set(context.isSearchFieldFocused, forKey: "stalk_search_active")
             }
             .onChange(of: context.viewState.visibleRooms) {
                 updateVisibleRange()
