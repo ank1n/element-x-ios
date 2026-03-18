@@ -315,24 +315,27 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
         messageSearchTask?.cancel()
 
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, state.bindings.isSearchFieldFocused else {
+        guard !trimmed.isEmpty else {
             state.messageSearchResults = []
             state.isMessageSearchLoading = false
             return
         }
 
         state.isMessageSearchLoading = true
+        MXLog.info("sTalk: Starting message search for '\(trimmed)', homeserver=\(userSession.clientProxy.homeserver)")
         messageSearchTask = Task { [weak self] in
             guard let self else { return }
             do {
                 let response = try await self.messageSearchService.searchMessages(query: trimmed, limit: 10)
                 guard !Task.isCancelled else { return }
+                MXLog.info("sTalk: Message search returned \(response.results.count) results (total: \(response.totalCount))")
                 await MainActor.run {
                     self.state.messageSearchResults = response.results
                     self.state.isMessageSearchLoading = false
                 }
             } catch {
                 guard !Task.isCancelled else { return }
+                MXLog.error("sTalk: Message search error: \(error)")
                 await MainActor.run {
                     self.state.messageSearchResults = []
                     self.state.isMessageSearchLoading = false
