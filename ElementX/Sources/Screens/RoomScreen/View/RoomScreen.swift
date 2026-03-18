@@ -27,6 +27,7 @@ struct RoomScreen: View {
     var body: some View {
         TimelineView(timelineContext: timelineContext)
             .environment(\.searchHighlight, context.viewState.isSearchActive ? context.viewState.bindings.searchQuery : "")
+            .id(context.viewState.isSearchActive)
             .overlay(alignment: .bottomTrailing) {
                 TimelineScrollToBottomButton(isVisible: isAtBottomAndLive) {
                     timelineContext.send(viewAction: .scrollToBottom)
