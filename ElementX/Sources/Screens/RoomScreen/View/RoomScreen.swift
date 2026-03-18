@@ -26,6 +26,7 @@ struct RoomScreen: View {
 
     var body: some View {
         TimelineView(timelineContext: timelineContext)
+            .environment(\.searchHighlight, context.viewState.isSearchActive ? context.viewState.bindings.searchQuery : "")
             .overlay(alignment: .bottomTrailing) {
                 TimelineScrollToBottomButton(isVisible: isAtBottomAndLive) {
                     timelineContext.send(viewAction: .scrollToBottom)
@@ -57,6 +58,18 @@ struct RoomScreen: View {
                         onDismiss: { context.send(viewAction: .toggleSearch) }
                     )
                     .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if context.viewState.isSearchActive && !context.viewState.bindings.searchQuery.isEmpty {
+                    RoomSearchNavigationBar(
+                        resultCount: context.viewState.searchResultCount,
+                        currentIndex: context.viewState.currentSearchResultIndex,
+                        isLoading: context.viewState.isSearchLoading,
+                        onPrevious: { context.send(viewAction: .searchPrevious) },
+                        onNext: { context.send(viewAction: .searchNext) }
+                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {

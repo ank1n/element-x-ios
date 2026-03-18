@@ -8,9 +8,22 @@
 
 import SwiftUI
 
+// Environment key for search highlight
+private struct SearchHighlightKey: EnvironmentKey {
+    static let defaultValue: String = ""
+}
+
+extension EnvironmentValues {
+    var searchHighlight: String {
+        get { self[SearchHighlightKey.self] }
+        set { self[SearchHighlightKey.self] = newValue }
+    }
+}
+
 struct FormattedBodyText: View {
     @Environment(\.layoutDirection) private var layoutDirection
-    
+    @Environment(\.searchHighlight) private var searchHighlight
+
     private let attributedString: AttributedString
     private let additionalWhitespacesCount: Int
     private let boostFontSize: Bool
@@ -40,6 +53,21 @@ struct FormattedBodyText: View {
             adjustedAttributedString[range].font = UIFont.systemFont(ofSize: 48.0)
         }
         
+        // Apply search highlight (yellow background) if search is active
+        if !searchHighlight.isEmpty {
+            let text = String(adjustedAttributedString.characters)
+            let lowerText = text.lowercased()
+            let lowerQuery = searchHighlight.lowercased()
+            var searchRange = lowerText.startIndex
+            while let range = lowerText.range(of: lowerQuery, range: searchRange..<lowerText.endIndex) {
+                if let attrRange = Range(range, in: adjustedAttributedString) {
+                    adjustedAttributedString[attrRange].backgroundColor = UIColor.yellow
+                    adjustedAttributedString[attrRange].foregroundColor = UIColor.black
+                }
+                searchRange = range.upperBound
+            }
+        }
+
         return adjustedAttributedString.formattedComponents
     }
     

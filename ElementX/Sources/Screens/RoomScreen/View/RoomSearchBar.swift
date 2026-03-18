@@ -8,6 +8,7 @@
 import Compound
 import SwiftUI
 
+/// Telegram-style search bar: input at top, navigation at bottom
 struct RoomSearchBar: View {
     @Binding var searchQuery: String
     let resultCount: Int
@@ -19,55 +20,101 @@ struct RoomSearchBar: View {
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
+        // Top: search input
+        HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
-                .foregroundColor(.compound.iconTertiary)
+                .foregroundColor(.secondary)
                 .font(.system(size: 16))
 
             TextField(L10n.actionSearch, text: $searchQuery)
                 .focused($isFocused)
                 .textFieldStyle(.plain)
-                .font(.compound.bodyMD)
+                .font(.system(size: 16))
                 .submitLabel(.search)
 
-            if isLoading {
-                ProgressView()
-                    .scaleEffect(0.7)
-            }
-
             if !searchQuery.isEmpty {
-                Text(resultCount > 0 ? "\(currentIndex + 1)/\(resultCount)" : "0/0")
-                    .font(.compound.bodySM)
-                    .foregroundColor(.compound.textSecondary)
-                    .monospacedDigit()
-
-                Button(action: onPrevious) {
-                    Image(systemName: "chevron.up")
-                        .font(.system(size: 14, weight: .semibold))
+                Button {
+                    searchQuery = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.secondary)
+                        .font(.system(size: 18))
                 }
-                .disabled(resultCount == 0)
-                .foregroundColor(resultCount == 0 ? .compound.iconDisabled : .compound.iconPrimary)
-
-                Button(action: onNext) {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 14, weight: .semibold))
-                }
-                .disabled(resultCount == 0)
-                .foregroundColor(resultCount == 0 ? .compound.iconDisabled : .compound.iconPrimary)
             }
 
             Button(action: onDismiss) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.compound.iconTertiary)
+                Text(SL10n.actionCancel)
+                    .font(.system(size: 16))
+                    .foregroundColor(StalkTheme.accent)
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color.compound.bgCanvasDefault)
+        .background(Color(UIColor.systemBackground))
         .overlay(alignment: .bottom) {
             Divider()
         }
         .onAppear { isFocused = true }
+    }
+}
+
+/// Bottom navigation bar for search results (Telegram-style)
+struct RoomSearchNavigationBar: View {
+    let resultCount: Int
+    let currentIndex: Int
+    var isLoading: Bool = false
+    let onPrevious: () -> Void
+    let onNext: () -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            // Left: icon + counter
+            HStack(spacing: 6) {
+                if isLoading {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                } else {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 14))
+                        .foregroundColor(.secondary)
+                }
+
+                if resultCount > 0 {
+                    Text("\(currentIndex + 1) из \(resultCount)")
+                        .font(.system(size: 14))
+                        .foregroundColor(.secondary)
+                        .monospacedDigit()
+                } else if !isLoading {
+                    Text("0 из 0")
+                        .font(.system(size: 14))
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Spacer()
+
+            // Right: navigation arrows
+            HStack(spacing: 16) {
+                Button(action: onPrevious) {
+                    Image(systemName: "chevron.up")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundColor(resultCount > 0 ? StalkTheme.accent : .secondary.opacity(0.4))
+                }
+                .disabled(resultCount == 0)
+
+                Button(action: onNext) {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundColor(resultCount > 0 ? StalkTheme.accent : .secondary.opacity(0.4))
+                }
+                .disabled(resultCount == 0)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color(UIColor.systemBackground))
+        .overlay(alignment: .top) {
+            Divider()
+        }
     }
 }
