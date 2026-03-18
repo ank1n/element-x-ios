@@ -92,6 +92,7 @@ struct FormattedBodyText: View {
     
     var body: some View {
         mainContent
+            .id(searchHighlight) // Force refresh when search highlight changes
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(attributedString))
     }
