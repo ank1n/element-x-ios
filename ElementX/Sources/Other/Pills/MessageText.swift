@@ -58,6 +58,7 @@ final class MessageTextView: UITextView, PillAttachmentViewProviderDelegate, UIG
 struct MessageText: UIViewRepresentable {
     @Environment(\.openURL) private var openURLAction
     @Environment(\.timelineContext) private var viewModel
+    @Environment(\.searchHighlight) private var searchHighlight
     @State private var computedSizes = [Double: CGSize]()
     
     @State var attributedString: AttributedString {
@@ -110,7 +111,37 @@ struct MessageText: UIViewRepresentable {
             uiView.flushPills()
             uiView.attributedText = newAttributedText
         }
+
+        // Apply or remove search highlight
+        applySearchHighlight(to: uiView)
+
         context.coordinator.openURLAction = openURLAction
+    }
+
+    private func applySearchHighlight(to textView: MessageTextView) {
+        guard let text = textView.attributedText else { return }
+        let mutable = NSMutableAttributedString(attributedString: text)
+        let fullRange = NSRange(location: 0, length: mutable.length)
+
+        // First remove any existing highlight
+        mutable.removeAttribute(.backgroundColor, range: fullRange)
+
+        // Then apply new highlight if search is active
+        if !searchHighlight.isEmpty {
+            let searchString = searchHighlight.lowercased()
+            let textString = mutable.string.lowercased()
+            var searchRange = textString.startIndex
+
+            while let range = textString.range(of: searchString, range: searchRange..<textString.endIndex) {
+                let nsRange = NSRange(range, in: textString)
+                mutable.addAttribute(.backgroundColor, value: UIColor.yellow, range: nsRange)
+                searchRange = range.upperBound
+            }
+        }
+
+        if textView.attributedText != mutable {
+            textView.attributedText = mutable
+        }
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: MessageTextView, context: Context) -> CGSize? {

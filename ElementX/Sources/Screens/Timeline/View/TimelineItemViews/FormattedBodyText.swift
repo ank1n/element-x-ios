@@ -53,21 +53,6 @@ struct FormattedBodyText: View {
             adjustedAttributedString[range].font = UIFont.systemFont(ofSize: 48.0)
         }
         
-        // Apply search highlight (yellow background) if search is active
-        if !searchHighlight.isEmpty {
-            let text = String(adjustedAttributedString.characters)
-            let lowerText = text.lowercased()
-            let lowerQuery = searchHighlight.lowercased()
-            var searchRange = lowerText.startIndex
-            while let range = lowerText.range(of: lowerQuery, range: searchRange..<lowerText.endIndex) {
-                if let attrRange = Range(range, in: adjustedAttributedString) {
-                    adjustedAttributedString[attrRange].backgroundColor = UIColor.yellow
-                    adjustedAttributedString[attrRange].foregroundColor = UIColor.black
-                }
-                searchRange = range.upperBound
-            }
-        }
-
         return adjustedAttributedString.formattedComponents
     }
     
@@ -92,7 +77,6 @@ struct FormattedBodyText: View {
     
     var body: some View {
         mainContent
-            .id(searchHighlight) // Force refresh when search highlight changes
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(attributedString))
     }
