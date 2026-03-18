@@ -21,6 +21,13 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
     private let userIndicatorController: UserIndicatorControllerProtocol
     
     private let roomSummaryProvider: RoomSummaryProviderProtocol?
+    private lazy var messageSearchService: MessageSearchService = {
+        MessageSearchService(
+            homeserverURL: userSession.clientProxy.homeserver,
+            accessTokenProvider: { [weak self] in try self?.userSession.clientProxy.matrixAccessToken() ?? "" }
+        )
+    }()
+    private var messageSearchTask: Task<Void, Never>?
     
     private var actionsSubject: PassthroughSubject<HomeScreenViewModelAction, Never> = .init()
     var actions: AnyPublisher<HomeScreenViewModelAction, Never> {
@@ -128,6 +135,15 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
             }
             .store(in: &cancellables)
         
+        // Message content search — debounced
+        searchQuery
+            .removeDuplicates()
+            .debounce(for: .milliseconds(500), scheduler: DispatchQueue.main)
+            .sink { [weak self] query in
+                self?.performMessageSearch(query: query)
+            }
+            .store(in: &cancellables)
+
         setupRoomListSubscriptions()
         setupArchiveSubscription()
 
@@ -171,6 +187,8 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
             actionsSubject.send(.presentStartChatScreen)
         case .globalSearch:
             actionsSubject.send(.presentGlobalSearch)
+        case .messageSearch:
+            actionsSubject.send(.presentMessageSearch)
         case .markRoomAsUnread(let roomIdentifier):
             Task {
                 guard case let .joined(roomProxy) = await userSession.clientProxy.roomForIdentifier(roomIdentifier) else {
@@ -291,6 +309,36 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
         if recent.count > 5 { recent = Array(recent.prefix(5)) }
         appSettings.recentSearchQueries = recent
         state.recentSearchQueries = recent
+    }
+
+    private func performMessageSearch(query: String) {
+        messageSearchTask?.cancel()
+
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, state.bindings.isSearchFieldFocused else {
+            state.messageSearchResults = []
+            state.isMessageSearchLoading = false
+            return
+        }
+
+        state.isMessageSearchLoading = true
+        messageSearchTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let response = try await self.messageSearchService.searchMessages(query: trimmed, limit: 10)
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    self.state.messageSearchResults = response.results
+                    self.state.isMessageSearchLoading = false
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    self.state.messageSearchResults = []
+                    self.state.isMessageSearchLoading = false
+                }
+            }
+        }
     }
 
     private func updateFilter() {

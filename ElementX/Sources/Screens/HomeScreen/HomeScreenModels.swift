@@ -25,6 +25,7 @@ enum HomeScreenViewModelAction {
     case presentFeedbackScreen
     case presentStartChatScreen
     case presentGlobalSearch
+    case presentMessageSearch
     case presentArchive
     case logout
 }
@@ -44,6 +45,7 @@ enum HomeScreenViewAction {
     case dismissNewSoundBanner
     case updateVisibleItemRange(Range<Int>)
     case globalSearch
+    case messageSearch
     case markRoomAsUnread(roomIdentifier: String)
     case markRoomAsRead(roomIdentifier: String)
     case markRoomAsFavourite(roomIdentifier: String, isFavourite: Bool)
@@ -117,6 +119,8 @@ struct HomeScreenViewState: BindableState {
     var reportRoomEnabled = false
 
     var recentSearchQueries: [String] = []
+    var messageSearchResults: [MessageSearchResult] = []
+    var isMessageSearchLoading = false
 
     var archiveRoomCount: Int = 0
     var archivePreviewText: String = ""

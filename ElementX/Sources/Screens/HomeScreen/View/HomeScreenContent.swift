@@ -117,7 +117,12 @@ struct HomeScreenContent: View {
                                     .transition(.move(edge: .top).combined(with: .opacity))
                             }
 
-                            if context.viewState.shouldShowEmptySearchState {
+                            // Message search results section
+                            if context.viewState.bindings.isSearchFieldFocused && !context.viewState.bindings.searchQuery.isEmpty {
+                                messageSearchSection
+                            }
+
+                            if context.viewState.shouldShowEmptySearchState && context.viewState.messageSearchResults.isEmpty && !context.viewState.isMessageSearchLoading {
                                 VStack(spacing: 12) {
                                     Spacer().frame(height: 60)
                                     Image(systemName: "magnifyingglass")
@@ -222,6 +227,72 @@ struct HomeScreenContent: View {
         }
     }
     
+    // MARK: - Message Search Results
+
+    @ViewBuilder
+    private var messageSearchSection: some View {
+        let results = context.viewState.messageSearchResults
+        let isLoading = context.viewState.isMessageSearchLoading
+
+        if isLoading && results.isEmpty {
+            HStack(spacing: 8) {
+                ProgressView().scaleEffect(0.8)
+                Text(SL10n.appsLoading)
+                    .font(.system(size: 14))
+                    .foregroundColor(.secondary)
+            }
+            .padding(16)
+        }
+
+        if !results.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Image(systemName: "text.magnifyingglass")
+                        .font(.system(size: 13))
+                        .foregroundColor(StalkTheme.accent)
+                    Text(SL10n.tabChats)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+
+                ForEach(results, id: \.eventID) { result in
+                    Button {
+                        context.send(viewAction: .selectRoom(roomIdentifier: result.roomID))
+                    } label: {
+                        HStack(spacing: 12) {
+                            // Sender initial avatar
+                            ZStack {
+                                Circle().fill(StalkTheme.accent.opacity(0.15))
+                                    .frame(width: 40, height: 40)
+                                Text(String(result.senderDisplayName.prefix(1)).uppercased())
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundColor(StalkTheme.accent)
+                            }
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(result.senderDisplayName)
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(.primary)
+                                    .lineLimit(1)
+                                Text(result.body)
+                                    .font(.system(size: 13))
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(2)
+                            }
+
+                            Spacer()
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 6)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
     @ViewBuilder
     private var topSection: some View {
         VStack(spacing: 0) {

@@ -403,6 +403,8 @@ class ChatsTabFlowCoordinator: FlowCoordinatorProtocol {
                     stateMachine.processEvent(.startStartChatFlow)
                 case .presentGlobalSearch:
                     presentGlobalSearch()
+                case .presentMessageSearch:
+                    presentMessageSearch()
                 case .presentArchive:
                     presentArchiveScreen()
                 case .logout:
@@ -697,6 +699,31 @@ class ChatsTabFlowCoordinator: FlowCoordinatorProtocol {
         globalSearchScreenCoordinator = nil
     }
     
+    // MARK: Message Search
+
+    private func presentMessageSearch() {
+        let parameters = MessageSearchScreenCoordinatorParameters(
+            clientProxy: userSession.clientProxy,
+            roomSummaryProvider: userSession.clientProxy.alternateRoomSummaryProvider
+        )
+        let coordinator = MessageSearchScreenCoordinator(parameters: parameters)
+
+        coordinator.actionsPublisher
+            .sink { [weak self] action in
+                guard let self else { return }
+                switch action {
+                case .openRoomAtEvent(let roomID, let eventID):
+                    self.sidebarNavigationStackCoordinator.pop()
+                    self.handleAppRoute(.event(eventID: eventID, roomID: roomID, via: []), animated: true)
+                case .dismiss:
+                    self.sidebarNavigationStackCoordinator.pop()
+                }
+            }
+            .store(in: &cancellables)
+
+        sidebarNavigationStackCoordinator.push(coordinator)
+    }
+
     // MARK: Archive Screen
 
     private func presentArchiveScreen() {
