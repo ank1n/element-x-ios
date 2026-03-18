@@ -116,6 +116,8 @@ enum SL10n {
     static let chatsRecent = NSLocalizedString("stalk_chats_recent", tableName: "Localizable", value: "Недавние", comment: "Recent chats section")
     static let chatArchived = NSLocalizedString("stalk_chat_archived", tableName: "Localizable", value: "Чат архивирован", comment: "Chat archived message")
     static let archiveTitle = NSLocalizedString("stalk_archive_title", tableName: "Localizable", value: "Архив", comment: "Archive screen title")
+    static let searchNoResults = NSLocalizedString("stalk_search_no_results", tableName: "Localizable", value: "Ничего не найдено", comment: "Search no results")
+
     static let archiveEmpty = NSLocalizedString("stalk_archive_empty", tableName: "Localizable", value: "Архив пуст", comment: "Empty archive message")
 
     // MARK: - Settings

@@ -117,7 +117,19 @@ struct HomeScreenContent: View {
                                     .transition(.move(edge: .top).combined(with: .opacity))
                             }
 
-                            if !context.viewState.shouldShowEmptyFilterState {
+                            if context.viewState.shouldShowEmptySearchState {
+                                VStack(spacing: 12) {
+                                    Spacer().frame(height: 60)
+                                    Image(systemName: "magnifyingglass")
+                                        .font(.system(size: 40))
+                                        .foregroundColor(.secondary.opacity(0.4))
+                                    Text(SL10n.searchNoResults)
+                                        .font(.system(size: 16, weight: .medium))
+                                        .foregroundColor(.secondary)
+                                    Spacer()
+                                }
+                                .frame(maxWidth: .infinity)
+                            } else if !context.viewState.shouldShowEmptyFilterState {
                                 if isCosmos {
                                     HomeScreenRoomList(context: context)
                                         .background(Color(UIColor.systemBackground))

@@ -145,6 +145,10 @@ struct HomeScreenViewState: BindableState {
     var shouldShowEmptyFilterState: Bool {
         !bindings.isSearchFieldFocused && bindings.filtersState.isFiltering && visibleRooms.isEmpty
     }
+
+    var shouldShowEmptySearchState: Bool {
+        bindings.isSearchFieldFocused && !bindings.searchQuery.isEmpty && visibleRooms.isEmpty
+    }
     
     var shouldShowFilters: Bool {
         !bindings.isSearchFieldFocused && roomListMode == .rooms
