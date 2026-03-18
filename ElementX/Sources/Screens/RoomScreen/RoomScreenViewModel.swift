@@ -463,27 +463,21 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
             .store(in: &cancellables)
     }
 
+    private var searchTask: Task<Void, Never>?
+
     private func performSearch(query: String) {
+        // Cancel previous search pagination
+        searchTask?.cancel()
+
         guard !query.isEmpty, let timelineController else {
             state.searchResultEventIDs = []
             state.currentSearchResultIndex = 0
+            state.isSearchLoading = false
             return
         }
 
-        let items = timelineController.timelineItems
-        var resultEventIDs = [String]()
-
-        for item in items {
-            guard let eventItem = item as? EventBasedTimelineItemProtocol,
-                  let eventID = item.id.eventID else {
-                continue
-            }
-
-            if eventItem.body.localizedCaseInsensitiveContains(query) {
-                resultEventIDs.append(eventID)
-            }
-        }
-
+        // First: search currently loaded items
+        let resultEventIDs = searchLoadedItems(query: query, in: timelineController)
         state.searchResultEventIDs = resultEventIDs
         state.currentSearchResultIndex = resultEventIDs.isEmpty ? 0 : resultEventIDs.count - 1
 
@@ -491,14 +485,70 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
         if let eventID = resultEventIDs.last {
             actionsSubject.send(.focusSearchResult(eventID: eventID))
         }
+
+        // Then: paginate backwards to find more results
+        state.isSearchLoading = true
+        searchTask = Task { [weak self] in
+            guard let self else { return }
+            var totalPaginated = 0
+            let maxEvents = 1000
+
+            while !Task.isCancelled, totalPaginated < maxEvents {
+                let result = await timelineController.paginateBackwards(requestSize: 100)
+
+                guard !Task.isCancelled else { break }
+
+                switch result {
+                case .success:
+                    totalPaginated += 100
+                    // Re-scan all items for matches
+                    let newResults = self.searchLoadedItems(query: query, in: timelineController)
+                    await MainActor.run {
+                        guard !Task.isCancelled else { return }
+                        let hadResults = !self.state.searchResultEventIDs.isEmpty
+                        self.state.searchResultEventIDs = newResults
+                        if !hadResults, let eventID = newResults.last {
+                            self.state.currentSearchResultIndex = newResults.count - 1
+                            self.actionsSubject.send(.focusSearchResult(eventID: eventID))
+                        }
+                    }
+                case .failure:
+                    // No more history or error — stop
+                    break
+                }
+
+                // Check if we've reached the beginning of the room
+                if case .failure = result { break }
+            }
+
+            await MainActor.run {
+                self.state.isSearchLoading = false
+            }
+        }
+    }
+
+    private func searchLoadedItems(query: String, in timelineController: any TimelineControllerProtocol) -> [String] {
+        var resultEventIDs = [String]()
+        for item in timelineController.timelineItems {
+            guard let eventItem = item as? EventBasedTimelineItemProtocol,
+                  let eventID = item.id.eventID else {
+                continue
+            }
+            if eventItem.body.localizedCaseInsensitiveContains(query) {
+                resultEventIDs.append(eventID)
+            }
+        }
+        return resultEventIDs
     }
 
     private func toggleSearch() {
         state.isSearchActive.toggle()
         if !state.isSearchActive {
+            searchTask?.cancel()
             state.bindings.searchQuery = ""
             state.searchResultEventIDs = []
             state.currentSearchResultIndex = 0
+            state.isSearchLoading = false
         }
     }
 

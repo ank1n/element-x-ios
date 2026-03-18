@@ -12,6 +12,7 @@ struct RoomSearchBar: View {
     @Binding var searchQuery: String
     let resultCount: Int
     let currentIndex: Int
+    var isLoading: Bool = false
     let onPrevious: () -> Void
     let onNext: () -> Void
     let onDismiss: () -> Void
@@ -28,6 +29,11 @@ struct RoomSearchBar: View {
                 .textFieldStyle(.plain)
                 .font(.compound.bodyMD)
                 .submitLabel(.search)
+
+            if isLoading {
+                ProgressView()
+                    .scaleEffect(0.7)
+            }
 
             if !searchQuery.isEmpty {
                 Text(resultCount > 0 ? "\(currentIndex + 1)/\(resultCount)" : "0/0")

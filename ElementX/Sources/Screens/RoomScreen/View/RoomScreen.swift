@@ -51,6 +51,7 @@ struct RoomScreen: View {
                         searchQuery: $context.searchQuery,
                         resultCount: context.viewState.searchResultCount,
                         currentIndex: context.viewState.currentSearchResultIndex,
+                        isLoading: context.viewState.isSearchLoading,
                         onPrevious: { context.send(viewAction: .searchPrevious) },
                         onNext: { context.send(viewAction: .searchNext) },
                         onDismiss: { context.send(viewAction: .toggleSearch) }
@@ -179,10 +180,20 @@ struct RoomScreen: View {
         
         if !ProcessInfo.processInfo.isiOSAppOnMac {
             ToolbarItem(placement: .primaryAction) {
-                // Только кнопка звонка (поиск убран - доступен через Room Details)
-                if context.viewState.shouldShowCallButton {
-                    callButton
-                        .disabled(!context.viewState.canJoinCall)
+                HStack(spacing: 12) {
+                    // Search button
+                    Button {
+                        context.send(viewAction: .toggleSearch)
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 16))
+                    }
+
+                    // Call button
+                    if context.viewState.shouldShowCallButton {
+                        callButton
+                            .disabled(!context.viewState.canJoinCall)
+                    }
                 }
             }
         }

@@ -102,6 +102,7 @@ struct RoomScreenViewState: BindableState {
     // MARK: - Search
 
     var isSearchActive = false
+    var isSearchLoading = false
     var searchResultEventIDs: [String] = []
     var currentSearchResultIndex: Int = 0
 
