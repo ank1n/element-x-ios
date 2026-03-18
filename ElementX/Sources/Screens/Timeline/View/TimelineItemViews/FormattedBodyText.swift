@@ -8,7 +8,7 @@
 
 import SwiftUI
 
-// Environment key for search highlight
+// Environment key for search highlight (used by bubble highlight)
 private struct SearchHighlightKey: EnvironmentKey {
     static let defaultValue: String = ""
 }
@@ -22,7 +22,6 @@ extension EnvironmentValues {
 
 struct FormattedBodyText: View {
     @Environment(\.layoutDirection) private var layoutDirection
-    @Environment(\.searchHighlight) private var searchHighlight
 
     private let attributedString: AttributedString
     private let additionalWhitespacesCount: Int
