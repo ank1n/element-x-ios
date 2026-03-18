@@ -172,6 +172,7 @@ struct HomeScreenContent: View {
             }
             .onChange(of: context.searchQuery) {
                 updateVisibleRange()
+                context.send(viewAction: .searchQueryChanged(context.searchQuery))
             }
             .onChange(of: context.viewState.visibleRooms) {
                 updateVisibleRange()

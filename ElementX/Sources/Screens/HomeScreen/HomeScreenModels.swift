@@ -46,6 +46,7 @@ enum HomeScreenViewAction {
     case updateVisibleItemRange(Range<Int>)
     case globalSearch
     case messageSearch
+    case searchQueryChanged(String)
     case markRoomAsUnread(roomIdentifier: String)
     case markRoomAsRead(roomIdentifier: String)
     case markRoomAsFavourite(roomIdentifier: String, isFavourite: Bool)

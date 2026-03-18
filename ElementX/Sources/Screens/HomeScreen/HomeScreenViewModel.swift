@@ -8,6 +8,7 @@
 
 import AnalyticsEvents
 import Combine
+import os
 import MatrixRustSDK
 import SwiftUI
 
@@ -135,14 +136,7 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
             }
             .store(in: &cancellables)
         
-        // Message content search — debounced
-        searchQuery
-            .removeDuplicates()
-            .debounce(for: .milliseconds(500), scheduler: DispatchQueue.main)
-            .sink { [weak self] query in
-                self?.performMessageSearch(query: query)
-            }
-            .store(in: &cancellables)
+        // Message content search is triggered from view via .onChange(of: searchQuery)
 
         setupRoomListSubscriptions()
         setupArchiveSubscription()
@@ -189,6 +183,8 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
             actionsSubject.send(.presentGlobalSearch)
         case .messageSearch:
             actionsSubject.send(.presentMessageSearch)
+        case .searchQueryChanged(let query):
+            performMessageSearch(query: query)
         case .markRoomAsUnread(let roomIdentifier):
             Task {
                 guard case let .joined(roomProxy) = await userSession.clientProxy.roomForIdentifier(roomIdentifier) else {
@@ -323,6 +319,7 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
 
         state.isMessageSearchLoading = true
         MXLog.info("sTalk: Starting message search for '\(trimmed)', homeserver=\(userSession.clientProxy.homeserver)")
+        os_log(.info, "sTalk: Starting message search for '%{public}@', homeserver=%{public}@", trimmed, userSession.clientProxy.homeserver)
         messageSearchTask = Task { [weak self] in
             guard let self else { return }
             do {
