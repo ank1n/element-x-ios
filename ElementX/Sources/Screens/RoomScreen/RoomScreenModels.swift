@@ -21,6 +21,7 @@ enum RoomScreenViewModelAction: Equatable {
     case displayRoom(roomID: String, via: [String])
     case displayMessageForwarding(MessageForwardingItem)
     case focusSearchResult(eventID: String)
+    case clearSearchFocus
 }
 
 enum RoomScreenViewAction {

@@ -18,6 +18,7 @@ protocol TimelineViewModelProtocol {
     func process(composerAction: ComposerToolbarViewModelAction)
     /// Updates the timeline to show and highlight the item with the corresponding event ID.
     func focusOnEvent(eventID: String) async
+    func clearFocus()
     
     /// Handles getting the content to forward an item given its item ID.
     func makeForwardingItem(for itemID: TimelineItemIdentifier) async -> MessageForwardingItem?

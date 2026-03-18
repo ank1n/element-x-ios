@@ -549,6 +549,7 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
             state.searchResultEventIDs = []
             state.currentSearchResultIndex = 0
             state.isSearchLoading = false
+            actionsSubject.send(.clearSearchFocus)
         }
     }
 

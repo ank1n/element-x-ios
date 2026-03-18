@@ -249,6 +249,10 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
         }
     }
     
+    func clearFocus() {
+        state.timelineState.focussedEvent = nil
+    }
+
     func focusOnEvent(eventID: String) async {
         if state.timelineState.hasLoadedItem(with: eventID) {
             state.timelineState.focussedEvent = .init(eventID: eventID, appearance: .animated)

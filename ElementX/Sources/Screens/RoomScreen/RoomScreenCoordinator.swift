@@ -194,6 +194,8 @@ final class RoomScreenCoordinator: CoordinatorProtocol {
                     actionsSubject.send(.presentThread(threadRootEventID: threadRootEventID, focussedEventID: focussedEventID))
                 case .focusSearchResult(let eventID):
                     Task { await self.timelineViewModel.focusOnEvent(eventID: eventID) }
+                case .clearSearchFocus:
+                    self.timelineViewModel.clearFocus()
                 }
             }
             .store(in: &cancellables)
