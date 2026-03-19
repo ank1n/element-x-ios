@@ -8,7 +8,8 @@
 import Compound
 import SwiftUI
 
-/// Telegram-style search bar: input at top, navigation at bottom
+// MARK: - Top Search Bar (Cosmos Style)
+
 struct RoomSearchBar: View {
     @Binding var searchQuery: String
     let resultCount: Int
@@ -19,37 +20,55 @@ struct RoomSearchBar: View {
     let onDismiss: () -> Void
     @FocusState private var isFocused: Bool
 
+    private let accent = StalkTheme.accent
+
     var body: some View {
-        // Top: search input
-        HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass")
-                .foregroundColor(.secondary)
-                .font(.system(size: 16))
+        HStack(spacing: 8) {
+            // Search capsule
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(accent)
 
-            TextField(L10n.actionSearch, text: $searchQuery)
-                .focused($isFocused)
-                .textFieldStyle(.plain)
-                .font(.system(size: 16))
-                .submitLabel(.search)
+                TextField(L10n.actionSearch, text: $searchQuery)
+                    .focused($isFocused)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 16))
+                    .submitLabel(.search)
 
-            if !searchQuery.isEmpty {
-                Button {
-                    searchQuery = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.secondary)
-                        .font(.system(size: 18))
+                if !searchQuery.isEmpty {
+                    Button {
+                        searchQuery = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(.secondary.opacity(0.5))
+                    }
                 }
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                Capsule()
+                    .fill(accent.opacity(0.08))
+                    .overlay(
+                        Capsule()
+                            .stroke(accent.opacity(0.2), lineWidth: 1)
+                    )
+            )
 
+            // Close button (icon, no text)
             Button(action: onDismiss) {
-                Text(SL10n.actionCancel)
-                    .font(.system(size: 16))
-                    .foregroundColor(StalkTheme.accent)
+                Image(systemName: "xmark")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .frame(width: 32, height: 32)
+                    .background(Color(UIColor.systemGray6))
+                    .clipShape(Circle())
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.vertical, 6)
         .background(Color(UIColor.systemBackground))
         .overlay(alignment: .bottom) {
             Divider()
@@ -58,7 +77,8 @@ struct RoomSearchBar: View {
     }
 }
 
-/// Bottom navigation bar for search results (Telegram-style)
+// MARK: - Bottom Navigation Bar (Cosmos Style)
+
 struct RoomSearchNavigationBar: View {
     let resultCount: Int
     let currentIndex: Int
@@ -66,52 +86,70 @@ struct RoomSearchNavigationBar: View {
     let onPrevious: () -> Void
     let onNext: () -> Void
 
+    private let accent = StalkTheme.accent
+
     var body: some View {
         HStack(spacing: 0) {
-            // Left: icon + counter
-            HStack(spacing: 6) {
-                if isLoading {
-                    ProgressView()
-                        .scaleEffect(0.7)
-                } else {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 14))
-                        .foregroundColor(.secondary)
-                }
+            // Left: badge counter
+            if isLoading {
+                ProgressView()
+                    .scaleEffect(0.8)
+                    .padding(.trailing, 8)
+            }
+
+            // Counter badge
+            HStack(spacing: 5) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 12, weight: .semibold))
 
                 if resultCount > 0 {
-                    Text("\(currentIndex + 1) из \(resultCount)")
-                        .font(.system(size: 14))
-                        .foregroundColor(.secondary)
+                    Text("\(currentIndex + 1)/\(resultCount)")
+                        .font(.system(size: 13, weight: .bold))
                         .monospacedDigit()
-                } else if !isLoading {
-                    Text("0 из 0")
-                        .font(.system(size: 14))
-                        .foregroundColor(.secondary)
+                } else {
+                    Text("0")
+                        .font(.system(size: 13, weight: .bold))
                 }
             }
+            .foregroundColor(.white)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                Capsule()
+                    .fill(accent)
+            )
 
             Spacer()
 
-            // Right: navigation arrows
-            HStack(spacing: 16) {
+            // Right: navigation arrows in circles
+            HStack(spacing: 10) {
                 Button(action: onPrevious) {
                     Image(systemName: "chevron.up")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundColor(resultCount > 0 ? StalkTheme.accent : .secondary.opacity(0.4))
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundColor(resultCount > 0 ? accent : .secondary.opacity(0.3))
+                        .frame(width: 40, height: 40)
+                        .background(
+                            Circle()
+                                .fill(resultCount > 0 ? accent.opacity(0.1) : Color(UIColor.systemGray6))
+                        )
                 }
                 .disabled(resultCount == 0)
 
                 Button(action: onNext) {
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundColor(resultCount > 0 ? StalkTheme.accent : .secondary.opacity(0.4))
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundColor(resultCount > 0 ? accent : .secondary.opacity(0.3))
+                        .frame(width: 40, height: 40)
+                        .background(
+                            Circle()
+                                .fill(resultCount > 0 ? accent.opacity(0.1) : Color(UIColor.systemGray6))
+                        )
                 }
                 .disabled(resultCount == 0)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
         .background(Color(UIColor.systemBackground))
         .overlay(alignment: .top) {
             Divider()
