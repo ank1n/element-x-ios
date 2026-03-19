@@ -17,24 +17,21 @@ extension View {
 
 private struct HighlightedTimelineItemModifier: ViewModifier {
     let isHighlighted: Bool
-    
+
+    private let accentColor = StalkTheme.accent
+
     func body(content: Content) -> some View {
         content
-            .padding(.top, isHighlighted ? 1 : 0)
             .background {
                 if isHighlighted {
-                    VStack(spacing: 0) {
-                        Color.compound.gradientSubtleStop1
-                        LinearGradient(gradient: .compound.subtle,
-                                       startPoint: .top,
-                                       endPoint: .bottom)
-                            .frame(maxHeight: 200)
-                            .layoutPriority(1)
-                    }
-                    .overlay(alignment: .top) {
-                        Color.compound.borderAccentSubtle
-                            .frame(height: 1)
-                    }
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(accentColor.opacity(0.12))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(accentColor.opacity(0.4), lineWidth: 1.5)
+                        )
+                        .padding(.horizontal, -4)
+                        .padding(.vertical, -2)
                 }
             }
     }
