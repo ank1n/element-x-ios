@@ -530,7 +530,8 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
     private func searchLoadedItems(query: String, in timelineController: any TimelineControllerProtocol) -> [String] {
         var resultEventIDs = [String]()
         for item in timelineController.timelineItems {
-            guard let eventItem = item as? EventBasedTimelineItemProtocol,
+            // Only search message items (text, image captions, etc.) — not system/state events
+            guard let eventItem = item as? EventBasedMessageTimelineItemProtocol,
                   let eventID = item.id.eventID else {
                 continue
             }
