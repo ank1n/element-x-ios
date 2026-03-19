@@ -59,32 +59,34 @@ struct RoomScreen: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
-            .overlay(alignment: .bottom) {
-                if context.viewState.isSearchActive && !context.viewState.bindings.searchQuery.isEmpty {
-                    RoomSearchNavigationBar(
-                        resultCount: context.viewState.searchResultCount,
-                        currentIndex: context.viewState.currentSearchResultIndex,
-                        isLoading: context.viewState.isSearchLoading,
-                        onPrevious: { context.send(viewAction: .searchPrevious) },
-                        onNext: { context.send(viewAction: .searchNext) }
-                    )
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-            }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                VStack(spacing: 0) {
-                    RoomScreenFooterView(details: context.viewState.footerDetails,
-                                         mediaProvider: context.mediaProvider) { action in
-                        context.send(viewAction: .footerViewAction(action))
+                if context.viewState.isSearchActive {
+                    // Search mode: show navigation bar instead of composer
+                    if !context.viewState.bindings.searchQuery.isEmpty {
+                        RoomSearchNavigationBar(
+                            resultCount: context.viewState.searchResultCount,
+                            currentIndex: context.viewState.currentSearchResultIndex,
+                            isLoading: context.viewState.isSearchLoading,
+                            onPrevious: { context.send(viewAction: .searchPrevious) },
+                            onNext: { context.send(viewAction: .searchNext) }
+                        )
                     }
-                    
-                    composer
-                        .padding(.top, 8)
-                        .background(Color.compound.bgCanvasDefault.ignoresSafeArea())
-                        .environmentObject(timelineContext)
-                        .environment(\.timelineContext, timelineContext)
+                } else {
+                    // Normal mode: footer + composer
+                    VStack(spacing: 0) {
+                        RoomScreenFooterView(details: context.viewState.footerDetails,
+                                             mediaProvider: context.mediaProvider) { action in
+                            context.send(viewAction: .footerViewAction(action))
+                        }
+
+                        composer
+                            .padding(.top, 8)
+                            .background(Color.compound.bgCanvasDefault.ignoresSafeArea())
+                            .environmentObject(timelineContext)
+                            .environment(\.timelineContext, timelineContext)
                         // Make sure the reply header honours the hideTimelineMedia setting too.
                         .environment(\.shouldAutomaticallyLoadImages, !timelineContext.viewState.hideTimelineMedia)
+                    }
                 }
             }
             .toolbarRole(RoomHeaderView.toolbarRole)
