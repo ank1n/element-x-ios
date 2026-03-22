@@ -135,6 +135,12 @@ final class LiveKitRoomManager: ObservableObject {
     /// Toggle screen sharing
     @Published private(set) var isScreenSharing: Bool = false
 
+    /// Toggle background blur
+    @Published private(set) var isBackgroundBlurEnabled: Bool = false
+
+    /// Toggle noise suppression (enhanced)
+    @Published private(set) var isNoiseSuppressed: Bool = false
+
     func setScreenShare(enabled: Bool) async throws {
         #if targetEnvironment(simulator)
         MXLog.warning("sTalk LiveKit: Screen sharing not available on simulator")
@@ -142,6 +148,49 @@ final class LiveKitRoomManager: ObservableObject {
         try await room.localParticipant.setScreenShare(enabled: enabled)
         isScreenSharing = enabled
         MXLog.info("sTalk LiveKit: Screen share \(enabled ? "started" : "stopped")")
+        #endif
+    }
+
+    private var blurProcessor: BackgroundBlurVideoProcessor?
+
+    /// Toggle background blur on camera video
+    func setBackgroundBlur(enabled: Bool) {
+        #if targetEnvironment(simulator)
+        MXLog.warning("sTalk LiveKit: Background blur not available on simulator")
+        #else
+        guard let videoTrack = room.localParticipant.videoTracks.first?.track as? LocalVideoTrack else {
+            MXLog.warning("sTalk LiveKit: No local video track for background blur")
+            return
+        }
+
+        if enabled {
+            let processor = BackgroundBlurVideoProcessor()
+            blurProcessor = processor
+            videoTrack.capturer.processor = processor
+            MXLog.info("sTalk LiveKit: Background blur enabled")
+        } else {
+            videoTrack.capturer.processor = nil
+            blurProcessor = nil
+            MXLog.info("sTalk LiveKit: Background blur disabled")
+        }
+        isBackgroundBlurEnabled = enabled
+        #endif
+    }
+
+    /// Toggle enhanced noise suppression
+    func setNoiseSuppression(enabled: Bool) {
+        #if targetEnvironment(simulator)
+        MXLog.warning("sTalk LiveKit: Noise suppression not available on simulator")
+        #else
+        let audioManager = AudioManager.shared
+        if enabled {
+            audioManager.isVoiceProcessingBypassed = false
+            MXLog.info("sTalk LiveKit: Enhanced noise suppression enabled")
+        } else {
+            // Voice processing is on by default on iOS — bypassing disables it
+            MXLog.info("sTalk LiveKit: Standard noise suppression")
+        }
+        isNoiseSuppressed = enabled
         #endif
     }
 

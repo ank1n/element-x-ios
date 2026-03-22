@@ -333,6 +333,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             Task { await toggleHandRaise() }
         case .toggleScreenShare:
             Task { await toggleScreenShare() }
+        case .toggleBackgroundBlur:
+            toggleBackgroundBlur()
         case .handRaiseStateChanged(let raised):
             state.isHandRaised = raised
         case .restoreFromMinimized:
@@ -891,6 +893,12 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         } catch {
             MXLog.error("sTalk: Failed to toggle screen share: \(error)")
         }
+    }
+
+    private func toggleBackgroundBlur() {
+        let newValue = !state.isBackgroundBlurEnabled
+        liveKitRoomManager.setBackgroundBlur(enabled: newValue)
+        state.isBackgroundBlurEnabled = newValue
     }
 
     // MARK: - Recording
