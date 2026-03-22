@@ -348,13 +348,16 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 interceptedLiveKitRoomName = roomName
                 MXLog.info("sTalk: Extracted LiveKit room name from JWT: \(roomName)")
             }
-            state.wasConnected = true
-            // NOTE: Native LiveKit disabled — dual connection creates duplicate participant
-            // E2EE key exchange works but WebView+native can't coexist in same room
-            // STMOB-65: requires single-connection architecture (either full native or full WebView)
+            // Connect native LiveKit SDK — WebView WS blocked, native is ONLY connection
+            Task { await connectNativeLiveKit(wsURL: url, token: token) }
         case .encryptionKeysReceived(let identity, let keys):
-            // E2EE keys received but native connection disabled
-            MXLog.info("sTalk E2EE: Keys received for \(identity) (\(keys.count) keys) — stored for future use")
+            // Forward E2EE keys from Element Call to native LiveKit SDK
+            for keyData in keys {
+                if let keyStr = keyData["key"] as? String,
+                   let index = keyData["index"] as? Int {
+                    liveKitRoomManager.setEncryptionKey(key: keyStr, participantId: identity, index: Int32(index))
+                }
+            }
         }
     }
     

@@ -147,10 +147,21 @@ struct CallScreen: View {
             ProgressView()
         } else {
             ZStack {
-                // sTalk: WebView handles video + E2EE (single connection)
-                // Native rendering disabled — dual connection creates duplicate participant
-                CallView(url: context.viewState.url, viewModelContext: context)
+                // sTalk: Native LiveKit video — ONLY connection to SFU
+                // WebView WS blocked → native SDK is sole participant
+                if let roomManager = context.viewState.liveKitRoomManager {
+                    NativeCallGridView(
+                        roomManager: roomManager,
+                        isDirect: context.viewState.isDirect
+                    )
                     .ignoresSafeArea()
+                }
+
+                // WebView for signaling only (Widget API, MatrixRTC)
+                // LiveKit WebSocket BLOCKED — fake WS returned to EC
+                CallView(url: context.viewState.url, viewModelContext: context)
+                    .frame(width: 1, height: 1)
+                    .opacity(0.01)
                     .allowsHitTesting(false)
             }
         }
