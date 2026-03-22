@@ -27,11 +27,13 @@ final class LiveKitRoomManager: ObservableObject {
     // MARK: - Private
 
     private let room: Room
+    private let keyProvider: BaseKeyProvider
     private var cancellables = Set<AnyCancellable>()
     private var reconnectToken: String?
     private var reconnectURL: String?
 
     init() {
+        keyProvider = BaseKeyProvider(isSharedKey: false)
         room = Room()
         room.add(delegate: self)
     }
@@ -67,6 +69,12 @@ final class LiveKitRoomManager: ObservableObject {
         let connectOptions = ConnectOptions(
             autoSubscribe: true
         )
+        // E2EE encryption options — per-participant keys from Element Call
+        let encryptionOptions = EncryptionOptions(
+            keyProvider: keyProvider,
+            encryptionType: .gcm
+        )
+
         let roomOptions = RoomOptions(
             defaultCameraCaptureOptions: CameraCaptureOptions(
                 dimensions: .h720_169
@@ -78,7 +86,8 @@ final class LiveKitRoomManager: ObservableObject {
             defaultAudioPublishOptions: AudioPublishOptions(
                 encoding: AudioEncoding(maxBitrate: 32_000), // 32 kbps minimum — prevents low frame rate (19→50 pps)
                 dtx: false // DTX off — don't skip packets on silence, keeps consistent frame rate
-            )
+            ),
+            encryptionOptions: encryptionOptions
         )
 
         try await room.connect(url: baseURL, token: token, connectOptions: connectOptions, roomOptions: roomOptions)
@@ -130,6 +139,12 @@ final class LiveKitRoomManager: ObservableObject {
         #if targetEnvironment(simulator)
         MXLog.warning("sTalk LiveKit: Running on SIMULATOR — camera unavailable, audio may have WebRTC limitations")
         #endif
+    }
+
+    /// Set E2EE encryption key for a participant (received from Element Call KS-Bridge)
+    func setEncryptionKey(key: String, participantId: String, index: Int32) {
+        keyProvider.setKey(key: key, participantId: participantId, index: index)
+        MXLog.info("sTalk LiveKit E2EE: Set key for \(participantId) index=\(index)")
     }
 
     /// Toggle screen sharing

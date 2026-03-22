@@ -348,9 +348,16 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 interceptedLiveKitRoomName = roomName
                 MXLog.info("sTalk: Extracted LiveKit room name from JWT: \(roomName)")
             }
-            state.wasConnected = true
-            // NOTE: connectNativeLiveKit disabled — WebView handles video + E2EE
-            // Native video requires E2EE key exchange (STMOB-65 future phases)
+            // Connect native LiveKit with E2EE support
+            Task { await connectNativeLiveKit(wsURL: url, token: token) }
+        case .encryptionKeysReceived(let identity, let keys):
+            // Forward E2EE keys from Element Call to native LiveKit SDK
+            for keyData in keys {
+                if let keyStr = keyData["key"] as? String,
+                   let index = keyData["index"] as? Int {
+                    liveKitRoomManager.setEncryptionKey(key: keyStr, participantId: identity, index: Int32(index))
+                }
+            }
         }
     }
     

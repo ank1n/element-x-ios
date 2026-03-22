@@ -147,10 +147,19 @@ struct CallScreen: View {
             ProgressView()
         } else {
             ZStack {
-                // sTalk: WebView renders Element Call video (handles E2EE decryption)
-                // Native rendering requires E2EE key exchange — not yet implemented
-                CallView(url: context.viewState.url, viewModelContext: context)
+                // sTalk: Native LiveKit video with E2EE key exchange
+                if let roomManager = context.viewState.liveKitRoomManager {
+                    NativeCallGridView(
+                        roomManager: roomManager,
+                        isDirect: context.viewState.isDirect
+                    )
                     .ignoresSafeArea()
+                }
+
+                // WebView for signaling (MatrixRTC, Widget API, E2EE keys)
+                CallView(url: context.viewState.url, viewModelContext: context)
+                    .frame(width: 1, height: 1)
+                    .opacity(0.01)
                     .allowsHitTesting(false)
             }
         }
@@ -539,6 +548,16 @@ private struct CallView: UIViewRepresentable {
                     return
                 }
                 viewModelContext?.send(viewAction: .liveKitCredentialsIntercepted(url: url, token: token))
+            case .onEncryptionKeysReceived:
+                guard let jsonString = message.body as? String,
+                      let data = jsonString.data(using: .utf8),
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let identity = json["identity"] as? String,
+                      let keys = json["keys"] as? [[String: Any]] else {
+                    return
+                }
+                MXLog.info("sTalk E2EE: Received \(keys.count) key(s) for \(identity)")
+                viewModelContext?.send(viewAction: .encryptionKeysReceived(identity: identity, keys: keys))
             }
         }
         
