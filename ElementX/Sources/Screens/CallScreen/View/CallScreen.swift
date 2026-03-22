@@ -248,20 +248,6 @@ struct CallScreen: View {
             }
         }
 
-        // sTalk: Background blur toggle
-        ToolbarItem(placement: .topBarTrailing) {
-            Button {
-                context.send(viewAction: .toggleBackgroundBlur)
-            } label: {
-                Image(systemName: context.viewState.isBackgroundBlurEnabled ? "person.fill" : "person.fill.viewfinder")
-                    .font(.system(size: 15))
-                    .foregroundColor(.white)
-                    .frame(width: 32, height: 32)
-                    .background(context.viewState.isBackgroundBlurEnabled ? StalkTheme.accent.opacity(0.8) : .white.opacity(0.2))
-                    .clipShape(Circle())
-            }
-        }
-
         // sTalk: Participants button
         if !context.viewState.isDirect {
             ToolbarItem(placement: .topBarTrailing) {

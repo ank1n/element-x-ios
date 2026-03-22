@@ -1724,3 +1724,7 @@
 "stalk_dnd_from" = "С";
 "stalk_dnd_to" = "До";
 "stalk_dnd_enabled" = "Включено";
+"stalk_call_background_blur" = "Размытие фона";
+"stalk_call_background_blur_hint" = "Размывает фон при видеозвонке";
+"stalk_call_noise_suppression" = "Шумоподавление";
+"stalk_call_noise_suppression_hint" = "Убирает фоновые шумы при звонке";

@@ -46,6 +46,8 @@ struct SettingsScreen: View {
 
                 dndSection
 
+                callsSettingsSection
+
                 appearanceSection
 
                 generalSection
@@ -374,6 +376,45 @@ struct SettingsScreen: View {
                 DatePicker(SL10n.dndFrom, selection: dndFromDate, displayedComponents: .hourAndMinute)
                 DatePicker(SL10n.dndTo, selection: dndToDate, displayedComponents: .hourAndMinute)
             }
+        }
+    }
+
+    // MARK: - Calls Settings
+
+    @AppStorage("stalk_background_blur_enabled") private var backgroundBlurEnabled: Bool = false
+    @AppStorage("stalk_noise_suppression_enabled") private var noiseSuppressionEnabled: Bool = true
+
+    private var callsSettingsSection: some View {
+        Section(header: Text(SL10n.tabCalls)) {
+            Toggle(isOn: $backgroundBlurEnabled) {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(SL10n.callBackgroundBlur)
+                        Text(SL10n.callBackgroundBlurHint)
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "person.fill.viewfinder")
+                        .foregroundColor(StalkTheme.accent)
+                }
+            }
+            .tint(StalkTheme.accent)
+
+            Toggle(isOn: $noiseSuppressionEnabled) {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(SL10n.callNoiseSuppression)
+                        Text(SL10n.callNoiseSuppressionHint)
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "waveform.slash")
+                        .foregroundColor(.orange)
+                }
+            }
+            .tint(StalkTheme.accent)
         }
     }
 

@@ -265,6 +265,12 @@ enum SL10n {
 
     static let callsCallButtonDefault = NSLocalizedString("stalk_calls_call_button_default", tableName: "Localizable", value: "Позвонить", comment: "Call button default")
 
+    // MARK: - Call Settings
+    static let callBackgroundBlur = NSLocalizedString("stalk_call_background_blur", tableName: "Localizable", value: "Размытие фона", comment: "Background blur toggle")
+    static let callBackgroundBlurHint = NSLocalizedString("stalk_call_background_blur_hint", tableName: "Localizable", value: "Размывает фон при видеозвонке", comment: "Background blur description")
+    static let callNoiseSuppression = NSLocalizedString("stalk_call_noise_suppression", tableName: "Localizable", value: "Шумоподавление", comment: "Noise suppression toggle")
+    static let callNoiseSuppressionHint = NSLocalizedString("stalk_call_noise_suppression_hint", tableName: "Localizable", value: "Убирает фоновые шумы при звонке", comment: "Noise suppression description")
+
     // MARK: - Bookmarks
     static let bookmarkAdd = NSLocalizedString("stalk_bookmark_add", tableName: "Localizable", value: "В избранное", comment: "Add to bookmarks")
     static let bookmarkRemove = NSLocalizedString("stalk_bookmark_remove", tableName: "Localizable", value: "Из избранного", comment: "Remove from bookmarks")
