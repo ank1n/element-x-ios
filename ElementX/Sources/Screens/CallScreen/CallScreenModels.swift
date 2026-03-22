@@ -300,12 +300,11 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 (document.documentElement || document).appendChild(s);
             })();
 
-            // === 3. Intercept LiveKit WebSocket — BLOCK and redirect to native SDK ===
+            // === 3. Intercept LiveKit WebSocket — log credentials, pass through ===
             var OrigWS = window.WebSocket;
             var _intercepted = false;
             window.WebSocket = function(url, protocols) {
                 var u = String(url);
-                // LiveKit SFU WebSocket — block and forward credentials to native
                 if (u.indexOf('/rtc') !== -1 && u.indexOf('access_token=') !== -1) {
                     if (!_intercepted) {
                         _intercepted = true;
@@ -315,31 +314,10 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                                 JSON.stringify({ url: u, token: token })
                             );
                         } catch(e) {}
-                        console.log('[sTalk] LiveKit WS BLOCKED — native SDK handles connection');
+                        console.log('[sTalk] LiveKit credentials captured (pass-through)');
                     }
-                    // Return fake WebSocket that looks connected but does nothing
-                    var fakeWs = {
-                        url: u,
-                        readyState: 1, // OPEN
-                        bufferedAmount: 0,
-                        extensions: '',
-                        protocol: '',
-                        binaryType: 'arraybuffer',
-                        onopen: null, onclose: null, onmessage: null, onerror: null,
-                        send: function() {},
-                        close: function() {
-                            this.readyState = 3;
-                            if (this.onclose) this.onclose({ code: 1000, reason: 'native', wasClean: true });
-                        },
-                        addEventListener: function(t, fn) { if (t === 'open') setTimeout(fn, 50); },
-                        removeEventListener: function() {},
-                        dispatchEvent: function() { return true; }
-                    };
-                    // Fire onopen after microtask to simulate connection
-                    setTimeout(function() { if (fakeWs.onopen) fakeWs.onopen({}); }, 50);
-                    return fakeWs;
                 }
-                // Non-LiveKit WebSockets pass through (Widget API, etc.)
+                // Pass through ALL WebSockets — EC handles signaling and media
                 return protocols !== undefined ? new OrigWS(url, protocols) : new OrigWS(url);
             };
             window.WebSocket.prototype = OrigWS.prototype;

@@ -348,16 +348,11 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 interceptedLiveKitRoomName = roomName
                 MXLog.info("sTalk: Extracted LiveKit room name from JWT: \(roomName)")
             }
-            // Connect native LiveKit SDK — WebView WS blocked, native is ONLY connection
-            Task { await connectNativeLiveKit(wsURL: url, token: token) }
+            state.wasConnected = true
+            // STMOB-65: Native video disabled — fake WebSocket breaks Element Call signaling
+            // E2EE key exchange infrastructure ready, needs WebSocket proxy instead of block
         case .encryptionKeysReceived(let identity, let keys):
-            // Forward E2EE keys from Element Call to native LiveKit SDK
-            for keyData in keys {
-                if let keyStr = keyData["key"] as? String,
-                   let index = keyData["index"] as? Int {
-                    liveKitRoomManager.setEncryptionKey(key: keyStr, participantId: identity, index: Int32(index))
-                }
-            }
+            MXLog.info("sTalk E2EE: Keys for \(identity) (\(keys.count)) — native connection disabled")
         }
     }
     
