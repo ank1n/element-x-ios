@@ -348,8 +348,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 interceptedLiveKitRoomName = roomName
                 MXLog.info("sTalk: Extracted LiveKit room name from JWT: \(roomName)")
             }
-            // sTalk: Connect native LiveKit SDK — replaces WebView video rendering
-            Task { await connectNativeLiveKit(wsURL: url, token: token) }
+            state.wasConnected = true
+            // NOTE: connectNativeLiveKit disabled — WebView handles video + E2EE
+            // Native video requires E2EE key exchange (STMOB-65 future phases)
         }
     }
     
