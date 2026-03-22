@@ -147,19 +147,10 @@ struct CallScreen: View {
             ProgressView()
         } else {
             ZStack {
-                // sTalk: Native LiveKit video with E2EE key exchange
-                if let roomManager = context.viewState.liveKitRoomManager {
-                    NativeCallGridView(
-                        roomManager: roomManager,
-                        isDirect: context.viewState.isDirect
-                    )
-                    .ignoresSafeArea()
-                }
-
-                // WebView for signaling (MatrixRTC, Widget API, E2EE keys)
+                // sTalk: WebView handles video + E2EE (single connection)
+                // Native rendering disabled — dual connection creates duplicate participant
                 CallView(url: context.viewState.url, viewModelContext: context)
-                    .frame(width: 1, height: 1)
-                    .opacity(0.01)
+                    .ignoresSafeArea()
                     .allowsHitTesting(false)
             }
         }
