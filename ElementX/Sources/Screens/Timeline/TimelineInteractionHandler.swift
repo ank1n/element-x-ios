@@ -202,6 +202,24 @@ class TimelineInteractionHandler {
         case .translate:
             guard let messageTimelineItem = timelineItem as? EventBasedMessageTimelineItemProtocol else { return }
             actionsSubject.send(.showTranslation(text: messageTimelineItem.body))
+        case .bookmark:
+            guard let eventID = eventTimelineItem.id.eventID else { return }
+            let body: String
+            if let messageItem = eventTimelineItem as? EventBasedMessageTimelineItemProtocol {
+                body = String(messageItem.body.prefix(200))
+            } else {
+                body = String(eventTimelineItem.body.prefix(200))
+            }
+            let bookmark = BookmarkedMessage(eventID: eventID,
+                                              roomID: roomProxy.id,
+                                              senderID: eventTimelineItem.sender.id,
+                                              senderName: eventTimelineItem.sender.displayName ?? eventTimelineItem.sender.id,
+                                              body: body,
+                                              timestamp: eventTimelineItem.timestamp)
+            ServiceLocator.shared.bookmarkService?.addBookmark(bookmark)
+        case .removeBookmark:
+            guard let eventID = eventTimelineItem.id.eventID else { return }
+            ServiceLocator.shared.bookmarkService?.removeBookmark(eventID: eventID)
         }
         
         if action.switchToDefaultComposer {

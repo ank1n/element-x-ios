@@ -406,6 +406,9 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
 
         // Setup Local Call History Service
         ServiceLocator.shared.setupLocalCallHistoryService()
+
+        // Setup Bookmark Service
+        ServiceLocator.shared.setupBookmarkService()
     }
     
     /// Perform any required migrations for the app to function correctly.

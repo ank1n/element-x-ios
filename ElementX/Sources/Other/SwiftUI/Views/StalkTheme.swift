@@ -265,6 +265,28 @@ enum SL10n {
 
     static let callsCallButtonDefault = NSLocalizedString("stalk_calls_call_button_default", tableName: "Localizable", value: "Позвонить", comment: "Call button default")
 
+    // MARK: - Bookmarks
+    static let bookmarkAdd = NSLocalizedString("stalk_bookmark_add", tableName: "Localizable", value: "В избранное", comment: "Add to bookmarks")
+    static let bookmarkRemove = NSLocalizedString("stalk_bookmark_remove", tableName: "Localizable", value: "Из избранного", comment: "Remove from bookmarks")
+    static let bookmarkTitle = NSLocalizedString("stalk_bookmark_title", tableName: "Localizable", value: "Избранное", comment: "Bookmarks screen title")
+    static let bookmarkEmpty = NSLocalizedString("stalk_bookmark_empty", tableName: "Localizable", value: "Нет избранных сообщений", comment: "No bookmarks")
+
+    // MARK: - User Status
+    static let statusTitle = NSLocalizedString("stalk_status_title", tableName: "Localizable", value: "Статус", comment: "Status section")
+    static let statusPlaceholder = NSLocalizedString("stalk_status_placeholder", tableName: "Localizable", value: "Что нового?", comment: "Status placeholder")
+    static let statusAvailable = NSLocalizedString("stalk_status_available", tableName: "Localizable", value: "Доступен", comment: "Available status")
+    static let statusBusy = NSLocalizedString("stalk_status_busy", tableName: "Localizable", value: "Занят", comment: "Busy status")
+    static let statusInMeeting = NSLocalizedString("stalk_status_in_meeting", tableName: "Localizable", value: "На встрече", comment: "In meeting status")
+    static let statusOnVacation = NSLocalizedString("stalk_status_on_vacation", tableName: "Localizable", value: "В отпуске", comment: "On vacation status")
+    static let statusClear = NSLocalizedString("stalk_status_clear", tableName: "Localizable", value: "Очистить статус", comment: "Clear status")
+
+    // MARK: - DND (Do Not Disturb)
+    static let dndTitle = NSLocalizedString("stalk_dnd_title", tableName: "Localizable", value: "Не беспокоить", comment: "DND title")
+    static let dndSchedule = NSLocalizedString("stalk_dnd_schedule", tableName: "Localizable", value: "Расписание тишины", comment: "DND schedule")
+    static let dndFrom = NSLocalizedString("stalk_dnd_from", tableName: "Localizable", value: "С", comment: "DND from time")
+    static let dndTo = NSLocalizedString("stalk_dnd_to", tableName: "Localizable", value: "До", comment: "DND to time")
+    static let dndEnabled = NSLocalizedString("stalk_dnd_enabled", tableName: "Localizable", value: "Включено", comment: "DND enabled")
+
     // MARK: - Recording
     static let recordingTitle = NSLocalizedString("stalk_recording_title", tableName: "Localizable", value: "Начать запись?", comment: "Recording consent title")
     static let recordingMessage = NSLocalizedString("stalk_recording_message", tableName: "Localizable", value: "Звонок будет записан. Все участники будут уведомлены о начале записи.", comment: "Recording consent message")

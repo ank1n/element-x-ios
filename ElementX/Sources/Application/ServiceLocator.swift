@@ -69,4 +69,17 @@ class ServiceLocator {
         let service = LocalCallHistoryService()
         register(localCallHistoryService: service)
     }
+
+    // MARK: - Bookmark Service
+
+    private(set) var bookmarkService: BookmarkServiceProtocol!
+
+    func register(bookmarkService: BookmarkServiceProtocol) {
+        self.bookmarkService = bookmarkService
+    }
+
+    func setupBookmarkService() {
+        let service = BookmarkService()
+        register(bookmarkService: service)
+    }
 }

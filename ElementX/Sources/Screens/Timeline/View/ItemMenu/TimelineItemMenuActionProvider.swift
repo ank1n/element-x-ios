@@ -21,6 +21,7 @@ struct TimelineItemMenuActionProvider {
     let areThreadsEnabled: Bool
     let timelineKind: TimelineKind
     let emojiProvider: EmojiProviderProtocol
+    var bookmarkService: BookmarkServiceProtocol? = ServiceLocator.shared.bookmarkService
     
     // swiftlint:disable:next cyclomatic_complexity
     func makeActions() -> TimelineItemMenuActions? {
@@ -100,7 +101,16 @@ struct TimelineItemMenuActionProvider {
         if item.isEditable, item.hasMediaCaption {
             actions.append(.removeCaption)
         }
-        
+
+        // Bookmark action — available for all event-based items with an eventID
+        if let eventID = item.id.eventID, let bookmarkService {
+            if bookmarkService.isBookmarked(eventID: eventID) {
+                actions.append(.removeBookmark)
+            } else {
+                actions.append(.bookmark)
+            }
+        }
+
         if !item.isOutgoing {
             secondaryActions.append(.report)
         }

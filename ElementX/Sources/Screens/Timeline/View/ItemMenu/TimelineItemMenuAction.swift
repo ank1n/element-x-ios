@@ -79,6 +79,8 @@ enum TimelineItemMenuAction: Identifiable, Hashable {
     case viewInRoomTimeline
     case share
     case save
+    case bookmark
+    case removeBookmark
     
     var id: Self { self }
     
@@ -191,6 +193,10 @@ enum TimelineItemMenuAction: Identifiable, Hashable {
             Label(L10n.actionShare, icon: \.shareIos)
         case .save:
             Label(L10n.actionSave, icon: \.downloadIos)
+        case .bookmark:
+            Label(SL10n.bookmarkAdd, icon: \.favourite)
+        case .removeBookmark:
+            Label(SL10n.bookmarkRemove, icon: \.favourite)
         }
     }
 }

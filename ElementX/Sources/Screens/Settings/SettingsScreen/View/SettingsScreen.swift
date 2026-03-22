@@ -42,6 +42,10 @@ struct SettingsScreen: View {
                     manageAccountSection
                 }
 
+                statusSection
+
+                dndSection
+
                 appearanceSection
 
                 generalSection
@@ -262,6 +266,117 @@ struct SettingsScreen: View {
         }
     }
     
+    // MARK: - User Status
+
+    @AppStorage("stalk_user_status_text") private var userStatusText: String = ""
+    @AppStorage("stalk_user_status_preset") private var userStatusPreset: String = ""
+
+    private var statusSection: some View {
+        Section(header: Text(SL10n.statusTitle)) {
+            HStack {
+                Image(systemName: "face.smiling")
+                    .foregroundColor(.orange)
+                TextField(SL10n.statusPlaceholder, text: $userStatusText)
+                    .font(.system(size: 16))
+            }
+
+            // Preset statuses
+            ForEach([
+                ("checkmark.circle", SL10n.statusAvailable, "available", Color.green),
+                ("clock.fill", SL10n.statusBusy, "busy", Color.red),
+                ("video.fill", SL10n.statusInMeeting, "meeting", StalkTheme.accent),
+                ("airplane", SL10n.statusOnVacation, "vacation", Color.orange),
+            ], id: \.2) { icon, title, preset, color in
+                Button {
+                    userStatusPreset = userStatusPreset == preset ? "" : preset
+                    if userStatusPreset == preset { userStatusText = title }
+                    else { userStatusText = "" }
+                } label: {
+                    HStack {
+                        Image(systemName: icon)
+                            .foregroundColor(color)
+                            .frame(width: 24)
+                        Text(title)
+                            .foregroundColor(.primary)
+                        Spacer()
+                        if userStatusPreset == preset {
+                            Image(systemName: "checkmark")
+                                .foregroundColor(StalkTheme.accent)
+                        }
+                    }
+                }
+            }
+
+            if !userStatusText.isEmpty {
+                Button {
+                    userStatusText = ""
+                    userStatusPreset = ""
+                } label: {
+                    HStack {
+                        Image(systemName: "xmark.circle")
+                            .foregroundColor(.secondary)
+                            .frame(width: 24)
+                        Text(SL10n.statusClear)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - DND Schedule
+
+    @AppStorage("stalk_dnd_enabled") private var dndEnabled: Bool = false
+    @AppStorage("stalk_dnd_from_hour") private var dndFromHour: Int = 22
+    @AppStorage("stalk_dnd_from_minute") private var dndFromMinute: Int = 0
+    @AppStorage("stalk_dnd_to_hour") private var dndToHour: Int = 9
+    @AppStorage("stalk_dnd_to_minute") private var dndToMinute: Int = 0
+
+    private var dndFromDate: Binding<Date> {
+        Binding(
+            get: {
+                Calendar.current.date(from: DateComponents(hour: dndFromHour, minute: dndFromMinute)) ?? Date()
+            },
+            set: { newDate in
+                let comps = Calendar.current.dateComponents([.hour, .minute], from: newDate)
+                dndFromHour = comps.hour ?? 22
+                dndFromMinute = comps.minute ?? 0
+            }
+        )
+    }
+
+    private var dndToDate: Binding<Date> {
+        Binding(
+            get: {
+                Calendar.current.date(from: DateComponents(hour: dndToHour, minute: dndToMinute)) ?? Date()
+            },
+            set: { newDate in
+                let comps = Calendar.current.dateComponents([.hour, .minute], from: newDate)
+                dndToHour = comps.hour ?? 9
+                dndToMinute = comps.minute ?? 0
+            }
+        )
+    }
+
+    private var dndSection: some View {
+        Section(header: Text(SL10n.dndTitle)) {
+            Toggle(isOn: $dndEnabled) {
+                Label {
+                    Text(SL10n.dndSchedule)
+                } icon: {
+                    Image(systemName: "moon.fill")
+                        .foregroundColor(.indigo)
+                }
+            }
+            .tint(StalkTheme.accent)
+
+            if dndEnabled {
+                DatePicker(SL10n.dndFrom, selection: dndFromDate, displayedComponents: .hourAndMinute)
+                DatePicker(SL10n.dndTo, selection: dndToDate, displayedComponents: .hourAndMinute)
+            }
+        }
+    }
+
     private var appearanceSection: some View {
         Section(header: Text(SL10n.settingsAppearance)) {
             Picker(selection: $settingsDesignTheme) {

@@ -1057,6 +1057,7 @@
 		AC69B6DF15FC451AB2945036 /* UserSessionStoreProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEBA759D1347CFFB3D84ED1F /* UserSessionStoreProtocol.swift */; };
 		AC7AA215D60FBC307F984028 /* Consumable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 127A57D053CE8C87B5EFB089 /* Consumable.swift */; };
 		AC90434798E7894370E80E66 /* SecureBackupScreenViewModelProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = D79BB714D28C9F588DD69353 /* SecureBackupScreenViewModelProtocol.swift */; };
+		BKMK00020000000000000001 /* BookmarkService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKMK00010000000000000001 /* BookmarkService.swift */; };
 		ACC2E87C133D0C8B2D762845 /* LocalCallHistoryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0715AAECE8155E9C6EDDA449 /* LocalCallHistoryService.swift */; };
 		AD2A81B65A9F6163012086F1 /* MXLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111B698739E3410E2CDB7144 /* MXLog.swift */; };
 		AD55E245FE686D7DB4C86406 /* RoomTimelineItemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90F2F8998E5632668B0AD848 /* RoomTimelineItemView.swift */; };
@@ -1684,6 +1685,7 @@
 		06B098A612DCB5A7358EECD5 /* DeveloperOptionsScreenModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperOptionsScreenModels.swift; sourceTree = "<group>"; };
 		06F27F588F9059128E17C669 /* WindowManagerProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowManagerProtocol.swift; sourceTree = "<group>"; };
 		06FAE373A7F20780BA84B59C /* MessageForwardingScreenCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageForwardingScreenCoordinator.swift; sourceTree = "<group>"; };
+		BKMK00010000000000000001 /* BookmarkService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkService.swift; sourceTree = "<group>"; };
 		0715AAECE8155E9C6EDDA449 /* LocalCallHistoryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalCallHistoryService.swift; sourceTree = "<group>"; };
 		0724EBDFE8BB4C9E5547C57D /* Client.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Client.swift; sourceTree = "<group>"; };
 		07579F9C29001E40715F3014 /* NotificationSettingsChatType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationSettingsChatType.swift; sourceTree = "<group>"; };
@@ -3337,6 +3339,7 @@
 				FCE7249621F507F34A8122FB /* Audio */,
 				AAFDD509929A0CCF8BCE51EB /* Authentication */,
 				0ED3F5C21537519389C07644 /* BugReport */,
+				BKMK00030000000000000001 /* Bookmark */,
 				6E9635174DDCBA73E06D46A7 /* CallHistory */,
 				8039515BAA53B7C3275AC64A /* Client */,
 				8B5E91450E85A9689931B221 /* ComposerDraft */,
@@ -4956,6 +4959,14 @@
 				1E53A2E18B59B82EE3D8C23C /* View */,
 			);
 			path = SecureBackupRecoveryKeyScreen;
+			sourceTree = "<group>";
+		};
+		BKMK00030000000000000001 /* Bookmark */ = {
+			isa = PBXGroup;
+			children = (
+				BKMK00010000000000000001 /* BookmarkService.swift */,
+			);
+			path = Bookmark;
 			sourceTree = "<group>";
 		};
 		6E9635174DDCBA73E06D46A7 /* CallHistory */ = {
@@ -8725,6 +8736,7 @@
 				6E47D126DD7585E8F8237CE7 /* LoadableAvatarImage.swift in Sources */,
 				D9F80CE61BF8FF627FDB0543 /* LoadableImage.swift in Sources */,
 				ACC2E87C133D0C8B2D762845 /* LocalCallHistoryService.swift in Sources */,
+				BKMK00020000000000000001 /* BookmarkService.swift in Sources */,
 				256D76972BA3254F7CB7F88B /* LocationAnnotation.swift in Sources */,
 				B5479997ECC516C121E6625E /* LocationMarkerView.swift in Sources */,
 				D46C33F8B61B55F0C8C2D15F /* LocationRoomTimelineItem.swift in Sources */,
