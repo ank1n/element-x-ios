@@ -147,11 +147,19 @@ struct CallScreen: View {
             ProgressView()
         } else {
             ZStack {
-                // sTalk: WebView renders Element Call video fullscreen.
-                // CSS injection hides EC UI chrome (header, buttons) — only video tiles visible.
-                // Our native SwiftUI controls overlay on top.
-                CallView(url: context.viewState.url, viewModelContext: context)
+                // sTalk: Native LiveKit video rendering (when connected)
+                if let roomManager = context.viewState.liveKitRoomManager {
+                    NativeCallGridView(
+                        roomManager: roomManager,
+                        isDirect: context.viewState.isDirect
+                    )
                     .ignoresSafeArea()
+                }
+
+                // sTalk: WebView for signaling only — hidden, 1x1
+                CallView(url: context.viewState.url, viewModelContext: context)
+                    .frame(width: 1, height: 1)
+                    .opacity(0.01)
                     .allowsHitTesting(false)
             }
         }

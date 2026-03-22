@@ -342,13 +342,14 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             state.isMinimized = false
             actionsSubject.send(.pictureInPictureStopped)
         case .liveKitCredentialsIntercepted(let url, let token):
-            MXLog.info("sTalk: LiveKit credentials intercepted (pass-through) — url=\(url.prefix(80))..., token length=\(token.count)")
+            MXLog.info("sTalk: LiveKit credentials intercepted — url=\(url.prefix(80))..., token length=\(token.count)")
             // sTalk: Extract LiveKit room name from JWT for recording-api
             if let roomName = extractRoomNameFromJWT(token) {
                 interceptedLiveKitRoomName = roomName
                 MXLog.info("sTalk: Extracted LiveKit room name from JWT: \(roomName)")
             }
-            state.wasConnected = true
+            // sTalk: Connect native LiveKit SDK — replaces WebView video rendering
+            Task { await connectNativeLiveKit(wsURL: url, token: token) }
         }
     }
     

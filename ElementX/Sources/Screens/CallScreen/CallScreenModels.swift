@@ -400,6 +400,40 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
 
                 console.log('[KS-Bridge-iOS] v1 initialized (fetch intercept)');
             })();
+
+            // === 5. Block WebView media capture — native LiveKit SDK handles all media ===
+            (function() {
+                var _getUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+                navigator.mediaDevices.getUserMedia = function(constraints) {
+                    console.log('[sTalk] getUserMedia blocked — native SDK handles media');
+                    // Return a silent/black MediaStream so Element Call doesn't crash
+                    var audioCtx = new AudioContext();
+                    var oscillator = audioCtx.createOscillator();
+                    var dst = audioCtx.createMediaStreamDestination();
+                    oscillator.connect(dst);
+                    oscillator.start();
+                    oscillator.stop();
+                    var silentTrack = dst.stream.getAudioTracks()[0];
+                    silentTrack.enabled = false;
+
+                    var canvas = document.createElement('canvas');
+                    canvas.width = 640;
+                    canvas.height = 480;
+                    var ctx2d = canvas.getContext('2d');
+                    ctx2d.fillStyle = 'black';
+                    ctx2d.fillRect(0, 0, 640, 480);
+                    var blackStream = canvas.captureStream(1);
+                    var videoTrack = blackStream.getVideoTracks()[0];
+                    videoTrack.enabled = false;
+
+                    var fakeStream = new MediaStream();
+                    if (constraints && constraints.audio) fakeStream.addTrack(silentTrack);
+                    if (constraints && constraints.video) fakeStream.addTrack(videoTrack);
+
+                    return Promise.resolve(fakeStream);
+                };
+                console.log('[sTalk] getUserMedia overridden — native SDK controls media');
+            })();
         })();
         """
     }
