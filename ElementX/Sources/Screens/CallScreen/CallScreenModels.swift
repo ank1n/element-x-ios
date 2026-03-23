@@ -118,8 +118,6 @@ enum CallScreenViewAction {
     case restoreFromMinimized
     /// sTalk: LiveKit credentials intercepted from Element Call WebSocket
     case liveKitCredentialsIntercepted(url: String, token: String)
-    /// sTalk: E2EE encryption keys received from Element Call
-    case encryptionKeysReceived(identity: String, keys: [[String: Any]])
 }
 
 enum CallScreenError: Error {
@@ -156,8 +154,6 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
     case onHandRaiseStateChanged
     /// sTalk: LiveKit WebSocket credentials intercepted from Element Call
     case onLiveKitCredentials
-    /// sTalk: E2EE encryption keys intercepted from Element Call
-    case onEncryptionKeysReceived
     
     private var postMessageScript: String {
         switch self {
@@ -267,9 +263,6 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
         case .onLiveKitCredentials:
             // No injection needed — credentials are captured via atDocumentStart script
             ""
-        case .onEncryptionKeysReceived:
-            // No injection needed — keys forwarded via KS-Bridge in webSocketInterceptionScript
-            ""
         }
     }
 
@@ -314,12 +307,10 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                                 JSON.stringify({ url: u, token: token })
                             );
                         } catch(e) {}
-                        console.log('[sTalk] LiveKit credentials captured');
+                        console.log('[sTalk] LiveKit credentials captured (pass-through)');
                     }
                 }
-                return protocols !== undefined ? new OrigWS(url, protocols) : new OrigWS(url);
-                }
-                // Pass through — EC connects normally for signaling + key exchange
+                // Pass through ALL WebSockets — EC handles signaling and media
                 return protocols !== undefined ? new OrigWS(url, protocols) : new OrigWS(url);
             };
             window.WebSocket.prototype = OrigWS.prototype;
@@ -362,12 +353,6 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                                 token
                             );
                         });
-                        // Forward keys to native LiveKit SDK for E2EE decryption
-                        try {
-                            window.webkit.messageHandlers.onEncryptionKeysReceived.postMessage(
-                                JSON.stringify({ identity: identity, keys: keysArr })
-                            );
-                        } catch(e) {}
                     }).catch(function(e) { console.warn('[KS-Bridge-iOS] SHA error:', e); });
                 }
 
@@ -415,9 +400,6 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
 
                 console.log('[KS-Bridge-iOS] v1 initialized (fetch intercept)');
             })();
-
-            // NOTE: getUserMedia NOT blocked — WebView handles video rendering + E2EE decryption
-            // Native video rendering requires E2EE key exchange (future work)
         })();
         """
     }

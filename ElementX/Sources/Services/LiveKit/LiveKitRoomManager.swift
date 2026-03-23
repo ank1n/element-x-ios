@@ -27,13 +27,11 @@ final class LiveKitRoomManager: ObservableObject {
     // MARK: - Private
 
     private let room: Room
-    private let keyProvider: BaseKeyProvider
     private var cancellables = Set<AnyCancellable>()
     private var reconnectToken: String?
     private var reconnectURL: String?
 
     init() {
-        keyProvider = BaseKeyProvider(isSharedKey: false)
         room = Room()
         room.add(delegate: self)
     }
@@ -55,41 +53,32 @@ final class LiveKitRoomManager: ObservableObject {
     ///   - wsURL: Full WebSocket URL from Element Call
     ///   - token: The extracted access_token JWT
     ///   - speakerByDefault: If true, start with speaker; if false, earpiece (1:1 calls)
-    func connect(wsURL: String, token: String, speakerByDefault: Bool = false, configureAudio: Bool = true) async throws {
+    func connect(wsURL: String, token: String, speakerByDefault: Bool = false) async throws {
         let baseURL = extractBaseURL(from: wsURL)
-        MXLog.info("sTalk LiveKit: Connecting to \(baseURL), configureAudio=\(configureAudio)")
+        MXLog.info("sTalk LiveKit: Connecting to \(baseURL)")
 
         // Store for potential reconnection
         reconnectURL = baseURL
         reconnectToken = token
 
         // Configure iOS audio session for VoIP BEFORE connecting
-        if configureAudio {
-            configureAudioSession(speakerByDefault: speakerByDefault)
-        }
+        configureAudioSession(speakerByDefault: speakerByDefault)
 
         let connectOptions = ConnectOptions(
             autoSubscribe: true
         )
-        // E2EE — keys arrive via KS-Bridge after WebView key exchange
-        let encryptionOptions = EncryptionOptions(
-            keyProvider: keyProvider,
-            encryptionType: .gcm
-        )
-
         let roomOptions = RoomOptions(
             defaultCameraCaptureOptions: CameraCaptureOptions(
                 dimensions: .h720_169
             ),
-            defaultAudioCaptureOptions: AudioCaptureOptions(),
+            defaultAudioCaptureOptions: AudioCaptureOptions(), // Platform defaults: Apple Voice Processing on device, WebRTC on simulator
             defaultVideoPublishOptions: VideoPublishOptions(
                 encoding: VideoEncoding(maxBitrate: 1_500_000, maxFps: 30)
             ),
             defaultAudioPublishOptions: AudioPublishOptions(
-                encoding: AudioEncoding(maxBitrate: 32_000),
-                dtx: false
-            ),
-            encryptionOptions: encryptionOptions
+                encoding: AudioEncoding(maxBitrate: 32_000), // 32 kbps minimum — prevents low frame rate (19→50 pps)
+                dtx: false // DTX off — don't skip packets on silence, keeps consistent frame rate
+            )
         )
 
         try await room.connect(url: baseURL, token: token, connectOptions: connectOptions, roomOptions: roomOptions)
@@ -142,29 +131,6 @@ final class LiveKitRoomManager: ObservableObject {
         MXLog.warning("sTalk LiveKit: Running on SIMULATOR — camera unavailable, audio may have WebRTC limitations")
         #endif
     }
-
-    /// Set E2EE encryption key for a participant (received from Element Call KS-Bridge)
-    func setEncryptionKey(key: String, participantId: String, index: Int32) {
-        keyProvider.setKey(key: key, participantId: participantId, index: index)
-        MXLog.info("sTalk LiveKit E2EE: Set key for \(participantId) index=\(index)")
-
-        // Subscribe to all remote tracks after first key received
-        if !hasSubscribedAfterKeys {
-            hasSubscribedAfterKeys = true
-            Task {
-                for participant in room.remoteParticipants.values {
-                    for publication in participant.trackPublications.values {
-                        if let remotePub = publication as? RemoteTrackPublication, !remotePub.isSubscribed {
-                            try? await remotePub.set(subscribed: true)
-                            MXLog.info("sTalk LiveKit E2EE: Subscribed to \(String(describing: remotePub.sid)) after key")
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private var hasSubscribedAfterKeys = false
 
     /// Toggle screen sharing
     @Published private(set) var isScreenSharing: Bool = false

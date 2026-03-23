@@ -147,7 +147,9 @@ struct CallScreen: View {
             ProgressView()
         } else {
             ZStack {
-                // WebView handles all media + E2EE
+                // sTalk: WebView renders Element Call video fullscreen.
+                // CSS injection hides EC UI chrome (header, buttons) — only video tiles visible.
+                // Our native SwiftUI controls overlay on top.
                 CallView(url: context.viewState.url, viewModelContext: context)
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
@@ -538,16 +540,6 @@ private struct CallView: UIViewRepresentable {
                     return
                 }
                 viewModelContext?.send(viewAction: .liveKitCredentialsIntercepted(url: url, token: token))
-            case .onEncryptionKeysReceived:
-                guard let jsonString = message.body as? String,
-                      let data = jsonString.data(using: .utf8),
-                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let identity = json["identity"] as? String,
-                      let keys = json["keys"] as? [[String: Any]] else {
-                    return
-                }
-                MXLog.info("sTalk E2EE: Received \(keys.count) key(s) for \(identity)")
-                viewModelContext?.send(viewAction: .encryptionKeysReceived(identity: identity, keys: keys))
             }
         }
         

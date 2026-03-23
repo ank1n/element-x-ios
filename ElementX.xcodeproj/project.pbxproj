@@ -216,7 +216,6 @@
 		23701DE32ACD6FD40AA992C3 /* MediaUploadingPreprocessorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE203026B9AD3DB412439866 /* MediaUploadingPreprocessorTests.swift */; };
 		237FC70AA257B935F53316BA /* SessionVerificationControllerProxy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C55D7E514F9DE4E3D72FDCAD /* SessionVerificationControllerProxy.swift */; };
 		238D561CA231339C6D4D06F3 /* ClientBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A1C33355FFB0F0953C35036 /* ClientBuilder.swift */; };
-		23AA90758562505D5BE48CC5 /* BroadcastExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 298F4FA3740801DAEA7E5782 /* BroadcastExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		23E23736B53946785431A74F /* AppAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FD22AEFFA20065494ED2333 /* AppAppearance.swift */; };
 		241CDEFE23819867D9B39066 /* RoomChangePermissionsScreenViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AE75941583A033A9EDC9FE0 /* RoomChangePermissionsScreenViewModel.swift */; };
 		2435DCCBD4513B9FD053CAC9 /* target.yml in Resources */ = {isa = PBXBuildFile; fileRef = DD3C65634A34467CB407A061 /* target.yml */; };
@@ -1057,7 +1056,6 @@
 		AC69B6DF15FC451AB2945036 /* UserSessionStoreProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEBA759D1347CFFB3D84ED1F /* UserSessionStoreProtocol.swift */; };
 		AC7AA215D60FBC307F984028 /* Consumable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 127A57D053CE8C87B5EFB089 /* Consumable.swift */; };
 		AC90434798E7894370E80E66 /* SecureBackupScreenViewModelProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = D79BB714D28C9F588DD69353 /* SecureBackupScreenViewModelProtocol.swift */; };
-		BKMK00020000000000000001 /* BookmarkService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKMK00010000000000000001 /* BookmarkService.swift */; };
 		ACC2E87C133D0C8B2D762845 /* LocalCallHistoryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0715AAECE8155E9C6EDDA449 /* LocalCallHistoryService.swift */; };
 		AD2A81B65A9F6163012086F1 /* MXLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111B698739E3410E2CDB7144 /* MXLog.swift */; };
 		AD55E245FE686D7DB4C86406 /* RoomTimelineItemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90F2F8998E5632668B0AD848 /* RoomTimelineItemView.swift */; };
@@ -1158,6 +1156,7 @@
 		BF523D9E12E3C4AABBA2F6CB /* SpaceHeaderTopicSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D9F2E1FC5A0139571211CE8 /* SpaceHeaderTopicSheetView.swift */; };
 		BFAF6AC585922AB80CB401A7 /* WidgetWebViewScreenModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAFE048CC4A421A340D10013 /* WidgetWebViewScreenModels.swift */; };
 		BFEB24336DFD5F196E6F3456 /* IntentionalMentions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DF5CBAF69BDF5DF31C661E1 /* IntentionalMentions.swift */; };
+		BKMK00020000000000000001 /* BookmarkService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKMK00010000000000000001 /* BookmarkService.swift */; };
 		C0090506A52A1991BAF4BA68 /* NotificationSettingsChatType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07579F9C29001E40715F3014 /* NotificationSettingsChatType.swift */; };
 		C022284E2774A5E1EF683B4D /* FileManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04DF593C3F7AF4B2FBAEB05D /* FileManager.swift */; };
 		C02DE5F62C81FB9E173C3D2F /* TimelineMediaPreviewDataSourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED0AD0C652385F69FA90FAF5 /* TimelineMediaPreviewDataSourceTests.swift */; };
@@ -1553,13 +1552,6 @@
 			remoteGlobalIDString = C0FAEB81CFD9776CD78CE489;
 			remoteInfo = ElementX;
 		};
-		22575D3CCB61B7DE2724013F /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = AC22997D58D612146053154D /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 0135B0953805E67CAA92899C;
-			remoteInfo = BroadcastExtension;
-		};
 		2324965D972BC4812FE0F380 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = AC22997D58D612146053154D /* Project object */;
@@ -1620,7 +1612,6 @@
 			files = (
 				EB88DBD77221E2CFE463018C /* NSE.appex in Embed Foundation Extensions */,
 				00C3023B6DF55024D8876B76 /* ShareExtension.appex in Embed Foundation Extensions */,
-				23AA90758562505D5BE48CC5 /* BroadcastExtension.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1685,7 +1676,6 @@
 		06B098A612DCB5A7358EECD5 /* DeveloperOptionsScreenModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperOptionsScreenModels.swift; sourceTree = "<group>"; };
 		06F27F588F9059128E17C669 /* WindowManagerProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowManagerProtocol.swift; sourceTree = "<group>"; };
 		06FAE373A7F20780BA84B59C /* MessageForwardingScreenCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageForwardingScreenCoordinator.swift; sourceTree = "<group>"; };
-		BKMK00010000000000000001 /* BookmarkService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkService.swift; sourceTree = "<group>"; };
 		0715AAECE8155E9C6EDDA449 /* LocalCallHistoryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalCallHistoryService.swift; sourceTree = "<group>"; };
 		0724EBDFE8BB4C9E5547C57D /* Client.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Client.swift; sourceTree = "<group>"; };
 		07579F9C29001E40715F3014 /* NotificationSettingsChatType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationSettingsChatType.swift; sourceTree = "<group>"; };
@@ -2756,6 +2746,7 @@
 		BFDCAC6CAAD65A2C24EA9C4B /* Dictionary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Dictionary.swift; sourceTree = "<group>"; };
 		BFEA446F8618DBA79A9239CC /* MessageForwardingScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageForwardingScreen.swift; sourceTree = "<group>"; };
 		BFEE91FB8ABB5F5884B6D940 /* WaveformInteractionModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaveformInteractionModifier.swift; sourceTree = "<group>"; };
+		BKMK00010000000000000001 /* BookmarkService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkService.swift; sourceTree = "<group>"; };
 		C024C151639C4E1B91FCC68B /* ElementXAttributeScope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ElementXAttributeScope.swift; sourceTree = "<group>"; };
 		C070FD43DC6BF4E50217965A /* LocalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizationTests.swift; sourceTree = "<group>"; };
 		C07851F4EA81AA3339806A7B /* KnockRequestProxyProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnockRequestProxyProtocol.swift; sourceTree = "<group>"; };
@@ -4961,14 +4952,6 @@
 			path = SecureBackupRecoveryKeyScreen;
 			sourceTree = "<group>";
 		};
-		BKMK00030000000000000001 /* Bookmark */ = {
-			isa = PBXGroup;
-			children = (
-				BKMK00010000000000000001 /* BookmarkService.swift */,
-			);
-			path = Bookmark;
-			sourceTree = "<group>";
-		};
 		6E9635174DDCBA73E06D46A7 /* CallHistory */ = {
 			isa = PBXGroup;
 			children = (
@@ -6397,6 +6380,14 @@
 			path = View;
 			sourceTree = "<group>";
 		};
+		BKMK00030000000000000001 /* Bookmark */ = {
+			isa = PBXGroup;
+			children = (
+				BKMK00010000000000000001 /* BookmarkService.swift */,
+			);
+			path = Bookmark;
+			sourceTree = "<group>";
+		};
 		C0937E3B06A8F0E2DB7C8241 /* Other */ = {
 			isa = PBXGroup;
 			children = (
@@ -7515,7 +7506,6 @@
 				2C29670603B37E38705D5FF1 /* PBXTargetDependency */,
 				58C473A5DEA945AACFEA8E9F /* PBXTargetDependency */,
 				2E32BC489F482046B8B1460F /* PBXTargetDependency */,
-				088EAF4FF7A9921CFA94F419 /* PBXTargetDependency */,
 			);
 			name = ElementX;
 			packageProductDependencies = (
@@ -9482,12 +9472,6 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		088EAF4FF7A9921CFA94F419 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			name = BroadcastExtension;
-			target = 0135B0953805E67CAA92899C /* BroadcastExtension */;
-			targetProxy = 22575D3CCB61B7DE2724013F /* PBXContainerItemProxy */;
-		};
 		0EEC1557A40FBA6DF49D83A2 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = C0FAEB81CFD9776CD78CE489 /* ElementX */;

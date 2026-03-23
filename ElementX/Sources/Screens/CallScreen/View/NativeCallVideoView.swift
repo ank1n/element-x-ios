@@ -83,15 +83,8 @@ private struct DirectCallLayout: View {
 
     private var firstRemoteVideoTrack: VideoTrack? {
         for participant in roomManager.remoteParticipants {
-            // Try camera first, then any video track
             if let track = participant.firstCameraVideoTrack {
                 return track
-            }
-            // Fallback: any subscribed video track (source may not be .camera)
-            for pub in participant.videoTracks where pub.isSubscribed {
-                if let track = pub.track as? VideoTrack {
-                    return track
-                }
             }
         }
         return nil
@@ -215,7 +208,7 @@ private struct GroupCallLayout: View {
         for participant in roomManager.remoteParticipants {
             items.append(ParticipantItem(
                 id: participant.identity?.stringValue ?? participant.sid?.stringValue ?? UUID().uuidString,
-                videoTrack: participant.firstCameraVideoTrack ?? participant.videoTracks.first(where: { $0.isSubscribed })?.track as? VideoTrack,
+                videoTrack: participant.firstCameraVideoTrack,
                 displayName: participant.name ?? participant.identity?.stringValue,
                 isLocal: false,
                 isSpeaking: participant.isSpeaking,

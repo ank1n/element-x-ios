@@ -209,16 +209,6 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                     // sTalk: Mark media as ready (for video state sync),
                     // but DON'T start timer or set connected — wait for remote to join via infoPublisher.
                     self.state.wasConnected = true
-                case .encryptionKeysReceived(let keys):
-                    // Forward E2EE keys from Widget API to native LiveKit SDK
-                    for keyData in keys {
-                        if let keyStr = keyData["key"] as? String,
-                           let index = keyData["index"] as? Int {
-                            let participantId = keyData["participantId"] as? String ?? ""
-                            MXLog.info("sTalk E2EE: Setting key index=\(index) for '\(participantId)'")
-                            self.liveKitRoomManager.setEncryptionKey(key: keyStr, participantId: participantId, index: Int32(index))
-                        }
-                    }
                 }
             }
             .store(in: &cancellables)
@@ -352,22 +342,13 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             state.isMinimized = false
             actionsSubject.send(.pictureInPictureStopped)
         case .liveKitCredentialsIntercepted(let url, let token):
-            MXLog.info("sTalk: LiveKit credentials intercepted — url=\(url.prefix(80))..., token length=\(token.count)")
+            MXLog.info("sTalk: LiveKit credentials intercepted (pass-through) — url=\(url.prefix(80))..., token length=\(token.count)")
             // sTalk: Extract LiveKit room name from JWT for recording-api
             if let roomName = extractRoomNameFromJWT(token) {
                 interceptedLiveKitRoomName = roomName
                 MXLog.info("sTalk: Extracted LiveKit room name from JWT: \(roomName)")
             }
             state.wasConnected = true
-            // Native SDK disabled — WebView handles all media + E2EE
-            // Blur via JS getUserMedia override
-        case .encryptionKeysReceived(let identity, let keys):
-            for keyData in keys {
-                if let keyStr = keyData["key"] as? String,
-                   let index = keyData["index"] as? Int {
-                    liveKitRoomManager.setEncryptionKey(key: keyStr, participantId: identity, index: Int32(index))
-                }
-            }
         }
     }
     
@@ -565,13 +546,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         // EC не отправит content_loaded, но нативный SDK берёт контроль.
         timeoutTask = nil
 
-        // Step 0: Close WebView's LiveKit WS before native SDK connects (avoid duplicate identity)
-        MXLog.info("sTalk LiveKit: Closing WebView WS before native connect")
-        _ = try? await state.bindings.javaScriptEvaluator?("if(window._stalkLiveKitWs){window._stalkLiveKitWs.close(1000,'native');window._stalkLiveKitWs=null;}")
-        try? await Task.sleep(for: .milliseconds(500))
-
-        // Step 1: Connect to SFU (sole connection after WebView WS closed)
+        // Step 1: Connect to SFU (critical — if this fails, we can't proceed)
         do {
+            // 1:1 calls → earpiece (like Telegram), group calls → speaker
             let useSpeaker = !state.isDirect
             try await liveKitRoomManager.connect(wsURL: wsURL, token: token, speakerByDefault: useSpeaker)
             state.isSpeakerOn = useSpeaker
@@ -588,19 +565,22 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         // Small delay to let audio session stabilize
         try? await Task.sleep(for: .milliseconds(200))
 
-        // Enable microphone
+        // Step 2: Enable microphone (non-fatal — may fail on simulator)
         do {
             try await liveKitRoomManager.setMicrophone(enabled: true)
             MXLog.info("sTalk LiveKit: Microphone enabled")
         } catch {
-            MXLog.error("sTalk LiveKit: Microphone failed: \(error)")
+            MXLog.error("sTalk LiveKit: Microphone enable failed (non-fatal): \(error)")
         }
 
-        // Enable camera
+        // Step 3: Enable camera
+        // On simulator: ALWAYS publish fake video to verify pipeline (color-cycling track)
+        // On device: only if video call was requested
         #if targetEnvironment(simulator)
         do {
             try await liveKitRoomManager.setCamera(enabled: true)
             state.isVideoEnabled = true
+            MXLog.info("sTalk LiveKit: Camera enabled (simulator — fake video track)")
         } catch {
             MXLog.error("sTalk LiveKit: Simulator camera failed: \(error)")
         }
@@ -610,11 +590,13 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 try await liveKitRoomManager.setCamera(enabled: true)
                 MXLog.info("sTalk LiveKit: Camera enabled")
             } catch {
+                MXLog.error("sTalk LiveKit: Camera enable failed (non-fatal): \(error)")
                 state.isVideoEnabled = false
             }
         }
         #endif
 
+        // Diagnostic: verify tracks were actually published
         liveKitRoomManager.logTrackDiagnostics()
 
         // Observe native LiveKit connection state for call lifecycle

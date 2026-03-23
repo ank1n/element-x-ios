@@ -144,9 +144,8 @@ final class ElementCallWidgetDriver: WidgetCapabilitiesProvider, ElementCallWidg
                 
                 messagePublisher.send(receivedMessage)
                 MXLog.debug("Received message: \(receivedMessage)")
-
+                
                 self?.handleMessageIfNeeded(receivedMessage)
-                self?.extractEncryptionKeysIfNeeded(receivedMessage)
             }
         }
         
@@ -196,75 +195,6 @@ final class ElementCallWidgetDriver: WidgetCapabilitiesProvider, ElementCallWidg
     
     // MARK: - Private
     
-    /// Extract E2EE encryption keys from Widget API messages (toWidget direction)
-    /// Keys come as sendToDevice events relayed by Rust SDK through widget driver
-    func extractEncryptionKeysIfNeeded(_ message: String) {
-        guard let data = message.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return
-        }
-
-        // Look for encryption_keys in the message content
-        // Widget API toWidget messages with sendToDevice contain encryption_keys
-        let messageStr = message
-        guard messageStr.contains("encryption_keys") || messageStr.contains("io.element.call.encryption_keys") else {
-            return
-        }
-
-        MXLog.info("sTalk E2EE: Found encryption_keys in widget message: \(String(messageStr.prefix(500)))")
-
-        // Format: data.content.keys = { "index": 0, "key": "base64==" }
-        // data.sender = "@user:server"
-        // data.content.member.claimed_device_id = "DEVICE"
-        guard let data = json["data"] as? [String: Any],
-              let content = data["content"] as? [String: Any],
-              let keysObj = content["keys"] as? [String: Any],
-              let key = keysObj["key"] as? String,
-              let index = keysObj["index"] as? Int else {
-            // Try messages format (fromWidget outgoing)
-            if let data = json["data"] as? [String: Any],
-               let messages = data["messages"] as? [String: Any] {
-                for (_, devices) in messages {
-                    if let devicesDict = devices as? [String: Any] {
-                        for (_, payload) in devicesDict {
-                            if let payloadDict = payload as? [String: Any],
-                               let keysObj = payloadDict["keys"] as? [String: Any],
-                               let key = keysObj["key"] as? String,
-                               let index = keysObj["index"] as? Int {
-                                let sender = payloadDict["member"] as? [String: Any]
-                                let deviceId = sender?["claimed_device_id"] as? String ?? ""
-                                MXLog.info("sTalk E2EE: Extracted outgoing key index=\(index) device=\(deviceId)")
-                                actionsSubject.send(.encryptionKeysReceived(keys: [["key": key, "index": index]]))
-                            }
-                        }
-                    }
-                }
-            }
-            return
-        }
-
-        let sender = data["sender"] as? String ?? "unknown"
-        let deviceId = (content["member"] as? [String: Any])?["claimed_device_id"] as? String ?? ""
-        let participantId = "\(sender):\(deviceId)"
-
-        MXLog.info("sTalk E2EE: Extracted key index=\(index) from \(participantId)")
-        actionsSubject.send(.encryptionKeysReceived(keys: [["key": key, "index": index, "participantId": participantId]]))
-    }
-
-    private func findKeysInJSON(_ json: [String: Any]) -> [[String: Any]]? {
-        if let keys = json["keys"] as? [[String: Any]], !keys.isEmpty {
-            return keys
-        }
-        for (_, value) in json {
-            if let dict = value as? [String: Any] {
-                if let found = findKeysInJSON(dict) {
-                    return found
-                }
-            }
-        }
-        return nil
-    }
-
     func handleMessageIfNeeded(_ message: String) {
         guard let data = message.data(using: .utf8) else {
             return
