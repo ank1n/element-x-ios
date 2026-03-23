@@ -209,6 +209,15 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                     // sTalk: Mark media as ready (for video state sync),
                     // but DON'T start timer or set connected — wait for remote to join via infoPublisher.
                     self.state.wasConnected = true
+                case .encryptionKeysReceived(let keys):
+                    // Forward E2EE keys from Widget API to native LiveKit SDK
+                    MXLog.info("sTalk E2EE: Received \(keys.count) key(s) from widget driver")
+                    for keyData in keys {
+                        if let keyStr = keyData["key"] as? String,
+                           let index = keyData["index"] as? Int {
+                            self.liveKitRoomManager.setEncryptionKey(key: keyStr, participantId: "", index: Int32(index))
+                        }
+                    }
                 }
             }
             .store(in: &cancellables)

@@ -144,8 +144,9 @@ final class ElementCallWidgetDriver: WidgetCapabilitiesProvider, ElementCallWidg
                 
                 messagePublisher.send(receivedMessage)
                 MXLog.debug("Received message: \(receivedMessage)")
-                
+
                 self?.handleMessageIfNeeded(receivedMessage)
+                self?.extractEncryptionKeysIfNeeded(receivedMessage)
             }
         }
         
@@ -195,6 +196,67 @@ final class ElementCallWidgetDriver: WidgetCapabilitiesProvider, ElementCallWidg
     
     // MARK: - Private
     
+    /// Extract E2EE encryption keys from Widget API messages (toWidget direction)
+    /// Keys come as sendToDevice events relayed by Rust SDK through widget driver
+    func extractEncryptionKeysIfNeeded(_ message: String) {
+        guard let data = message.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return
+        }
+
+        // Look for encryption_keys in the message content
+        // Widget API toWidget messages with sendToDevice contain encryption_keys
+        let messageStr = message
+        guard messageStr.contains("encryption_keys") || messageStr.contains("io.element.call.encryption_keys") else {
+            return
+        }
+
+        MXLog.info("sTalk E2EE: Found encryption_keys in widget message")
+
+        // Extract keys from various message formats
+        var keys: [[String: Any]] = []
+
+        // Try to find keys in nested content
+        if let content = json["data"] as? [String: Any],
+           let encrypted = content["content"] as? [String: Any] {
+            if let keysList = encrypted["keys"] as? [[String: Any]] {
+                keys = keysList
+            }
+        }
+
+        // Try flat format
+        if keys.isEmpty, let keysList = json["keys"] as? [[String: Any]] {
+            keys = keysList
+        }
+
+        // Try deeper nesting - Widget API wraps messages
+        if keys.isEmpty {
+            // Recursively search for "keys" array in the JSON
+            if let found = findKeysInJSON(json) {
+                keys = found
+            }
+        }
+
+        if !keys.isEmpty {
+            MXLog.info("sTalk E2EE: Extracted \(keys.count) encryption key(s) from widget message")
+            actionsSubject.send(.encryptionKeysReceived(keys: keys))
+        }
+    }
+
+    private func findKeysInJSON(_ json: [String: Any]) -> [[String: Any]]? {
+        if let keys = json["keys"] as? [[String: Any]], !keys.isEmpty {
+            return keys
+        }
+        for (_, value) in json {
+            if let dict = value as? [String: Any] {
+                if let found = findKeysInJSON(dict) {
+                    return found
+                }
+            }
+        }
+        return nil
+    }
+
     func handleMessageIfNeeded(_ message: String) {
         guard let data = message.data(using: .utf8) else {
             return
