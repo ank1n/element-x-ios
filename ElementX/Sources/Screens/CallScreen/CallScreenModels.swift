@@ -418,31 +418,10 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 };
             })();
 
-            // === 6. Activate Element Call background blur if enabled in settings ===
-            (function() {
-                if (!window._stalkBlurEnabled) return;
-                // Wait for EC to load, then click the blur checkbox
-                function tryActivateBlur() {
-                    var cb = document.getElementById('activateBackgroundBlur');
-                    if (cb && !cb.checked) {
-                        cb.click();
-                        console.log('[sTalk] Background blur activated via EC checkbox');
-                    } else if (!cb) {
-                        // EC settings not rendered yet — try via EC's internal state
-                        // Set blur preference so EC picks it up on next render
-                        try {
-                            var keys = Object.keys(localStorage);
-                            for (var i = 0; i < keys.length; i++) {
-                                if (keys[i].indexOf('blur') !== -1 || keys[i].indexOf('background') !== -1) {
-                                    console.log('[sTalk] Found localStorage key: ' + keys[i] + '=' + localStorage.getItem(keys[i]));
-                                }
-                            }
-                        } catch(e) {}
-                        setTimeout(tryActivateBlur, 2000);
-                    }
-                }
-                setTimeout(tryActivateBlur, 3000);
-            })();
+            // === 6. Background blur via EC jotai atomWithStorage ===
+            if (window._stalkBlurEnabled) {
+                try { localStorage.setItem('background-blur', 'true'); } catch(e) {}
+            }
         })();
         """
     }
