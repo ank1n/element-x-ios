@@ -317,15 +317,9 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                                 JSON.stringify({ url: u, token: token })
                             );
                         } catch(e) {}
-                        console.log('[sTalk] LiveKit WS pass-through — native SDK will take over');
-                        // Close WebView's WS after native SDK connects (3s delay)
-                        setTimeout(function() {
-                            if (_liveKitWs && _liveKitWs.readyState <= 1) {
-                                console.log('[sTalk] Closing WebView LiveKit WS — native SDK active');
-                                _liveKitWs.close(1000, 'native takeover');
-                                _liveKitWs = null;
-                            }
-                        }, 3000);
+                        console.log('[sTalk] LiveKit WS pass-through — native SDK connects in parallel');
+                        // NOTE: NOT closing WebView WS — both connections coexist
+                        // WebView handles E2EE signaling, native SDK handles media rendering
                     }
                     return ws;
                 }
