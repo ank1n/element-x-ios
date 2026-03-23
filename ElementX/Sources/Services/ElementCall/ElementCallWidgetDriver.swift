@@ -211,7 +211,7 @@ final class ElementCallWidgetDriver: WidgetCapabilitiesProvider, ElementCallWidg
             return
         }
 
-        MXLog.info("sTalk E2EE: Found encryption_keys in widget message")
+        MXLog.info("sTalk E2EE: Found encryption_keys in widget message: \(String(messageStr.prefix(500)))")
 
         // Extract keys from various message formats
         var keys: [[String: Any]] = []
