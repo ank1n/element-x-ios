@@ -213,34 +213,42 @@ final class ElementCallWidgetDriver: WidgetCapabilitiesProvider, ElementCallWidg
 
         MXLog.info("sTalk E2EE: Found encryption_keys in widget message: \(String(messageStr.prefix(500)))")
 
-        // Extract keys from various message formats
-        var keys: [[String: Any]] = []
-
-        // Try to find keys in nested content
-        if let content = json["data"] as? [String: Any],
-           let encrypted = content["content"] as? [String: Any] {
-            if let keysList = encrypted["keys"] as? [[String: Any]] {
-                keys = keysList
+        // Format: data.content.keys = { "index": 0, "key": "base64==" }
+        // data.sender = "@user:server"
+        // data.content.member.claimed_device_id = "DEVICE"
+        guard let data = json["data"] as? [String: Any],
+              let content = data["content"] as? [String: Any],
+              let keysObj = content["keys"] as? [String: Any],
+              let key = keysObj["key"] as? String,
+              let index = keysObj["index"] as? Int else {
+            // Try messages format (fromWidget outgoing)
+            if let data = json["data"] as? [String: Any],
+               let messages = data["messages"] as? [String: Any] {
+                for (_, devices) in messages {
+                    if let devicesDict = devices as? [String: Any] {
+                        for (_, payload) in devicesDict {
+                            if let payloadDict = payload as? [String: Any],
+                               let keysObj = payloadDict["keys"] as? [String: Any],
+                               let key = keysObj["key"] as? String,
+                               let index = keysObj["index"] as? Int {
+                                let sender = payloadDict["member"] as? [String: Any]
+                                let deviceId = sender?["claimed_device_id"] as? String ?? ""
+                                MXLog.info("sTalk E2EE: Extracted outgoing key index=\(index) device=\(deviceId)")
+                                actionsSubject.send(.encryptionKeysReceived(keys: [["key": key, "index": index]]))
+                            }
+                        }
+                    }
+                }
             }
+            return
         }
 
-        // Try flat format
-        if keys.isEmpty, let keysList = json["keys"] as? [[String: Any]] {
-            keys = keysList
-        }
+        let sender = data["sender"] as? String ?? "unknown"
+        let deviceId = (content["member"] as? [String: Any])?["claimed_device_id"] as? String ?? ""
+        let participantId = "\(sender):\(deviceId)"
 
-        // Try deeper nesting - Widget API wraps messages
-        if keys.isEmpty {
-            // Recursively search for "keys" array in the JSON
-            if let found = findKeysInJSON(json) {
-                keys = found
-            }
-        }
-
-        if !keys.isEmpty {
-            MXLog.info("sTalk E2EE: Extracted \(keys.count) encryption key(s) from widget message")
-            actionsSubject.send(.encryptionKeysReceived(keys: keys))
-        }
+        MXLog.info("sTalk E2EE: Extracted key index=\(index) from \(participantId)")
+        actionsSubject.send(.encryptionKeysReceived(keys: [["key": key, "index": index, "participantId": participantId]]))
     }
 
     private func findKeysInJSON(_ json: [String: Any]) -> [[String: Any]]? {

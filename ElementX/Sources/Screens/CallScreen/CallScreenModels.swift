@@ -300,26 +300,29 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 (document.documentElement || document).appendChild(s);
             })();
 
-            // === 3. Pass-through LiveKit WebSocket — let EC connect for key exchange ===
-            // Native SDK connects after 5s delay (SFU replaces WebView with native)
+            // === 3. Pass-through LiveKit WS — EC connects for key exchange, native takes over ===
             var OrigWS = window.WebSocket;
             var _intercepted = false;
+            window._stalkLiveKitWs = null; // saved for native to close later
             window.WebSocket = function(url, protocols) {
                 var u = String(url);
                 if (u.indexOf('/rtc') !== -1 && u.indexOf('access_token=') !== -1) {
+                    var ws = protocols !== undefined ? new OrigWS(url, protocols) : new OrigWS(url);
                     if (!_intercepted) {
                         _intercepted = true;
+                        window._stalkLiveKitWs = ws;
                         var token = (u.match(/access_token=([^&]+)/) || [])[1] || '';
-                        // Notify native after 5s delay — give EC time for key exchange
+                        // Notify native after 5s — EC had time for key exchange
                         setTimeout(function() {
                             try {
                                 window.webkit.messageHandlers.onLiveKitCredentials.postMessage(
                                     JSON.stringify({ url: u, token: token })
                                 );
                             } catch(e) {}
-                            console.log('[sTalk] LiveKit credentials sent to native (after 5s key exchange window)');
+                            console.log('[sTalk] Credentials sent — native will close WS and take over');
                         }, 5000);
                     }
+                    return ws;
                 }
                 // Pass through — EC connects normally for signaling + key exchange
                 return protocols !== undefined ? new OrigWS(url, protocols) : new OrigWS(url);

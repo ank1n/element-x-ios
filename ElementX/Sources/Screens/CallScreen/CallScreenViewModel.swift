@@ -211,11 +211,12 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                     self.state.wasConnected = true
                 case .encryptionKeysReceived(let keys):
                     // Forward E2EE keys from Widget API to native LiveKit SDK
-                    MXLog.info("sTalk E2EE: Received \(keys.count) key(s) from widget driver")
                     for keyData in keys {
                         if let keyStr = keyData["key"] as? String,
                            let index = keyData["index"] as? Int {
-                            self.liveKitRoomManager.setEncryptionKey(key: keyStr, participantId: "", index: Int32(index))
+                            let participantId = keyData["participantId"] as? String ?? ""
+                            MXLog.info("sTalk E2EE: Setting key index=\(index) for '\(participantId)'")
+                            self.liveKitRoomManager.setEncryptionKey(key: keyStr, participantId: participantId, index: Int32(index))
                         }
                     }
                 }
@@ -563,9 +564,13 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         // EC не отправит content_loaded, но нативный SDK берёт контроль.
         timeoutTask = nil
 
-        // Step 1: Connect to SFU (critical — if this fails, we can't proceed)
+        // Step 0: Close WebView's LiveKit WS before native SDK connects (avoid duplicate identity)
+        MXLog.info("sTalk LiveKit: Closing WebView WS before native connect")
+        _ = try? await state.bindings.javaScriptEvaluator?("if(window._stalkLiveKitWs){window._stalkLiveKitWs.close(1000,'native');window._stalkLiveKitWs=null;}")
+        try? await Task.sleep(for: .milliseconds(500))
+
+        // Step 1: Connect to SFU (sole connection after WebView WS closed)
         do {
-            // Native SDK is sole connection — publish camera + microphone
             let useSpeaker = !state.isDirect
             try await liveKitRoomManager.connect(wsURL: wsURL, token: token, speakerByDefault: useSpeaker)
             state.isSpeakerOn = useSpeaker
