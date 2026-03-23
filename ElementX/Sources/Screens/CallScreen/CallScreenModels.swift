@@ -300,36 +300,23 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 (document.documentElement || document).appendChild(s);
             })();
 
-            // === 3. Intercept LiveKit WebSocket — pass through, then hand off to native ===
+            // === 3. Intercept LiveKit WebSocket — log credentials, pass through ===
             var OrigWS = window.WebSocket;
             var _intercepted = false;
-            var _liveKitWs = null;
             window.WebSocket = function(url, protocols) {
                 var u = String(url);
                 if (u.indexOf('/rtc') !== -1 && u.indexOf('access_token=') !== -1) {
-                    var ws = protocols !== undefined ? new OrigWS(url, protocols) : new OrigWS(url);
                     if (!_intercepted) {
                         _intercepted = true;
-                        _liveKitWs = ws;
                         var token = (u.match(/access_token=([^&]+)/) || [])[1] || '';
                         try {
                             window.webkit.messageHandlers.onLiveKitCredentials.postMessage(
                                 JSON.stringify({ url: u, token: token })
                             );
                         } catch(e) {}
-                        console.log('[sTalk] LiveKit WS pass-through — native SDK will take over');
-                        // Close WebView's WS after native SDK connects (3s delay)
-                        setTimeout(function() {
-                            if (_liveKitWs && _liveKitWs.readyState <= 1) {
-                                console.log('[sTalk] Closing WebView LiveKit WS — native SDK active');
-                                _liveKitWs.close(1000, 'native takeover');
-                                _liveKitWs = null;
-                            }
-                        }, 3000);
+                        console.log('[sTalk] LiveKit credentials captured');
                     }
-                    return ws;
                 }
-                // Non-LiveKit WebSockets pass through
                 return protocols !== undefined ? new OrigWS(url, protocols) : new OrigWS(url);
             };
             window.WebSocket.prototype = OrigWS.prototype;

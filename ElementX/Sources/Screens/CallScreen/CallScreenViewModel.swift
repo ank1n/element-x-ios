@@ -348,16 +348,12 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 interceptedLiveKitRoomName = roomName
                 MXLog.info("sTalk: Extracted LiveKit room name from JWT: \(roomName)")
             }
-            // WebView WS passes through first, then closes after 3s
-            // Native SDK takes over as sole LiveKit participant
-            Task { await connectNativeLiveKit(wsURL: url, token: token) }
+            state.wasConnected = true
+            // Native video disabled — E2EE без EncryptionOptions не расшифровывает,
+            // с EncryptionOptions триггерит верификацию устройства.
+            // WebView остаётся единственным рабочим вариантом.
         case .encryptionKeysReceived(let identity, let keys):
-            for keyData in keys {
-                if let keyStr = keyData["key"] as? String,
-                   let index = keyData["index"] as? Int {
-                    liveKitRoomManager.setEncryptionKey(key: keyStr, participantId: identity, index: Int32(index))
-                }
-            }
+            MXLog.info("sTalk E2EE: Keys for \(identity) — WebView handles decryption")
         }
     }
     
