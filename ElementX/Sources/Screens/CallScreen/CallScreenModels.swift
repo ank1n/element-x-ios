@@ -418,12 +418,7 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 };
             })();
 
-            // === 6. Background blur via EC's matrix-setting localStorage key ===
-            if (window._stalkBlurEnabled) {
-                try { localStorage.setItem('matrix-setting-background-blur', 'true'); } catch(e) {}
-            } else {
-                try { localStorage.removeItem('matrix-setting-background-blur'); } catch(e) {}
-            }
+            // === 6. Background blur disabled — MediaPipe WASM crashes in WKWebView ===
         })();
         """
     }
