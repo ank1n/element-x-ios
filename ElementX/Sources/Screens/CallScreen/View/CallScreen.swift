@@ -156,7 +156,7 @@ struct CallScreen: View {
                     .ignoresSafeArea()
                 }
 
-                // WebView: MatrixRTC signaling + initial LiveKit WS (closes after 3s)
+                // WebView for signaling (shrinks when native video active)
                 CallView(url: context.viewState.url, viewModelContext: context)
                     .frame(width: context.viewState.liveKitRoomManager != nil ? 1 : nil,
                            height: context.viewState.liveKitRoomManager != nil ? 1 : nil)
