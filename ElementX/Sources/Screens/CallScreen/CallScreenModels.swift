@@ -401,103 +401,70 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 console.log('[KS-Bridge-iOS] v1 initialized (fetch intercept)');
             })();
 
-            // === 5. Enhanced audio: force noise suppression + echo cancellation ===
+            // === 5. Enhanced audio + background blur (single getUserMedia override) ===
             (function() {
-                var _origGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+                var _origGUM = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+                var blurEnabled = window._stalkBlurEnabled || false;
+
                 navigator.mediaDevices.getUserMedia = function(constraints) {
                     // Force audio enhancements
                     if (constraints && constraints.audio) {
                         if (typeof constraints.audio === 'boolean') {
-                            constraints.audio = {
-                                noiseSuppression: true,
-                                echoCancellation: true,
-                                autoGainControl: true
-                            };
-                        } else if (typeof constraints.audio === 'object') {
+                            constraints.audio = { noiseSuppression: true, echoCancellation: true, autoGainControl: true };
+                        } else {
                             constraints.audio.noiseSuppression = { ideal: true };
                             constraints.audio.echoCancellation = { ideal: true };
                             constraints.audio.autoGainControl = { ideal: true };
                         }
                     }
-                    console.log('[sTalk] getUserMedia with enhanced audio');
-                    return _origGetUserMedia(constraints);
-                };
-                console.log('[sTalk] Audio enhancement: noiseSuppression + echoCancellation enabled');
-            })();
 
-            // === 6. Background blur via Canvas + OffscreenCanvas ===
-            // Simple approach: check stalk_background_blur_enabled setting
-            // If enabled, intercept video track and apply blur via Canvas
-            (function() {
-                var blurEnabled = false;
-                try {
-                    // Check if native setting is enabled (injected from Swift)
-                    blurEnabled = window._stalkBlurEnabled || false;
-                } catch(e) {}
+                    if (!blurEnabled || !constraints || !constraints.video) {
+                        return _origGUM(constraints);
+                    }
 
-                if (!blurEnabled) {
-                    console.log('[sTalk] Background blur disabled');
-                    return;
-                }
-
-                var _origGUM = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
-                navigator.mediaDevices.getUserMedia = function(constraints) {
+                    // Blur enabled — intercept video
                     return _origGUM(constraints).then(function(stream) {
-                        if (!constraints || !constraints.video) return stream;
+                        var vt = stream.getVideoTracks()[0];
+                        if (!vt) return stream;
 
-                        // Get original video track
-                        var videoTrack = stream.getVideoTracks()[0];
-                        if (!videoTrack) return stream;
+                        try {
+                            var c = document.createElement('canvas');
+                            c.width = 640; c.height = 480;
+                            var ctx = c.getContext('2d');
+                            var v = document.createElement('video');
+                            v.srcObject = new MediaStream([vt]);
+                            v.autoplay = true; v.playsInline = true; v.muted = true;
+                            v.play().catch(function(){});
 
-                        var canvas = document.createElement('canvas');
-                        canvas.width = 640;
-                        canvas.height = 480;
-                        var ctx = canvas.getContext('2d');
+                            function draw() {
+                                if (vt.readyState === 'ended') return;
+                                ctx.filter = 'none';
+                                ctx.drawImage(v, 0, 0, c.width, c.height);
+                                // Edge blur
+                                ctx.filter = 'blur(10px)';
+                                var w = c.width, h = c.height, m = 0.2;
+                                ctx.drawImage(c, 0, 0, w, h*m, 0, 0, w, h*m);
+                                ctx.drawImage(c, 0, h*(1-m), w, h*m, 0, h*(1-m), w, h*m);
+                                ctx.drawImage(c, 0, 0, w*m, h, 0, 0, w*m, h);
+                                ctx.drawImage(c, w*(1-m), 0, w*m, h, w*(1-m), 0, w*m, h);
+                                ctx.filter = 'none';
+                                requestAnimationFrame(draw);
+                            }
+                            v.onloadeddata = function() {
+                                c.width = v.videoWidth || 640;
+                                c.height = v.videoHeight || 480;
+                                draw();
+                            };
 
-                        var video = document.createElement('video');
-                        video.srcObject = new MediaStream([videoTrack]);
-                        video.autoplay = true;
-                        video.playsInline = true;
-                        video.muted = true;
-                        video.play();
-
-                        // Draw video to canvas with blur applied to edges (simple vignette blur)
-                        function drawFrame() {
-                            if (videoTrack.readyState === 'ended') return;
-                            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-                            // Apply edge blur (simple approach — blur outer 30% of frame)
-                            ctx.filter = 'blur(8px)';
-                            var w = canvas.width, h = canvas.height;
-                            var margin = 0.25;
-                            // Top
-                            ctx.drawImage(canvas, 0, 0, w, h * margin, 0, 0, w, h * margin);
-                            // Bottom
-                            ctx.drawImage(canvas, 0, h * (1 - margin), w, h * margin, 0, h * (1 - margin), w, h * margin);
-                            // Left
-                            ctx.drawImage(canvas, 0, 0, w * margin, h, 0, 0, w * margin, h);
-                            // Right
-                            ctx.drawImage(canvas, w * (1 - margin), 0, w * margin, h, w * (1 - margin), 0, w * margin, h);
-                            ctx.filter = 'none';
-
-                            requestAnimationFrame(drawFrame);
+                            var ps = c.captureStream(30);
+                            stream.getAudioTracks().forEach(function(t) { ps.addTrack(t); });
+                            return ps;
+                        } catch(e) {
+                            console.warn('[sTalk] Blur failed, using original:', e);
+                            return stream;
                         }
-
-                        video.onloadeddata = function() {
-                            canvas.width = video.videoWidth || 640;
-                            canvas.height = video.videoHeight || 480;
-                            drawFrame();
-                        };
-
-                        var processedStream = canvas.captureStream(30);
-                        // Keep original audio tracks
-                        stream.getAudioTracks().forEach(function(t) { processedStream.addTrack(t); });
-
-                        console.log('[sTalk] Background blur active (edge blur)');
-                        return processedStream;
                     });
                 };
-                console.log('[sTalk] Background blur override installed');
             })();
         })();
         """
