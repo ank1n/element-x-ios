@@ -418,9 +418,11 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 };
             })();
 
-            // === 6. Background blur via EC jotai atomWithStorage ===
+            // === 6. Background blur via EC's matrix-setting localStorage key ===
             if (window._stalkBlurEnabled) {
-                try { localStorage.setItem('background-blur', 'true'); } catch(e) {}
+                try { localStorage.setItem('matrix-setting-background-blur', 'true'); } catch(e) {}
+            } else {
+                try { localStorage.removeItem('matrix-setting-background-blur'); } catch(e) {}
             }
         })();
         """
