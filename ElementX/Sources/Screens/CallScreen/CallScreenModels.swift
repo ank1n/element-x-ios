@@ -401,13 +401,10 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 console.log('[KS-Bridge-iOS] v1 initialized (fetch intercept)');
             })();
 
-            // === 5. Enhanced audio + background blur (single getUserMedia override) ===
+            // === 5. Enhanced audio (noise suppression) ===
             (function() {
                 var _origGUM = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
-                var blurEnabled = window._stalkBlurEnabled || false;
-
                 navigator.mediaDevices.getUserMedia = function(constraints) {
-                    // Force audio enhancements
                     if (constraints && constraints.audio) {
                         if (typeof constraints.audio === 'boolean') {
                             constraints.audio = { noiseSuppression: true, echoCancellation: true, autoGainControl: true };
@@ -417,53 +414,7 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                             constraints.audio.autoGainControl = { ideal: true };
                         }
                     }
-
-                    if (!blurEnabled || !constraints || !constraints.video) {
-                        return _origGUM(constraints);
-                    }
-
-                    // Blur enabled — intercept video
-                    return _origGUM(constraints).then(function(stream) {
-                        var vt = stream.getVideoTracks()[0];
-                        if (!vt) return stream;
-
-                        try {
-                            var c = document.createElement('canvas');
-                            c.width = 640; c.height = 480;
-                            var ctx = c.getContext('2d');
-                            var v = document.createElement('video');
-                            v.srcObject = new MediaStream([vt]);
-                            v.autoplay = true; v.playsInline = true; v.muted = true;
-                            v.play().catch(function(){});
-
-                            function draw() {
-                                if (vt.readyState === 'ended') return;
-                                ctx.filter = 'none';
-                                ctx.drawImage(v, 0, 0, c.width, c.height);
-                                // Edge blur
-                                ctx.filter = 'blur(10px)';
-                                var w = c.width, h = c.height, m = 0.2;
-                                ctx.drawImage(c, 0, 0, w, h*m, 0, 0, w, h*m);
-                                ctx.drawImage(c, 0, h*(1-m), w, h*m, 0, h*(1-m), w, h*m);
-                                ctx.drawImage(c, 0, 0, w*m, h, 0, 0, w*m, h);
-                                ctx.drawImage(c, w*(1-m), 0, w*m, h, w*(1-m), 0, w*m, h);
-                                ctx.filter = 'none';
-                                requestAnimationFrame(draw);
-                            }
-                            v.onloadeddata = function() {
-                                c.width = v.videoWidth || 640;
-                                c.height = v.videoHeight || 480;
-                                draw();
-                            };
-
-                            var ps = c.captureStream(30);
-                            stream.getAudioTracks().forEach(function(t) { ps.addTrack(t); });
-                            return ps;
-                        } catch(e) {
-                            console.warn('[sTalk] Blur failed, using original:', e);
-                            return stream;
-                        }
-                    });
+                    return _origGUM(constraints);
                 };
             })();
         })();
