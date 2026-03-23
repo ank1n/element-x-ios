@@ -75,7 +75,8 @@ final class LiveKitRoomManager: ObservableObject {
             ),
             defaultAudioCaptureOptions: AudioCaptureOptions(),
             defaultVideoPublishOptions: VideoPublishOptions(
-                encoding: VideoEncoding(maxBitrate: 3_000_000, maxFps: 30)
+                encoding: VideoEncoding(maxBitrate: 3_000_000, maxFps: 30),
+                simulcast: true // Adaptive quality: 1080p + 720p + 360p layers
             ),
             defaultAudioPublishOptions: AudioPublishOptions(
                 encoding: AudioEncoding(maxBitrate: 32_000),

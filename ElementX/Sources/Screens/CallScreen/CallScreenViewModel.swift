@@ -605,6 +605,13 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         }
         #endif
 
+        // Step 4: Apply background blur if enabled in settings
+        if UserDefaults.standard.bool(forKey: "stalk_background_blur_enabled") {
+            liveKitRoomManager.setBackgroundBlur(enabled: true)
+            state.isBackgroundBlurEnabled = true
+            MXLog.info("sTalk LiveKit: Background blur enabled from settings")
+        }
+
         // Diagnostic: verify tracks were actually published
         liveKitRoomManager.logTrackDiagnostics()
 
