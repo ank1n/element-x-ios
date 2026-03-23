@@ -300,7 +300,8 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 (document.documentElement || document).appendChild(s);
             })();
 
-            // === 3. BLOCK LiveKit WebSocket — native SDK is sole connection ===
+            // === 3. Pass-through LiveKit WebSocket — let EC connect for key exchange ===
+            // Native SDK connects after 5s delay (SFU replaces WebView with native)
             var OrigWS = window.WebSocket;
             var _intercepted = false;
             window.WebSocket = function(url, protocols) {
@@ -309,24 +310,18 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                     if (!_intercepted) {
                         _intercepted = true;
                         var token = (u.match(/access_token=([^&]+)/) || [])[1] || '';
-                        try {
-                            window.webkit.messageHandlers.onLiveKitCredentials.postMessage(
-                                JSON.stringify({ url: u, token: token })
-                            );
-                        } catch(e) {}
-                        console.log('[sTalk] LiveKit WS BLOCKED — native SDK only');
+                        // Notify native after 5s delay — give EC time for key exchange
+                        setTimeout(function() {
+                            try {
+                                window.webkit.messageHandlers.onLiveKitCredentials.postMessage(
+                                    JSON.stringify({ url: u, token: token })
+                                );
+                            } catch(e) {}
+                            console.log('[sTalk] LiveKit credentials sent to native (after 5s key exchange window)');
+                        }, 5000);
                     }
-                    // Fake WS — EC thinks connected but no real SFU link
-                    var f = { url:u, readyState:1, bufferedAmount:0, extensions:'', protocol:'', binaryType:'arraybuffer',
-                        onopen:null, onclose:null, onmessage:null, onerror:null,
-                        send:function(){}, close:function(){ this.readyState=3; if(this.onclose) this.onclose({code:1000,reason:'native',wasClean:true}); },
-                        addEventListener:function(t,fn){ if(t==='open') setTimeout(fn,100); },
-                        removeEventListener:function(){}, dispatchEvent:function(){ return true; }
-                    };
-                    setTimeout(function(){ if(f.onopen) f.onopen({}); }, 100);
-                    return f;
                 }
-                // Non-LiveKit WebSockets pass through (Widget API signaling)
+                // Pass through — EC connects normally for signaling + key exchange
                 return protocols !== undefined ? new OrigWS(url, protocols) : new OrigWS(url);
             };
             window.WebSocket.prototype = OrigWS.prototype;

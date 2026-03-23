@@ -71,8 +71,12 @@ final class LiveKitRoomManager: ObservableObject {
         let connectOptions = ConnectOptions(
             autoSubscribe: true
         )
-        // No E2EE on native SDK — keys don't arrive when WebView WS is blocked
-        // Video/audio will have E2EE artifacts until key exchange is solved
+        // E2EE — keys arrive via KS-Bridge after WebView key exchange
+        let encryptionOptions = EncryptionOptions(
+            keyProvider: keyProvider,
+            encryptionType: .gcm
+        )
+
         let roomOptions = RoomOptions(
             defaultCameraCaptureOptions: CameraCaptureOptions(
                 dimensions: .h720_169
@@ -84,7 +88,8 @@ final class LiveKitRoomManager: ObservableObject {
             defaultAudioPublishOptions: AudioPublishOptions(
                 encoding: AudioEncoding(maxBitrate: 32_000),
                 dtx: false
-            )
+            ),
+            encryptionOptions: encryptionOptions
         )
 
         try await room.connect(url: baseURL, token: token, connectOptions: connectOptions, roomOptions: roomOptions)
