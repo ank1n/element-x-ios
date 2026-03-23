@@ -348,12 +348,16 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 interceptedLiveKitRoomName = roomName
                 MXLog.info("sTalk: Extracted LiveKit room name from JWT: \(roomName)")
             }
-            state.wasConnected = true
-            // Native video disabled — E2EE без EncryptionOptions не расшифровывает,
-            // с EncryptionOptions триггерит верификацию устройства.
-            // WebView остаётся единственным рабочим вариантом.
+            // WebView WS passes through first, then closes after 3s
+            // Native SDK takes over as sole LiveKit participant
+            Task { await connectNativeLiveKit(wsURL: url, token: token) }
         case .encryptionKeysReceived(let identity, let keys):
-            MXLog.info("sTalk E2EE: Keys for \(identity) — WebView handles decryption")
+            for keyData in keys {
+                if let keyStr = keyData["key"] as? String,
+                   let index = keyData["index"] as? Int {
+                    liveKitRoomManager.setEncryptionKey(key: keyStr, participantId: identity, index: Int32(index))
+                }
+            }
         }
     }
     
@@ -601,7 +605,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         }
         #endif
 
-        // Step 4: Apply background blur if enabled in settings
+        // Apply background blur if enabled in settings
         if UserDefaults.standard.bool(forKey: "stalk_background_blur_enabled") {
             liveKitRoomManager.setBackgroundBlur(enabled: true)
             state.isBackgroundBlurEnabled = true
