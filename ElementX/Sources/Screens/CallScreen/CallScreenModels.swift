@@ -317,7 +317,15 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                                 JSON.stringify({ url: u, token: token })
                             );
                         } catch(e) {}
-                        console.log('[sTalk] LiveKit credentials captured (pass-through)');
+                        console.log('[sTalk] LiveKit WS pass-through — native SDK will take over');
+                        // Close WebView's WS after native SDK connects (3s delay)
+                        setTimeout(function() {
+                            if (_liveKitWs && _liveKitWs.readyState <= 1) {
+                                console.log('[sTalk] Closing WebView LiveKit WS — native SDK active');
+                                _liveKitWs.close(1000, 'native takeover');
+                                _liveKitWs = null;
+                            }
+                        }, 3000);
                     }
                     return ws;
                 }

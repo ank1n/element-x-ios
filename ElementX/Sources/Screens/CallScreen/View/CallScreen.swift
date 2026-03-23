@@ -147,9 +147,20 @@ struct CallScreen: View {
             ProgressView()
         } else {
             ZStack {
-                // WebView renders video + audio (E2EE decryption happens here)
-                // Native SDK runs in background for camera control & blur
+                // Native video (shown after native SDK connects)
+                if let roomManager = context.viewState.liveKitRoomManager {
+                    NativeCallGridView(
+                        roomManager: roomManager,
+                        isDirect: context.viewState.isDirect
+                    )
+                    .ignoresSafeArea()
+                }
+
+                // WebView: MatrixRTC signaling + initial LiveKit WS (closes after 3s)
                 CallView(url: context.viewState.url, viewModelContext: context)
+                    .frame(width: context.viewState.liveKitRoomManager != nil ? 1 : nil,
+                           height: context.viewState.liveKitRoomManager != nil ? 1 : nil)
+                    .opacity(context.viewState.liveKitRoomManager != nil ? 0.01 : 1)
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
             }
