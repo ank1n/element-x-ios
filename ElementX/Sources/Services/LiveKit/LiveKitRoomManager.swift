@@ -69,9 +69,9 @@ final class LiveKitRoomManager: ObservableObject {
         }
 
         let connectOptions = ConnectOptions(
-            autoSubscribe: true
+            autoSubscribe: false
         )
-        // E2EE encryption options — per-participant keys from Element Call
+        // E2EE — keys will be set via setEncryptionKey() from KS-Bridge
         let encryptionOptions = EncryptionOptions(
             keyProvider: keyProvider,
             encryptionType: .gcm
@@ -81,13 +81,13 @@ final class LiveKitRoomManager: ObservableObject {
             defaultCameraCaptureOptions: CameraCaptureOptions(
                 dimensions: .h720_169
             ),
-            defaultAudioCaptureOptions: AudioCaptureOptions(), // Platform defaults: Apple Voice Processing on device, WebRTC on simulator
+            defaultAudioCaptureOptions: AudioCaptureOptions(),
             defaultVideoPublishOptions: VideoPublishOptions(
                 encoding: VideoEncoding(maxBitrate: 1_500_000, maxFps: 30)
             ),
             defaultAudioPublishOptions: AudioPublishOptions(
-                encoding: AudioEncoding(maxBitrate: 32_000), // 32 kbps minimum — prevents low frame rate (19→50 pps)
-                dtx: false // DTX off — don't skip packets on silence, keeps consistent frame rate
+                encoding: AudioEncoding(maxBitrate: 32_000),
+                dtx: false
             ),
             encryptionOptions: encryptionOptions
         )
@@ -147,7 +147,24 @@ final class LiveKitRoomManager: ObservableObject {
     func setEncryptionKey(key: String, participantId: String, index: Int32) {
         keyProvider.setKey(key: key, participantId: participantId, index: index)
         MXLog.info("sTalk LiveKit E2EE: Set key for \(participantId) index=\(index)")
+
+        // Subscribe to all remote tracks after first key received
+        if !hasSubscribedAfterKeys {
+            hasSubscribedAfterKeys = true
+            Task {
+                for participant in room.remoteParticipants.values {
+                    for publication in participant.trackPublications.values {
+                        if let remotePub = publication as? RemoteTrackPublication, !remotePub.isSubscribed {
+                            try? await remotePub.set(subscribed: true)
+                            MXLog.info("sTalk LiveKit E2EE: Subscribed to \(String(describing: remotePub.sid)) after key")
+                        }
+                    }
+                }
+            }
+        }
     }
+
+    private var hasSubscribedAfterKeys = false
 
     /// Toggle screen sharing
     @Published private(set) var isScreenSharing: Bool = false
