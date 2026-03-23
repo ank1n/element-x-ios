@@ -348,8 +348,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 interceptedLiveKitRoomName = roomName
                 MXLog.info("sTalk: Extracted LiveKit room name from JWT: \(roomName)")
             }
-            // WebView WS passes through first, then closes after 3s
-            // Native SDK takes over as sole LiveKit participant
+            // Connect native LiveKit SDK (parallel with WebView — NO WS close)
             Task { await connectNativeLiveKit(wsURL: url, token: token) }
         case .encryptionKeysReceived(let identity, let keys):
             for keyData in keys {
