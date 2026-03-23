@@ -69,12 +69,6 @@ final class LiveKitRoomManager: ObservableObject {
         let connectOptions = ConnectOptions(
             autoSubscribe: true
         )
-        // E2EE encryption options — per-participant keys from Element Call
-        let encryptionOptions = EncryptionOptions(
-            keyProvider: keyProvider,
-            encryptionType: .gcm
-        )
-
         let roomOptions = RoomOptions(
             defaultCameraCaptureOptions: CameraCaptureOptions(
                 dimensions: .h1080_169
@@ -84,10 +78,9 @@ final class LiveKitRoomManager: ObservableObject {
                 encoding: VideoEncoding(maxBitrate: 3_000_000, maxFps: 30)
             ),
             defaultAudioPublishOptions: AudioPublishOptions(
-                encoding: AudioEncoding(maxBitrate: 32_000), // 32 kbps minimum — prevents low frame rate (19→50 pps)
-                dtx: false // DTX off — don't skip packets on silence, keeps consistent frame rate
-            ),
-            encryptionOptions: encryptionOptions
+                encoding: AudioEncoding(maxBitrate: 32_000),
+                dtx: false
+            )
         )
 
         try await room.connect(url: baseURL, token: token, connectOptions: connectOptions, roomOptions: roomOptions)
