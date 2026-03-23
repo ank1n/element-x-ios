@@ -7,6 +7,8 @@
 
 import AVFoundation
 import Combine
+import CryptoKit
+import Foundation
 import LiveKit
 import SwiftUI
 
@@ -92,6 +94,87 @@ final class LiveKitRoomManager: ObservableObject {
         await room.disconnect()
         MXLog.info("sTalk LiveKit: Disconnected")
         updateState()
+    }
+
+    /// Connect as subscribe-only observer with a different identity (for blur rendering)
+    /// Uses a separate JWT so SFU sees two different participants
+    func connectAsObserver(wsURL: String, originalToken: String) async throws {
+        // Decode original JWT to get room name and identity
+        guard let (roomName, identity) = decodeJWT(originalToken) else {
+            MXLog.error("sTalk LiveKit: Failed to decode JWT")
+            return
+        }
+
+        let observerIdentity = identity + "_observer"
+        let baseURL = extractBaseURL(from: wsURL)
+
+        // Generate new JWT with observer identity (subscribe-only)
+        let apiKey = "APIe5e237fe719f"
+        let apiSecret = "6b0d7fe4c5b393c004bf813ae8dd428f70aef4896957fcb9b0ad58d37c353f96"
+        guard let observerToken = generateLiveKitJWT(
+            apiKey: apiKey,
+            apiSecret: apiSecret,
+            roomName: roomName,
+            identity: observerIdentity,
+            canPublish: false,
+            canSubscribe: true
+        ) else {
+            MXLog.error("sTalk LiveKit: Failed to generate observer JWT")
+            return
+        }
+
+        MXLog.info("sTalk LiveKit: Connecting as observer '\(observerIdentity)' to \(baseURL)")
+
+        let connectOptions = ConnectOptions(autoSubscribe: true)
+        let roomOptions = RoomOptions()
+
+        try await room.connect(url: baseURL, token: observerToken, connectOptions: connectOptions, roomOptions: roomOptions)
+        MXLog.info("sTalk LiveKit: Observer connected to room \(room.name ?? "?")")
+        updateState()
+    }
+
+    // MARK: - JWT Generation
+
+    private func decodeJWT(_ token: String) -> (roomName: String, identity: String)? {
+        let parts = token.split(separator: ".")
+        guard parts.count >= 2,
+              let data = Data(base64Encoded: String(parts[1]).base64Padded()) else { return nil }
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let sub = json["sub"] as? String,
+              let video = json["video"] as? [String: Any],
+              let room = video["room"] as? String else { return nil }
+        return (room, sub)
+    }
+
+    private func generateLiveKitJWT(apiKey: String, apiSecret: String, roomName: String, identity: String, canPublish: Bool, canSubscribe: Bool) -> String? {
+        let header = ["alg": "HS256", "typ": "JWT"]
+        let now = Int(Date().timeIntervalSince1970)
+        let payload: [String: Any] = [
+            "iss": apiKey,
+            "sub": identity,
+            "nbf": now,
+            "exp": now + 3600,
+            "video": [
+                "room": roomName,
+                "roomJoin": true,
+                "canPublish": canPublish,
+                "canSubscribe": canSubscribe
+            ]
+        ]
+
+        guard let headerData = try? JSONSerialization.data(withJSONObject: header),
+              let payloadData = try? JSONSerialization.data(withJSONObject: payload) else { return nil }
+
+        let headerB64 = headerData.base64EncodedString().base64URLEncoded()
+        let payloadB64 = payloadData.base64EncodedString().base64URLEncoded()
+        let signingInput = "\(headerB64).\(payloadB64)"
+
+        guard let keyData = apiSecret.data(using: .utf8) else { return nil }
+        let key = SymmetricKey(data: keyData)
+        let signature = HMAC<SHA256>.authenticationCode(for: Data(signingInput.utf8), using: key)
+        let sigB64 = Data(signature).base64EncodedString().base64URLEncoded()
+
+        return "\(headerB64).\(payloadB64).\(sigB64)"
     }
 
     func setCamera(enabled: Bool) async throws {
@@ -404,5 +487,21 @@ extension LiveKitRoomManager: RoomDelegate {
             self.updateState()
             MXLog.info("sTalk LiveKit: Published local track: \(publication.kind)")
         }
+    }
+}
+
+// MARK: - Base64 URL Encoding Helpers
+
+private extension String {
+    func base64URLEncoded() -> String {
+        replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+
+    func base64Padded() -> String {
+        let remainder = count % 4
+        if remainder == 0 { return self }
+        return self + String(repeating: "=", count: 4 - remainder)
     }
 }
