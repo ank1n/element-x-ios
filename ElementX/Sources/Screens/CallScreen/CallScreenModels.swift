@@ -303,23 +303,35 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
             // === 3. Pass-through LiveKit WS — EC connects for key exchange, native takes over ===
             var OrigWS = window.WebSocket;
             var _intercepted = false;
-            window._stalkLiveKitWs = null; // saved for native to close later
+            var _nativeTookOver = false;
+            window._stalkLiveKitWs = null;
             window.WebSocket = function(url, protocols) {
                 var u = String(url);
                 if (u.indexOf('/rtc') !== -1 && u.indexOf('access_token=') !== -1) {
+                    // Block reconnect after native SDK took over
+                    if (_nativeTookOver) {
+                        console.log('[sTalk] LiveKit WS reconnect BLOCKED — native SDK active');
+                        var f = { url:u, readyState:3, bufferedAmount:0, extensions:'', protocol:'', binaryType:'arraybuffer',
+                            onopen:null, onclose:null, onmessage:null, onerror:null,
+                            send:function(){}, close:function(){},
+                            addEventListener:function(){}, removeEventListener:function(){}, dispatchEvent:function(){return true;}
+                        };
+                        setTimeout(function(){ if(f.onerror) f.onerror({}); if(f.onclose) f.onclose({code:1000,reason:'native',wasClean:true}); }, 100);
+                        return f;
+                    }
                     var ws = protocols !== undefined ? new OrigWS(url, protocols) : new OrigWS(url);
                     if (!_intercepted) {
                         _intercepted = true;
                         window._stalkLiveKitWs = ws;
                         var token = (u.match(/access_token=([^&]+)/) || [])[1] || '';
-                        // Notify native after 5s — EC had time for key exchange
                         setTimeout(function() {
+                            _nativeTookOver = true;
                             try {
                                 window.webkit.messageHandlers.onLiveKitCredentials.postMessage(
                                     JSON.stringify({ url: u, token: token })
                                 );
                             } catch(e) {}
-                            console.log('[sTalk] Credentials sent — native will close WS and take over');
+                            console.log('[sTalk] Credentials sent — native takes over, reconnects blocked');
                         }, 5000);
                     }
                     return ws;
