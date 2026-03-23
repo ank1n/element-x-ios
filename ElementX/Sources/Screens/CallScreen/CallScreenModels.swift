@@ -300,36 +300,33 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 (document.documentElement || document).appendChild(s);
             })();
 
-            // === 3. Intercept LiveKit WebSocket — pass through, then hand off to native ===
+            // === 3. BLOCK LiveKit WebSocket — native SDK is sole connection ===
             var OrigWS = window.WebSocket;
             var _intercepted = false;
-            var _liveKitWs = null;
             window.WebSocket = function(url, protocols) {
                 var u = String(url);
                 if (u.indexOf('/rtc') !== -1 && u.indexOf('access_token=') !== -1) {
-                    var ws = protocols !== undefined ? new OrigWS(url, protocols) : new OrigWS(url);
                     if (!_intercepted) {
                         _intercepted = true;
-                        _liveKitWs = ws;
                         var token = (u.match(/access_token=([^&]+)/) || [])[1] || '';
                         try {
                             window.webkit.messageHandlers.onLiveKitCredentials.postMessage(
                                 JSON.stringify({ url: u, token: token })
                             );
                         } catch(e) {}
-                        console.log('[sTalk] LiveKit WS pass-through — native SDK will take over');
-                        // Close WebView's WS after native SDK connects (3s delay)
-                        setTimeout(function() {
-                            if (_liveKitWs && _liveKitWs.readyState <= 1) {
-                                console.log('[sTalk] Closing WebView LiveKit WS — native SDK active');
-                                _liveKitWs.close(1000, 'native takeover');
-                                _liveKitWs = null;
-                            }
-                        }, 3000);
+                        console.log('[sTalk] LiveKit WS BLOCKED — native SDK only');
                     }
-                    return ws;
+                    // Fake WS — EC thinks connected but no real SFU link
+                    var f = { url:u, readyState:1, bufferedAmount:0, extensions:'', protocol:'', binaryType:'arraybuffer',
+                        onopen:null, onclose:null, onmessage:null, onerror:null,
+                        send:function(){}, close:function(){ this.readyState=3; if(this.onclose) this.onclose({code:1000,reason:'native',wasClean:true}); },
+                        addEventListener:function(t,fn){ if(t==='open') setTimeout(fn,100); },
+                        removeEventListener:function(){}, dispatchEvent:function(){ return true; }
+                    };
+                    setTimeout(function(){ if(f.onopen) f.onopen({}); }, 100);
+                    return f;
                 }
-                // Non-LiveKit WebSockets pass through
+                // Non-LiveKit WebSockets pass through (Widget API signaling)
                 return protocols !== undefined ? new OrigWS(url, protocols) : new OrigWS(url);
             };
             window.WebSocket.prototype = OrigWS.prototype;

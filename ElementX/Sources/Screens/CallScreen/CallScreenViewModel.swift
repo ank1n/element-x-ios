@@ -556,8 +556,10 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
 
         // Step 1: Connect to SFU (critical — if this fails, we can't proceed)
         do {
-            // Subscribe-only: don't configure audio session — WebView handles it
-            try await liveKitRoomManager.connect(wsURL: wsURL, token: token, configureAudio: false)
+            // Native SDK is sole connection — publish camera + microphone
+            let useSpeaker = !state.isDirect
+            try await liveKitRoomManager.connect(wsURL: wsURL, token: token, speakerByDefault: useSpeaker)
+            state.isSpeakerOn = useSpeaker
             MXLog.info("sTalk LiveKit: Native connection established")
         } catch {
             MXLog.error("sTalk LiveKit: Failed to connect to SFU: \(error)")
@@ -568,10 +570,37 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         state.liveKitRoomManager = liveKitRoomManager
         state.wasConnected = true
 
-        // Native SDK: subscribe-only mode
-        // WebView handles camera + microphone publishing (E2EE)
-        // Native SDK only renders received remote video
-        MXLog.info("sTalk LiveKit: Subscribe-only mode — WebView publishes media")
+        // Small delay to let audio session stabilize
+        try? await Task.sleep(for: .milliseconds(200))
+
+        // Enable microphone
+        do {
+            try await liveKitRoomManager.setMicrophone(enabled: true)
+            MXLog.info("sTalk LiveKit: Microphone enabled")
+        } catch {
+            MXLog.error("sTalk LiveKit: Microphone failed: \(error)")
+        }
+
+        // Enable camera
+        #if targetEnvironment(simulator)
+        do {
+            try await liveKitRoomManager.setCamera(enabled: true)
+            state.isVideoEnabled = true
+        } catch {
+            MXLog.error("sTalk LiveKit: Simulator camera failed: \(error)")
+        }
+        #else
+        if startWithVideoEnabled {
+            do {
+                try await liveKitRoomManager.setCamera(enabled: true)
+                MXLog.info("sTalk LiveKit: Camera enabled")
+            } catch {
+                state.isVideoEnabled = false
+            }
+        }
+        #endif
+
+        liveKitRoomManager.logTrackDiagnostics()
 
         // Observe native LiveKit connection state for call lifecycle
         observeLiveKitState()
