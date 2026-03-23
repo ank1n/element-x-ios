@@ -147,20 +147,8 @@ struct CallScreen: View {
             ProgressView()
         } else {
             ZStack {
-                // Native video (shown after native SDK connects)
-                if let roomManager = context.viewState.liveKitRoomManager {
-                    NativeCallGridView(
-                        roomManager: roomManager,
-                        isDirect: context.viewState.isDirect
-                    )
-                    .ignoresSafeArea()
-                }
-
-                // WebView for signaling (shrinks when native video active)
+                // WebView handles all media + E2EE
                 CallView(url: context.viewState.url, viewModelContext: context)
-                    .frame(width: context.viewState.liveKitRoomManager != nil ? 1 : nil,
-                           height: context.viewState.liveKitRoomManager != nil ? 1 : nil)
-                    .opacity(context.viewState.liveKitRoomManager != nil ? 0.01 : 1)
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
             }

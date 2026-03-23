@@ -358,8 +358,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 interceptedLiveKitRoomName = roomName
                 MXLog.info("sTalk: Extracted LiveKit room name from JWT: \(roomName)")
             }
-            // Connect native LiveKit SDK (subscribe-only — WebView publishes media)
-            Task { await connectNativeLiveKit(wsURL: url, token: token) }
+            state.wasConnected = true
+            // Native SDK disabled — WebView handles all media + E2EE
+            // Blur via JS getUserMedia override
         case .encryptionKeysReceived(let identity, let keys):
             for keyData in keys {
                 if let keyStr = keyData["key"] as? String,
