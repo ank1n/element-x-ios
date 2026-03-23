@@ -348,7 +348,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 interceptedLiveKitRoomName = roomName
                 MXLog.info("sTalk: Extracted LiveKit room name from JWT: \(roomName)")
             }
-            state.wasConnected = true
+            // Connect native LiveKit SDK (subscribe-only — WebView publishes media)
+            Task { await connectNativeLiveKit(wsURL: url, token: token) }
         case .encryptionKeysReceived(let identity, let keys):
             for keyData in keys {
                 if let keyStr = keyData["key"] as? String,
@@ -555,10 +556,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
 
         // Step 1: Connect to SFU (critical — if this fails, we can't proceed)
         do {
-            // 1:1 calls → earpiece (like Telegram), group calls → speaker
-            let useSpeaker = !state.isDirect
-            try await liveKitRoomManager.connect(wsURL: wsURL, token: token, speakerByDefault: useSpeaker)
-            state.isSpeakerOn = useSpeaker
+            // Subscribe-only: don't configure audio session — WebView handles it
+            try await liveKitRoomManager.connect(wsURL: wsURL, token: token, configureAudio: false)
             MXLog.info("sTalk LiveKit: Native connection established")
         } catch {
             MXLog.error("sTalk LiveKit: Failed to connect to SFU: \(error)")
@@ -569,42 +568,10 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         state.liveKitRoomManager = liveKitRoomManager
         state.wasConnected = true
 
-        // Small delay to let audio session stabilize
-        try? await Task.sleep(for: .milliseconds(200))
-
-        // Step 2: Enable microphone (non-fatal — may fail on simulator)
-        do {
-            try await liveKitRoomManager.setMicrophone(enabled: true)
-            MXLog.info("sTalk LiveKit: Microphone enabled")
-        } catch {
-            MXLog.error("sTalk LiveKit: Microphone enable failed (non-fatal): \(error)")
-        }
-
-        // Step 3: Enable camera
-        // On simulator: ALWAYS publish fake video to verify pipeline (color-cycling track)
-        // On device: only if video call was requested
-        #if targetEnvironment(simulator)
-        do {
-            try await liveKitRoomManager.setCamera(enabled: true)
-            state.isVideoEnabled = true
-            MXLog.info("sTalk LiveKit: Camera enabled (simulator — fake video track)")
-        } catch {
-            MXLog.error("sTalk LiveKit: Simulator camera failed: \(error)")
-        }
-        #else
-        if startWithVideoEnabled {
-            do {
-                try await liveKitRoomManager.setCamera(enabled: true)
-                MXLog.info("sTalk LiveKit: Camera enabled")
-            } catch {
-                MXLog.error("sTalk LiveKit: Camera enable failed (non-fatal): \(error)")
-                state.isVideoEnabled = false
-            }
-        }
-        #endif
-
-        // Diagnostic: verify tracks were actually published
-        liveKitRoomManager.logTrackDiagnostics()
+        // Native SDK: subscribe-only mode
+        // WebView handles camera + microphone publishing (E2EE)
+        // Native SDK only renders received remote video
+        MXLog.info("sTalk LiveKit: Subscribe-only mode — WebView publishes media")
 
         // Observe native LiveKit connection state for call lifecycle
         observeLiveKitState()

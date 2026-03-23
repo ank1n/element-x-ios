@@ -55,16 +55,18 @@ final class LiveKitRoomManager: ObservableObject {
     ///   - wsURL: Full WebSocket URL from Element Call
     ///   - token: The extracted access_token JWT
     ///   - speakerByDefault: If true, start with speaker; if false, earpiece (1:1 calls)
-    func connect(wsURL: String, token: String, speakerByDefault: Bool = false) async throws {
+    func connect(wsURL: String, token: String, speakerByDefault: Bool = false, configureAudio: Bool = true) async throws {
         let baseURL = extractBaseURL(from: wsURL)
-        MXLog.info("sTalk LiveKit: Connecting to \(baseURL)")
+        MXLog.info("sTalk LiveKit: Connecting to \(baseURL), configureAudio=\(configureAudio)")
 
         // Store for potential reconnection
         reconnectURL = baseURL
         reconnectToken = token
 
         // Configure iOS audio session for VoIP BEFORE connecting
-        configureAudioSession(speakerByDefault: speakerByDefault)
+        if configureAudio {
+            configureAudioSession(speakerByDefault: speakerByDefault)
+        }
 
         let connectOptions = ConnectOptions(
             autoSubscribe: true
