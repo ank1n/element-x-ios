@@ -77,12 +77,11 @@ final class LiveKitRoomManager: ObservableObject {
 
         let roomOptions = RoomOptions(
             defaultCameraCaptureOptions: CameraCaptureOptions(
-                dimensions: .h1080_169
+                dimensions: .h720_169
             ),
-            defaultAudioCaptureOptions: AudioCaptureOptions(),
+            defaultAudioCaptureOptions: AudioCaptureOptions(), // Platform defaults: Apple Voice Processing on device, WebRTC on simulator
             defaultVideoPublishOptions: VideoPublishOptions(
-                encoding: VideoEncoding(maxBitrate: 3_000_000, maxFps: 30),
-                simulcast: true
+                encoding: VideoEncoding(maxBitrate: 1_500_000, maxFps: 30)
             ),
             defaultAudioPublishOptions: AudioPublishOptions(
                 encoding: AudioEncoding(maxBitrate: 32_000), // 32 kbps minimum — prevents low frame rate (19→50 pps)
