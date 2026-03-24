@@ -146,7 +146,6 @@ final class ElementCallWidgetDriver: WidgetCapabilitiesProvider, ElementCallWidg
                 MXLog.debug("Received message: \(receivedMessage)")
                 
                 self?.handleMessageIfNeeded(receivedMessage)
-                self?.extractEncryptionKeysIfNeeded(receivedMessage)
             }
         }
         
@@ -196,24 +195,6 @@ final class ElementCallWidgetDriver: WidgetCapabilitiesProvider, ElementCallWidg
     
     // MARK: - Private
     
-    func extractEncryptionKeysIfNeeded(_ message: String) {
-        guard message.contains("encryption_keys") else { return }
-        guard let data = message.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let msgData = json["data"] as? [String: Any],
-              let content = msgData["content"] as? [String: Any],
-              let keysObj = content["keys"] as? [String: Any],
-              let key = keysObj["key"] as? String,
-              let index = keysObj["index"] as? Int else { return }
-
-        let sender = msgData["sender"] as? String ?? ""
-        let deviceId = (content["member"] as? [String: Any])?["claimed_device_id"] as? String ?? ""
-        let participantId = "\(sender):\(deviceId)"
-
-        MXLog.info("sTalk E2EE: Key from \(participantId) index=\(index)")
-        actionsSubject.send(.encryptionKeysReceived(keys: [["key": key, "index": index, "participantId": participantId]]))
-    }
-
     func handleMessageIfNeeded(_ message: String) {
         guard let data = message.data(using: .utf8) else {
             return

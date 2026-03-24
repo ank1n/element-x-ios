@@ -400,9 +400,6 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
 
                 console.log('[KS-Bridge-iOS] v1 initialized (fetch intercept)');
             })();
-
-            // === 5. Clean up stale settings that crash EC ===
-            try { localStorage.removeItem('matrix-setting-background-blur'); } catch(e) {}
         })();
         """
     }

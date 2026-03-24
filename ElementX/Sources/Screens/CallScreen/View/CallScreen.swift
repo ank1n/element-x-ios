@@ -413,15 +413,6 @@ private struct CallView: UIViewRepresentable {
             configuration.allowsInlineMediaPlayback = true
             configuration.allowsPictureInPictureMediaPlayback = true
             
-            // sTalk: Inject blur setting before scripts
-            let blurEnabled = UserDefaults.standard.bool(forKey: "stalk_background_blur_enabled")
-            let blurScript = WKUserScript(
-                source: "window._stalkBlurEnabled = \(blurEnabled);",
-                injectionTime: .atDocumentStart,
-                forMainFrameOnly: false
-            )
-            configuration.userContentController.addUserScript(blurScript)
-
             // sTalk: Inject WebSocket interception + CSS hiding script BEFORE page loads.
             // forMainFrameOnly: false — Element Call UI renders in iframes,
             // CSS must apply to ALL frames to hide their content.
