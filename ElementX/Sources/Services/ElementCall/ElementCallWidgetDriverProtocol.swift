@@ -21,6 +21,7 @@ enum ElementCallWidgetDriverError: Error {
 enum ElementCallWidgetDriverAction {
     case callEnded
     case mediaStateChanged(audioEnabled: Bool, videoEnabled: Bool)
+    case encryptionKeysReceived(keys: [[String: Any]])
 }
 
 // sourcery: AutoMockable

@@ -29,6 +29,7 @@ final class LiveKitRoomManager: ObservableObject {
     // MARK: - Private
 
     private let room: Room
+    private let keyProvider = BaseKeyProvider(isSharedKey: false)
     private var cancellables = Set<AnyCancellable>()
     private var reconnectToken: String?
     private var reconnectURL: String?
@@ -125,8 +126,14 @@ final class LiveKitRoomManager: ObservableObject {
 
         MXLog.info("sTalk LiveKit: Connecting as observer '\(observerIdentity)' to \(baseURL)")
 
+        // E2EE — decrypt incoming tracks with keys from Matrix key exchange
+        let encryptionOptions = EncryptionOptions(
+            keyProvider: keyProvider,
+            encryptionType: .gcm
+        )
+
         let connectOptions = ConnectOptions(autoSubscribe: true)
-        let roomOptions = RoomOptions()
+        let roomOptions = RoomOptions(encryptionOptions: encryptionOptions)
 
         try await room.connect(url: baseURL, token: observerToken, connectOptions: connectOptions, roomOptions: roomOptions)
         MXLog.info("sTalk LiveKit: Observer connected to room \(room.name ?? "?")")
@@ -213,6 +220,12 @@ final class LiveKitRoomManager: ObservableObject {
         #if targetEnvironment(simulator)
         MXLog.warning("sTalk LiveKit: Running on SIMULATOR — camera unavailable, audio may have WebRTC limitations")
         #endif
+    }
+
+    /// Set E2EE key for a participant
+    func setEncryptionKey(key: String, participantId: String, index: Int32) {
+        keyProvider.setKey(key: key, participantId: participantId, index: index)
+        MXLog.info("sTalk LiveKit E2EE: Key set for '\(participantId)' index=\(index)")
     }
 
     /// Toggle screen sharing
