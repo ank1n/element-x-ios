@@ -358,16 +358,6 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 MXLog.info("sTalk: Extracted LiveKit room name from JWT: \(roomName)")
             }
             state.wasConnected = true
-            // Connect native SDK as observer (different identity, subscribe-only)
-            Task {
-                do {
-                    try await liveKitRoomManager.connectAsObserver(wsURL: url, originalToken: token)
-                    state.liveKitRoomManager = liveKitRoomManager
-                    MXLog.info("sTalk: Native observer connected — NativeCallGridView active")
-                } catch {
-                    MXLog.error("sTalk: Observer connection failed: \(error)")
-                }
-            }
         }
     }
     

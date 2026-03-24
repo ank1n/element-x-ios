@@ -401,24 +401,8 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 console.log('[KS-Bridge-iOS] v1 initialized (fetch intercept)');
             })();
 
-            // === 5. Enhanced audio (noise suppression) ===
-            (function() {
-                var _origGUM = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
-                navigator.mediaDevices.getUserMedia = function(constraints) {
-                    if (constraints && constraints.audio) {
-                        if (typeof constraints.audio === 'boolean') {
-                            constraints.audio = { noiseSuppression: true, echoCancellation: true, autoGainControl: true };
-                        } else {
-                            constraints.audio.noiseSuppression = { ideal: true };
-                            constraints.audio.echoCancellation = { ideal: true };
-                            constraints.audio.autoGainControl = { ideal: true };
-                        }
-                    }
-                    return _origGUM(constraints);
-                };
-            })();
-
-            // === 6. Background blur disabled — MediaPipe WASM crashes in WKWebView ===
+            // === 5. Clean up stale settings that crash EC ===
+            try { localStorage.removeItem('matrix-setting-background-blur'); } catch(e) {}
         })();
         """
     }
