@@ -126,13 +126,23 @@ final class LiveKitRoomManager: ObservableObject {
 
         MXLog.info("sTalk LiveKit: Connecting as observer '\(observerIdentity)' to \(baseURL)")
 
-        // No EncryptionOptions — blocks subscription without keys
-        // E2EE decryption will be handled post-connect when keys arrive
-        let connectOptions = ConnectOptions(autoSubscribe: true)
+        // Subscribe only to video, not audio (WebView handles audio)
+        let connectOptions = ConnectOptions(autoSubscribe: false)
         let roomOptions = RoomOptions()
 
         try await room.connect(url: baseURL, token: observerToken, connectOptions: connectOptions, roomOptions: roomOptions)
         MXLog.info("sTalk LiveKit: Observer connected to room \(room.name ?? "?")")
+
+        // Subscribe to video tracks only
+        for participant in room.remoteParticipants.values {
+            for pub in participant.trackPublications.values {
+                if let remotePub = pub as? RemoteTrackPublication, pub.kind == .video {
+                    try? await remotePub.set(subscribed: true)
+                    MXLog.info("sTalk LiveKit: Observer subscribed to video from \(participant.identity?.stringValue ?? "?")")
+                }
+            }
+        }
+
         updateState()
     }
 
@@ -462,6 +472,13 @@ extension LiveKitRoomManager: RoomDelegate {
         Task { @MainActor in
             self.updateState()
             MXLog.info("sTalk LiveKit: Participant joined: \(participant.identity?.stringValue ?? "unknown"), sid=\(participant.sid?.stringValue ?? "nil"), totalRemote=\(self.remoteParticipants.count)")
+            // Auto-subscribe to video tracks only (observer mode)
+            for pub in participant.trackPublications.values {
+                if let remotePub = pub as? RemoteTrackPublication, pub.kind == .video, !remotePub.isSubscribed {
+                    try? await remotePub.set(subscribed: true)
+                    MXLog.info("sTalk LiveKit: Observer auto-subscribed to video from \(participant.identity?.stringValue ?? "?")")
+                }
+            }
         }
     }
 
