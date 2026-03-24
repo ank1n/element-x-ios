@@ -61,6 +61,13 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     /// sTalk: Guard against cascade endCall() — infoPublisher fires multiple times
     private var isEndingCall = false
 
+    /// sTalk: Native call session (replaces WebView when enabled)
+    private var nativeCallSession: NativeCallSession?
+    /// sTalk: Feature flag for native calls
+    private var useNativeCall: Bool {
+        UserDefaults.standard.bool(forKey: "stalk_native_calls_enabled")
+    }
+
     private let actionsSubject: PassthroughSubject<CallScreenViewModelAction, Never> = .init()
     var actions: AnyPublisher<CallScreenViewModelAction, Never> {
         actionsSubject.eraseToAnyPublisher()
@@ -398,13 +405,56 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         case .roomCall(let roomProxy, _, let clientID, let elementCallBaseURL, let elementCallBaseURLOverride, let colorScheme):
             Task { [weak self] in
                 guard let self else { return }
-                
+
                 let baseURL = if let elementCallBaseURLOverride {
                     elementCallBaseURLOverride
                 } else {
                     elementCallBaseURL
                 }
-                
+
+                // sTalk: Native call mode — no WebView, WidgetDriver + native LiveKit SDK
+                if useNativeCall {
+                    MXLog.info("sTalk: Starting NATIVE call mode")
+                    let isEncrypted = (roomProxy.infoPublisher.value.isEncrypted)
+                    let session = NativeCallSession(
+                        widgetDriver: widgetDriver,
+                        liveKitRoomManager: liveKitRoomManager,
+                        isEncrypted: isEncrypted
+                    )
+                    self.nativeCallSession = session
+
+                    // Observe session state
+                    session.$sessionState
+                        .receive(on: DispatchQueue.main)
+                        .sink { [weak self] sessionState in
+                            guard let self else { return }
+                            switch sessionState {
+                            case .connected:
+                                self.state.liveKitRoomManager = self.liveKitRoomManager
+                                self.state.wasConnected = true
+                            case .failed:
+                                self.actionsSubject.send(.dismiss)
+                            case .disconnected:
+                                self.actionsSubject.send(.dismiss)
+                            default:
+                                break
+                            }
+                        }
+                        .store(in: &cancellables)
+
+                    // Start native session
+                    await session.start(
+                        baseURL: baseURL,
+                        clientID: clientID,
+                        colorScheme: colorScheme
+                    )
+
+                    await elementCallService.setupCallSession(roomID: roomProxy.id,
+                                                              roomDisplayName: roomProxy.infoPublisher.value.displayName ?? roomProxy.id)
+                    return
+                }
+
+                // WebView mode (default)
                 // We only set the analytics configuration if analytics are enabled
                 let analyticsConfiguration: ElementCallAnalyticsConfiguration? = if analyticsService.isEnabled {
                     .init(posthogAPIHost: appSettings.elementCallPosthogAPIHost,
@@ -418,7 +468,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 } else {
                     nil
                 }
-                
+
                 switch await widgetDriver.start(baseURL: baseURL,
                                                 clientID: clientID,
                                                 colorScheme: colorScheme,
@@ -435,7 +485,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                                                      })
                     return
                 }
-                
+
                 await elementCallService.setupCallSession(roomID: roomProxy.id,
                                                           roomDisplayName: roomProxy.infoPublisher.value.displayName ?? roomProxy.id)
             }

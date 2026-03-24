@@ -143,7 +143,14 @@ struct CallScreen: View {
     
     @ViewBuilder
     var content: some View {
-        if context.viewState.url == nil {
+        if let roomManager = context.viewState.liveKitRoomManager, context.viewState.url == nil {
+            // sTalk: Native call mode — no WebView, native LiveKit rendering
+            NativeCallGridView(
+                roomManager: roomManager,
+                isDirect: context.viewState.isDirect
+            )
+            .ignoresSafeArea()
+        } else if context.viewState.url == nil {
             ProgressView()
         } else {
             ZStack {

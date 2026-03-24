@@ -1542,6 +1542,9 @@
 		FF7E8ECC8E7E1D1851517536 /* PollFormScreenViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 347D708104CCEF771428C9A3 /* PollFormScreenViewModelTests.swift */; };
 		FF9C06BBF6AC6F1CFFBEBFFC /* target.yml in Resources */ = {isa = PBXBuildFile; fileRef = 90791B9C739C716A40E1B230 /* target.yml */; };
 		FFD52DCDA6962055A363CC8F /* IdentityResetHandleSDKMock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EFB1D29B0870AFB6A56E9B8 /* IdentityResetHandleSDKMock.swift */; };
+
+		229692E68E534799A8D86830 /* NativeCallModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80F74EF812940DFAD9CACE3 /* NativeCallModels.swift */; };
+		B67B63F810D045148C17E812 /* NativeCallSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0077B6E066604496A50C82E8 /* NativeCallSession.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -3090,6 +3093,9 @@
 		FEC4B431B0117BDEE697DB4A /* ComposerDisabledView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerDisabledView.swift; sourceTree = "<group>"; };
 		FF720BA68256297680980481 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		FFECCE59967018204876D0A5 /* LocationMarkerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationMarkerView.swift; sourceTree = "<group>"; };
+
+		A80F74EF812940DFAD9CACE3 /* NativeCallModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCallModels.swift; sourceTree = "<group>"; };
+		0077B6E066604496A50C82E8 /* NativeCallSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCallSession.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -3362,7 +3368,8 @@
 				A30A573FEA8EA30EC3F3BABF /* OrgProfile */,
 				FBC5E3CD6A94D1F926AE5713 /* Meetings */,
 				1C34166E019C188FE5338FDA /* Search */,
-			);
+			
+				4D1224452B0140E28F0DCA67 /* NativeCall */,);
 			path = Services;
 			sourceTree = "<group>";
 		};
@@ -7318,6 +7325,16 @@
 			path = JoinRoomScreen;
 			sourceTree = "<group>";
 		};
+
+		4D1224452B0140E28F0DCA67 /* NativeCall */ = {
+			isa = PBXGroup;
+			children = (
+				A80F74EF812940DFAD9CACE3 /* NativeCallModels.swift */,
+				0077B6E066604496A50C82E8 /* NativeCallSession.swift */,
+			);
+			path = NativeCall;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -8090,7 +8107,9 @@
 				D98B5EE8C4F5A2CE84687AE8 /* UTType.swift in Sources */,
 				34357B287357BC0B9715DD51 /* UserAgentBuilder.swift in Sources */,
 				683154AD739245E56F37921E /* UserPreference.swift in Sources */,
-			);
+			
+				229692E68E534799A8D86830 /* NativeCallModels.swift in Sources */,
+				B67B63F810D045148C17E812 /* NativeCallSession.swift in Sources */,);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		11F93544B4FC60F78F47D89C /* Sources */ = {

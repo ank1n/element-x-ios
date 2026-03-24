@@ -383,6 +383,7 @@ struct SettingsScreen: View {
 
     @AppStorage("stalk_background_blur_enabled") private var backgroundBlurEnabled: Bool = false
     @AppStorage("stalk_noise_suppression_enabled") private var noiseSuppressionEnabled: Bool = true
+    @AppStorage("stalk_native_calls_enabled") private var nativeCallsEnabled: Bool = false
 
     private var callsSettingsSection: some View {
         Section(header: Text(SL10n.tabCalls)) {
@@ -397,6 +398,21 @@ struct SettingsScreen: View {
                 } icon: {
                     Image(systemName: "person.fill.viewfinder")
                         .foregroundColor(StalkTheme.accent)
+                }
+            }
+            .tint(StalkTheme.accent)
+
+            Toggle(isOn: $nativeCallsEnabled) {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Нативные звонки")
+                        Text("Экспериментально: без WebView, нативный LiveKit SDK")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "phone.badge.waveform")
+                        .foregroundColor(.purple)
                 }
             }
             .tint(StalkTheme.accent)
