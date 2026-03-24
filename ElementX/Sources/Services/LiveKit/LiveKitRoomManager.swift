@@ -126,14 +126,10 @@ final class LiveKitRoomManager: ObservableObject {
 
         MXLog.info("sTalk LiveKit: Connecting as observer '\(observerIdentity)' to \(baseURL)")
 
-        // E2EE — decrypt incoming tracks with keys from Matrix key exchange
-        let encryptionOptions = EncryptionOptions(
-            keyProvider: keyProvider,
-            encryptionType: .gcm
-        )
-
+        // No EncryptionOptions — blocks subscription without keys
+        // E2EE decryption will be handled post-connect when keys arrive
         let connectOptions = ConnectOptions(autoSubscribe: true)
-        let roomOptions = RoomOptions(encryptionOptions: encryptionOptions)
+        let roomOptions = RoomOptions()
 
         try await room.connect(url: baseURL, token: observerToken, connectOptions: connectOptions, roomOptions: roomOptions)
         MXLog.info("sTalk LiveKit: Observer connected to room \(room.name ?? "?")")
