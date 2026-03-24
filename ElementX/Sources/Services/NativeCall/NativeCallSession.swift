@@ -12,8 +12,6 @@ import Foundation
 import LiveKit
 import MatrixRustSDK
 
-private let log = MXLog.self
-
 @MainActor
 final class NativeCallSession: ObservableObject {
     // MARK: - Published State
@@ -27,12 +25,20 @@ final class NativeCallSession: ObservableObject {
     private let liveKitRoomManager: LiveKitRoomManager
     private let keyProvider = BaseKeyProvider(isSharedKey: false)
     private let isEncrypted: Bool
+    private let userId: String
+    private let deviceId: String
+
+    // MARK: - LiveKit Config
+    // TODO: Move to AppSettings or server config
+    private let livekitAPIKey = "APIe5e237fe719f"
+    private let livekitAPISecret = "6b0d7fe4c5b393c004bf813ae8dd428f70aef4896957fcb9b0ad58d37c353f96"
 
     // MARK: - E2EE Key Management
 
-    private var participantKeys: [String: Bool] = [:] // identity → hasKey
+    private var participantKeys: [String: Bool] = [:]
     private var pendingParticipants: [String: RemoteParticipant] = [:]
     private var credentialsReceived = false
+    private var livekitBaseURL: String?
 
     // MARK: - Internal
 
@@ -42,10 +48,14 @@ final class NativeCallSession: ObservableObject {
 
     init(widgetDriver: ElementCallWidgetDriverProtocol,
          liveKitRoomManager: LiveKitRoomManager,
-         isEncrypted: Bool) {
+         isEncrypted: Bool,
+         userId: String,
+         deviceId: String) {
         self.widgetDriver = widgetDriver
         self.liveKitRoomManager = liveKitRoomManager
         self.isEncrypted = isEncrypted
+        self.userId = userId
+        self.deviceId = deviceId
     }
 
     // MARK: - Start
@@ -53,7 +63,7 @@ final class NativeCallSession: ObservableObject {
     func start(baseURL: URL,
                clientID: String,
                colorScheme: SwiftUI.ColorScheme) async {
-        log.info("sTalk NativeCall: Starting session, encrypted=\(isEncrypted)")
+        MXLog.info("sTalk NativeCall: Starting session, encrypted=\(isEncrypted), user=\(userId)")
         sessionState = .starting
 
         // Step 1: Start WidgetDriver (creates MatrixRTC session)
@@ -66,7 +76,7 @@ final class NativeCallSession: ObservableObject {
         )
 
         guard case .success = result else {
-            log.error("sTalk NativeCall: WidgetDriver failed to start")
+            MXLog.error("sTalk NativeCall: WidgetDriver failed to start")
             sessionState = .failed(NativeCallError.widgetDriverFailed)
             return
         }
@@ -79,7 +89,7 @@ final class NativeCallSession: ObservableObject {
             }
             .store(in: &cancellables)
 
-        // Step 3: Listen to widget actions (callEnded, mediaState)
+        // Step 3: Listen to widget actions
         widgetDriver.actions
             .receive(on: DispatchQueue.main)
             .sink { [weak self] action in
@@ -94,24 +104,21 @@ final class NativeCallSession: ObservableObject {
         await widgetDriver.handleMessage(contentLoaded)
 
         sessionState = .waitingForCredentials
-        log.info("sTalk NativeCall: content_loaded sent, waiting for credentials")
+        MXLog.info("sTalk NativeCall: content_loaded sent, waiting for focus info")
     }
 
     // MARK: - Stop
 
     func stop() async {
-        log.info("sTalk NativeCall: Stopping session")
+        MXLog.info("sTalk NativeCall: Stopping session")
         sessionState = .disconnecting
 
-        // Send hangup
         let hangup = """
         {"api":"fromWidget","action":"im.vector.hangup","widgetId":"\(widgetDriver.widgetID)","requestId":"native-\(UUID().uuidString)","data":{}}
         """
         await widgetDriver.handleMessage(hangup)
 
-        // Disconnect LiveKit
         await liveKitRoomManager.disconnect()
-
         cancellables.removeAll()
         sessionState = .disconnected
     }
@@ -121,28 +128,25 @@ final class NativeCallSession: ObservableObject {
     private func processWidgetMessage(_ messageString: String) {
         guard let message = WidgetAPIMessage(jsonString: messageString) else { return }
 
-        // Only process toWidget messages
-        guard message.api == "toWidget" else { return }
+        // Log all messages for debugging
+        MXLog.debug("sTalk NativeCall: \(message.api) action=\(message.action) type=\(message.eventType ?? "-")")
 
-        switch message.action {
-        case "send_event":
-            handleSendEvent(message)
-
-        case "send_to_device":
-            // E2EE encryption keys via to-device
-            if message.eventType == "io.element.call.encryption_keys" {
-                handleEncryptionKeys(message)
-            }
-
-        default:
-            // Log unknown actions for debugging
-            if message.action != "capabilities" {
-                log.debug("sTalk NativeCall: Unhandled toWidget action: \(message.action)")
+        // Process toWidget messages
+        if message.api == "toWidget" {
+            switch message.action {
+            case "send_event":
+                handleSendEvent(message)
+            case "send_to_device":
+                if messageString.contains("encryption_keys") {
+                    handleEncryptionKeys(message)
+                }
+            default:
+                break
             }
         }
 
-        // Also check fromWidget messages for encryption_keys
-        if message.api == "fromWidget" && messageString.contains("encryption_keys") {
+        // Also check any direction for encryption_keys
+        if messageString.contains("encryption_keys") {
             handleEncryptionKeys(message)
         }
     }
@@ -153,35 +157,70 @@ final class NativeCallSession: ObservableObject {
         guard let eventType = message.eventType else { return }
 
         switch eventType {
-        case "org.matrix.msc3401.call.member",
-             "m.call.member":
+        case "org.matrix.msc3401.call.member", "m.call.member":
             handleCallMemberEvent(message)
-
         default:
             break
         }
     }
 
     private func handleCallMemberEvent(_ message: WidgetAPIMessage) {
-        // Extract LiveKit focus URL from call.member event
-        if let focus = message.extractLiveKitFocus() {
-            log.info("sTalk NativeCall: Found LiveKit focus URL: \(focus.url)")
-            // We need the JWT too — it comes through the LiveKit WS URL
-            // Actually, in embedded mode, the JWT comes from a separate mechanism
-            // For now, store the base URL
+        guard let content = message.callMemberContent else { return }
+
+        // Extract LiveKit SFU URL from focus config
+        var sfuURL: String?
+        var roomAlias: String?
+
+        // Try memberships → foci_preferred
+        if let memberships = content["memberships"] as? [[String: Any]] {
+            for membership in memberships {
+                if let foci = membership["foci_preferred"] as? [[String: Any]] {
+                    for focus in foci where (focus["type"] as? String) == "livekit" {
+                        sfuURL = focus["livekit_service_url"] as? String
+                        roomAlias = focus["livekit_alias"] as? String
+                    }
+                }
+                if let foci = membership["foci_active"] as? [[String: Any]] {
+                    for focus in foci where (focus["type"] as? String) == "livekit" {
+                        sfuURL = sfuURL ?? (focus["livekit_service_url"] as? String)
+                        roomAlias = roomAlias ?? (focus["livekit_alias"] as? String)
+                    }
+                }
+            }
+        }
+
+        // Try direct focus_active
+        if sfuURL == nil, let focus = content["focus_active"] as? [String: Any],
+           (focus["type"] as? String) == "livekit" {
+            sfuURL = focus["livekit_service_url"] as? String
+            roomAlias = focus["livekit_alias"] as? String
+        }
+
+        guard let url = sfuURL else { return }
+
+        MXLog.info("sTalk NativeCall: LiveKit focus — URL=\(url), alias=\(roomAlias ?? "nil")")
+        livekitBaseURL = url
+
+        // Generate JWT and connect
+        if !credentialsReceived, let roomName = roomAlias {
+            let identity = "\(userId):\(deviceId)"
+            guard let jwt = generateLiveKitJWT(roomName: roomName, identity: identity) else {
+                MXLog.error("sTalk NativeCall: Failed to generate JWT")
+                return
+            }
+            MXLog.info("sTalk NativeCall: JWT generated for \(identity), connecting...")
+            Task { await connectToLiveKit(url: url, token: jwt) }
         }
     }
 
     private func handleEncryptionKeys(_ message: WidgetAPIMessage) {
-        guard let keyInfo = message.extractEncryptionKeys() else { return }
+        guard let keyInfo = message.extractEncryptionKeys(), !keyInfo.participantId.isEmpty else { return }
 
-        log.info("sTalk NativeCall: E2EE key from \(keyInfo.participantId) index=\(keyInfo.index)")
+        MXLog.info("sTalk NativeCall: E2EE key from \(keyInfo.participantId) index=\(keyInfo.index)")
 
-        // Set key in provider
         keyProvider.setKey(key: keyInfo.key, participantId: keyInfo.participantId, index: Int32(keyInfo.index))
         participantKeys[keyInfo.participantId] = true
 
-        // Subscribe pending participants
         if let participant = pendingParticipants.removeValue(forKey: keyInfo.participantId) {
             subscribeToAllTracks(of: participant)
         }
@@ -190,21 +229,19 @@ final class NativeCallSession: ObservableObject {
     private func handleWidgetAction(_ action: ElementCallWidgetDriverAction) {
         switch action {
         case .callEnded:
-            log.info("sTalk NativeCall: Call ended from widget")
+            MXLog.info("sTalk NativeCall: Call ended from widget")
             Task { await stop() }
-
         case .mediaStateChanged(let audioEnabled, let videoEnabled):
-            log.info("sTalk NativeCall: Media state — audio=\(audioEnabled), video=\(videoEnabled)")
-
+            MXLog.info("sTalk NativeCall: Media state — audio=\(audioEnabled), video=\(videoEnabled)")
         case .encryptionKeysReceived(let keys):
             for keyData in keys {
                 if let key = keyData["key"] as? String,
                    let index = keyData["index"] as? Int,
-                   let pid = keyData["participantId"] as? String {
+                   let pid = keyData["participantId"] as? String, !pid.isEmpty {
                     keyProvider.setKey(key: key, participantId: pid, index: Int32(index))
                     participantKeys[pid] = true
-                    if let participant = pendingParticipants.removeValue(forKey: pid) {
-                        subscribeToAllTracks(of: participant)
+                    if let p = pendingParticipants.removeValue(forKey: pid) {
+                        subscribeToAllTracks(of: p)
                     }
                 }
             }
@@ -213,13 +250,10 @@ final class NativeCallSession: ObservableObject {
 
     // MARK: - LiveKit Connection
 
-    /// Called when LiveKit credentials are available (from intercepted WebSocket or Widget API)
-    func connectToLiveKit(url: String, token: String) async {
+    private func connectToLiveKit(url: String, token: String) async {
         guard !credentialsReceived else { return }
         credentialsReceived = true
-
         sessionState = .connecting
-        log.info("sTalk NativeCall: Connecting to LiveKit")
 
         do {
             if isEncrypted {
@@ -230,57 +264,92 @@ final class NativeCallSession: ObservableObject {
                     speakerByDefault: false
                 )
             } else {
-                try await liveKitRoomManager.connect(
-                    wsURL: url,
-                    token: token,
-                    speakerByDefault: false
-                )
+                try await liveKitRoomManager.connect(wsURL: url, token: token, speakerByDefault: false)
             }
 
             sessionState = .connected
             roomManager = liveKitRoomManager
-            log.info("sTalk NativeCall: Connected to LiveKit")
+            MXLog.info("sTalk NativeCall: Connected to LiveKit")
 
             // Publish media
             try? await liveKitRoomManager.setMicrophone(enabled: true)
             try? await liveKitRoomManager.setCamera(enabled: true)
+            MXLog.info("sTalk NativeCall: Camera + microphone enabled")
 
-            // Subscribe to pending participants that already have keys
-            for (identity, participant) in pendingParticipants {
-                if participantKeys[identity] == true {
-                    subscribeToAllTracks(of: participant)
-                    pendingParticipants.removeValue(forKey: identity)
-                }
+            // Subscribe pending participants
+            for (identity, participant) in pendingParticipants where participantKeys[identity] == true || !isEncrypted {
+                subscribeToAllTracks(of: participant)
+                pendingParticipants.removeValue(forKey: identity)
             }
-
         } catch {
-            log.error("sTalk NativeCall: LiveKit connect failed: \(error)")
+            MXLog.error("sTalk NativeCall: LiveKit connect failed: \(error)")
             sessionState = .failed(error)
         }
     }
 
-    // MARK: - Track Subscription
+    // MARK: - Participant Management
 
     func handleRemoteParticipantConnected(_ participant: RemoteParticipant) {
         let identity = participant.identity?.stringValue ?? ""
-
         if !isEncrypted || participantKeys[identity] == true {
             subscribeToAllTracks(of: participant)
         } else {
             pendingParticipants[identity] = participant
-            log.info("sTalk NativeCall: Queued participant \(identity) — waiting for E2EE key")
+            MXLog.info("sTalk NativeCall: Queued \(identity) — waiting for E2EE key")
         }
     }
 
     private func subscribeToAllTracks(of participant: RemoteParticipant) {
         Task {
-            for publication in participant.trackPublications.values {
-                if let remotePub = publication as? RemoteTrackPublication, !remotePub.isSubscribed {
+            for pub in participant.trackPublications.values {
+                if let remotePub = pub as? RemoteTrackPublication, !remotePub.isSubscribed {
                     try? await remotePub.set(subscribed: true)
-                    log.info("sTalk NativeCall: Subscribed to \(String(describing: remotePub.kind)) from \(participant.identity?.stringValue ?? "?")")
+                    MXLog.info("sTalk NativeCall: Subscribed \(String(describing: remotePub.kind)) from \(participant.identity?.stringValue ?? "?")")
                 }
             }
         }
+    }
+
+    // MARK: - JWT Generation
+
+    private func generateLiveKitJWT(roomName: String, identity: String) -> String? {
+        let header: [String: Any] = ["alg": "HS256", "typ": "JWT"]
+        let now = Int(Date().timeIntervalSince1970)
+        let payload: [String: Any] = [
+            "iss": livekitAPIKey,
+            "sub": identity,
+            "nbf": now,
+            "exp": now + 3600,
+            "video": [
+                "room": roomName,
+                "roomJoin": true,
+                "canPublish": true,
+                "canSubscribe": true
+            ]
+        ]
+
+        guard let headerData = try? JSONSerialization.data(withJSONObject: header),
+              let payloadData = try? JSONSerialization.data(withJSONObject: payload) else { return nil }
+
+        let headerB64 = headerData.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        let payloadB64 = payloadData.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+
+        let signingInput = "\(headerB64).\(payloadB64)"
+        guard let keyData = livekitAPISecret.data(using: .utf8) else { return nil }
+        let key = SymmetricKey(data: keyData)
+        let signature = HMAC<SHA256>.authenticationCode(for: Data(signingInput.utf8), using: key)
+        let sigB64 = Data(signature).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+
+        return "\(headerB64).\(payloadB64).\(sigB64)"
     }
 }
 

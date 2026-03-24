@@ -402,7 +402,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             state.url = url
             // We need widget messaging to work before enabling CallKit, otherwise mute, hangup etc do nothing.
             
-        case .roomCall(let roomProxy, _, let clientID, let elementCallBaseURL, let elementCallBaseURLOverride, let colorScheme):
+        case .roomCall(let roomProxy, let clientProxy, let clientID, let elementCallBaseURL, let elementCallBaseURLOverride, let colorScheme):
             Task { [weak self] in
                 guard let self else { return }
 
@@ -415,11 +415,13 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 // sTalk: Native call mode — no WebView, WidgetDriver + native LiveKit SDK
                 if useNativeCall {
                     MXLog.info("sTalk: Starting NATIVE call mode")
-                    let isEncrypted = (roomProxy.infoPublisher.value.isEncrypted)
+                    let isEncrypted = roomProxy.infoPublisher.value.isEncrypted
                     let session = NativeCallSession(
                         widgetDriver: widgetDriver,
                         liveKitRoomManager: liveKitRoomManager,
-                        isEncrypted: isEncrypted
+                        isEncrypted: isEncrypted,
+                        userId: clientProxy.userID,
+                        deviceId: clientProxy.deviceID ?? "unknown"
                     )
                     self.nativeCallSession = session
 
@@ -763,7 +765,12 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
 
         // 4. Отключить нативный LiveKit SDK
         stalkLog("[4] Disconnecting LiveKit")
-        await liveKitRoomManager.disconnect()
+        if let nativeSession = nativeCallSession {
+            await nativeSession.stop()
+            nativeCallSession = nil
+        } else {
+            await liveKitRoomManager.disconnect()
+        }
 
         // 5. Закрыть CallKit сессию
         stalkLog("[5] Tearing down CallKit session")
