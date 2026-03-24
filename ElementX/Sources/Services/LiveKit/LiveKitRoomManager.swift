@@ -126,7 +126,11 @@ final class LiveKitRoomManager: ObservableObject {
 
         MXLog.info("sTalk LiveKit: Connecting as observer '\(observerIdentity)' to \(baseURL)")
 
-        // Subscribe only to video, not audio (WebView handles audio)
+        // Prevent LiveKit from touching audio session — WebView handles all audio
+        AudioManager.shared.customConfigureAudioSessionFunc = { _, _ in
+            // No-op: don't configure audio session for observer
+        }
+
         let connectOptions = ConnectOptions(autoSubscribe: false)
         let roomOptions = RoomOptions()
 
