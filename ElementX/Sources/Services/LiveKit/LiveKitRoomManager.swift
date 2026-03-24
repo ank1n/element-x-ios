@@ -86,6 +86,44 @@ final class LiveKitRoomManager: ObservableObject {
         updateState()
     }
 
+    /// Connect with E2EE enabled (per-participant keys, manual subscribe)
+    func connectWithE2EE(wsURL: String, token: String, keyProvider: BaseKeyProvider, speakerByDefault: Bool = false) async throws {
+        let baseURL = extractBaseURL(from: wsURL)
+        MXLog.info("sTalk LiveKit: Connecting with E2EE to \(baseURL)")
+
+        reconnectURL = baseURL
+        reconnectToken = token
+
+        configureAudioSession(speakerByDefault: speakerByDefault)
+
+        let encryptionOptions = EncryptionOptions(
+            keyProvider: keyProvider,
+            encryptionType: .gcm
+        )
+
+        let connectOptions = ConnectOptions(
+            autoSubscribe: false // Manual subscribe after keys arrive
+        )
+        let roomOptions = RoomOptions(
+            defaultCameraCaptureOptions: CameraCaptureOptions(
+                dimensions: .h720_169
+            ),
+            defaultAudioCaptureOptions: AudioCaptureOptions(),
+            defaultVideoPublishOptions: VideoPublishOptions(
+                encoding: VideoEncoding(maxBitrate: 1_500_000, maxFps: 30)
+            ),
+            defaultAudioPublishOptions: AudioPublishOptions(
+                encoding: AudioEncoding(maxBitrate: 32_000),
+                dtx: false
+            ),
+            encryptionOptions: encryptionOptions
+        )
+
+        try await room.connect(url: baseURL, token: token, connectOptions: connectOptions, roomOptions: roomOptions)
+        MXLog.info("sTalk LiveKit: Connected with E2EE to room \(room.name ?? "unknown")")
+        updateState()
+    }
+
     func disconnect() async {
         reconnectURL = nil
         reconnectToken = nil
