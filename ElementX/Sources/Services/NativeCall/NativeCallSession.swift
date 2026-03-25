@@ -45,6 +45,7 @@ final class NativeCallSession: ObservableObject {
     // MARK: - Internal
 
     private var cancellables = Set<AnyCancellable>()
+    private var heartbeatTask: Task<Void, Never>?
 
     // MARK: - Init
 
@@ -114,6 +115,16 @@ final class NativeCallSession: ObservableObject {
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(2))
             await self?.sendJoinMembership()
+        }
+
+        // Step 6: Start heartbeat — resend membership every 8s to prevent delayed_leave timeout
+        heartbeatTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(8))
+                guard !Task.isCancelled, let self else { return }
+                await self.sendJoinMembership()
+                MXLog.debug("sTalk NativeCall: Heartbeat — membership refreshed")
+            }
         }
     }
 
@@ -199,6 +210,8 @@ final class NativeCallSession: ObservableObject {
         """
         await widgetDriver.handleMessage(hangup)
 
+        heartbeatTask?.cancel()
+        heartbeatTask = nil
         await liveKitRoomManager.disconnect()
         cancellables.removeAll()
         sessionState = .disconnected
