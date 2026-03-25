@@ -127,13 +127,24 @@ final class NativeCallSession: ObservableObject {
     // MARK: - Message Processing
 
     private func processWidgetMessage(_ messageString: String) {
-        guard let message = WidgetAPIMessage(jsonString: messageString) else { return }
+        guard let message = WidgetAPIMessage(jsonString: messageString) else {
+            MXLog.info("sTalk NativeCall: Unparseable message: \(messageString.prefix(200))")
+            return
+        }
 
-        // Log all messages for debugging
-        MXLog.debug("sTalk NativeCall: \(message.api) action=\(message.action) type=\(message.eventType ?? "-")")
+        // Log all messages
+        MXLog.info("sTalk NativeCall: \(message.api) action=\(message.action) type=\(message.eventType ?? "-") reqId=\(message.requestId)")
 
-        // Process toWidget messages
+        // Process toWidget messages and send acknowledgments
         if message.api == "toWidget" {
+            // Send acknowledgment for every toWidget message
+            Task {
+                let ack = """
+                {"api":"fromWidget","action":"\(message.action)","widgetId":"\(message.widgetId)","requestId":"\(message.requestId)","response":{}}
+                """
+                await widgetDriver.handleMessage(ack)
+            }
+
             switch message.action {
             case "send_event":
                 handleSendEvent(message)
