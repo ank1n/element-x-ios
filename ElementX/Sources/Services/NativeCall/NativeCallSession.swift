@@ -111,20 +111,10 @@ final class NativeCallSession: ObservableObject {
         sessionState = .waitingForCredentials
         MXLog.info("sTalk NativeCall: content_loaded sent, waiting for focus info")
 
-        // Step 5: Wait for capabilities to complete, then send join membership
+        // Step 5: Connect to LiveKit directly (no need to wait for Widget API join)
         Task { [weak self] in
-            try? await Task.sleep(for: .seconds(2))
-            await self?.sendJoinMembership()
-        }
-
-        // Step 6: Start heartbeat — resend membership every 8s to prevent delayed_leave timeout
-        heartbeatTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(8))
-                guard !Task.isCancelled, let self else { return }
-                await self.sendJoinMembership()
-                MXLog.debug("sTalk NativeCall: Heartbeat — membership refreshed")
-            }
+            try? await Task.sleep(for: .seconds(1))
+            await self?.connectWithGeneratedJWT()
         }
     }
 
@@ -334,8 +324,9 @@ final class NativeCallSession: ObservableObject {
     private func handleWidgetAction(_ action: ElementCallWidgetDriverAction) {
         switch action {
         case .callEnded:
-            MXLog.info("sTalk NativeCall: Call ended from widget")
-            Task { await stop() }
+            // Ignore widget driver hangup — it times out because we don't do delayed_leave.
+            // Native SDK manages call lifecycle independently.
+            MXLog.info("sTalk NativeCall: Widget driver hangup IGNORED — native SDK manages lifecycle")
         case .mediaStateChanged(let audioEnabled, let videoEnabled):
             MXLog.info("sTalk NativeCall: Media state — audio=\(audioEnabled), video=\(videoEnabled)")
         }
