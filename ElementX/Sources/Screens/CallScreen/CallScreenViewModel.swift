@@ -421,7 +421,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                         liveKitRoomManager: liveKitRoomManager,
                         isEncrypted: isEncrypted,
                         userId: clientProxy.userID,
-                        deviceId: clientProxy.deviceID ?? "unknown"
+                        deviceId: clientProxy.deviceID ?? "unknown",
+                        matrixRoomId: roomProxy.id
                     )
                     self.nativeCallSession = session
 

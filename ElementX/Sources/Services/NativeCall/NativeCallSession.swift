@@ -28,6 +28,7 @@ final class NativeCallSession: ObservableObject {
     private let isEncrypted: Bool
     private let userId: String
     private let deviceId: String
+    private let matrixRoomId: String
 
     // MARK: - LiveKit Config
     // TODO: Move to AppSettings or server config
@@ -51,12 +52,14 @@ final class NativeCallSession: ObservableObject {
          liveKitRoomManager: LiveKitRoomManager,
          isEncrypted: Bool,
          userId: String,
-         deviceId: String) {
+         deviceId: String,
+         matrixRoomId: String) {
         self.widgetDriver = widgetDriver
         self.liveKitRoomManager = liveKitRoomManager
         self.isEncrypted = isEncrypted
         self.userId = userId
         self.deviceId = deviceId
+        self.matrixRoomId = matrixRoomId
     }
 
     // MARK: - Start
@@ -106,6 +109,83 @@ final class NativeCallSession: ObservableObject {
 
         sessionState = .waitingForCredentials
         MXLog.info("sTalk NativeCall: content_loaded sent, waiting for focus info")
+
+        // Step 5: Wait for capabilities to complete, then send join membership
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            await self?.sendJoinMembership()
+        }
+    }
+
+    // MARK: - Join Membership
+
+    private func sendJoinMembership() async {
+        let stateKey = userId
+        let expiresTs = Int(Date().timeIntervalSince1970 * 1000) + 7_200_000 // 2 hours
+
+        let membership: [String: Any] = [
+            "application": "m.call",
+            "call_id": "",
+            "scope": "m.room",
+            "device_id": deviceId,
+            "expires": expiresTs,
+            "foci_preferred": [
+                ["type": "livekit", "livekit_service_url": "https://livekit.stalk.implica.ru"]
+            ],
+            "membershipID": UUID().uuidString
+        ]
+
+        let eventData: [String: Any] = [
+            "type": "org.matrix.msc3401.call.member",
+            "state_key": stateKey,
+            "content": ["memberships": [membership]]
+        ]
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: eventData),
+              let jsonString = String(data: jsonData, encoding: .utf8) else {
+            MXLog.error("sTalk NativeCall: Failed to serialize join membership")
+            return
+        }
+
+        let sendEvent = """
+        {"api":"fromWidget","action":"send_event","widgetId":"\(widgetDriver.widgetID)","requestId":"native-join-\(UUID().uuidString)","data":\(jsonString)}
+        """
+
+        MXLog.info("sTalk NativeCall: Sending join membership via Widget API")
+        await widgetDriver.handleMessage(sendEvent)
+
+        // After join, generate JWT and connect to LiveKit
+        try? await Task.sleep(for: .seconds(2))
+        await connectWithGeneratedJWT()
+    }
+
+    private func connectWithGeneratedJWT() async {
+        let sfuURL = "wss://livekit.stalk.implica.ru"
+        let identity = "\(userId):\(deviceId)"
+
+        // Room name = base64(SHA256(matrixRoomID + "|m.call#ROOM")) — same as lk-jwt-service
+        guard let roomName = generateLiveKitRoomName() else {
+            MXLog.error("sTalk NativeCall: Failed to generate room name")
+            sessionState = .failed(NativeCallError.noCredentials)
+            return
+        }
+
+        guard let jwt = generateLiveKitJWT(roomName: roomName, identity: identity) else {
+            MXLog.error("sTalk NativeCall: Failed to generate JWT")
+            sessionState = .failed(NativeCallError.noCredentials)
+            return
+        }
+
+        MXLog.info("sTalk NativeCall: Generated JWT for room=\(roomName), identity=\(identity)")
+        await connectToLiveKit(url: sfuURL, token: jwt)
+    }
+
+    private func generateLiveKitRoomName() -> String? {
+        guard !matrixRoomId.isEmpty else { return nil }
+        let raw = "\(matrixRoomId)|m.call#ROOM"
+        let hash = SHA256.hash(data: Data(raw.utf8))
+        return Data(hash).base64EncodedString()
+            .replacingOccurrences(of: "=", with: "")
     }
 
     // MARK: - Stop
