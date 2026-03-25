@@ -77,51 +77,13 @@ final class NativeCallSession: ObservableObject {
         MXLog.info("sTalk NativeCall: Starting session, encrypted=\(isEncrypted), user=\(userId)")
         sessionState = .starting
 
-        // Step 1: Start WidgetDriver (creates MatrixRTC session)
-        let result = await widgetDriver.start(
-            baseURL: baseURL,
-            clientID: clientID,
-            colorScheme: colorScheme,
-            rageshakeURL: nil,
-            analyticsConfiguration: nil
-        )
-
-        guard case .success = result else {
-            MXLog.error("sTalk NativeCall: WidgetDriver failed to start")
-            sessionState = .failed(NativeCallError.widgetDriverFailed)
-            return
-        }
-
-        // Step 2: Listen to widget messages
-        widgetDriver.messagePublisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] message in
-                self?.processWidgetMessage(message)
-            }
-            .store(in: &cancellables)
-
-        // Step 3: Listen to widget actions
-        widgetDriver.actions
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] action in
-                self?.handleWidgetAction(action)
-            }
-            .store(in: &cancellables)
-
-        // Step 4: Send content_loaded to kick off MatrixRTC join
-        let contentLoaded = """
-        {"api":"fromWidget","action":"content_loaded","widgetId":"\(widgetDriver.widgetID)","requestId":"native-\(UUID().uuidString)","data":{}}
-        """
-        await widgetDriver.handleMessage(contentLoaded)
+        // No WidgetDriver — we manage everything directly:
+        // 1. Generate JWT ourselves
+        // 2. Join MatrixRTC via REST API
+        // 3. Connect to LiveKit SFU natively
 
         sessionState = .waitingForCredentials
-        MXLog.info("sTalk NativeCall: content_loaded sent, waiting for focus info")
-
-        // Step 5: Connect to LiveKit directly (no need to wait for Widget API join)
-        Task { [weak self] in
-            try? await Task.sleep(for: .seconds(1))
-            await self?.connectWithGeneratedJWT()
-        }
+        await connectWithGeneratedJWT()
     }
 
     // MARK: - Join Membership
@@ -253,16 +215,40 @@ final class NativeCallSession: ObservableObject {
         MXLog.info("sTalk NativeCall: Stopping session")
         sessionState = .disconnecting
 
-        let hangup = """
-        {"api":"fromWidget","action":"im.vector.hangup","widgetId":"\(widgetDriver.widgetID)","requestId":"native-\(UUID().uuidString)","data":{}}
-        """
-        await widgetDriver.handleMessage(hangup)
+        // Leave MatrixRTC via REST API
+        await sendLeaveViaREST()
 
-        heartbeatTask?.cancel()
-        heartbeatTask = nil
         await liveKitRoomManager.disconnect()
         cancellables.removeAll()
         sessionState = .disconnected
+        MXLog.info("sTalk NativeCall: Session stopped")
+    }
+
+    private func sendLeaveViaREST() async {
+        let encodedRoom = matrixRoomId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? matrixRoomId
+        let encodedStateKey = userId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? userId
+
+        for eventType in ["org.matrix.msc3401.call.member", "m.call.member"] {
+            let encodedType = eventType.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? eventType
+            let url = "\(homeserverURL)/_matrix/client/v3/rooms/\(encodedRoom)/state/\(encodedType)/\(encodedStateKey)"
+
+            let body: [String: Any] = ["memberships": []]
+            guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else { continue }
+
+            var request = URLRequest(url: URL(string: url)!)
+            request.httpMethod = "PUT"
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = jsonData
+
+            do {
+                let (_, response) = try await URLSession.shared.data(for: request)
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                MXLog.info("sTalk NativeCall: REST leave \(eventType) → \(status)")
+            } catch {
+                MXLog.error("sTalk NativeCall: REST leave failed: \(error)")
+            }
+        }
     }
 
     // MARK: - Message Processing
