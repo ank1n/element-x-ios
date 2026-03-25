@@ -196,10 +196,12 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 
                 switch action {
                 case .callEnded:
+                    // sTalk: In native call mode, widget driver timeout is expected — ignore
+                    if self.nativeCallSession != nil {
+                        MXLog.info("sTalk: .callEnded from widget IGNORED — native mode")
+                        return
+                    }
                     // sTalk: Guard against bounce-back.
-                    // .callEnded fires when Widget API receives .close with fromWidget direction.
-                    // Our endCall() sends .close directly → handleMessageIfNeeded echoes .callEnded.
-                    // If endCall() is already running, ignore the bounced signal.
                     if self.isEndingCall {
                         MXLog.info("sTalk: .callEnded ignored — endCall() is already in progress")
                         return
@@ -416,13 +418,16 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 if useNativeCall {
                     MXLog.info("sTalk: Starting NATIVE call mode")
                     let isEncrypted = roomProxy.infoPublisher.value.isEncrypted
+                    let token = (try? (clientProxy as? ClientProxy)?.matrixAccessToken()) ?? ""
                     let session = NativeCallSession(
                         widgetDriver: widgetDriver,
                         liveKitRoomManager: liveKitRoomManager,
                         isEncrypted: isEncrypted,
                         userId: clientProxy.userID,
                         deviceId: clientProxy.deviceID ?? "unknown",
-                        matrixRoomId: roomProxy.id
+                        matrixRoomId: roomProxy.id,
+                        homeserverURL: clientProxy.homeserver,
+                        accessToken: token
                     )
                     self.nativeCallSession = session
 

@@ -29,6 +29,8 @@ final class NativeCallSession: ObservableObject {
     private let userId: String
     private let deviceId: String
     private let matrixRoomId: String
+    private let homeserverURL: String
+    private let accessToken: String
 
     // MARK: - LiveKit Config
     // TODO: Move to AppSettings or server config
@@ -54,13 +56,17 @@ final class NativeCallSession: ObservableObject {
          isEncrypted: Bool,
          userId: String,
          deviceId: String,
-         matrixRoomId: String) {
+         matrixRoomId: String,
+         homeserverURL: String,
+         accessToken: String) {
         self.widgetDriver = widgetDriver
         self.liveKitRoomManager = liveKitRoomManager
         self.isEncrypted = isEncrypted
         self.userId = userId
         self.deviceId = deviceId
         self.matrixRoomId = matrixRoomId
+        self.homeserverURL = homeserverURL.hasSuffix("/") ? String(homeserverURL.dropLast()) : homeserverURL
+        self.accessToken = accessToken
     }
 
     // MARK: - Start
@@ -178,6 +184,10 @@ final class NativeCallSession: ObservableObject {
         }
 
         MXLog.info("sTalk NativeCall: Generated JWT for room=\(roomName), identity=\(identity)")
+
+        // Send MatrixRTC join via REST API so remote participants see us
+        await sendJoinViaREST()
+
         await connectToLiveKit(url: sfuURL, token: jwt)
     }
 
@@ -187,6 +197,54 @@ final class NativeCallSession: ObservableObject {
         let hash = SHA256.hash(data: Data(raw.utf8))
         return Data(hash).base64EncodedString()
             .replacingOccurrences(of: "=", with: "")
+    }
+
+    // MARK: - MatrixRTC Join via REST API
+
+    private func sendJoinViaREST() async {
+        let encodedRoom = matrixRoomId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? matrixRoomId
+        let encodedStateKey = userId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? userId
+
+        // Try both event types
+        for eventType in ["org.matrix.msc3401.call.member", "m.call.member"] {
+            let encodedType = eventType.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? eventType
+            let url = "\(homeserverURL)/_matrix/client/v3/rooms/\(encodedRoom)/state/\(encodedType)/\(encodedStateKey)"
+
+            let expiresTs = Int(Date().timeIntervalSince1970 * 1000) + 7_200_000
+            let body: [String: Any] = [
+                "memberships": [[
+                    "application": "m.call",
+                    "call_id": "",
+                    "scope": "m.room",
+                    "device_id": deviceId,
+                    "expires": expiresTs,
+                    "foci_preferred": [[
+                        "type": "livekit",
+                        "livekit_service_url": "https://livekit.stalk.implica.ru"
+                    ]],
+                    "membershipID": UUID().uuidString
+                ]]
+            ]
+
+            guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else { continue }
+
+            var request = URLRequest(url: URL(string: url)!)
+            request.httpMethod = "PUT"
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = jsonData
+
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                MXLog.info("sTalk NativeCall: REST join \(eventType) → \(status)")
+                if status == 200 {
+                    return // Success — don't try second event type
+                }
+            } catch {
+                MXLog.error("sTalk NativeCall: REST join failed: \(error)")
+            }
+        }
     }
 
     // MARK: - Stop
