@@ -1613,7 +1613,6 @@
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				EB88DBD77221E2CFE463018C /* NSE.appex in Embed Foundation Extensions */,
 				00C3023B6DF55024D8876B76 /* ShareExtension.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
@@ -7520,7 +7519,6 @@
 			buildRules = (
 			);
 			dependencies = (
-				2C29670603B37E38705D5FF1 /* PBXTargetDependency */,
 				58C473A5DEA945AACFEA8E9F /* PBXTargetDependency */,
 				2E32BC489F482046B8B1460F /* PBXTargetDependency */,
 			);
@@ -8109,7 +8107,8 @@
 				683154AD739245E56F37921E /* UserPreference.swift in Sources */,
 			
 				229692E68E534799A8D86830 /* NativeCallModels.swift in Sources */,
-				B67B63F810D045148C17E812 /* NativeCallSession.swift in Sources */,);
+				B67B63F810D045148C17E812 /* NativeCallSession.swift in Sources */,
+			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		11F93544B4FC60F78F47D89C /* Sources */ = {
@@ -9435,7 +9434,9 @@
 				CB8B296BCB938166EC048DBA /* MessageSearchScreen.swift in Sources */,
 				C73B0B5A5D1CF7E89B00E7B6 /* MessageSearchScreenCoordinator.swift in Sources */,
 				26B8ED4777E4DD0A6452B1F7 /* MessageSearchService.swift in Sources */,
-			);
+			
+				229692E68E534799A8D86830 /* NativeCallModels.swift in Sources */,
+				B67B63F810D045148C17E812 /* NativeCallSession.swift in Sources */,);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		BAD5CD7BE53A7C832569B67A /* Sources */ = {

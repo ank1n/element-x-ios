@@ -11,6 +11,7 @@ import CryptoKit
 import Foundation
 import LiveKit
 import MatrixRustSDK
+import SwiftUI
 
 @MainActor
 final class NativeCallSession: ObservableObject {
@@ -233,18 +234,6 @@ final class NativeCallSession: ObservableObject {
             Task { await stop() }
         case .mediaStateChanged(let audioEnabled, let videoEnabled):
             MXLog.info("sTalk NativeCall: Media state — audio=\(audioEnabled), video=\(videoEnabled)")
-        case .encryptionKeysReceived(let keys):
-            for keyData in keys {
-                if let key = keyData["key"] as? String,
-                   let index = keyData["index"] as? Int,
-                   let pid = keyData["participantId"] as? String, !pid.isEmpty {
-                    keyProvider.setKey(key: key, participantId: pid, index: Int32(index))
-                    participantKeys[pid] = true
-                    if let p = pendingParticipants.removeValue(forKey: pid) {
-                        subscribeToAllTracks(of: p)
-                    }
-                }
-            }
         }
     }
 
