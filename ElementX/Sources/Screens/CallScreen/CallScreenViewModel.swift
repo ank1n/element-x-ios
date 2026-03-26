@@ -502,6 +502,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                                                           roomDisplayName: roomProxy.infoPublisher.value.displayName ?? roomProxy.id)
             }
             
+            // No timeout in native mode — native SDK manages lifecycle
+            guard !useNativeCall else { return }
+
             timeoutTask = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(10))
                 guard !Task.isCancelled, let self else { return }
