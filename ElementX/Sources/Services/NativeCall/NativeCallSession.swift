@@ -225,7 +225,8 @@ final class NativeCallSession: ObservableObject {
             "call_id": "",
             "m.mentions": ["user_ids": [] as [String]],
             "sender_ts": Int(Date().timeIntervalSince1970 * 1000),
-            "lifetime": 90000
+            "lifetime": 90000,
+            "notification_type": "ring"
         ]
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else { return }
