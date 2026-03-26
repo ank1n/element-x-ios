@@ -178,16 +178,19 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             }
             .store(in: &cancellables)
         
-        widgetDriver.messagePublisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] receivedMessage in
-                guard let self else { return }
-                
-                Task {
-                    await self.postJSONToWidget(receivedMessage)
+        // In native mode, don't forward widget messages to non-existent WebView
+        if !useNativeCall {
+            widgetDriver.messagePublisher
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] receivedMessage in
+                    guard let self else { return }
+
+                    Task {
+                        await self.postJSONToWidget(receivedMessage)
+                    }
                 }
-            }
-            .store(in: &cancellables)
+                .store(in: &cancellables)
+        }
         
         widgetDriver.actions
             .receive(on: DispatchQueue.main)
@@ -457,8 +460,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                         colorScheme: colorScheme
                     )
 
-                    await elementCallService.setupCallSession(roomID: roomProxy.id,
-                                                              roomDisplayName: roomProxy.infoPublisher.value.displayName ?? roomProxy.id)
+                    // Note: NOT calling elementCallService.setupCallSession —
+                    // CallKit would kill the call when WidgetDriver times out.
+                    // Native SDK manages call lifecycle independently.
                     return
                 }
 
