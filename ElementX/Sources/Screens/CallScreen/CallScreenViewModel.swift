@@ -192,18 +192,14 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 .store(in: &cancellables)
         }
         
+        if !useNativeCall {
         widgetDriver.actions
             .receive(on: DispatchQueue.main)
             .sink { [weak self] action in
                 guard let self else { return }
-                
+
                 switch action {
                 case .callEnded:
-                    // sTalk: In native call mode, widget driver timeout is expected — ignore
-                    if self.nativeCallSession != nil {
-                        MXLog.info("sTalk: .callEnded from widget IGNORED — native mode")
-                        return
-                    }
                     // sTalk: Guard against bounce-back.
                     if self.isEndingCall {
                         MXLog.info("sTalk: .callEnded ignored — endCall() is already in progress")
@@ -224,7 +220,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 }
             }
             .store(in: &cancellables)
-        
+        } // end if !useNativeCall
+
         NotificationCenter.default
             .publisher(for: AVAudioSession.routeChangeNotification)
             .sink { [weak self] _ in
