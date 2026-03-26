@@ -97,7 +97,7 @@ final class NativeCallSession: ObservableObject {
             "call_id": "",
             "scope": "m.room",
             "device_id": deviceId,
-            "expires": expiresTs,
+            "expires_ts": expiresTs,
             "foci_preferred": [
                 ["type": "livekit", "livekit_service_url": "https://livekit.stalk.implica.ru"]
             ],
@@ -172,17 +172,20 @@ final class NativeCallSession: ObservableObject {
             let encodedType = eventType.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? eventType
             let url = "\(homeserverURL)/_matrix/client/v3/rooms/\(encodedRoom)/state/\(encodedType)/\(encodedStateKey)"
 
-            let expiresTs = Int(Date().timeIntervalSince1970 * 1000) + 7_200_000
+            let nowMs = Int(Date().timeIntervalSince1970 * 1000)
+            let expiresTs = nowMs + 7_200_000
             let body: [String: Any] = [
                 "memberships": [[
                     "application": "m.call",
                     "call_id": "",
                     "scope": "m.room",
                     "device_id": deviceId,
-                    "expires": expiresTs,
+                    "expires_ts": expiresTs,
+                    "created_ts": nowMs,
                     "foci_preferred": [[
                         "type": "livekit",
-                        "livekit_service_url": "https://livekit.stalk.implica.ru"
+                        "livekit_service_url": "https://livekit.stalk.implica.ru",
+                        "livekit_alias": matrixRoomId
                     ]],
                     "membershipID": UUID().uuidString
                 ]]
