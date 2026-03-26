@@ -77,49 +77,12 @@ final class NativeCallSession: ObservableObject {
         MXLog.info("sTalk NativeCall: Starting session, encrypted=\(isEncrypted), user=\(userId)")
         sessionState = .starting
 
-        // Step 1: Start WidgetDriver for E2EE key exchange
-        // WidgetDriver receives encryption_keys via Matrix to-device events
-        let driverResult = await widgetDriver.start(
-            baseURL: baseURL,
-            clientID: clientID,
-            colorScheme: colorScheme,
-            rageshakeURL: nil,
-            analyticsConfiguration: nil
-        )
+        // No WidgetDriver — it sends leave after 10s timeout and breaks our membership.
+        // E2EE key exchange will be handled separately (TODO: STMOB-66).
 
-        if case .success = driverResult {
-            // Listen to widget messages for E2EE keys
-            widgetDriver.messagePublisher
-                .receive(on: DispatchQueue.main)
-                .sink { [weak self] message in
-                    self?.processWidgetMessage(message)
-                }
-                .store(in: &cancellables)
-
-            // Send content_loaded to start MatrixRTC session (needed for key exchange)
-            let contentLoaded = """
-            {"api":"fromWidget","action":"content_loaded","widgetId":"\(widgetDriver.widgetID)","requestId":"native-\(UUID().uuidString)","data":{}}
-            """
-            await widgetDriver.handleMessage(contentLoaded)
-            MXLog.info("sTalk NativeCall: WidgetDriver started for key exchange")
-        } else {
-            MXLog.warning("sTalk NativeCall: WidgetDriver failed — continuing without E2EE keys")
-        }
-
-        // Step 2: Generate JWT and connect to LiveKit
+        // Generate JWT and connect to LiveKit
         sessionState = .waitingForCredentials
         await connectWithGeneratedJWT()
-
-        // Step 3: Start heartbeat — re-send REST join every 15s
-        // (WidgetDriver will send leave after ~10s timeout, we override it)
-        heartbeatTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(15))
-                guard !Task.isCancelled, let self else { return }
-                await self.sendJoinViaREST()
-                MXLog.debug("sTalk NativeCall: Heartbeat — REST join refreshed")
-            }
-        }
     }
 
     // MARK: - Join Membership
