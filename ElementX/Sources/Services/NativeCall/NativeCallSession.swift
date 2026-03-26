@@ -77,13 +77,49 @@ final class NativeCallSession: ObservableObject {
         MXLog.info("sTalk NativeCall: Starting session, encrypted=\(isEncrypted), user=\(userId)")
         sessionState = .starting
 
-        // No WidgetDriver — we manage everything directly:
-        // 1. Generate JWT ourselves
-        // 2. Join MatrixRTC via REST API
-        // 3. Connect to LiveKit SFU natively
+        // Step 1: Start WidgetDriver for E2EE key exchange
+        // WidgetDriver receives encryption_keys via Matrix to-device events
+        let driverResult = await widgetDriver.start(
+            baseURL: baseURL,
+            clientID: clientID,
+            colorScheme: colorScheme,
+            rageshakeURL: nil,
+            analyticsConfiguration: nil
+        )
 
+        if case .success = driverResult {
+            // Listen to widget messages for E2EE keys
+            widgetDriver.messagePublisher
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] message in
+                    self?.processWidgetMessage(message)
+                }
+                .store(in: &cancellables)
+
+            // Send content_loaded to start MatrixRTC session (needed for key exchange)
+            let contentLoaded = """
+            {"api":"fromWidget","action":"content_loaded","widgetId":"\(widgetDriver.widgetID)","requestId":"native-\(UUID().uuidString)","data":{}}
+            """
+            await widgetDriver.handleMessage(contentLoaded)
+            MXLog.info("sTalk NativeCall: WidgetDriver started for key exchange")
+        } else {
+            MXLog.warning("sTalk NativeCall: WidgetDriver failed — continuing without E2EE keys")
+        }
+
+        // Step 2: Generate JWT and connect to LiveKit
         sessionState = .waitingForCredentials
         await connectWithGeneratedJWT()
+
+        // Step 3: Start heartbeat — re-send REST join every 15s
+        // (WidgetDriver will send leave after ~10s timeout, we override it)
+        heartbeatTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(15))
+                guard !Task.isCancelled, let self else { return }
+                await self.sendJoinViaREST()
+                MXLog.debug("sTalk NativeCall: Heartbeat — REST join refreshed")
+            }
+        }
     }
 
     // MARK: - Join Membership
@@ -251,6 +287,9 @@ final class NativeCallSession: ObservableObject {
     func stop() async {
         MXLog.info("sTalk NativeCall: Stopping session")
         sessionState = .disconnecting
+
+        heartbeatTask?.cancel()
+        heartbeatTask = nil
 
         // Leave MatrixRTC via REST API
         await sendLeaveViaREST()
@@ -422,8 +461,9 @@ final class NativeCallSession: ObservableObject {
 
         do {
             if isEncrypted {
-                // TODO: E2EE — need key exchange before enabling EncryptionOptions
-                // For now connect without E2EE to test basic connectivity
+                // Connect without EncryptionOptions initially (allows autoSubscribe)
+                // E2EE keys arrive async via WidgetDriver — set in keyProvider when received
+                // TODO: Enable EncryptionOptions after keys arrive for full E2EE
                 try await liveKitRoomManager.connect(wsURL: url, token: token, speakerByDefault: false)
             } else {
                 try await liveKitRoomManager.connect(wsURL: url, token: token, speakerByDefault: false)
