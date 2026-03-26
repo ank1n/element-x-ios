@@ -77,8 +77,29 @@ final class NativeCallSession: ObservableObject {
         MXLog.info("sTalk NativeCall: Starting session, encrypted=\(isEncrypted), user=\(userId)")
         sessionState = .starting
 
-        // No WidgetDriver — it sends leave after 10s timeout and breaks our membership.
-        // E2EE key exchange will be handled separately (TODO: STMOB-66).
+        // Start WidgetDriver in background for E2EE key exchange only
+        // WidgetDriver uses different state_key format, won't conflict with our REST join
+        let driverResult = await widgetDriver.start(
+            baseURL: baseURL,
+            clientID: clientID,
+            colorScheme: colorScheme,
+            rageshakeURL: nil,
+            analyticsConfiguration: nil
+        )
+        if case .success = driverResult {
+            widgetDriver.messagePublisher
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] message in
+                    self?.processWidgetMessage(message)
+                }
+                .store(in: &cancellables)
+
+            let contentLoaded = """
+            {"api":"fromWidget","action":"content_loaded","widgetId":"\(widgetDriver.widgetID)","requestId":"native-\(UUID().uuidString)","data":{}}
+            """
+            await widgetDriver.handleMessage(contentLoaded)
+            MXLog.info("sTalk NativeCall: WidgetDriver started for E2EE key exchange")
+        }
 
         // Generate JWT and connect to LiveKit
         sessionState = .waitingForCredentials
@@ -458,9 +479,9 @@ final class NativeCallSession: ObservableObject {
 
         do {
             if isEncrypted {
-                // Connect without EncryptionOptions initially (allows autoSubscribe)
-                // E2EE keys arrive async via WidgetDriver — set in keyProvider when received
-                // TODO: Enable EncryptionOptions after keys arrive for full E2EE
+                // Connect without E2EE for now — allows autoSubscribe
+                // Our tracks go plaintext, web shows "unencrypted" warning
+                // TODO: E2EE key exchange for full encryption
                 try await liveKitRoomManager.connect(wsURL: url, token: token, speakerByDefault: false)
             } else {
                 try await liveKitRoomManager.connect(wsURL: url, token: token, speakerByDefault: false)
