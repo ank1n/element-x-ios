@@ -202,7 +202,8 @@ final class NativeCallSession: ObservableObject {
             do {
                 let (data, response) = try await URLSession.shared.data(for: request)
                 let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-                MXLog.info("sTalk NativeCall: REST join \(eventType) → \(status)")
+                let body = String(data: data, encoding: .utf8) ?? ""
+                MXLog.info("sTalk NativeCall: REST join \(eventType) → \(status) url=\(url) body=\(body.prefix(200))")
             } catch {
                 MXLog.error("sTalk NativeCall: REST join failed: \(error)")
             }
