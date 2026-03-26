@@ -150,6 +150,9 @@ final class NativeCallSession: ObservableObject {
         // Send MatrixRTC join via REST API so remote participants see us
         await sendJoinViaREST()
 
+        // Send call notification for incoming call ring on remote
+        await sendCallNotification()
+
         await connectToLiveKit(url: sfuURL, token: jwt)
     }
 
@@ -207,6 +210,36 @@ final class NativeCallSession: ObservableObject {
             } catch {
                 MXLog.error("sTalk NativeCall: REST join failed: \(error)")
             }
+        }
+    }
+
+    // MARK: - Call Notification
+
+    private func sendCallNotification() async {
+        let encodedRoom = matrixRoomId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? matrixRoomId
+        let txnId = UUID().uuidString
+        let url = "\(homeserverURL)/_matrix/client/v3/rooms/\(encodedRoom)/send/org.matrix.msc4075.rtc.notification/\(txnId)"
+
+        let body: [String: Any] = [
+            "application": "m.call",
+            "call_id": "",
+            "m.mentions": ["user_ids": [] as [String]]
+        ]
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else { return }
+
+        var request = URLRequest(url: URL(string: url)!)
+        request.httpMethod = "PUT"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            MXLog.info("sTalk NativeCall: Call notification → \(status)")
+        } catch {
+            MXLog.error("sTalk NativeCall: Call notification failed: \(error)")
         }
     }
 
