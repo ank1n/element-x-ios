@@ -170,30 +170,30 @@ final class NativeCallSession: ObservableObject {
 
     private func sendJoinViaREST() async {
         let encodedRoom = matrixRoomId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? matrixRoomId
-        let encodedStateKey = userId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? userId
+        // State key format: _@user:server_deviceId_m.call
+        let stateKey = "_\(userId)_\(deviceId)_m.call"
+        let encodedStateKey = stateKey.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? stateKey
 
-        // Try both event types
-        for eventType in ["m.call.member", "org.matrix.msc3401.call.member"] {
+        for eventType in ["org.matrix.msc3401.call.member"] {
             let encodedType = eventType.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? eventType
             let url = "\(homeserverURL)/_matrix/client/v3/rooms/\(encodedRoom)/state/\(encodedType)/\(encodedStateKey)"
 
-            let nowMs = Int(Date().timeIntervalSince1970 * 1000)
-            let expiresTs = nowMs + 7_200_000
+            // Flat format matching Element Call web client
             let body: [String: Any] = [
-                "memberships": [[
-                    "application": "m.call",
-                    "call_id": "",
-                    "scope": "m.room",
-                    "device_id": deviceId,
-                    "expires_ts": expiresTs,
-                    "created_ts": nowMs,
-                    "foci_preferred": [[
-                        "type": "livekit",
-                        "livekit_service_url": "https://livekit.stalk.implica.ru",
-                        "livekit_alias": matrixRoomId
-                    ]],
-                    "membershipID": UUID().uuidString
-                ]]
+                "application": "m.call",
+                "call_id": "",
+                "scope": "m.room",
+                "device_id": deviceId,
+                "expires": 7200000,
+                "foci_preferred": [[
+                    "type": "livekit",
+                    "livekit_alias": matrixRoomId,
+                    "livekit_service_url": "https://jwt.stalk.implica.ru"
+                ]],
+                "focus_active": [
+                    "type": "livekit",
+                    "focus_selection": "oldest_membership"
+                ]
             ]
 
             guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else { continue }
@@ -297,13 +297,15 @@ final class NativeCallSession: ObservableObject {
 
     private func sendLeaveViaREST() async {
         let encodedRoom = matrixRoomId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? matrixRoomId
-        let encodedStateKey = userId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? userId
+        let stateKey = "_\(userId)_\(deviceId)_m.call"
+        let encodedStateKey = stateKey.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? stateKey
 
-        for eventType in ["m.call.member", "org.matrix.msc3401.call.member"] {
+        for eventType in ["org.matrix.msc3401.call.member"] {
             let encodedType = eventType.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? eventType
             let url = "\(homeserverURL)/_matrix/client/v3/rooms/\(encodedRoom)/state/\(encodedType)/\(encodedStateKey)"
 
-            let body: [String: Any] = ["memberships": []]
+            // Empty content = leave
+            let body: [String: Any] = [:]
             guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else { continue }
 
             var request = URLRequest(url: URL(string: url)!)
