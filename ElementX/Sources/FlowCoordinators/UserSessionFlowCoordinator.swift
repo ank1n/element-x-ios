@@ -579,9 +579,8 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
     
     private func hideCallScreenOverlay() {
         guard let callScreenPictureInPictureController else {
-            // sTalk: In native call mode PiP is not available — just minimize, don't dismiss
-            MXLog.warning("Picture in picture isn't available — minimizing instead of dismissing.")
-            navigationTabCoordinator.setOverlayPresentationMode(.minimized)
+            // sTalk: In native call mode PiP is not available — keep fullscreen
+            MXLog.warning("Picture in picture isn't available — keeping call fullscreen.")
             return
         }
         
