@@ -83,8 +83,15 @@ private struct DirectCallLayout: View {
 
     private var firstRemoteVideoTrack: VideoTrack? {
         for participant in roomManager.remoteParticipants {
+            // Try camera first
             if let track = participant.firstCameraVideoTrack {
                 return track
+            }
+            // Fallback: any subscribed video track
+            for pub in participant.videoTracks where pub.isSubscribed {
+                if let track = pub.track as? VideoTrack {
+                    return track
+                }
             }
         }
         return nil
