@@ -168,7 +168,7 @@ final class NativeCallSession: ObservableObject {
         let encodedStateKey = userId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? userId
 
         // Try both event types
-        for eventType in ["org.matrix.msc3401.call.member", "m.call.member"] {
+        for eventType in ["m.call.member", "org.matrix.msc3401.call.member"] {
             let encodedType = eventType.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? eventType
             let url = "\(homeserverURL)/_matrix/client/v3/rooms/\(encodedRoom)/state/\(encodedType)/\(encodedStateKey)"
 
@@ -203,9 +203,6 @@ final class NativeCallSession: ObservableObject {
                 let (data, response) = try await URLSession.shared.data(for: request)
                 let status = (response as? HTTPURLResponse)?.statusCode ?? 0
                 MXLog.info("sTalk NativeCall: REST join \(eventType) → \(status)")
-                if status == 200 {
-                    return // Success — don't try second event type
-                }
             } catch {
                 MXLog.error("sTalk NativeCall: REST join failed: \(error)")
             }
@@ -231,7 +228,7 @@ final class NativeCallSession: ObservableObject {
         let encodedRoom = matrixRoomId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? matrixRoomId
         let encodedStateKey = userId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? userId
 
-        for eventType in ["org.matrix.msc3401.call.member", "m.call.member"] {
+        for eventType in ["m.call.member", "org.matrix.msc3401.call.member"] {
             let encodedType = eventType.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? eventType
             let url = "\(homeserverURL)/_matrix/client/v3/rooms/\(encodedRoom)/state/\(encodedType)/\(encodedStateKey)"
 
