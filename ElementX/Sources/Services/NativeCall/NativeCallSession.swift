@@ -152,6 +152,9 @@ final class NativeCallSession: ObservableObject {
         // Send call notification for incoming call ring on remote
         await sendCallNotification()
 
+        // Debug: read current state events to compare formats
+        await debugReadCallMemberState()
+
         await connectToLiveKit(url: sfuURL, token: jwt)
     }
 
@@ -209,6 +212,35 @@ final class NativeCallSession: ObservableObject {
             } catch {
                 MXLog.error("sTalk NativeCall: REST join failed: \(error)")
             }
+        }
+    }
+
+    // MARK: - Debug
+
+    private func debugReadCallMemberState() async {
+        let encodedRoom = matrixRoomId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? matrixRoomId
+        let url = "\(homeserverURL)/_matrix/client/v3/rooms/\(encodedRoom)/state"
+
+        var request = URLRequest(url: URL(string: url)!)
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            if let events = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+                for event in events {
+                    let type = event["type"] as? String ?? ""
+                    if type.contains("call") {
+                        let stateKey = event["state_key"] as? String ?? ""
+                        let content = event["content"] as? [String: Any] ?? [:]
+                        if let contentData = try? JSONSerialization.data(withJSONObject: content),
+                           let contentStr = String(data: contentData, encoding: .utf8) {
+                            MXLog.info("sTalk DEBUG: state \(type) key=\(stateKey) content=\(contentStr.prefix(500))")
+                        }
+                    }
+                }
+            }
+        } catch {
+            MXLog.error("sTalk DEBUG: Failed to read state: \(error)")
         }
     }
 
