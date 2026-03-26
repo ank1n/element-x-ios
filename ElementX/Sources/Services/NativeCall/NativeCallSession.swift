@@ -422,12 +422,9 @@ final class NativeCallSession: ObservableObject {
 
         do {
             if isEncrypted {
-                try await liveKitRoomManager.connectWithE2EE(
-                    wsURL: url,
-                    token: token,
-                    keyProvider: keyProvider,
-                    speakerByDefault: false
-                )
+                // TODO: E2EE — need key exchange before enabling EncryptionOptions
+                // For now connect without E2EE to test basic connectivity
+                try await liveKitRoomManager.connect(wsURL: url, token: token, speakerByDefault: false)
             } else {
                 try await liveKitRoomManager.connect(wsURL: url, token: token, speakerByDefault: false)
             }
