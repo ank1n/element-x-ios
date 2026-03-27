@@ -402,14 +402,12 @@ final class NativeCallSession: ObservableObject {
 
         // Process toWidget messages
         if message.api == "toWidget" {
-            // Send acknowledgment for toWidget messages (except capabilities — handled internally by driver)
-            if message.action != "capabilities" {
-                Task {
-                    let ack = """
-                    {"api":"fromWidget","action":"\(message.action)","widgetId":"\(message.widgetId)","requestId":"\(message.requestId)","response":{}}
-                    """
-                    await widgetDriver.handleMessage(ack)
-                }
+            // Send acknowledgment for every toWidget message
+            Task {
+                let ack = """
+                {"api":"fromWidget","action":"\(message.action)","widgetId":"\(message.widgetId)","requestId":"\(message.requestId)","response":{}}
+                """
+                await widgetDriver.handleMessage(ack)
             }
 
             switch message.action {
