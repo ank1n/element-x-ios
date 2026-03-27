@@ -402,21 +402,15 @@ final class NativeCallSession: ObservableObject {
 
         // Process toWidget messages
         if message.api == "toWidget" {
-            // Send acknowledgment/response for toWidget messages
-            Task {
-                var responseBody = "{}"
-
-                // For capabilities: respond with full permissions request
-                if message.action == "capabilities" {
-                    responseBody = """
-                    {"capabilities":{"read":["org.matrix.msc3401.call.member","m.call.member","io.element.call.encryption_keys","org.matrix.msc4075.rtc.notification"],"send":["org.matrix.msc3401.call.member","m.call.member","io.element.call.encryption_keys","org.matrix.msc4075.rtc.notification"],"requiresClient":true,"updateDelayedEvent":true,"sendDelayedEvent":true}}
+            // DON'T ack capabilities — let driver.run() handle via acquireCapabilities callback
+            // Ack all other toWidget messages
+            if message.action != "capabilities" {
+                Task {
+                    let ack = """
+                    {"api":"fromWidget","action":"\(message.action)","widgetId":"\(message.widgetId)","requestId":"\(message.requestId)","response":{}}
                     """
+                    await widgetDriver.handleMessage(ack)
                 }
-
-                let ack = """
-                {"api":"fromWidget","action":"\(message.action)","widgetId":"\(message.widgetId)","requestId":"\(message.requestId)","response":\(responseBody)}
-                """
-                await widgetDriver.handleMessage(ack)
             }
 
             switch message.action {
