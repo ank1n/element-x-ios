@@ -644,10 +644,20 @@ final class NativeCallSession: ObservableObject {
 
         do {
             if isEncrypted {
-                // Connect without E2EE for now — allows autoSubscribe
-                // Our tracks go plaintext, web shows "unencrypted" warning
-                // TODO: E2EE key exchange for full encryption
-                try await liveKitRoomManager.connect(wsURL: url, token: token, speakerByDefault: false)
+                // Generate our E2EE key BEFORE connect
+                if ourEncryptionKey == nil {
+                    var keyBytes = [UInt8](repeating: 0, count: 16)
+                    _ = SecRandomCopyBytes(kSecRandomDefault, keyBytes.count, &keyBytes)
+                    ourEncryptionKey = Data(keyBytes).base64EncodedString()
+                }
+                let ourIdentity = "\(userId):\(deviceId)"
+                keyProvider.setKey(key: ourEncryptionKey!, participantId: ourIdentity, index: 0)
+                MXLog.info("sTalk NativeCall E2EE: Key set in provider before connect")
+
+                // Connect WITH E2EE
+                try await liveKitRoomManager.connectWithE2EE(
+                    wsURL: url, token: token, keyProvider: keyProvider, speakerByDefault: false
+                )
             } else {
                 try await liveKitRoomManager.connect(wsURL: url, token: token, speakerByDefault: false)
             }
