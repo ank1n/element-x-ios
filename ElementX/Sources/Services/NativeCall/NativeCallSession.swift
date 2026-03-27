@@ -94,19 +94,19 @@ final class NativeCallSession: ObservableObject {
                 }
                 .store(in: &cancellables)
 
-            // Step 1: content_loaded — start widget session
-            let contentLoaded = """
-            {"api":"fromWidget","action":"content_loaded","widgetId":"\(widgetDriver.widgetID)","requestId":"native-\(UUID().uuidString)","data":{}}
-            """
-            await widgetDriver.handleMessage(contentLoaded)
-            MXLog.info("sTalk NativeCall: WidgetDriver — content_loaded sent")
-
-            // Step 2: Request capabilities (widget initiates, driver responds)
+            // Step 1: capabilities request FIRST (widget initiates negotiate)
             let capabilitiesRequest = """
             {"api":"fromWidget","action":"capabilities","widgetId":"\(widgetDriver.widgetID)","requestId":"native-cap-\(UUID().uuidString)","data":{"send":["org.matrix.msc3401.call.member","org.matrix.msc4075.rtc.notification","io.element.call.encryption_keys"],"receive":["org.matrix.msc3401.call.member","org.matrix.msc4075.rtc.notification","io.element.call.encryption_keys"],"send_to_device":["io.element.call.encryption_keys"],"receive_to_device":["io.element.call.encryption_keys"],"requires_client":true,"send_delayed_event":true,"update_delayed_event":true}}
             """
             await widgetDriver.handleMessage(capabilitiesRequest)
             MXLog.info("sTalk NativeCall: WidgetDriver — capabilities request sent")
+
+            // Step 2: content_loaded
+            let contentLoaded = """
+            {"api":"fromWidget","action":"content_loaded","widgetId":"\(widgetDriver.widgetID)","requestId":"native-\(UUID().uuidString)","data":{}}
+            """
+            await widgetDriver.handleMessage(contentLoaded)
+            MXLog.info("sTalk NativeCall: WidgetDriver — content_loaded sent")
 
             try? await Task.sleep(for: .seconds(1))
 
