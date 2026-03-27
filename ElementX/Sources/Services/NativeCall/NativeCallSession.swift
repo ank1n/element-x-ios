@@ -101,6 +101,14 @@ final class NativeCallSession: ObservableObject {
             MXLog.info("sTalk NativeCall: WidgetDriver started for E2EE key exchange")
         }
 
+        // Send our E2EE key through Widget API to initiate key exchange
+        if isEncrypted {
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(3)) // Wait for WidgetDriver to be ready
+                await self?.sendOurEncryptionKey()
+            }
+        }
+
         // Generate JWT and connect to LiveKit
         sessionState = .waitingForCredentials
         await connectWithGeneratedJWT()
@@ -236,6 +244,31 @@ final class NativeCallSession: ObservableObject {
         }
     }
 
+    // MARK: - E2EE Key Exchange
+
+    private var ourEncryptionKey: String?
+
+    private func sendOurEncryptionKey() async {
+        // Generate random 16-byte key (base64)
+        var keyBytes = [UInt8](repeating: 0, count: 16)
+        _ = SecRandomCopyBytes(kSecRandomDefault, keyBytes.count, &keyBytes)
+        let key = Data(keyBytes).base64EncodedString()
+        ourEncryptionKey = key
+
+        // Set our own key in keyProvider
+        let ourIdentity = "\(userId):\(deviceId)"
+        keyProvider.setKey(key: key, participantId: ourIdentity, index: 0)
+        MXLog.info("sTalk NativeCall E2EE: Generated our key, identity=\(ourIdentity)")
+
+        // Send via Widget API send_to_device
+        let sendToDevice = """
+        {"api":"fromWidget","action":"send_to_device","widgetId":"\(widgetDriver.widgetID)","requestId":"native-key-\(UUID().uuidString)","data":{"type":"io.element.call.encryption_keys","encrypted":true,"messages":{"*":{"*":{"keys":{"index":0,"key":"\(key)"},"room_id":"\(matrixRoomId)","member":{"claimed_device_id":"\(deviceId)"},"session":{"call_id":"","application":"m.call","scope":"m.room"},"sent_ts":\(Int(Date().timeIntervalSince1970 * 1000))}}}}}
+        """
+
+        MXLog.info("sTalk NativeCall E2EE: Sending our encryption key via Widget API")
+        await widgetDriver.handleMessage(sendToDevice)
+    }
+
     // MARK: - Debug
 
     private func debugReadCallMemberState() async {
@@ -356,14 +389,16 @@ final class NativeCallSession: ObservableObject {
         // Log all messages
         MXLog.info("sTalk NativeCall: \(message.api) action=\(message.action) type=\(message.eventType ?? "-") reqId=\(message.requestId)")
 
-        // Process toWidget messages and send acknowledgments
+        // Process toWidget messages
         if message.api == "toWidget" {
-            // Send acknowledgment for every toWidget message
-            Task {
-                let ack = """
-                {"api":"fromWidget","action":"\(message.action)","widgetId":"\(message.widgetId)","requestId":"\(message.requestId)","response":{}}
-                """
-                await widgetDriver.handleMessage(ack)
+            // Send acknowledgment for toWidget messages (except capabilities — handled internally by driver)
+            if message.action != "capabilities" {
+                Task {
+                    let ack = """
+                    {"api":"fromWidget","action":"\(message.action)","widgetId":"\(message.widgetId)","requestId":"\(message.requestId)","response":{}}
+                    """
+                    await widgetDriver.handleMessage(ack)
+                }
             }
 
             switch message.action {
