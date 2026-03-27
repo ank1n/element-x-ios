@@ -94,23 +94,17 @@ final class NativeCallSession: ObservableObject {
                 }
                 .store(in: &cancellables)
 
-            // Step 1: capabilities request FIRST (widget initiates negotiate)
-            let capabilitiesRequest = """
-            {"api":"fromWidget","action":"capabilities","widgetId":"\(widgetDriver.widgetID)","requestId":"native-cap-\(UUID().uuidString)","data":{"send":["org.matrix.msc3401.call.member","org.matrix.msc4075.rtc.notification","io.element.call.encryption_keys"],"receive":["org.matrix.msc3401.call.member","org.matrix.msc4075.rtc.notification","io.element.call.encryption_keys"],"send_to_device":["io.element.call.encryption_keys"],"receive_to_device":["io.element.call.encryption_keys"],"requires_client":true,"send_delayed_event":true,"update_delayed_event":true}}
-            """
-            await widgetDriver.handleMessage(capabilitiesRequest)
-            MXLog.info("sTalk NativeCall: WidgetDriver — capabilities request sent")
-
-            // Step 2: content_loaded
+            // Only send content_loaded — driver handles capabilities internally via callback
             let contentLoaded = """
             {"api":"fromWidget","action":"content_loaded","widgetId":"\(widgetDriver.widgetID)","requestId":"native-\(UUID().uuidString)","data":{}}
             """
             await widgetDriver.handleMessage(contentLoaded)
             MXLog.info("sTalk NativeCall: WidgetDriver — content_loaded sent")
 
-            try? await Task.sleep(for: .seconds(1))
+            // Wait for driver to complete capabilities + init
+            try? await Task.sleep(for: .seconds(2))
 
-            // Step 3: io.element.join — trigger MatrixRTC join + to-device relay
+            // io.element.join — trigger MatrixRTC
             let joinCall = """
             {"api":"fromWidget","action":"io.element.join","widgetId":"\(widgetDriver.widgetID)","requestId":"native-join-\(UUID().uuidString)","data":{}}
             """
@@ -408,18 +402,9 @@ final class NativeCallSession: ObservableObject {
 
         // Process toWidget messages
         if message.api == "toWidget" {
-            if message.action == "capabilities" {
-                // Respond with our capabilities REQUEST (what we need)
-                // This triggers acquireCapabilities() callback in driver
-                Task {
-                    let capRequest = """
-                    {"api":"fromWidget","action":"capabilities","widgetId":"\(message.widgetId)","requestId":"\(message.requestId)","data":{"send":["org.matrix.msc3401.call.member","org.matrix.msc4075.rtc.notification","io.element.call.encryption_keys"],"receive":["org.matrix.msc3401.call.member","org.matrix.msc4075.rtc.notification","io.element.call.encryption_keys"],"send_to_device":["io.element.call.encryption_keys"],"receive_to_device":["io.element.call.encryption_keys"],"requires_client":true,"send_delayed_event":true,"update_delayed_event":true}}
-                    """
-                    await widgetDriver.handleMessage(capRequest)
-                    MXLog.info("sTalk NativeCall: Sent capabilities REQUEST to driver")
-                }
-            } else {
-                // Ack all other toWidget messages
+            // Don't respond to capabilities — driver.run() handles via acquireCapabilities callback
+            // Ack all other toWidget messages
+            if message.action != "capabilities" {
                 Task {
                     let ack = """
                     {"api":"fromWidget","action":"\(message.action)","widgetId":"\(message.widgetId)","requestId":"\(message.requestId)","response":{}}
