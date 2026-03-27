@@ -282,6 +282,29 @@ final class NativeCallSession: ObservableObject {
         }
     }
 
+    // MARK: - Raw Key Provider Access
+
+    /// Set raw bytes key in BaseKeyProvider, bypassing UTF-8 string conversion
+    /// BaseKeyProvider.rtcKeyProvider is internal, so we use KVC to access it
+    private func setRawKeyInProvider(_ provider: BaseKeyProvider, key: Data, participantId: String, index: Int32) {
+        // Try KVC access to rtcKeyProvider (LKRTCFrameCryptorKeyProvider)
+        if let rtcProvider = (provider as NSObject).value(forKey: "rtcKeyProvider") as AnyObject? {
+            // Use NSInvocation-style call via ObjC runtime
+            let selector = NSSelectorFromString("setKey:withIndex:forParticipant:")
+            if rtcProvider.responds(to: selector) {
+                let imp = rtcProvider.method(for: selector)
+                typealias SetKeyFunc = @convention(c) (AnyObject, Selector, NSData, Int32, NSString) -> Void
+                let setKey = unsafeBitCast(imp, to: SetKeyFunc.self)
+                setKey(rtcProvider, selector, key as NSData, index, participantId as NSString)
+                MXLog.info("sTalk E2EE: Raw key set via IMP (\(key.count) bytes)")
+                return
+            }
+        }
+        // Fallback
+        MXLog.warning("sTalk E2EE: IMP failed, using string key")
+        provider.setKey(key: key.base64EncodedString(), participantId: participantId, index: index)
+    }
+
     // MARK: - E2EE Key Exchange
 
     private var ourEncryptionKey: String? // base64
@@ -617,7 +640,12 @@ final class NativeCallSession: ObservableObject {
 
         MXLog.info("sTalk NativeCall: E2EE key from \(keyInfo.participantId) index=\(keyInfo.index)")
 
-        keyProvider.setKey(key: keyInfo.key, participantId: keyInfo.participantId, index: Int32(keyInfo.index))
+        // Decode base64 → raw bytes, set via KVC
+        if let rawKey = Data(base64Encoded: keyInfo.key) {
+            setRawKeyInProvider(keyProvider, key: rawKey, participantId: keyInfo.participantId, index: Int32(keyInfo.index))
+        } else {
+            keyProvider.setKey(key: keyInfo.key, participantId: keyInfo.participantId, index: Int32(keyInfo.index))
+        }
         participantKeys[keyInfo.participantId] = true
 
         if let participant = pendingParticipants.removeValue(forKey: keyInfo.participantId) {
@@ -647,16 +675,22 @@ final class NativeCallSession: ObservableObject {
             if isEncrypted {
                 // Generate our E2EE key BEFORE connect
                 if ourEncryptionKey == nil {
-                    var keyBytes = [UInt8](repeating: 0, count: 16)
+                    // Generate 16 random bytes, BUT encode as ASCII-safe string
+                    // so that .utf8 encoding gives predictable bytes
+                    var keyBytes = [UInt8](repeating: 0, count: 32)
                     _ = SecRandomCopyBytes(kSecRandomDefault, keyBytes.count, &keyBytes)
-                    ourEncryptionKey = Data(keyBytes).base64EncodedString()
-                    ourEncryptionKeyRaw = Data(keyBytes)
+                    // Use hex string as key — .utf8 gives same bytes, and we send hex to remote
+                    ourEncryptionKey = keyBytes.map { String(format: "%02x", $0) }.joined()
+                    // But EC expects base64... Send base64 to remote, use same decoded bytes locally
+                    let rawData = Data(keyBytes.prefix(16))
+                    ourEncryptionKey = rawData.base64EncodedString()
+                    ourEncryptionKeyRaw = rawData
                 }
-                // Set key — use base64 string (LiveKit SDK converts to UTF-8 bytes internally)
-                // EC JS also uses the base64 string directly as the key material
+
+                // Set raw key bytes via runtime access to rtcKeyProvider
                 let ourIdentity = "\(userId):\(deviceId)"
-                keyProvider.setKey(key: ourEncryptionKey!, participantId: ourIdentity, index: 0)
-                MXLog.info("sTalk NativeCall E2EE: Key set for \(ourIdentity), base64=\(ourEncryptionKey!.prefix(8))...")
+                setRawKeyInProvider(keyProvider, key: ourEncryptionKeyRaw!, participantId: ourIdentity, index: 0)
+                MXLog.info("sTalk NativeCall E2EE: Raw key (\(ourEncryptionKeyRaw!.count) bytes) set for \(ourIdentity)")
 
                 // Connect WITH E2EE
                 try await liveKitRoomManager.connectWithE2EE(
