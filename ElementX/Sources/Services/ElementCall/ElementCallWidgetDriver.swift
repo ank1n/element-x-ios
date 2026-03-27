@@ -191,7 +191,8 @@ final class ElementCallWidgetDriver: WidgetCapabilitiesProvider, ElementCallWidg
     
     func acquireCapabilities(capabilities: WidgetCapabilities) -> WidgetCapabilities {
         let result = getElementCallRequiredPermissions(ownUserId: room.ownUserId(), ownDeviceId: deviceID)
-        MXLog.info("sTalk WidgetDriver: acquireCapabilities called — read=\(result.read.count), send=\(result.send.count), requiresClient=\(result.requiresClient)")
+        os_log("sTalk WidgetDriver: acquireCapabilities CALLED — read=%d, send=%d", log: widgetLog, type: .info, result.read.count, result.send.count)
+        MXLog.info("sTalk WidgetDriver: acquireCapabilities called — read=\(result.read.count), send=\(result.send.count)")
         return result
     }
     
