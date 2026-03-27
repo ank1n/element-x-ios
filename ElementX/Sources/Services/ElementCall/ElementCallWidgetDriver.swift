@@ -190,9 +190,22 @@ final class ElementCallWidgetDriver: WidgetCapabilitiesProvider, ElementCallWidg
     // MARK: - WidgetCapabilitiesProvider
     
     func acquireCapabilities(capabilities: WidgetCapabilities) -> WidgetCapabilities {
-        let result = getElementCallRequiredPermissions(ownUserId: room.ownUserId(), ownDeviceId: deviceID)
-        os_log("sTalk WidgetDriver: acquireCapabilities CALLED — read=%d, send=%d", log: widgetLog, type: .info, result.read.count, result.send.count)
-        MXLog.info("sTalk WidgetDriver: acquireCapabilities called — read=\(result.read.count), send=\(result.send.count)")
+        var result = getElementCallRequiredPermissions(ownUserId: room.ownUserId(), ownDeviceId: deviceID)
+
+        // Ensure to-device encryption_keys is in both read and send
+        let encKeyFilter = WidgetEventFilter.toDevice(eventType: "io.element.call.encryption_keys")
+        if !result.read.contains(encKeyFilter) {
+            result.read.append(encKeyFilter)
+        }
+        if !result.send.contains(encKeyFilter) {
+            result.send.append(encKeyFilter)
+        }
+
+        // Log with file write to guarantee visibility
+        let logMsg = "sTalk WidgetDriver: acquireCapabilities CALLED — read=\(result.read.count), send=\(result.send.count), hasToDevice=true"
+        os_log("%{public}@", log: widgetLog, type: .info, logMsg)
+        MXLog.info(logMsg)
+
         return result
     }
     
