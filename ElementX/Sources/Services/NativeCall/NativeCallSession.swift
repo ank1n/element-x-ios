@@ -94,11 +94,22 @@ final class NativeCallSession: ObservableObject {
                 }
                 .store(in: &cancellables)
 
+            // Step 1: content_loaded — start widget session
             let contentLoaded = """
             {"api":"fromWidget","action":"content_loaded","widgetId":"\(widgetDriver.widgetID)","requestId":"native-\(UUID().uuidString)","data":{}}
             """
             await widgetDriver.handleMessage(contentLoaded)
-            MXLog.info("sTalk NativeCall: WidgetDriver started for E2EE key exchange")
+            MXLog.info("sTalk NativeCall: WidgetDriver — content_loaded sent")
+
+            // Step 2: Wait for capabilities exchange
+            try? await Task.sleep(for: .milliseconds(500))
+
+            // Step 3: io.element.join — trigger MatrixRTC join + to-device relay
+            let joinCall = """
+            {"api":"fromWidget","action":"io.element.join","widgetId":"\(widgetDriver.widgetID)","requestId":"native-join-\(UUID().uuidString)","data":{}}
+            """
+            await widgetDriver.handleMessage(joinCall)
+            MXLog.info("sTalk NativeCall: WidgetDriver — io.element.join sent")
         }
 
         // Send our E2EE key through Widget API to initiate key exchange
