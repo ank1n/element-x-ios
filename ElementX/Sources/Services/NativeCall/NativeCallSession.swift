@@ -133,11 +133,17 @@ final class NativeCallSession: ObservableObject {
             MXLog.info("sTalk NativeCall: WidgetDriver — io.element.join sent")
         }
 
-        // Send our E2EE key through Widget API to initiate key exchange
+        // E2EE key exchange
         if isEncrypted {
+            // Send our key
             Task { [weak self] in
-                try? await Task.sleep(for: .seconds(3)) // Wait for WidgetDriver to be ready
+                try? await Task.sleep(for: .seconds(3))
                 await self?.sendOurEncryptionKey()
+            }
+            // Poll for remote keys from room timeline
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(2))
+                await self?.pollForEncryptionKeys()
             }
         }
 
@@ -292,13 +298,74 @@ final class NativeCallSession: ObservableObject {
         keyProvider.setKey(key: key, participantId: ourIdentity, index: 0)
         MXLog.info("sTalk NativeCall E2EE: Generated our key, identity=\(ourIdentity)")
 
-        // Send via Widget API send_to_device
+        // Send via Widget API send_to_device (for direct delivery)
         let sendToDevice = """
         {"api":"fromWidget","action":"send_to_device","widgetId":"\(widgetDriver.widgetID)","requestId":"native-key-\(UUID().uuidString)","data":{"type":"io.element.call.encryption_keys","encrypted":true,"messages":{"*":{"*":{"keys":{"index":0,"key":"\(key)"},"room_id":"\(matrixRoomId)","member":{"claimed_device_id":"\(deviceId)"},"session":{"call_id":"","application":"m.call","scope":"m.room"},"sent_ts":\(Int(Date().timeIntervalSince1970 * 1000))}}}}}
         """
-
-        MXLog.info("sTalk NativeCall E2EE: Sending our encryption key via Widget API")
         await widgetDriver.handleMessage(sendToDevice)
+        MXLog.info("sTalk NativeCall E2EE: Sent key via Widget API send_to_device")
+
+        // Also send as room event via Widget API (WidgetDriver encrypts with Megolm)
+        let roomEvent = """
+        {"api":"fromWidget","action":"send_event","widgetId":"\(widgetDriver.widgetID)","requestId":"native-roomkey-\(UUID().uuidString)","data":{"type":"io.element.call.encryption_keys","content":{"keys":[{"index":0,"key":"\(key)"}],"device_id":"\(deviceId)","call_id":"","sent_ts":\(Int(Date().timeIntervalSince1970 * 1000))}}}
+        """
+        await widgetDriver.handleMessage(roomEvent)
+        MXLog.info("sTalk NativeCall E2EE: Sent key as room event via Widget API")
+    }
+
+    // MARK: - E2EE Key Polling from Room Timeline
+
+    private func pollForEncryptionKeys() async {
+        // Poll room messages for io.element.call.encryption_keys events
+        let encodedRoom = matrixRoomId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? matrixRoomId
+        let url = "\(homeserverURL)/_matrix/client/v3/rooms/\(encodedRoom)/messages?dir=b&limit=20&filter={\"types\":[\"io.element.call.encryption_keys\"]}"
+
+        guard let requestURL = URL(string: url) else { return }
+
+        // Poll every 3 seconds for 60 seconds
+        for _ in 0..<20 {
+            guard sessionState == .connected || sessionState == .waitingForCredentials || sessionState == .connecting else { return }
+
+            var request = URLRequest(url: requestURL)
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+
+                if status == 200,
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let chunk = json["chunk"] as? [[String: Any]] {
+                    for event in chunk {
+                        guard let content = event["content"] as? [String: Any],
+                              let sender = event["sender"] as? String,
+                              sender != userId, // Skip our own keys
+                              let deviceId = content["device_id"] as? String else { continue }
+
+                        // Extract keys array
+                        if let keys = content["keys"] as? [[String: Any]] {
+                            for keyObj in keys {
+                                if let key = keyObj["key"] as? String,
+                                   let index = keyObj["index"] as? Int {
+                                    let participantId = "\(sender):\(deviceId)"
+                                    MXLog.info("sTalk NativeCall E2EE: Got key from timeline! \(participantId) index=\(index)")
+                                    keyProvider.setKey(key: key, participantId: participantId, index: Int32(index))
+                                    participantKeys[participantId] = true
+
+                                    if let participant = pendingParticipants.removeValue(forKey: participantId) {
+                                        subscribeToAllTracks(of: participant)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch {
+                MXLog.error("sTalk NativeCall E2EE: Poll failed: \(error)")
+            }
+
+            try? await Task.sleep(for: .seconds(3))
+        }
     }
 
     // MARK: - Debug

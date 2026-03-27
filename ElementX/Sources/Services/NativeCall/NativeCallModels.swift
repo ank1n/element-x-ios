@@ -7,7 +7,21 @@ import Foundation
 
 // MARK: - Session State
 
-enum NativeCallSessionState {
+enum NativeCallSessionState: Equatable {
+    static func == (lhs: NativeCallSessionState, rhs: NativeCallSessionState) -> Bool {
+        switch (lhs, rhs) {
+        case (.starting, .starting), (.widgetReady, .widgetReady),
+             (.waitingForCredentials, .waitingForCredentials),
+             (.connecting, .connecting), (.connected, .connected),
+             (.disconnecting, .disconnecting), (.disconnected, .disconnected):
+            return true
+        case (.failed, .failed):
+            return true
+        default:
+            return false
+        }
+    }
+
     case starting
     case widgetReady
     case waitingForCredentials
