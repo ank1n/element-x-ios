@@ -298,19 +298,32 @@ final class NativeCallSession: ObservableObject {
         keyProvider.setKey(key: key, participantId: ourIdentity, index: 0)
         MXLog.info("sTalk NativeCall E2EE: Generated our key, identity=\(ourIdentity)")
 
-        // Send via Widget API send_to_device (for direct delivery)
-        let sendToDevice = """
-        {"api":"fromWidget","action":"send_to_device","widgetId":"\(widgetDriver.widgetID)","requestId":"native-key-\(UUID().uuidString)","data":{"type":"io.element.call.encryption_keys","encrypted":true,"messages":{"*":{"*":{"keys":{"index":0,"key":"\(key)"},"room_id":"\(matrixRoomId)","member":{"claimed_device_id":"\(deviceId)"},"session":{"call_id":"","application":"m.call","scope":"m.room"},"sent_ts":\(Int(Date().timeIntervalSince1970 * 1000))}}}}}
-        """
-        await widgetDriver.handleMessage(sendToDevice)
-        MXLog.info("sTalk NativeCall E2EE: Sent key via Widget API send_to_device")
+        // Fire-and-forget — handleMessage may hang if driver can't process
+        let widgetId = widgetDriver.widgetID
+        let roomId = matrixRoomId
+        let devId = deviceId
+        let driver = widgetDriver
+        let nowMs = Int(Date().timeIntervalSince1970 * 1000)
 
-        // Also send as room event via Widget API (WidgetDriver encrypts with Megolm)
-        let roomEvent = """
-        {"api":"fromWidget","action":"send_event","widgetId":"\(widgetDriver.widgetID)","requestId":"native-roomkey-\(UUID().uuidString)","data":{"type":"io.element.call.encryption_keys","content":{"keys":[{"index":0,"key":"\(key)"}],"device_id":"\(deviceId)","call_id":"","sent_ts":\(Int(Date().timeIntervalSince1970 * 1000))}}}
-        """
-        await widgetDriver.handleMessage(roomEvent)
-        MXLog.info("sTalk NativeCall E2EE: Sent key as room event via Widget API")
+        // Send via Widget API send_to_device
+        Task.detached {
+            let msg = """
+            {"api":"fromWidget","action":"send_to_device","widgetId":"\(widgetId)","requestId":"native-key-\(UUID().uuidString)","data":{"type":"io.element.call.encryption_keys","encrypted":true,"messages":{"*":{"*":{"keys":{"index":0,"key":"\(key)"},"room_id":"\(roomId)","member":{"claimed_device_id":"\(devId)"},"session":{"call_id":"","application":"m.call","scope":"m.room"},"sent_ts":\(nowMs)}}}}}
+            """
+            let result = await driver.handleMessage(msg)
+            MXLog.info("sTalk NativeCall E2EE: send_to_device result=\(result)")
+        }
+
+        // Send as room event
+        Task.detached {
+            let msg = """
+            {"api":"fromWidget","action":"send_event","widgetId":"\(widgetId)","requestId":"native-roomkey-\(UUID().uuidString)","data":{"type":"io.element.call.encryption_keys","content":{"keys":[{"index":0,"key":"\(key)"}],"device_id":"\(devId)","call_id":"","sent_ts":\(nowMs)}}}
+            """
+            let result = await driver.handleMessage(msg)
+            MXLog.info("sTalk NativeCall E2EE: room event result=\(result)")
+        }
+
+        MXLog.info("sTalk NativeCall E2EE: Key send tasks launched")
     }
 
     // MARK: - E2EE Key Polling from Room Timeline
