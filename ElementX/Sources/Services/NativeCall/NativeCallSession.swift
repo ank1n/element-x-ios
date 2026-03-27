@@ -94,17 +94,38 @@ final class NativeCallSession: ObservableObject {
                 }
                 .store(in: &cancellables)
 
-            // Only send content_loaded — driver handles capabilities internally via callback
+            // Step 1: Request capabilities (same as Element Call JS does)
+            let capabilities = [
+                "org.matrix.msc3819.send.to_device:io.element.call.encryption_keys",
+                "org.matrix.msc3819.receive.to_device:io.element.call.encryption_keys",
+                "org.matrix.msc2762.send.state_event:org.matrix.msc3401.call.member",
+                "org.matrix.msc2762.receive.state_event:org.matrix.msc3401.call.member",
+                "org.matrix.msc2762.send.state_event:org.matrix.msc4075.rtc.notification",
+                "org.matrix.msc2762.receive.state_event:org.matrix.msc4075.rtc.notification",
+                "org.matrix.msc2762.send.delayed_event",
+                "org.matrix.msc2762.update.delayed_event",
+                "requires_client"
+            ]
+            let capsJSON = capabilities.map { "\"\($0)\"" }.joined(separator: ",")
+            let capRequest = """
+            {"api":"fromWidget","action":"org.matrix.msc2974.request_capabilities","widgetId":"\(widgetDriver.widgetID)","requestId":"native-cap-\(UUID().uuidString)","data":{"capabilities":[\(capsJSON)]}}
+            """
+            await widgetDriver.handleMessage(capRequest)
+            MXLog.info("sTalk NativeCall: WidgetDriver — capabilities requested")
+
+            // Wait for driver to process capabilities
+            try? await Task.sleep(for: .seconds(1))
+
+            // Step 2: content_loaded
             let contentLoaded = """
             {"api":"fromWidget","action":"content_loaded","widgetId":"\(widgetDriver.widgetID)","requestId":"native-\(UUID().uuidString)","data":{}}
             """
             await widgetDriver.handleMessage(contentLoaded)
             MXLog.info("sTalk NativeCall: WidgetDriver — content_loaded sent")
 
-            // Wait for driver to complete capabilities + init
-            try? await Task.sleep(for: .seconds(2))
+            try? await Task.sleep(for: .seconds(1))
 
-            // io.element.join — trigger MatrixRTC
+            // Step 3: io.element.join — trigger MatrixRTC
             let joinCall = """
             {"api":"fromWidget","action":"io.element.join","widgetId":"\(widgetDriver.widgetID)","requestId":"native-join-\(UUID().uuidString)","data":{}}
             """
