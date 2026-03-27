@@ -423,9 +423,26 @@ final class NativeCallSession: ObservableObject {
 
         // Process toWidget messages
         if message.api == "toWidget" {
-            // Don't respond to capabilities — driver.run() handles via acquireCapabilities callback
-            // Ack all other toWidget messages
-            if message.action != "capabilities" {
+            if message.action == "capabilities" {
+                // Driver asks "what capabilities do you want?" — respond with our list
+                let caps = [
+                    "org.matrix.msc3819.send.to_device:io.element.call.encryption_keys",
+                    "org.matrix.msc3819.receive.to_device:io.element.call.encryption_keys",
+                    "org.matrix.msc2762.send.state_event:org.matrix.msc3401.call.member",
+                    "org.matrix.msc2762.receive.state_event:org.matrix.msc3401.call.member",
+                    "org.matrix.msc2762.send.delayed_event",
+                    "org.matrix.msc2762.update.delayed_event",
+                    "requires_client"
+                ]
+                let capsJSON = caps.map { "\"\($0)\"" }.joined(separator: ",")
+                Task {
+                    let response = """
+                    {"api":"fromWidget","action":"capabilities","widgetId":"\(message.widgetId)","requestId":"\(message.requestId)","response":{"capabilities":[\(capsJSON)]}}
+                    """
+                    await widgetDriver.handleMessage(response)
+                    MXLog.info("sTalk NativeCall: Responded to capabilities with \(caps.count) permissions")
+                }
+            } else {
                 Task {
                     let ack = """
                     {"api":"fromWidget","action":"\(message.action)","widgetId":"\(message.widgetId)","requestId":"\(message.requestId)","response":{}}
