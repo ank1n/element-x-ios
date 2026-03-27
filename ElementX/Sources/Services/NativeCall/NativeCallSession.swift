@@ -402,10 +402,19 @@ final class NativeCallSession: ObservableObject {
 
         // Process toWidget messages
         if message.api == "toWidget" {
-            // Send acknowledgment for every toWidget message
+            // Send acknowledgment/response for toWidget messages
             Task {
+                var responseBody = "{}"
+
+                // For capabilities: respond with full permissions request
+                if message.action == "capabilities" {
+                    responseBody = """
+                    {"capabilities":{"read":["org.matrix.msc3401.call.member","m.call.member","io.element.call.encryption_keys","org.matrix.msc4075.rtc.notification"],"send":["org.matrix.msc3401.call.member","m.call.member","io.element.call.encryption_keys","org.matrix.msc4075.rtc.notification"],"requiresClient":true,"updateDelayedEvent":true,"sendDelayedEvent":true}}
+                    """
+                }
+
                 let ack = """
-                {"api":"fromWidget","action":"\(message.action)","widgetId":"\(message.widgetId)","requestId":"\(message.requestId)","response":{}}
+                {"api":"fromWidget","action":"\(message.action)","widgetId":"\(message.widgetId)","requestId":"\(message.requestId)","response":\(responseBody)}
                 """
                 await widgetDriver.handleMessage(ack)
             }
