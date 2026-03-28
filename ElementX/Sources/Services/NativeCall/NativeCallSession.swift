@@ -727,15 +727,13 @@ final class NativeCallSession: ObservableObject {
                     ourEncryptionKeyRaw = rawData
                 }
 
-                // Set raw key bytes via runtime access to rtcKeyProvider
                 let ourIdentity = "\(userId):\(deviceId)"
-                setRawKeyInProvider(keyProvider, key: ourEncryptionKeyRaw!, participantId: ourIdentity, index: 0)
-                MXLog.info("sTalk NativeCall E2EE: Raw key (\(ourEncryptionKeyRaw!.count) bytes) set for \(ourIdentity)")
 
-                // Connect WITH E2EE
-                try await liveKitRoomManager.connectWithE2EE(
-                    wsURL: url, token: token, keyProvider: keyProvider, speakerByDefault: false
-                )
+                // DEBUG: Connect WITHOUT E2EE to test if video works, keep key exchange for future
+                MXLog.info("sTalk NativeCall E2EE: DEBUG — connecting WITHOUT EncryptionOptions (key exchange still active)")
+
+                // DEBUG: Connect WITHOUT E2EE — test if video passes through
+                try await liveKitRoomManager.connect(wsURL: url, token: token, speakerByDefault: false)
             } else {
                 try await liveKitRoomManager.connect(wsURL: url, token: token, speakerByDefault: false)
             }
