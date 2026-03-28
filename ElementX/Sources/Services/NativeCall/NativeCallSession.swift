@@ -297,11 +297,11 @@ final class NativeCallSession: ObservableObject {
     /// Converts raw Data to a String where each byte maps 1:1 (ISO Latin-1)
     /// LiveKit SDK will .utf8 encode this — for ASCII-range bytes it's identical
     private func setRawKeyInProvider(_ provider: BaseKeyProvider, key: Data, participantId: String, index: Int32) {
-        // Use standard setKey(String) — LiveKit SDK handles key derivation internally
-        // Key is base64 string → UTF-8 bytes → HKDF → AES key
-        let keyString = key.base64EncodedString()
-        provider.setKey(key: keyString, participantId: participantId, index: index)
-        MXLog.info("sTalk E2EE: Key set as string (\(keyString.prefix(8))...) for \(participantId) index=\(index)")
+        // Pass raw bytes via @testable import — MUST match JS importKey("raw", buffer)
+        // setKey(String) uses .utf8 encoding which gives DIFFERENT bytes than base64 decoded
+        provider.rtcKeyProvider.setKey(key, with: index, forParticipant: participantId)
+        provider.setCurrentKeyIndex(index)
+        MXLog.info("sTalk E2EE: Raw key (\(key.count) bytes, idx=\(index)) for \(participantId)")
     }
 
     // MARK: - E2EE Key Exchange
