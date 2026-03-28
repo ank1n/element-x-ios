@@ -767,6 +767,12 @@ final class NativeCallSession: ObservableObject {
             pendingParticipants[identity] = participant
             MXLog.info("sTalk NativeCall: Queued \(identity) — waiting for E2EE key")
         }
+
+        // Resend our encryption key when remote joins — they may have missed initial key
+        if isEncrypted, ourEncryptionKey != nil {
+            Task { await sendOurEncryptionKey() }
+            MXLog.info("sTalk NativeCall: Resent our E2EE key for new participant \(identity)")
+        }
     }
 
     private func subscribeToAllTracks(of participant: RemoteParticipant) {
