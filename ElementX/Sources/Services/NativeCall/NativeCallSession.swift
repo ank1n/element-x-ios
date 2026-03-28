@@ -297,11 +297,28 @@ final class NativeCallSession: ObservableObject {
     /// Converts raw Data to a String where each byte maps 1:1 (ISO Latin-1)
     /// LiveKit SDK will .utf8 encode this — for ASCII-range bytes it's identical
     private func setRawKeyInProvider(_ provider: BaseKeyProvider, key: Data, participantId: String, index: Int32) {
-        // @testable import LiveKit gives access to rtcKeyProvider
-        // Pass raw bytes directly — MUST match JS importKey("raw", buffer) = same 16 bytes
-        // setKey(String) uses .utf8 which gives DIFFERENT bytes (24 vs 16) — incompatible
-        provider.rtcKeyProvider.setKey(key, with: index, forParticipant: participantId)
-        MXLog.info("sTalk E2EE: Raw key (\(key.count) bytes) set for \(participantId) idx=\(index)")
+        // JS SFrame worker:
+        //   importKey("raw", bytes, "HKDF") → deriveKey(HKDF, salt, info=128zeros, AES-GCM-128)
+        //   This does HKDF derivation: raw bytes → AES key
+        //
+        // Native RTCFrameCryptor:
+        //   Receives raw bytes, does its own HKDF internally
+        //   IF native HKDF matches JS → raw bytes should work
+        //   IF native skips HKDF → needs pre-derived key
+        //
+        // Try pre-derived key to test if native skips HKDF:
+        let salt = "LKFrameEncryptionKey".data(using: .utf8)!
+        let info = Data(count: 128) // 128 zero bytes — matches JS new ArrayBuffer(128)
+        let derived = HKDF<SHA256>.deriveKey(
+            inputKeyMaterial: SymmetricKey(data: key),
+            salt: salt,
+            info: info,
+            outputByteCount: 16
+        )
+        let derivedData = derived.withUnsafeBytes { Data($0) }
+
+        provider.rtcKeyProvider.setKey(derivedData, with: index, forParticipant: participantId)
+        MXLog.info("sTalk E2EE: HKDF-derived key (\(derivedData.count) bytes) for \(participantId) idx=\(index)")
     }
 
     // MARK: - E2EE Key Exchange
