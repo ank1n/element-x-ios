@@ -21,18 +21,16 @@ class MeetingEditViewModel: MeetingEditViewModelType {
         self.userDiscoveryService = userDiscoveryService
         let bindings: MeetingEditViewStateBindings
         if let meeting {
-            bindings = MeetingEditViewStateBindings(
-                title: meeting.title,
-                description: meeting.description,
-                startDate: meeting.startTime,
-                endDate: meeting.endTime,
-                location: meeting.location,
-                isIndefinite: meeting.isIndefinite,
-                allowGuests: meeting.accessLevel == "public",
-                participants: meeting.participants.map { participant in
-                    UserProfileProxy(userID: participant.userId, displayName: participant.displayName)
-                }
-            )
+            bindings = MeetingEditViewStateBindings(title: meeting.title,
+                                                    description: meeting.description,
+                                                    startDate: meeting.startTime,
+                                                    endDate: meeting.endTime,
+                                                    location: meeting.location,
+                                                    isIndefinite: meeting.isIndefinite,
+                                                    allowGuests: meeting.accessLevel == "public",
+                                                    participants: meeting.participants.map { participant in
+                                                        UserProfileProxy(userID: participant.userId, displayName: participant.displayName)
+                                                    })
         } else {
             bindings = MeetingEditViewStateBindings()
         }
@@ -98,17 +96,15 @@ class MeetingEditViewModel: MeetingEditViewModelType {
                 ? String(UUID().uuidString.lowercased().prefix(11))
                 : nil
 
-            var request = MeetingRequest(
-                title: state.bindings.title,
-                description: state.bindings.description,
-                startTime: state.bindings.startDate,
-                endTime: endDate,
-                isIndefinite: state.bindings.isIndefinite,
-                location: state.bindings.location,
-                participants: state.bindings.participants.map(\.userID),
-                accessLevel: state.bindings.allowGuests ? "public" : "private",
-                meetingCode: meetingCode
-            )
+            var request = MeetingRequest(title: state.bindings.title,
+                                         description: state.bindings.description,
+                                         startTime: state.bindings.startDate,
+                                         endTime: endDate,
+                                         isIndefinite: state.bindings.isIndefinite,
+                                         location: state.bindings.location,
+                                         participants: state.bindings.participants.map(\.userID),
+                                         accessLevel: state.bindings.allowGuests ? "public" : "private",
+                                         meetingCode: meetingCode)
 
             do {
                 let meeting: Meeting

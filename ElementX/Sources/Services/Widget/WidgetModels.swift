@@ -56,7 +56,7 @@ struct WidgetEventContent: Codable {
         case type
         case name
         case url
-        case creatorUserId = "creatorUserId"
+        case creatorUserId
         case waitForIframeLoad
         case data
     }

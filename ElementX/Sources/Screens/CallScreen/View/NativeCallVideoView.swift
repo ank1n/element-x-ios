@@ -15,7 +15,7 @@ import SwiftUI
 /// sTalk: Wraps LiveKit's `VideoView` for use in SwiftUI.
 struct NativeCallVideoView: UIViewRepresentable {
     let track: VideoTrack
-    var mirror: Bool = false
+    var mirror = false
     var contentMode: VideoView.LayoutMode = .fill
 
     func makeUIView(context: Context) -> VideoView {
@@ -131,40 +131,32 @@ private struct DirectCallLayout: View {
         let padding: CGFloat = 12
         let safeArea = geometry.safeAreaInsets
 
-        let anchor = selfViewCorner.position(
-            in: geometry.size,
-            pipSize: CGSize(width: pipWidth, height: pipHeight),
-            padding: padding,
-            safeArea: safeArea
-        )
+        let anchor = selfViewCorner.position(in: geometry.size,
+                                             pipSize: CGSize(width: pipWidth, height: pipHeight),
+                                             padding: padding,
+                                             safeArea: safeArea)
 
         NativeCallVideoView(track: track, mirror: true)
             .frame(width: pipWidth, height: pipHeight)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .shadow(color: .black.opacity(0.4), radius: 8, x: 0, y: 4)
             .position(x: anchor.x + selfViewOffset.width, y: anchor.y + selfViewOffset.height)
-            .gesture(
-                DragGesture()
-                    .onChanged { value in
-                        selfViewOffset = value.translation
+            .gesture(DragGesture()
+                .onChanged { value in
+                    selfViewOffset = value.translation
+                }
+                .onEnded { value in
+                    let finalPoint = CGPoint(x: anchor.x + value.translation.width,
+                                             y: anchor.y + value.translation.height)
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        selfViewCorner = PipCorner.nearest(to: finalPoint,
+                                                           in: geometry.size,
+                                                           pipSize: CGSize(width: pipWidth, height: pipHeight),
+                                                           padding: padding,
+                                                           safeArea: safeArea)
+                        selfViewOffset = .zero
                     }
-                    .onEnded { value in
-                        let finalPoint = CGPoint(
-                            x: anchor.x + value.translation.width,
-                            y: anchor.y + value.translation.height
-                        )
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            selfViewCorner = PipCorner.nearest(
-                                to: finalPoint,
-                                in: geometry.size,
-                                pipSize: CGSize(width: pipWidth, height: pipHeight),
-                                padding: padding,
-                                safeArea: safeArea
-                            )
-                            selfViewOffset = .zero
-                        }
-                    }
-            )
+                })
     }
 }
 
@@ -201,26 +193,22 @@ private struct GroupCallLayout: View {
 
         // Local participant
         if let local = roomManager.localParticipant {
-            items.append(ParticipantItem(
-                id: local.identity?.stringValue ?? "local",
-                videoTrack: roomManager.localVideoTrack,
-                displayName: SL10n.callsYou,
-                isLocal: true,
-                isSpeaking: local.isSpeaking,
-                isAudioMuted: local.firstAudioPublication?.isMuted ?? true
-            ))
+            items.append(ParticipantItem(id: local.identity?.stringValue ?? "local",
+                                         videoTrack: roomManager.localVideoTrack,
+                                         displayName: SL10n.callsYou,
+                                         isLocal: true,
+                                         isSpeaking: local.isSpeaking,
+                                         isAudioMuted: local.firstAudioPublication?.isMuted ?? true))
         }
 
         // Remote participants
         for participant in roomManager.remoteParticipants {
-            items.append(ParticipantItem(
-                id: participant.identity?.stringValue ?? participant.sid?.stringValue ?? UUID().uuidString,
-                videoTrack: participant.firstCameraVideoTrack,
-                displayName: participant.name ?? participant.identity?.stringValue,
-                isLocal: false,
-                isSpeaking: participant.isSpeaking,
-                isAudioMuted: participant.firstAudioPublication?.isMuted ?? false
-            ))
+            items.append(ParticipantItem(id: participant.identity?.stringValue ?? participant.sid?.stringValue ?? UUID().uuidString,
+                                         videoTrack: participant.firstCameraVideoTrack,
+                                         displayName: participant.name ?? participant.identity?.stringValue,
+                                         isLocal: false,
+                                         isSpeaking: participant.isSpeaking,
+                                         isAudioMuted: participant.firstAudioPublication?.isMuted ?? false))
         }
 
         return items
@@ -263,11 +251,9 @@ private struct ParticipantTile: View {
         ZStack(alignment: .bottomLeading) {
             // Video or placeholder
             if let track = item.videoTrack {
-                NativeCallVideoView(
-                    track: track,
-                    mirror: item.isLocal,
-                    contentMode: .fill
-                )
+                NativeCallVideoView(track: track,
+                                    mirror: item.isLocal,
+                                    contentMode: .fill)
             } else {
                 // Camera off — show initials
                 Color(white: 0.1)
@@ -284,13 +270,11 @@ private struct ParticipantTile: View {
             }
 
             // Bottom gradient for name readability
-            LinearGradient(
-                colors: [.clear, .black.opacity(0.5)],
-                startPoint: .center,
-                endPoint: .bottom
-            )
-            .frame(height: 48)
-            .allowsHitTesting(false)
+            LinearGradient(colors: [.clear, .black.opacity(0.5)],
+                           startPoint: .center,
+                           endPoint: .bottom)
+                .frame(height: 48)
+                .allowsHitTesting(false)
 
             // Name tag + mute indicator
             HStack(spacing: 4) {
@@ -314,11 +298,9 @@ private struct ParticipantTile: View {
         }
         .background(Color(white: 0.1))
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            // Speaking indicator — green border
+        .overlay(// Speaking indicator — green border
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(item.isSpeaking ? Color.green : Color.clear, lineWidth: 2)
-        )
+                .stroke(item.isSpeaking ? Color.green : Color.clear, lineWidth: 2))
     }
 }
 
@@ -335,25 +317,18 @@ private enum PipCorner {
 
         switch self {
         case .topLeft:
-            return CGPoint(
-                x: padding + halfW,
-                y: safeArea.top + padding + halfH + 44 // 44 for toolbar
+            return CGPoint(x: padding + halfW,
+                           y: safeArea.top + padding + halfH + 44 // 44 for toolbar
             )
         case .topRight:
-            return CGPoint(
-                x: containerSize.width - padding - halfW,
-                y: safeArea.top + padding + halfH + 44
-            )
+            return CGPoint(x: containerSize.width - padding - halfW,
+                           y: safeArea.top + padding + halfH + 44)
         case .bottomLeft:
-            return CGPoint(
-                x: padding + halfW,
-                y: containerSize.height - safeArea.bottom - padding - halfH - bottomReserved
-            )
+            return CGPoint(x: padding + halfW,
+                           y: containerSize.height - safeArea.bottom - padding - halfH - bottomReserved)
         case .bottomRight:
-            return CGPoint(
-                x: containerSize.width - padding - halfW,
-                y: containerSize.height - safeArea.bottom - padding - halfH - bottomReserved
-            )
+            return CGPoint(x: containerSize.width - padding - halfW,
+                           y: containerSize.height - safeArea.bottom - padding - halfH - bottomReserved)
         }
     }
 

@@ -27,7 +27,9 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
     private let appLockService: AppLockServiceProtocol
     private let flowParameters: CommonFlowParameters
 
-    private var userSession: UserSessionProtocol { flowParameters.userSession }
+    private var userSession: UserSessionProtocol {
+        flowParameters.userSession
+    }
 
     private let onboardingFlowCoordinator: OnboardingFlowCoordinator
     private let onboardingStackCoordinator: NavigationStackCoordinator
@@ -81,7 +83,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         // 1. Contacts tab
         let contactsStackCoordinator = NavigationStackCoordinator()
         contactsTabFlowCoordinator = ContactsTabFlowCoordinator(navigationStackCoordinator: contactsStackCoordinator,
-                                                                 flowParameters: flowParameters)
+                                                                flowParameters: flowParameters)
         contactsTabDetails = .init(tag: HomeTab.contacts, title: SL10n.tabContacts, icon: \.userProfile, selectedIcon: \.userProfileSolid, sfSymbol: "person", sfSymbolSelected: "person.fill", lottieAnimation: "TabContacts")
         contactsTabDetails.barVisibilityOverride = .visible
         contactsTabFlowCoordinator.onTabBarVisibilityChange = { [weak contactsTabDetails] visibility in
@@ -115,8 +117,8 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         let profileStack = NavigationStackCoordinator()
         profileTabStackCoordinator = profileStack
         profileTabFlowCoordinator = SettingsFlowCoordinator(appLockService: appLockService,
-                                                             navigationStackCoordinator: profileStack,
-                                                             flowParameters: flowParameters)
+                                                            navigationStackCoordinator: profileStack,
+                                                            flowParameters: flowParameters)
         profileTabDetails = .init(tag: HomeTab.profile, title: SL10n.tabSettings, icon: \.userProfile, selectedIcon: \.userProfileSolid, sfSymbol: "gearshape", sfSymbolSelected: "gearshape.fill", lottieAnimation: "TabSettings")
         profileTabDetails.barVisibilityOverride = .visible
 
@@ -179,12 +181,12 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         chatsTabFlowCoordinator.clearRoute(animated: animated)
     }
     
-    // Clearing routes is more complicated than it first seems. When passing routes
-    // to the chats flow we can't clear all routes as e.g. childRoom/childEvent etc
-    // expect to push into the existing stack. But we do need to hide any sheets that
-    // might cover up the presented route. BUT! We probably shouldn't dismiss onboarding
-    // or verification flows until they're complete… This needs more thought before we
-    // codify it all into the state machine.
+    /// Clearing routes is more complicated than it first seems. When passing routes
+    /// to the chats flow we can't clear all routes as e.g. childRoom/childEvent etc
+    /// expect to push into the existing stack. But we do need to hide any sheets that
+    /// might cover up the presented route. BUT! We probably shouldn't dismiss onboarding
+    /// or verification flows until they're complete… This needs more thought before we
+    /// codify it all into the state machine.
     private func clearPresentedSheets(animated: Bool) {
         // Settings is now a tab, no sheets to clear for it
     }
@@ -457,7 +459,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         // значит пользователь присоединяется к входящему звонку
         let roomInfo = roomProxy.infoPublisher.value
         let isJoiningExistingCall = roomInfo.hasRoomCall &&
-                                    !roomInfo.activeRoomCallParticipants.contains(roomProxy.ownUserID)
+            !roomInfo.activeRoomCallParticipants.contains(roomProxy.ownUserID)
         if isJoiningExistingCall {
             flowParameters.elementCallService.markNextCallAsIncoming()
         }
@@ -495,6 +497,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         minimizedCallTimer?.invalidate()
         minimizedCallTimer = nil
     }
+
     private func presentCallScreen(configuration: ElementCallConfiguration, startWithVideoEnabled: Bool = true) {
         guard flowParameters.ongoingCallRoomIDPublisher.value != configuration.callRoomID else {
             MXLog.info("Returning to existing call.")

@@ -21,7 +21,7 @@ struct CallScreenCoordinatorParameters {
     let mediaProvider: MediaProviderProtocol?
     let localCallHistoryService: LocalCallHistoryServiceProtocol?
     let currentCallID: String?
-    var startWithVideoEnabled: Bool = true
+    var startWithVideoEnabled = true
 }
 
 enum CallScreenCoordinatorAction {

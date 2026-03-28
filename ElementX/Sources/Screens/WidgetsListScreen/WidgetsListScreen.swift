@@ -10,9 +10,11 @@ import UIKit
 struct WidgetsListScreen: View {
     @ObservedObject var context: WidgetsListScreenViewModelType.Context
     @State private var selectedCategory: AppCategory = .all
-    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
+    @AppStorage("stalk_design_theme") private var designTheme = "cosmos"
 
-    private var isCosmos: Bool { designTheme == "cosmos" }
+    private var isCosmos: Bool {
+        designTheme == "cosmos"
+    }
 
     enum AppCategory: CaseIterable {
         case all
@@ -39,12 +41,10 @@ struct WidgetsListScreen: View {
         Group {
             if isCosmos {
                 ZStack {
-                    LinearGradient(
-                        colors: [bgGradientTop, bgGradientBottom, Color(UIColor.systemGroupedBackground)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .ignoresSafeArea()
+                    LinearGradient(colors: [bgGradientTop, bgGradientBottom, Color(UIColor.systemGroupedBackground)],
+                                   startPoint: .top,
+                                   endPoint: .bottom)
+                        .ignoresSafeArea()
                     cosmosContent
                 }
             } else {
@@ -73,7 +73,6 @@ struct WidgetsListScreen: View {
 
     // MARK: - Classic Design
 
-    @ViewBuilder
     private var classicContent: some View {
         GeometryReader { geometry in
             ScrollView {
@@ -107,13 +106,9 @@ struct WidgetsListScreen: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(AppCategory.allCases, id: \.self) { category in
-                    GenericFilterView(
-                        title: category.rawValue,
-                        isActive: Binding(
-                            get: { selectedCategory == category },
-                            set: { if $0 { selectedCategory = category } }
-                        )
-                    )
+                    GenericFilterView(title: category.rawValue,
+                                      isActive: Binding(get: { selectedCategory == category },
+                                                        set: { if $0 { selectedCategory = category } }))
                 }
             }
             .padding(.horizontal, 16)
@@ -199,7 +194,6 @@ struct WidgetsListScreen: View {
 
     // MARK: - Cosmos Design
 
-    @ViewBuilder
     private var cosmosContent: some View {
         ScrollView {
             VStack(spacing: 0) {
@@ -232,7 +226,6 @@ struct WidgetsListScreen: View {
         }
     }
 
-    @ViewBuilder
     private var categoriesSection: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
@@ -245,10 +238,8 @@ struct WidgetsListScreen: View {
                             .foregroundColor(selectedCategory == category ? .white : .primary)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 7)
-                            .background(
-                                Capsule()
-                                    .fill(selectedCategory == category ? accentBlue : Color(UIColor.systemGray6))
-                            )
+                            .background(Capsule()
+                                .fill(selectedCategory == category ? accentBlue : Color(UIColor.systemGray6)))
                     }
                 }
             }
@@ -332,7 +323,7 @@ struct WidgetsListScreen: View {
         if !context.searchQuery.isEmpty {
             widgets = widgets.filter {
                 $0.name.localizedCaseInsensitiveContains(context.searchQuery) ||
-                $0.description.localizedCaseInsensitiveContains(context.searchQuery)
+                    $0.description.localizedCaseInsensitiveContains(context.searchQuery)
             }
         }
 
@@ -411,7 +402,7 @@ struct WidgetsListScreen: View {
             Color(red: 0.9, green: 0.5, blue: 0.2),
             Color(red: 0.6, green: 0.3, blue: 0.8),
             Color(red: 0.9, green: 0.3, blue: 0.4),
-            Color(red: 0.2, green: 0.7, blue: 0.7),
+            Color(red: 0.2, green: 0.7, blue: 0.7)
         ]
         // Stable hash — djb2 algorithm (hashValue is randomized per launch)
         var hash: UInt64 = 5381

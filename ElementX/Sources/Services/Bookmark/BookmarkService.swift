@@ -18,13 +18,13 @@ struct BookmarkedMessage: Codable, Identifiable, Equatable {
     let bookmarkedAt: Date
 
     init(eventID: String, roomID: String, senderID: String, senderName: String, body: String, timestamp: Date) {
-        self.id = eventID
+        id = eventID
         self.roomID = roomID
         self.senderID = senderID
         self.senderName = senderName
         self.body = body
         self.timestamp = timestamp
-        self.bookmarkedAt = Date()
+        bookmarkedAt = Date()
     }
 }
 

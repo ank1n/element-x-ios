@@ -25,7 +25,9 @@ class ChatsTabFlowCoordinator: FlowCoordinatorProtocol {
     private let navigationSplitCoordinator: NavigationSplitCoordinator
     private let flowParameters: CommonFlowParameters
     
-    private var userSession: UserSessionProtocol { flowParameters.userSession }
+    private var userSession: UserSessionProtocol {
+        flowParameters.userSession
+    }
     
     private let stateMachine: ChatsTabFlowCoordinatorStateMachine
     
@@ -702,10 +704,8 @@ class ChatsTabFlowCoordinator: FlowCoordinatorProtocol {
     // MARK: Message Search
 
     private func presentMessageSearch() {
-        let parameters = MessageSearchScreenCoordinatorParameters(
-            clientProxy: userSession.clientProxy,
-            roomSummaryProvider: userSession.clientProxy.alternateRoomSummaryProvider
-        )
+        let parameters = MessageSearchScreenCoordinatorParameters(clientProxy: userSession.clientProxy,
+                                                                  roomSummaryProvider: userSession.clientProxy.alternateRoomSummaryProvider)
         let coordinator = MessageSearchScreenCoordinator(parameters: parameters)
 
         coordinator.actionsPublisher

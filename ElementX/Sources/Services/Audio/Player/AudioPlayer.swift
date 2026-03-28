@@ -96,7 +96,7 @@ class AudioPlayer: NSObject, AudioPlayerProtocol {
         playerItem = AVPlayerItem(url: playbackURL)
 
         // Увеличиваем буфер для предотвращения треска
-        playerItem?.preferredForwardBufferDuration = 5.0  // 5 секунд буфера
+        playerItem?.preferredForwardBufferDuration = 5.0 // 5 секунд буфера
 
         internalAudioPlayer = AVQueuePlayer(playerItem: playerItem)
         internalAudioPlayer?.automaticallyWaitsToMinimizeStalling = true

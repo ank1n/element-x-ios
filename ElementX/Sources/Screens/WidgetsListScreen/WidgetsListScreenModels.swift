@@ -19,11 +19,11 @@ enum WidgetsListScreenViewModelAction {
 
 struct WidgetsListScreenViewState: BindableState {
     var widgets: [WidgetItem] = []
-    var isLoading: Bool = true
+    var isLoading = true
     var errorMessage: String?
 
     // User info for avatar
-    var userID: String = ""
+    var userID = ""
     var userDisplayName: String?
     var userAvatarURL: URL?
     var requiresExtraAccountSetup = false
@@ -69,14 +69,16 @@ struct WidgetItem: Identifiable, Equatable, Codable {
     let id: String
     let name: String
     let description: String
-    let icon: String           // SF Symbol name
-    let iconURL: URL?          // Remote icon URL (from API)
-    let url: String            // Full URL to open widget (empty for builtin)
-    let apiURL: String?        // Backend API URL for builtin apps
-    let type: String           // "builtin", "widget", "smartapp"
+    let icon: String // SF Symbol name
+    let iconURL: URL? // Remote icon URL (from API)
+    let url: String // Full URL to open widget (empty for builtin)
+    let apiURL: String? // Backend API URL for builtin apps
+    let type: String // "builtin", "widget", "smartapp"
     var category: WidgetCategory = .tools
 
-    var isBuiltin: Bool { type == "builtin" }
+    var isBuiltin: Bool {
+        type == "builtin"
+    }
 
     init(id: String, name: String, description: String, icon: String = "", iconURL: URL? = nil, url: String, apiURL: String? = nil, type: String = "widget", category: WidgetCategory = .tools) {
         self.id = id
@@ -104,16 +106,16 @@ struct AppsAPIApp: Decodable {
     let id: String
     let name: String
     let description: String
-    let icon: AppsAPIIcon      // { "sf": "calendar", "material": "event" }
-    let url: String            // Full URL or empty for builtin
-    let apiUrl: String?        // Backend API URL for builtin apps (e.g. meetings)
-    let category: String       // "productivity", "tools"
-    let type: String           // "builtin", "widget", "smartapp"
+    let icon: AppsAPIIcon // { "sf": "calendar", "material": "event" }
+    let url: String // Full URL or empty for builtin
+    let apiUrl: String? // Backend API URL for builtin apps (e.g. meetings)
+    let category: String // "productivity", "tools"
+    let type: String // "builtin", "widget", "smartapp"
     let enabled: Bool
 }
 
 /// Icon object with platform-specific names
 struct AppsAPIIcon: Decodable {
-    let sf: String?            // SF Symbols name (iOS)
-    let material: String?      // Material Icons name (Android)
+    let sf: String? // SF Symbols name (iOS)
+    let material: String? // Material Icons name (Android)
 }

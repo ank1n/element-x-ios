@@ -36,7 +36,7 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
         self.userSession = userSession
 
         let saved = UserDefaults.standard.stringArray(forKey: Self.favoritesKey) ?? []
-        self.favoriteRoomIDs = Set(saved)
+        favoriteRoomIDs = Set(saved)
 
         var initialState = ContactsListScreenViewState()
         initialState.userID = userSession.clientProxy.userID
@@ -89,10 +89,8 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
             }
 
             // Create new DM
-            let result = await userSession.clientProxy.createDirectRoom(
-                with: matrixUserID,
-                expectedRoomName: contact.displayName
-            )
+            let result = await userSession.clientProxy.createDirectRoom(with: matrixUserID,
+                                                                        expectedRoomName: contact.displayName)
             switch result {
             case .success(let roomID):
                 actionsSubject.send(.openChat(roomId: roomID))
@@ -286,15 +284,13 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
             // For DMs, use hero's avatar (user profile pic) if room has no avatar
             let contactAvatarURL = summary.avatarURL ?? summary.heroes.first?.avatarURL
 
-            contacts.append(ContactItem(
-                id: summary.id,
-                displayName: summary.name,
-                avatarURL: contactAvatarURL,
-                matrixUserID: heroUserID,
-                isOnline: presence?.isOnline ?? false,
-                lastSeenDate: presence?.lastSeenDate,
-                isFavorite: favoriteRoomIDs.contains(summary.id)
-            ))
+            contacts.append(ContactItem(id: summary.id,
+                                        displayName: summary.name,
+                                        avatarURL: contactAvatarURL,
+                                        matrixUserID: heroUserID,
+                                        isOnline: presence?.isOnline ?? false,
+                                        lastSeenDate: presence?.lastSeenDate,
+                                        isFavorite: favoriteRoomIDs.contains(summary.id)))
 
             if let heroUserID { userIDs.append(heroUserID) }
         }
@@ -316,15 +312,13 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
             // For 2-member rooms, use hero's avatar if room has no avatar
             let contactAvatarURL = summary.avatarURL ?? summary.heroes.first?.avatarURL
 
-            contacts.append(ContactItem(
-                id: summary.id,
-                displayName: summary.name,
-                avatarURL: contactAvatarURL,
-                matrixUserID: heroUserID,
-                isOnline: presence?.isOnline ?? false,
-                lastSeenDate: presence?.lastSeenDate,
-                isFavorite: favoriteRoomIDs.contains(summary.id)
-            ))
+            contacts.append(ContactItem(id: summary.id,
+                                        displayName: summary.name,
+                                        avatarURL: contactAvatarURL,
+                                        matrixUserID: heroUserID,
+                                        isOnline: presence?.isOnline ?? false,
+                                        lastSeenDate: presence?.lastSeenDate,
+                                        isFavorite: favoriteRoomIDs.contains(summary.id)))
 
             if let heroUserID { userIDs.append(heroUserID) }
         }
@@ -381,7 +375,9 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
                 for letter in "abcdefghijklmnopqrstuvwxyz" {
                     let r = await userSession.clientProxy.searchUsers(searchTerm: String(letter), limit: 50)
                     if case .success(let sr) = r {
-                        for u in sr.results { allUsers[u.userID] = u }
+                        for u in sr.results {
+                            allUsers[u.userID] = u
+                        }
                     }
                 }
                 users = Array(allUsers.values)
@@ -399,15 +395,13 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
                       !existingUserIDs.contains(user.userID) else { continue }
 
                 let presence = presenceMap[user.userID]
-                newContacts.append(ContactItem(
-                    id: user.userID,
-                    displayName: user.displayName ?? user.userID.replacingOccurrences(of: "@", with: "").components(separatedBy: ":").first ?? user.userID,
-                    avatarURL: user.avatarURL,
-                    matrixUserID: user.userID,
-                    isOnline: presence?.isOnline ?? false,
-                    lastSeenDate: presence?.lastSeenDate,
-                    isFavorite: favoriteRoomIDs.contains(user.userID)
-                ))
+                newContacts.append(ContactItem(id: user.userID,
+                                               displayName: user.displayName ?? user.userID.replacingOccurrences(of: "@", with: "").components(separatedBy: ":").first ?? user.userID,
+                                               avatarURL: user.avatarURL,
+                                               matrixUserID: user.userID,
+                                               isOnline: presence?.isOnline ?? false,
+                                               lastSeenDate: presence?.lastSeenDate,
+                                               isFavorite: favoriteRoomIDs.contains(user.userID)))
                 newUserIDs.append(user.userID)
             }
 
@@ -424,9 +418,7 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
             }
 
             if !newUserIDs.isEmpty {
-                presenceService?.updatePollingUserIDs(
-                    (presenceService?.currentUserIDs ?? []) + newUserIDs
-                )
+                presenceService?.updatePollingUserIDs((presenceService?.currentUserIDs ?? []) + newUserIDs)
                 if let orgProfileService {
                     await orgProfileService.fetchProfiles(for: newUserIDs)
                 }

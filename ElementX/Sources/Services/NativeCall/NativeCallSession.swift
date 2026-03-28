@@ -24,12 +24,12 @@ final class NativeCallSession: ObservableObject {
 
     private let widgetDriver: ElementCallWidgetDriverProtocol
     private let liveKitRoomManager: LiveKitRoomManager
-    // Match EC JS parameters: ratchetWindowSize: 10, keyringSize: 256
-    private let keyProvider = BaseKeyProvider(options: KeyProviderOptions(
-        sharedKey: false,
-        ratchetWindowSize: 10,
-        keyRingSize: 256
-    ))
+    /// Match EC JS parameters: ratchetWindowSize: 10, keyringSize: 256, HKDF derivation
+    private let keyProvider = BaseKeyProvider(options: KeyProviderOptions(sharedKey: false,
+                                                                          ratchetWindowSize: 10,
+                                                                          keyRingSize: 256,
+                                                                          useHKDF: true // CRITICAL: JS uses HKDF, native default is PBKDF2
+        ))
     private let isEncrypted: Bool
     private let userId: String
     private let deviceId: String
@@ -39,6 +39,7 @@ final class NativeCallSession: ObservableObject {
     private let roomProxy: JoinedRoomProxyProtocol?
 
     // MARK: - LiveKit Config
+
     // TODO: Move to AppSettings or server config
     private let livekitAPIKey = "APIe5e237fe719f"
     private let livekitAPISecret = "6b0d7fe4c5b393c004bf813ae8dd428f70aef4896957fcb9b0ad58d37c353f96"
@@ -87,13 +88,11 @@ final class NativeCallSession: ObservableObject {
 
         // Start WidgetDriver in background for E2EE key exchange only
         // WidgetDriver uses different state_key format, won't conflict with our REST join
-        let driverResult = await widgetDriver.start(
-            baseURL: baseURL,
-            clientID: clientID,
-            colorScheme: colorScheme,
-            rageshakeURL: nil,
-            analyticsConfiguration: nil
-        )
+        let driverResult = await widgetDriver.start(baseURL: baseURL,
+                                                    clientID: clientID,
+                                                    colorScheme: colorScheme,
+                                                    rageshakeURL: nil,
+                                                    analyticsConfiguration: nil)
         if case .success = driverResult {
             widgetDriver.messagePublisher
                 .receive(on: DispatchQueue.main)
@@ -258,7 +257,7 @@ final class NativeCallSession: ObservableObject {
                 "call_id": "",
                 "scope": "m.room",
                 "device_id": deviceId,
-                "expires": 7200000,
+                "expires": 7_200_000,
                 "foci_preferred": [[
                     "type": "livekit",
                     "livekit_alias": matrixRoomId,
@@ -297,28 +296,9 @@ final class NativeCallSession: ObservableObject {
     /// Converts raw Data to a String where each byte maps 1:1 (ISO Latin-1)
     /// LiveKit SDK will .utf8 encode this — for ASCII-range bytes it's identical
     private func setRawKeyInProvider(_ provider: BaseKeyProvider, key: Data, participantId: String, index: Int32) {
-        // JS SFrame worker:
-        //   importKey("raw", bytes, "HKDF") → deriveKey(HKDF, salt, info=128zeros, AES-GCM-128)
-        //   This does HKDF derivation: raw bytes → AES key
-        //
-        // Native RTCFrameCryptor:
-        //   Receives raw bytes, does its own HKDF internally
-        //   IF native HKDF matches JS → raw bytes should work
-        //   IF native skips HKDF → needs pre-derived key
-        //
-        // Try pre-derived key to test if native skips HKDF:
-        let salt = "LKFrameEncryptionKey".data(using: .utf8)!
-        let info = Data(count: 128) // 128 zero bytes — matches JS new ArrayBuffer(128)
-        let derived = HKDF<SHA256>.deriveKey(
-            inputKeyMaterial: SymmetricKey(data: key),
-            salt: salt,
-            info: info,
-            outputByteCount: 16
-        )
-        let derivedData = derived.withUnsafeBytes { Data($0) }
-
-        provider.rtcKeyProvider.setKey(derivedData, with: index, forParticipant: participantId)
-        MXLog.info("sTalk E2EE: HKDF-derived key (\(derivedData.count) bytes) for \(participantId) idx=\(index)")
+        // webrtc 144 with useHKDF:true does HKDF internally — pass RAW bytes only
+        provider.rtcKeyProvider.setKey(key, with: index, forParticipant: participantId)
+        MXLog.info("sTalk E2EE: Raw key (\(key.count) bytes) for \(participantId) idx=\(index)")
     }
 
     // MARK: - E2EE Key Exchange
@@ -393,7 +373,6 @@ final class NativeCallSession: ObservableObject {
                                let content = dict["content"] as? [String: Any],
                                let sender = dict["sender"] as? String,
                                sender != self.userId {
-
                                 let deviceId = content["device_id"] as? String ?? ""
                                 let participantId = "\(sender):\(deviceId)"
 
@@ -753,9 +732,7 @@ final class NativeCallSession: ObservableObject {
                 setRawKeyInProvider(keyProvider, key: ourEncryptionKeyRaw!, participantId: ourIdentity, index: 0)
                 MXLog.info("sTalk NativeCall E2EE: Our key set for \(ourIdentity)")
 
-                try await liveKitRoomManager.connectWithE2EE(
-                    wsURL: url, token: token, keyProvider: keyProvider, speakerByDefault: false
-                )
+                try await liveKitRoomManager.connectWithE2EE(wsURL: url, token: token, keyProvider: keyProvider, speakerByDefault: false)
             } else {
                 try await liveKitRoomManager.connect(wsURL: url, token: token, speakerByDefault: false)
             }

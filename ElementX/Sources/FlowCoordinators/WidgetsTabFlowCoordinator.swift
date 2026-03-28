@@ -120,16 +120,12 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
             }
             // Pass a closure so each API call gets a fresh OIDC token
             let clientProxy = userSession.clientProxy
-            let parameters = MeetingsScreenCoordinatorParameters(
-                apiURL: baseURL,
-                accessTokenProvider: { try clientProxy.matrixAccessToken() },
-                currentUserId: userSession.clientProxy.userID,
-                clientProxy: clientProxy
-            )
-            let coordinator = MeetingsScreenCoordinator(
-                parameters: parameters,
-                navigationStackCoordinator: navigationStackCoordinator
-            )
+            let parameters = MeetingsScreenCoordinatorParameters(apiURL: baseURL,
+                                                                 accessTokenProvider: { try clientProxy.matrixAccessToken() },
+                                                                 currentUserId: userSession.clientProxy.userID,
+                                                                 clientProxy: clientProxy)
+            let coordinator = MeetingsScreenCoordinator(parameters: parameters,
+                                                        navigationStackCoordinator: navigationStackCoordinator)
             coordinator.actionsPublisher
                 .sink { [weak self] action in
                     switch action {

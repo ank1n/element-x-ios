@@ -74,23 +74,19 @@ class MessageSearchScreenViewModel: MessageSearchScreenViewModelType {
         searchTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let response = try await self.searchService.searchMessages(
-                    query: query,
-                    nextBatch: self.nextBatch
-                )
+                let response = try await self.searchService.searchMessages(query: query,
+                                                                           nextBatch: self.nextBatch)
 
                 guard !Task.isCancelled else { return }
 
                 await MainActor.run {
                     let newResults = response.results.map { result in
-                        MessageSearchScreenResult(
-                            eventID: result.eventID,
-                            roomID: result.roomID,
-                            roomName: self.roomName(for: result.roomID),
-                            senderName: result.senderDisplayName,
-                            body: result.body,
-                            timestamp: result.timestamp
-                        )
+                        MessageSearchScreenResult(eventID: result.eventID,
+                                                  roomID: result.roomID,
+                                                  roomName: self.roomName(for: result.roomID),
+                                                  senderName: result.senderDisplayName,
+                                                  body: result.body,
+                                                  timestamp: result.timestamp)
                     }
 
                     if append {

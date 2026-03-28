@@ -47,29 +47,25 @@ struct RoomScreen: View {
             }
             .safeAreaInset(edge: .top) {
                 if context.viewState.isSearchActive {
-                    RoomSearchBar(
-                        searchQuery: $context.searchQuery,
-                        resultCount: context.viewState.searchResultCount,
-                        currentIndex: context.viewState.currentSearchResultIndex,
-                        isLoading: context.viewState.isSearchLoading,
-                        onPrevious: { context.send(viewAction: .searchPrevious) },
-                        onNext: { context.send(viewAction: .searchNext) },
-                        onDismiss: { context.send(viewAction: .toggleSearch) }
-                    )
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    RoomSearchBar(searchQuery: $context.searchQuery,
+                                  resultCount: context.viewState.searchResultCount,
+                                  currentIndex: context.viewState.currentSearchResultIndex,
+                                  isLoading: context.viewState.isSearchLoading,
+                                  onPrevious: { context.send(viewAction: .searchPrevious) },
+                                  onNext: { context.send(viewAction: .searchNext) },
+                                  onDismiss: { context.send(viewAction: .toggleSearch) })
+                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if context.viewState.isSearchActive {
                     // Search mode: show navigation bar instead of composer
                     if !context.viewState.bindings.searchQuery.isEmpty {
-                        RoomSearchNavigationBar(
-                            resultCount: context.viewState.searchResultCount,
-                            currentIndex: context.viewState.currentSearchResultIndex,
-                            isLoading: context.viewState.isSearchLoading,
-                            onPrevious: { context.send(viewAction: .searchPrevious) },
-                            onNext: { context.send(viewAction: .searchNext) }
-                        )
+                        RoomSearchNavigationBar(resultCount: context.viewState.searchResultCount,
+                                                currentIndex: context.viewState.currentSearchResultIndex,
+                                                isLoading: context.viewState.isSearchLoading,
+                                                onPrevious: { context.send(viewAction: .searchPrevious) },
+                                                onNext: { context.send(viewAction: .searchNext) })
                     }
                 } else {
                     // Normal mode: footer + composer
@@ -84,8 +80,8 @@ struct RoomScreen: View {
                             .background(Color.compound.bgCanvasDefault.ignoresSafeArea())
                             .environmentObject(timelineContext)
                             .environment(\.timelineContext, timelineContext)
-                        // Make sure the reply header honours the hideTimelineMedia setting too.
-                        .environment(\.shouldAutomaticallyLoadImages, !timelineContext.viewState.hideTimelineMedia)
+                            // Make sure the reply header honours the hideTimelineMedia setting too.
+                            .environment(\.shouldAutomaticallyLoadImages, !timelineContext.viewState.hideTimelineMedia)
                     }
                 }
             }
@@ -100,14 +96,12 @@ struct RoomScreen: View {
             .sentryTrace("\(Self.self)")
     }
     
-    @ViewBuilder
     private var pinnedItemsBanner: some View {
         PinnedItemsBannerView(state: context.viewState.pinnedEventsBannerState,
                               onMainButtonTap: { context.send(viewAction: .tappedPinnedEventsBanner) },
                               onViewAllButtonTap: { context.send(viewAction: .viewAllPins) })
     }
     
-    @ViewBuilder
     private var knockRequestsBanner: some View {
         KnockRequestsBannerView(requests: context.viewState.displayedKnockRequests,
                                 onDismiss: dismissKnockRequestsBanner,

@@ -12,9 +12,12 @@ typealias NativeLoginScreenViewModelType = StateStoreViewModel<NativeLoginScreen
 struct NativeLoginScreen: View {
     @ObservedObject var context: NativeLoginScreenViewModelType.Context
     @FocusState private var focusedField: Field?
-    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
+    @AppStorage("stalk_design_theme") private var designTheme = "cosmos"
 
-    private var isCosmos: Bool { designTheme == "cosmos" }
+    private var isCosmos: Bool {
+        designTheme == "cosmos"
+    }
+
     private let accentBlue = StalkTheme.accent
     private let bgGradientTop = Color(red: 0.90, green: 0.92, blue: 1.0)
     private let bgGradientBottom = Color(red: 0.95, green: 0.96, blue: 1.0)
@@ -52,10 +55,8 @@ struct NativeLoginScreen: View {
                             .padding()
                             .background(isCosmos ? Color(UIColor.systemBackground) : Color(.systemGray6))
                             .cornerRadius(14)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .stroke(isCosmos ? accentBlue.opacity(0.15) : Color.clear, lineWidth: 1)
-                            )
+                            .overlay(RoundedRectangle(cornerRadius: 14)
+                                .stroke(isCosmos ? accentBlue.opacity(0.15) : Color.clear, lineWidth: 1))
 
                         SecureField(SL10n.authPassword, text: $context.password)
                             .textContentType(.password)
@@ -65,10 +66,8 @@ struct NativeLoginScreen: View {
                             .padding()
                             .background(isCosmos ? Color(UIColor.systemBackground) : Color(.systemGray6))
                             .cornerRadius(14)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .stroke(isCosmos ? accentBlue.opacity(0.15) : Color.clear, lineWidth: 1)
-                            )
+                            .overlay(RoundedRectangle(cornerRadius: 14)
+                                .stroke(isCosmos ? accentBlue.opacity(0.15) : Color.clear, lineWidth: 1))
                     }
 
                     // Login button
@@ -129,11 +128,9 @@ struct NativeLoginScreen: View {
             }
         }
         .alert(item: $context.alertInfo) { alertInfo in
-            Alert(
-                title: Text(alertInfo.title),
-                message: alertInfo.message.map { Text($0) },
-                dismissButton: .default(Text("OK"))
-            )
+            Alert(title: Text(alertInfo.title),
+                  message: alertInfo.message.map { Text($0) },
+                  dismissButton: .default(Text("OK")))
         }
         .interactiveDismissDisabled(context.viewState.isLoading)
         .onAppear {
@@ -167,10 +164,8 @@ struct NativeLoginScreen: View {
                     .foregroundColor(.primary)
                 Text("Talk")
                     .font(.system(size: 42, weight: .bold))
-                    .foregroundStyle(
-                        LinearGradient(colors: [accentBlue, Color(red: 0.55, green: 0.36, blue: 0.96)],
-                                       startPoint: .leading, endPoint: .trailing)
-                    )
+                    .foregroundStyle(LinearGradient(colors: [accentBlue, Color(red: 0.55, green: 0.36, blue: 0.96)],
+                                                    startPoint: .leading, endPoint: .trailing))
             }
 
             // Equalizer animation
@@ -189,7 +184,7 @@ struct NativeLoginScreen: View {
 
     private var isFormValid: Bool {
         !context.username.trimmingCharacters(in: .whitespaces).isEmpty &&
-        !context.password.isEmpty
+            !context.password.isEmpty
     }
 
     private func loginIfValid() {
@@ -222,7 +217,7 @@ private struct EqualizerBar: View {
     let index: Int
     let animating: Bool
 
-    // Each bar gets its own random-ish min/max heights and speed
+    /// Each bar gets its own random-ish min/max heights and speed
     private var minHeight: CGFloat {
         [3, 4, 2, 5, 3, 4, 2][index % 7]
     }
@@ -241,18 +236,14 @@ private struct EqualizerBar: View {
 
     var body: some View {
         RoundedRectangle(cornerRadius: 2)
-            .fill(
-                LinearGradient(colors: [accentColor, accentColor.opacity(0.4)],
-                               startPoint: .top, endPoint: .bottom)
-            )
+            .fill(LinearGradient(colors: [accentColor, accentColor.opacity(0.4)],
+                                 startPoint: .top, endPoint: .bottom))
             .frame(width: 4, height: animating ? maxHeight : minHeight)
-            .animation(
-                animating
-                    ? .easeInOut(duration: duration)
-                        .repeatForever(autoreverses: true)
-                        .delay(delay)
-                    : .default,
-                value: animating
-            )
+            .animation(animating
+                ? .easeInOut(duration: duration)
+                .repeatForever(autoreverses: true)
+                .delay(delay)
+                : .default,
+                value: animating)
     }
 }

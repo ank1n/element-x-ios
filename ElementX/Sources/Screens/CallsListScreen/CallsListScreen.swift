@@ -10,9 +10,11 @@ import SwiftUI
 struct CallsListScreen: View {
     @ObservedObject var context: CallsListScreenViewModelType.Context
     @State private var selectedFilter: CallFilter = .all
-    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
+    @AppStorage("stalk_design_theme") private var designTheme = "cosmos"
 
-    private var isCosmos: Bool { designTheme == "cosmos" }
+    private var isCosmos: Bool {
+        designTheme == "cosmos"
+    }
 
     // MARK: - Cosmos Colors
 
@@ -97,7 +99,6 @@ struct CallsListScreen: View {
 
     // MARK: - Classic Content (unchanged)
 
-    @ViewBuilder
     private var classicContent: some View {
         GeometryReader { geometry in
             ScrollView {
@@ -326,7 +327,7 @@ struct CallsListScreen: View {
                                     .fill(isPlayingCall(call) ? Color.compound.bgActionPrimaryRest : Color.compound.bgSubtleSecondary)
                                     .frame(width: 36, height: 36)
 
-                                if context.viewState.playingCallId == call.id && context.viewState.playbackState == .loading {
+                                if context.viewState.playingCallId == call.id, context.viewState.playbackState == .loading {
                                     ProgressView()
                                         .progressViewStyle(CircularProgressViewStyle(tint: .compound.iconPrimary))
                                         .scaleEffect(0.6)
@@ -361,21 +362,17 @@ struct CallsListScreen: View {
             .padding(.vertical, 12)
 
             // Interactive slider when playing this call
-            if context.viewState.playingCallId == call.id && context.viewState.playbackState != .stopped {
+            if context.viewState.playingCallId == call.id, context.viewState.playbackState != .stopped {
                 HStack(spacing: 8) {
                     Text(formatTime(context.viewState.playbackCurrentTime))
                         .font(.caption2)
                         .foregroundColor(.compound.textSecondary)
                         .monospacedDigit()
 
-                    Slider(
-                        value: Binding(
-                            get: { context.viewState.playbackProgress },
-                            set: { context.send(viewAction: .seekPlayback(progress: $0)) }
-                        ),
-                        in: 0...1
-                    )
-                    .tint(.compound.iconAccentTertiary)
+                    Slider(value: Binding(get: { context.viewState.playbackProgress },
+                                          set: { context.send(viewAction: .seekPlayback(progress: $0)) }),
+                           in: 0...1)
+                        .tint(.compound.iconAccentTertiary)
 
                     Text(formatTime(context.viewState.playbackDuration))
                         .font(.caption2)
@@ -397,7 +394,6 @@ struct CallsListScreen: View {
 
     // MARK: - Cosmos Content
 
-    @ViewBuilder
     private var cosmosContent: some View {
         GeometryReader { geometry in
             ScrollView {
@@ -414,10 +410,8 @@ struct CallsListScreen: View {
                                         .foregroundColor(selectedFilter == filter ? .white : .primary)
                                         .padding(.horizontal, 14)
                                         .padding(.vertical, 7)
-                                        .background(
-                                            Capsule()
-                                                .fill(selectedFilter == filter ? accentBlue : Color(UIColor.systemGray6))
-                                        )
+                                        .background(Capsule()
+                                            .fill(selectedFilter == filter ? accentBlue : Color(UIColor.systemGray6)))
                                 }
                             }
                         }
@@ -693,7 +687,7 @@ struct CallsListScreen: View {
                                     .fill(isPlayingCall(call) ? accentBlue : Color(UIColor.systemGray6))
                                     .frame(width: 36, height: 36)
 
-                                if context.viewState.playingCallId == call.id && context.viewState.playbackState == .loading {
+                                if context.viewState.playingCallId == call.id, context.viewState.playbackState == .loading {
                                     ProgressView()
                                         .progressViewStyle(CircularProgressViewStyle(tint: .primary))
                                         .scaleEffect(0.6)
@@ -727,21 +721,17 @@ struct CallsListScreen: View {
             .padding(.vertical, 12)
 
             // Interactive slider when playing this call
-            if context.viewState.playingCallId == call.id && context.viewState.playbackState != .stopped {
+            if context.viewState.playingCallId == call.id, context.viewState.playbackState != .stopped {
                 HStack(spacing: 8) {
                     Text(formatTime(context.viewState.playbackCurrentTime))
                         .font(.caption2)
                         .foregroundColor(.secondary)
                         .monospacedDigit()
 
-                    Slider(
-                        value: Binding(
-                            get: { context.viewState.playbackProgress },
-                            set: { context.send(viewAction: .seekPlayback(progress: $0)) }
-                        ),
-                        in: 0...1
-                    )
-                    .tint(accentBlue)
+                    Slider(value: Binding(get: { context.viewState.playbackProgress },
+                                          set: { context.send(viewAction: .seekPlayback(progress: $0)) }),
+                           in: 0...1)
+                        .tint(accentBlue)
 
                     Text(formatTime(context.viewState.playbackDuration))
                         .font(.caption2)
@@ -792,10 +782,8 @@ struct CallsListScreen: View {
                                 contentID: "\(call.contactId)-0",
                                 avatarSize: .custom(34),
                                 mediaProvider: context.mediaProvider)
-                .overlay(
-                    Circle()
-                        .stroke(Color(UIColor.systemBackground), lineWidth: 2)
-                )
+                .overlay(Circle()
+                    .stroke(Color(UIColor.systemBackground), lineWidth: 2))
                 .offset(x: -8, y: 8)
 
             // Бейдж "+N" если > 3 участников (2 аватарки уже видны)
@@ -848,7 +836,7 @@ struct CallsListScreen: View {
         case .all:
             break
         case .missed:
-            calls = calls.filter { $0.isMissed }
+            calls = calls.filter(\.isMissed)
         }
 
         return calls
@@ -887,10 +875,8 @@ struct CallsListScreen: View {
         // Past meetings where I'm the creator or was a participant
         let myID = context.viewState.userID
         let pastMeetings = context.viewState.meetings.filter { meeting in
-            meeting.isPast && (
-                meeting.creatorId == myID ||
-                meeting.participants.contains(where: { $0.userId == myID })
-            )
+            meeting.isPast && (meeting.creatorId == myID ||
+                meeting.participants.contains(where: { $0.userId == myID }))
         }
         items += pastMeetings.map { .meeting($0) }
 
@@ -1058,7 +1044,7 @@ struct CallsListScreen: View {
         guard !query.isEmpty else { return context.viewState.newCallContacts }
         return context.viewState.newCallContacts.filter {
             $0.displayName.localizedCaseInsensitiveContains(query) ||
-            ($0.matrixUserID?.localizedCaseInsensitiveContains(query) ?? false)
+                ($0.matrixUserID?.localizedCaseInsensitiveContains(query) ?? false)
         }
     }
 
@@ -1080,7 +1066,6 @@ struct CallsListScreen: View {
         }
     }
 
-    @ViewBuilder
     private var newCallSheet: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -1131,10 +1116,8 @@ struct CallsListScreen: View {
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
-                            .background(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .fill(selectedNewCallContacts.isEmpty ? Color.gray : accentBlue)
-                            )
+                            .background(RoundedRectangle(cornerRadius: 14)
+                                .fill(selectedNewCallContacts.isEmpty ? Color.gray : accentBlue))
                     }
                     .disabled(selectedNewCallContacts.isEmpty)
                 }
@@ -1278,11 +1261,9 @@ struct CallsListScreen_Previews: PreviewProvider {
         ServiceLocator.shared.setupLocalCallHistoryService()
 
         let mockService = CallHistoryService(baseURL: URL(string: "https://stalk.implica.ru/recording-api")!)
-        let viewModel = CallsListScreenViewModel(
-            userSession: UserSessionMock(.init()),
-            localCallHistoryService: ServiceLocator.shared.localCallHistoryService,
-            callHistoryService: mockService
-        )
+        let viewModel = CallsListScreenViewModel(userSession: UserSessionMock(.init()),
+                                                 localCallHistoryService: ServiceLocator.shared.localCallHistoryService,
+                                                 callHistoryService: mockService)
         return NavigationStack {
             CallsListScreen(context: viewModel.context)
         }

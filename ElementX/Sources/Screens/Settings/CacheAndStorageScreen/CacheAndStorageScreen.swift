@@ -11,10 +11,10 @@ import SwiftUI
 struct CacheAndStorageScreen: View {
     let onClearAllCache: () -> Void
 
-    @State private var apiCacheSize: String = "..."
-    @State private var imageCacheSize: String = "..."
-    @State private var downloadedRecordingsSize: String = "..."
-    @State private var totalSize: String = "..."
+    @State private var apiCacheSize = "..."
+    @State private var imageCacheSize = "..."
+    @State private var downloadedRecordingsSize = "..."
+    @State private var totalSize = "..."
     @State private var showClearConfirmation = false
 
     var body: some View {

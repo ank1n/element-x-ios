@@ -17,12 +17,10 @@ protocol RecordingServiceProtocol: AnyObject {
     func startRecording(roomName: String) async throws -> String
 
     /// Start recording with participant metadata (API v2)
-    func startRecording(
-        roomName: String,
-        matrixRoomId: String?,
-        participants: [(userId: String, displayName: String)]?,
-        initiatedBy: String?
-    ) async throws -> String
+    func startRecording(roomName: String,
+                        matrixRoomId: String?,
+                        participants: [(userId: String, displayName: String)]?,
+                        initiatedBy: String?) async throws -> String
 
     func stopRecording() async throws
     func getStatus(egressId: String) async throws -> EgressInfo
@@ -84,21 +82,17 @@ class RecordingService: RecordingServiceProtocol {
 
     /// Start recording (API v1 - simple)
     func startRecording(roomName: String) async throws -> String {
-        try await startRecording(
-            roomName: roomName,
-            matrixRoomId: nil,
-            participants: nil,
-            initiatedBy: nil
-        )
+        try await startRecording(roomName: roomName,
+                                 matrixRoomId: nil,
+                                 participants: nil,
+                                 initiatedBy: nil)
     }
 
     /// Start recording with participant metadata (API v2)
-    func startRecording(
-        roomName: String,
-        matrixRoomId: String?,
-        participants: [(userId: String, displayName: String)]?,
-        initiatedBy: String?
-    ) async throws -> String {
+    func startRecording(roomName: String,
+                        matrixRoomId: String?,
+                        participants: [(userId: String, displayName: String)]?,
+                        initiatedBy: String?) async throws -> String {
         guard !state.isRecording else {
             throw RecordingError.alreadyRecording
         }
@@ -110,12 +104,10 @@ class RecordingService: RecordingServiceProtocol {
         stateSubject.send(.starting)
 
         do {
-            let request = RecordingStartRequest(
-                roomName: roomName,
-                matrixRoomId: matrixRoomId,
-                participants: participants,
-                initiatedBy: initiatedBy
-            )
+            let request = RecordingStartRequest(roomName: roomName,
+                                                matrixRoomId: matrixRoomId,
+                                                participants: participants,
+                                                initiatedBy: initiatedBy)
 
             // Add timeout to the request
             let response: RecordingStartResponse = try await withTimeout(seconds: requestTimeout) {
@@ -205,9 +197,7 @@ class RecordingService: RecordingServiceProtocol {
     }
 
     func getStatus(egressId: String) async throws -> EgressInfo {
-        let response: RecordingStatusResponse = try await get(
-            endpoint: "/recording-api/status/\(egressId)"
-        )
+        let response: RecordingStatusResponse = try await get(endpoint: "/recording-api/status/\(egressId)")
 
         guard response.success, let egress = response.egress else {
             let errorMessage = response.error ?? "Unknown error"
@@ -386,20 +376,16 @@ class RecordingServiceMock: RecordingServiceProtocol {
     var stopRecordingResult: Result<Void, Error> = .success(())
 
     func startRecording(roomName: String) async throws -> String {
-        try await startRecording(
-            roomName: roomName,
-            matrixRoomId: nil,
-            participants: nil,
-            initiatedBy: nil
-        )
+        try await startRecording(roomName: roomName,
+                                 matrixRoomId: nil,
+                                 participants: nil,
+                                 initiatedBy: nil)
     }
 
-    func startRecording(
-        roomName: String,
-        matrixRoomId: String?,
-        participants: [(userId: String, displayName: String)]?,
-        initiatedBy: String?
-    ) async throws -> String {
+    func startRecording(roomName: String,
+                        matrixRoomId: String?,
+                        participants: [(userId: String, displayName: String)]?,
+                        initiatedBy: String?) async throws -> String {
         switch startRecordingResult {
         case .success(let egressId):
             stateSubject.send(.recording(egressId: egressId, duration: 0))
@@ -422,9 +408,13 @@ class RecordingServiceMock: RecordingServiceProtocol {
         EgressInfo(egressId: egressId, roomName: "test-room", status: 1, startedAt: nil, endedAt: nil)
     }
 
-    func hasActiveRecording(roomName: String) async -> Bool { false }
+    func hasActiveRecording(roomName: String) async -> Bool {
+        false
+    }
 
-    func hasActiveRecordingInRoom(matrixRoomId: String) async -> Bool { false }
+    func hasActiveRecordingInRoom(matrixRoomId: String) async -> Bool {
+        false
+    }
 
     func forceReset() {
         stateSubject.send(.idle)

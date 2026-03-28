@@ -19,14 +19,12 @@ struct WidgetScreen: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                WidgetWebView(
-                    widget: widget,
-                    roomId: roomId,
-                    userId: userId,
-                    displayName: displayName,
-                    viewModel: viewModel
-                )
-                .ignoresSafeArea(edges: .bottom)
+                WidgetWebView(widget: widget,
+                              roomId: roomId,
+                              userId: userId,
+                              displayName: displayName,
+                              viewModel: viewModel)
+                    .ignoresSafeArea(edges: .bottom)
 
                 if viewModel.isLoading {
                     loadingOverlay
@@ -124,19 +122,15 @@ struct WidgetScreen: View {
 // MARK: - Preview
 
 #Preview {
-    WidgetScreen(
-        widget: MatrixWidget(
-            id: "widget1",
-            type: "customwidget",
-            name: "Stats Widget",
-            url: "https://stats.example.com/?roomId=$matrix_room_id",
-            creatorUserId: "@admin:example.com",
-            waitForIframeLoad: true,
-            data: nil
-        ),
-        roomId: "!room:example.com",
-        userId: "@user:example.com",
-        displayName: "Test User",
-        onClose: { }
-    )
+    WidgetScreen(widget: MatrixWidget(id: "widget1",
+                                      type: "customwidget",
+                                      name: "Stats Widget",
+                                      url: "https://stats.example.com/?roomId=$matrix_room_id",
+                                      creatorUserId: "@admin:example.com",
+                                      waitForIframeLoad: true,
+                                      data: nil),
+                 roomId: "!room:example.com",
+                 userId: "@user:example.com",
+                 displayName: "Test User",
+                 onClose: { })
 }

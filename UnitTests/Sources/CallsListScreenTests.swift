@@ -4,9 +4,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-import XCTest
-
 @testable import ElementX
+import XCTest
 
 @MainActor
 class CallsListScreenTests: XCTestCase {
@@ -63,22 +62,18 @@ class CallsListScreenTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private func makeCall(
-        callType: CallHistoryItem.CallType = .incoming,
-        isMissed: Bool = false,
-        recordingURL: URL? = nil,
-        participantCount: Int = 2
-    ) -> CallHistoryItem {
-        CallHistoryItem(
-            id: UUID().uuidString,
-            contactName: "Test",
-            contactId: "@test:example.com",
-            callType: callType,
-            timestamp: Date(),
-            duration: 120,
-            isMissed: isMissed,
-            recordingURL: recordingURL,
-            participantCount: participantCount
-        )
+    private func makeCall(callType: CallHistoryItem.CallType = .incoming,
+                          isMissed: Bool = false,
+                          recordingURL: URL? = nil,
+                          participantCount: Int = 2) -> CallHistoryItem {
+        CallHistoryItem(id: UUID().uuidString,
+                        contactName: "Test",
+                        contactId: "@test:example.com",
+                        callType: callType,
+                        timestamp: Date(),
+                        duration: 120,
+                        isMissed: isMissed,
+                        recordingURL: recordingURL,
+                        participantCount: participantCount)
     }
 }

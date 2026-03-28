@@ -26,9 +26,9 @@ struct RecordingStartRequest: Codable {
     init(roomName: String, layout: String = "grid-dark") {
         self.roomName = roomName
         self.layout = layout
-        self.matrixRoomId = nil
-        self.participants = nil
-        self.initiatedBy = nil
+        matrixRoomId = nil
+        participants = nil
+        initiatedBy = nil
     }
 
     /// Recording API v2 initializer with participant metadata

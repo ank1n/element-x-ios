@@ -12,9 +12,11 @@ import SwiftUI
 
 struct SettingsScreen: View {
     let context: SettingsScreenViewModel.Context
-    @AppStorage("stalk_design_theme") private var settingsDesignTheme: String = "cosmos"
+    @AppStorage("stalk_design_theme") private var settingsDesignTheme = "cosmos"
 
-    private var isCosmos: Bool { settingsDesignTheme == "cosmos" }
+    private var isCosmos: Bool {
+        settingsDesignTheme == "cosmos"
+    }
 
     private let bgGradientTop = Color(red: 0.90, green: 0.92, blue: 1.0)
     private let bgGradientBottom = Color(red: 0.95, green: 0.96, blue: 1.0)
@@ -74,7 +76,6 @@ struct SettingsScreen: View {
     
     private let accentBlue = StalkTheme.accent
 
-    @ViewBuilder
     private var userSection: some View {
         Section {
             if isCosmos {
@@ -94,11 +95,9 @@ struct SettingsScreen: View {
                                 avatarSize: .custom(88),
                                 mediaProvider: context.mediaProvider)
                 .accessibilityHidden(true)
-                .overlay(
-                    Circle()
-                        .stroke(accentBlue.opacity(0.2), lineWidth: 3)
-                        .frame(width: 94, height: 94)
-                )
+                .overlay(Circle()
+                    .stroke(accentBlue.opacity(0.2), lineWidth: 3)
+                    .frame(width: 94, height: 94))
                 .shadow(color: accentBlue.opacity(0.15), radius: 8, y: 2)
 
             VStack(spacing: 4) {
@@ -270,8 +269,8 @@ struct SettingsScreen: View {
     
     // MARK: - User Status
 
-    @AppStorage("stalk_user_status_text") private var userStatusText: String = ""
-    @AppStorage("stalk_user_status_preset") private var userStatusPreset: String = ""
+    @AppStorage("stalk_user_status_text") private var userStatusText = ""
+    @AppStorage("stalk_user_status_preset") private var userStatusPreset = ""
 
     private var statusSection: some View {
         Section(header: Text(SL10n.statusTitle)) {
@@ -287,7 +286,7 @@ struct SettingsScreen: View {
                 ("checkmark.circle", SL10n.statusAvailable, "available", Color.green),
                 ("clock.fill", SL10n.statusBusy, "busy", Color.red),
                 ("video.fill", SL10n.statusInMeeting, "meeting", StalkTheme.accent),
-                ("airplane", SL10n.statusOnVacation, "vacation", Color.orange),
+                ("airplane", SL10n.statusOnVacation, "vacation", Color.orange)
             ], id: \.2) { icon, title, preset, color in
                 Button {
                     userStatusPreset = userStatusPreset == preset ? "" : preset
@@ -328,36 +327,32 @@ struct SettingsScreen: View {
 
     // MARK: - DND Schedule
 
-    @AppStorage("stalk_dnd_enabled") private var dndEnabled: Bool = false
-    @AppStorage("stalk_dnd_from_hour") private var dndFromHour: Int = 22
-    @AppStorage("stalk_dnd_from_minute") private var dndFromMinute: Int = 0
-    @AppStorage("stalk_dnd_to_hour") private var dndToHour: Int = 9
-    @AppStorage("stalk_dnd_to_minute") private var dndToMinute: Int = 0
+    @AppStorage("stalk_dnd_enabled") private var dndEnabled = false
+    @AppStorage("stalk_dnd_from_hour") private var dndFromHour = 22
+    @AppStorage("stalk_dnd_from_minute") private var dndFromMinute = 0
+    @AppStorage("stalk_dnd_to_hour") private var dndToHour = 9
+    @AppStorage("stalk_dnd_to_minute") private var dndToMinute = 0
 
     private var dndFromDate: Binding<Date> {
-        Binding(
-            get: {
-                Calendar.current.date(from: DateComponents(hour: dndFromHour, minute: dndFromMinute)) ?? Date()
-            },
-            set: { newDate in
-                let comps = Calendar.current.dateComponents([.hour, .minute], from: newDate)
-                dndFromHour = comps.hour ?? 22
-                dndFromMinute = comps.minute ?? 0
-            }
-        )
+        Binding(get: {
+                    Calendar.current.date(from: DateComponents(hour: dndFromHour, minute: dndFromMinute)) ?? Date()
+                },
+                set: { newDate in
+                    let comps = Calendar.current.dateComponents([.hour, .minute], from: newDate)
+                    dndFromHour = comps.hour ?? 22
+                    dndFromMinute = comps.minute ?? 0
+                })
     }
 
     private var dndToDate: Binding<Date> {
-        Binding(
-            get: {
-                Calendar.current.date(from: DateComponents(hour: dndToHour, minute: dndToMinute)) ?? Date()
-            },
-            set: { newDate in
-                let comps = Calendar.current.dateComponents([.hour, .minute], from: newDate)
-                dndToHour = comps.hour ?? 9
-                dndToMinute = comps.minute ?? 0
-            }
-        )
+        Binding(get: {
+                    Calendar.current.date(from: DateComponents(hour: dndToHour, minute: dndToMinute)) ?? Date()
+                },
+                set: { newDate in
+                    let comps = Calendar.current.dateComponents([.hour, .minute], from: newDate)
+                    dndToHour = comps.hour ?? 9
+                    dndToMinute = comps.minute ?? 0
+                })
     }
 
     private var dndSection: some View {
@@ -381,9 +376,9 @@ struct SettingsScreen: View {
 
     // MARK: - Calls Settings
 
-    @AppStorage("stalk_background_blur_enabled") private var backgroundBlurEnabled: Bool = false
-    @AppStorage("stalk_noise_suppression_enabled") private var noiseSuppressionEnabled: Bool = true
-    @AppStorage("stalk_native_calls_enabled") private var nativeCallsEnabled: Bool = false
+    @AppStorage("stalk_background_blur_enabled") private var backgroundBlurEnabled = false
+    @AppStorage("stalk_noise_suppression_enabled") private var noiseSuppressionEnabled = true
+    @AppStorage("stalk_native_calls_enabled") private var nativeCallsEnabled = false
 
     private var callsSettingsSection: some View {
         Section(header: Text(SL10n.tabCalls)) {

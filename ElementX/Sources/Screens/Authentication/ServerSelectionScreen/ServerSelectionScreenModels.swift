@@ -20,7 +20,7 @@ struct ServerSelectionScreenViewState: BindableState {
     private let regularFooterMessage = L10n.screenChangeServerFormNotice
 
     /// Placeholder text for the server address field.
-    var placeholder: String = "matrix.org"
+    var placeholder = "matrix.org"
 
     /// View state that can be bound to from SwiftUI.
     var bindings: ServerSelectionScreenBindings

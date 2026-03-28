@@ -13,6 +13,3 @@ protocol RoomPreviewProxyProtocol {
     var info: RoomPreviewInfoProxy { get }
     var ownMembershipDetails: RoomMembershipDetailsProxyProtocol? { get async }
 }
-
-// sourcery: AutoMockable
-extension RoomPreviewProxyProtocol { }

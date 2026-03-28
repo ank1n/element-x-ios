@@ -27,24 +27,24 @@ enum CallsListScreenViewModelAction {
 
 /// Контакт для экрана "Новый звонок"
 struct NewCallContact: Identifiable {
-    let id: String       // roomID
+    let id: String // roomID
     let displayName: String
     let avatarURL: URL?
-    let matrixUserID: String?  // @user:server
+    let matrixUserID: String? // @user:server
     let isOnline: Bool
     let isFavorite: Bool
 }
 
 struct CallsListScreenViewState: BindableState {
     var callHistory: [CallHistoryItem] = []
-    var isLoading: Bool = false
+    var isLoading = false
     var searchQuery = ""
 
-    // Новый звонок
+    /// Новый звонок
     var newCallContacts: [NewCallContact] = []
 
     // User info for avatar
-    var userID: String = ""
+    var userID = ""
     var userDisplayName: String?
     var userAvatarURL: URL?
     var requiresExtraAccountSetup = false
@@ -55,11 +55,11 @@ struct CallsListScreenViewState: BindableState {
     var playbackProgress: Double = 0
     var playbackDuration: TimeInterval = 0
     var playbackCurrentTime: TimeInterval = 0
-    var downloadProgress: Double = 0  // 0.0 to 1.0
+    var downloadProgress: Double = 0 // 0.0 to 1.0
 
     // Meetings
     var meetings: [Meeting] = []
-    var isMeetingsLoading: Bool = false
+    var isMeetingsLoading = false
 
     var bindings = CallsListScreenViewStateBindings()
 }
@@ -86,9 +86,9 @@ struct CallHistoryItem: Identifiable, Equatable, Codable {
     /// Avatar URL from Matrix (mxc:// or https://)
     var avatarURL: URL?
     /// Whether the recording has been listened to
-    var isListened: Bool = false
+    var isListened = false
     /// Количество участников (для групповых звонков)
-    var participantCount: Int = 2
+    var participantCount = 2
     /// Avatar URLs участников (для наложенных аватарок)
     var participantAvatarURLs: [URL] = []
 
@@ -116,7 +116,7 @@ enum RecordingStatus: Int, Codable {
     case ending = 2
     case complete = 3
     case failed = 4
-    case aborted = 5  // запись прервана
+    case aborted = 5 // запись прервана
 
     var isCompleted: Bool {
         self == .complete
@@ -213,7 +213,7 @@ struct CallHistoryAPIItem: Codable {
         // Use participants from API v2 if available (limit to 2 names)
         let displayName: String
         if let participants, !participants.isEmpty {
-            let names = participants.map { $0.displayName }
+            let names = participants.map(\.displayName)
             if names.count <= 2 {
                 displayName = names.joined(separator: ", ")
             } else {
@@ -235,19 +235,17 @@ struct CallHistoryAPIItem: Codable {
         // Use matrixRoomId if available, otherwise fallback to roomName
         let contactId = matrixRoomId ?? roomName
 
-        let participantCount = (participants?.count ?? 0) + 1  // +1 для инициатора
+        let participantCount = (participants?.count ?? 0) + 1 // +1 для инициатора
 
-        return CallHistoryItem(
-            id: egressId,
-            contactName: displayName,
-            contactId: contactId,
-            callType: callType,
-            timestamp: startDate,
-            duration: callDuration,
-            isMissed: false,
-            recordingURL: playbackURL,
-            participantCount: max(participantCount, 2)
-        )
+        return CallHistoryItem(id: egressId,
+                               contactName: displayName,
+                               contactId: contactId,
+                               callType: callType,
+                               timestamp: startDate,
+                               duration: callDuration,
+                               isMissed: false,
+                               recordingURL: playbackURL,
+                               participantCount: max(participantCount, 2))
     }
 
     /// Парсит дату в разных форматах от Recording API

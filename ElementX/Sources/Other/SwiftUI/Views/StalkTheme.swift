@@ -25,6 +25,7 @@ enum StalkTheme {
 
 enum SL10n {
     // MARK: - Tabs
+
     static let tabContacts = NSLocalizedString("stalk_tab_contacts", tableName: "Localizable", value: "Контакты", comment: "Contacts tab title")
     static let tabCalls = NSLocalizedString("stalk_tab_calls", tableName: "Localizable", value: "Звонки", comment: "Calls tab title")
     static let tabChats = NSLocalizedString("stalk_tab_chats", tableName: "Localizable", value: "Чаты", comment: "Chats tab title")
@@ -32,6 +33,7 @@ enum SL10n {
     static let tabSettings = NSLocalizedString("stalk_tab_settings", tableName: "Localizable", value: "Настройки", comment: "Settings tab title")
 
     // MARK: - Attachment Picker
+
     static let attachCamera = NSLocalizedString("stalk_attach_camera", tableName: "Localizable", value: "Камера", comment: "Camera attachment option")
     static let attachGallery = NSLocalizedString("stalk_attach_gallery", tableName: "Localizable", value: "Галерея", comment: "Gallery attachment option")
     static let attachFile = NSLocalizedString("stalk_attach_file", tableName: "Localizable", value: "Файл", comment: "File attachment option")
@@ -40,6 +42,7 @@ enum SL10n {
     static let attachFormat = NSLocalizedString("stalk_attach_format", tableName: "Localizable", value: "Формат", comment: "Text formatting attachment option")
 
     // MARK: - Contacts
+
     static let contactsAll = NSLocalizedString("stalk_contacts_all", tableName: "Localizable", value: "Все", comment: "All contacts filter")
     static let contactsOnline = NSLocalizedString("stalk_contacts_online", tableName: "Localizable", value: "В сети", comment: "Online contacts filter")
     static let contactsFavorites = NSLocalizedString("stalk_contacts_favorites", tableName: "Localizable", value: "Избранные", comment: "Favorite contacts filter")
@@ -76,6 +79,7 @@ enum SL10n {
     }
 
     // MARK: - Calls
+
     static let callsAll = NSLocalizedString("stalk_calls_all", tableName: "Localizable", value: "Все", comment: "All calls filter")
     static let callsMissed = NSLocalizedString("stalk_calls_missed", tableName: "Localizable", value: "Пропущенные", comment: "Missed calls filter")
     static let callsEmpty = NSLocalizedString("stalk_calls_empty", tableName: "Localizable", value: "Нет звонков", comment: "No calls message")
@@ -83,6 +87,7 @@ enum SL10n {
     static let callDefault = NSLocalizedString("stalk_call_default_name", tableName: "Localizable", value: "Звонок", comment: "Default call name")
 
     // MARK: - Call Screen
+
     static let callHand = NSLocalizedString("stalk_call_hand", tableName: "Localizable", value: "рука", comment: "Raise hand button")
     static let callCamera = NSLocalizedString("stalk_call_camera", tableName: "Localizable", value: "камера", comment: "Camera toggle button")
     static let callMicOn = NSLocalizedString("stalk_call_mic_on", tableName: "Localizable", value: "вкл. микр.", comment: "Microphone on label")
@@ -97,6 +102,7 @@ enum SL10n {
     static let callVoiceCall = NSLocalizedString("stalk_call_voice_call", tableName: "Localizable", value: "Голосовой вызов", comment: "Voice call accessibility")
 
     // MARK: - Chat / Room Actions
+
     static let actionRemoveFavorite = NSLocalizedString("stalk_action_remove_favorite", tableName: "Localizable", value: "Убрать", comment: "Remove from favorites")
     static let actionAddFavorite = NSLocalizedString("stalk_action_add_favorite", tableName: "Localizable", value: "Избранное", comment: "Add to favorites")
     static let actionArchive = NSLocalizedString("stalk_action_archive", tableName: "Localizable", value: "Архив", comment: "Archive chat")
@@ -113,6 +119,7 @@ enum SL10n {
     static let actionUnarchiveShort = NSLocalizedString("stalk_action_unarchive_short", tableName: "Localizable", value: "Разархив.", comment: "Short unarchive label")
 
     // MARK: - Home / Chats
+
     static let chatsRecent = NSLocalizedString("stalk_chats_recent", tableName: "Localizable", value: "Недавние", comment: "Recent chats section")
     static let chatArchived = NSLocalizedString("stalk_chat_archived", tableName: "Localizable", value: "Чат архивирован", comment: "Chat archived message")
     static let archiveTitle = NSLocalizedString("stalk_archive_title", tableName: "Localizable", value: "Архив", comment: "Archive screen title")
@@ -121,6 +128,7 @@ enum SL10n {
     static let archiveEmpty = NSLocalizedString("stalk_archive_empty", tableName: "Localizable", value: "Архив пуст", comment: "Empty archive message")
 
     // MARK: - Settings
+
     static let settingsPhoto = NSLocalizedString("stalk_settings_photo", tableName: "Localizable", value: "Фото", comment: "Photo section in settings")
     static let settingsName = NSLocalizedString("stalk_settings_name", tableName: "Localizable", value: "Имя", comment: "Name section in settings")
     static let settingsChangePhoto = NSLocalizedString("stalk_settings_change_photo", tableName: "Localizable", value: "Изменить фото", comment: "Change photo action")
@@ -136,6 +144,7 @@ enum SL10n {
     static let settingsThemeClassic = NSLocalizedString("stalk_settings_theme_classic", tableName: "Localizable", value: "Классика", comment: "Classic theme option")
 
     // MARK: - Cache & Storage
+
     static let cacheUsage = NSLocalizedString("stalk_cache_usage", tableName: "Localizable", value: "Использование", comment: "Usage section header")
     static let cacheApiData = NSLocalizedString("stalk_cache_api_data", tableName: "Localizable", value: "Кеш API данных", comment: "API data cache label")
     static let cacheImages = NSLocalizedString("stalk_cache_images", tableName: "Localizable", value: "Кеш изображений", comment: "Image cache label")
@@ -151,6 +160,7 @@ enum SL10n {
     static let cacheClearConfirmMessage = NSLocalizedString("stalk_cache_clear_confirm_message", tableName: "Localizable", value: "Все кешированные данные будут удалены. Приложение перезагрузится для повторной синхронизации.", comment: "Clear confirmation message")
 
     // MARK: - Meetings
+
     static let meetingTitle = NSLocalizedString("stalk_meeting_title", tableName: "Localizable", value: "Встреча", comment: "Meeting type label")
     static let meetingCall = NSLocalizedString("stalk_meeting_call", tableName: "Localizable", value: "Звонок", comment: "Call type label")
     static let meetingAll = NSLocalizedString("stalk_meeting_all", tableName: "Localizable", value: "Все", comment: "All meetings filter")
@@ -175,10 +185,12 @@ enum SL10n {
     }
 
     // MARK: - Camera
+
     static let cameraPhoto = NSLocalizedString("stalk_camera_photo", tableName: "Localizable", value: "ФОТО", comment: "Photo mode button")
     static let cameraVideo = NSLocalizedString("stalk_camera_video", tableName: "Localizable", value: "ВИДЕО", comment: "Video mode button")
 
     // MARK: - Apps / Widgets
+
     static let appsAll = NSLocalizedString("stalk_apps_all", tableName: "Localizable", value: "Все", comment: "All apps category")
     static let appsProductivity = NSLocalizedString("stalk_apps_productivity", tableName: "Localizable", value: "Продуктивность", comment: "Productivity category")
     static let appsCommunication = NSLocalizedString("stalk_apps_communication", tableName: "Localizable", value: "Связь", comment: "Communication category")
@@ -190,6 +202,7 @@ enum SL10n {
     static let appsLoading = NSLocalizedString("stalk_apps_loading", tableName: "Localizable", value: "Загрузка...", comment: "Loading state")
 
     // MARK: - Auth
+
     static let authUsername = NSLocalizedString("stalk_auth_username", tableName: "Localizable", value: "Имя пользователя", comment: "Username field placeholder")
     static let authPassword = NSLocalizedString("stalk_auth_password", tableName: "Localizable", value: "Пароль", comment: "Password field placeholder")
     static let authLogin = NSLocalizedString("stalk_auth_login", tableName: "Localizable", value: "Войти", comment: "Login button")
@@ -209,6 +222,7 @@ enum SL10n {
     }
 
     // MARK: - Meetings (remaining)
+
     static let meetingNow = NSLocalizedString("stalk_meeting_now", tableName: "Localizable", value: "Сейчас", comment: "Now indicator")
     static let meetingNoMore = NSLocalizedString("stalk_meeting_no_more", tableName: "Localizable", value: "Встреч больше нет", comment: "No more meetings")
     static let meetingNoEvents = NSLocalizedString("stalk_meeting_no_events", tableName: "Localizable", value: "Нет событий на этот день", comment: "No events for this day")
@@ -238,6 +252,7 @@ enum SL10n {
     }
 
     // MARK: - Calls List
+
     static let callsToday = NSLocalizedString("stalk_calls_today", tableName: "Localizable", value: "Сегодня", comment: "Today section header")
     static let callsYesterday = NSLocalizedString("stalk_calls_yesterday", tableName: "Localizable", value: "Вчера", comment: "Yesterday section header")
     static let callsVideoCall = NSLocalizedString("stalk_calls_video_call", tableName: "Localizable", value: "Видеозвонок", comment: "Video call label")
@@ -266,18 +281,21 @@ enum SL10n {
     static let callsCallButtonDefault = NSLocalizedString("stalk_calls_call_button_default", tableName: "Localizable", value: "Позвонить", comment: "Call button default")
 
     // MARK: - Call Settings
+
     static let callBackgroundBlur = NSLocalizedString("stalk_call_background_blur", tableName: "Localizable", value: "Размытие фона", comment: "Background blur toggle")
     static let callBackgroundBlurHint = NSLocalizedString("stalk_call_background_blur_hint", tableName: "Localizable", value: "Размывает фон при видеозвонке", comment: "Background blur description")
     static let callNoiseSuppression = NSLocalizedString("stalk_call_noise_suppression", tableName: "Localizable", value: "Шумоподавление", comment: "Noise suppression toggle")
     static let callNoiseSuppressionHint = NSLocalizedString("stalk_call_noise_suppression_hint", tableName: "Localizable", value: "Убирает фоновые шумы при звонке", comment: "Noise suppression description")
 
     // MARK: - Bookmarks
+
     static let bookmarkAdd = NSLocalizedString("stalk_bookmark_add", tableName: "Localizable", value: "В избранное", comment: "Add to bookmarks")
     static let bookmarkRemove = NSLocalizedString("stalk_bookmark_remove", tableName: "Localizable", value: "Из избранного", comment: "Remove from bookmarks")
     static let bookmarkTitle = NSLocalizedString("stalk_bookmark_title", tableName: "Localizable", value: "Избранное", comment: "Bookmarks screen title")
     static let bookmarkEmpty = NSLocalizedString("stalk_bookmark_empty", tableName: "Localizable", value: "Нет избранных сообщений", comment: "No bookmarks")
 
     // MARK: - User Status
+
     static let statusTitle = NSLocalizedString("stalk_status_title", tableName: "Localizable", value: "Статус", comment: "Status section")
     static let statusPlaceholder = NSLocalizedString("stalk_status_placeholder", tableName: "Localizable", value: "Что нового?", comment: "Status placeholder")
     static let statusAvailable = NSLocalizedString("stalk_status_available", tableName: "Localizable", value: "Доступен", comment: "Available status")
@@ -287,6 +305,7 @@ enum SL10n {
     static let statusClear = NSLocalizedString("stalk_status_clear", tableName: "Localizable", value: "Очистить статус", comment: "Clear status")
 
     // MARK: - DND (Do Not Disturb)
+
     static let dndTitle = NSLocalizedString("stalk_dnd_title", tableName: "Localizable", value: "Не беспокоить", comment: "DND title")
     static let dndSchedule = NSLocalizedString("stalk_dnd_schedule", tableName: "Localizable", value: "Расписание тишины", comment: "DND schedule")
     static let dndFrom = NSLocalizedString("stalk_dnd_from", tableName: "Localizable", value: "С", comment: "DND from time")
@@ -294,11 +313,13 @@ enum SL10n {
     static let dndEnabled = NSLocalizedString("stalk_dnd_enabled", tableName: "Localizable", value: "Включено", comment: "DND enabled")
 
     // MARK: - Recording
+
     static let recordingTitle = NSLocalizedString("stalk_recording_title", tableName: "Localizable", value: "Начать запись?", comment: "Recording consent title")
     static let recordingMessage = NSLocalizedString("stalk_recording_message", tableName: "Localizable", value: "Звонок будет записан. Все участники будут уведомлены о начале записи.", comment: "Recording consent message")
     static let recordingStart = NSLocalizedString("stalk_recording_start", tableName: "Localizable", value: "Начать запись", comment: "Start recording button")
 
     // MARK: - Calendar
+
     static let calendarWeekdays: [String] = {
         let keys = ["stalk_weekday_mon", "stalk_weekday_tue", "stalk_weekday_wed", "stalk_weekday_thu", "stalk_weekday_fri", "stalk_weekday_sat", "stalk_weekday_sun"]
         let defaults = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]

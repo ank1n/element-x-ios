@@ -211,11 +211,11 @@ class TimelineInteractionHandler {
                 body = String(eventTimelineItem.body.prefix(200))
             }
             let bookmark = BookmarkedMessage(eventID: eventID,
-                                              roomID: roomProxy.id,
-                                              senderID: eventTimelineItem.sender.id,
-                                              senderName: eventTimelineItem.sender.displayName ?? eventTimelineItem.sender.id,
-                                              body: body,
-                                              timestamp: eventTimelineItem.timestamp)
+                                             roomID: roomProxy.id,
+                                             senderID: eventTimelineItem.sender.id,
+                                             senderName: eventTimelineItem.sender.displayName ?? eventTimelineItem.sender.id,
+                                             body: body,
+                                             timestamp: eventTimelineItem.timestamp)
             ServiceLocator.shared.bookmarkService?.addBookmark(bookmark)
         case .removeBookmark:
             guard let eventID = eventTimelineItem.id.eventID else { return }

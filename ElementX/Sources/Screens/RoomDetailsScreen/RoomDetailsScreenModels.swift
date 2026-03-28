@@ -72,7 +72,7 @@ struct RoomDetailsScreenViewState: BindableState {
 
     var reportRoomEnabled = false
 
-    // Widgets
+    /// Widgets
     var widgetsCount = 0
     
     var canSeeKnockingRequests: Bool {

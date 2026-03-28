@@ -8,9 +8,9 @@
 
 import SwiftUI
 
-// Environment key for search highlight (used by bubble highlight)
+/// Environment key for search highlight (used by bubble highlight)
 private struct SearchHighlightKey: EnvironmentKey {
-    static let defaultValue: String = ""
+    static let defaultValue = ""
 }
 
 extension EnvironmentValues {
@@ -69,7 +69,7 @@ struct FormattedBodyText: View {
                   boostFontSize: boostFontSize)
     }
     
-    // These is needed to create the slightly off inlined timestamp effect
+    /// These is needed to create the slightly off inlined timestamp effect
     private var additionalWhitespacesSuffix: String {
         .generateBreakableWhitespaceEnd(whitespaceCount: additionalWhitespacesCount, layoutDirection: layoutDirection)
     }
@@ -80,7 +80,6 @@ struct FormattedBodyText: View {
             .accessibilityLabel(Text(attributedString))
     }
     
-    @ViewBuilder
     var mainContent: some View {
         layout
             .tint(.compound.textLinkExternal)

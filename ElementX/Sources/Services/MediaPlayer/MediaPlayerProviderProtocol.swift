@@ -21,6 +21,3 @@ protocol MediaPlayerProviderProtocol {
     func unregister(audioPlayerState: AudioPlayerState)
     func detachAllStates(except exception: AudioPlayerState?) async
 }
-
-// sourcery: AutoMockable
-extension MediaPlayerProviderProtocol { }

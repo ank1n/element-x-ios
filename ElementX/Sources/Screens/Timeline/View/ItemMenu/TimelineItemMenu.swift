@@ -20,8 +20,10 @@ struct TimelineItemMenu: View {
     let actions: TimelineItemMenuActions
     private let feedbackGenerator = UIImpactFeedbackGenerator(style: .heavy)
     
-    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
-    private var isCosmos: Bool { designTheme == "cosmos" }
+    @AppStorage("stalk_design_theme") private var designTheme = "cosmos"
+    private var isCosmos: Bool {
+        designTheme == "cosmos"
+    }
 
     var body: some View {
         VStack(spacing: 6) {

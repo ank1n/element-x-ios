@@ -25,7 +25,7 @@ class ArchiveScreenViewModel: ArchiveScreenViewModelType {
          mediaProvider: MediaProviderProtocol,
          userIndicatorController: UserIndicatorControllerProtocol) {
         self.userSession = userSession
-        self.roomSummaryProvider = userSession.clientProxy.alternateRoomSummaryProvider
+        roomSummaryProvider = userSession.clientProxy.alternateRoomSummaryProvider
         self.userIndicatorController = userIndicatorController
 
         super.init(initialViewState: .init(), mediaProvider: mediaProvider)
@@ -118,8 +118,8 @@ class ArchiveScreenViewModel: ArchiveScreenViewModelType {
             }
 
             state.bindings.leaveRoomAlertItem = LeaveRoomAlertItem(roomID: roomID,
-                                                                     isDM: roomProxy.isDirectOneToOneRoom,
-                                                                     state: roomProxy.infoPublisher.value.isPrivate ?? true ? .empty : .public)
+                                                                   isDM: roomProxy.isDirectOneToOneRoom,
+                                                                   state: roomProxy.infoPublisher.value.isPrivate ?? true ? .empty : .public)
         }
     }
 

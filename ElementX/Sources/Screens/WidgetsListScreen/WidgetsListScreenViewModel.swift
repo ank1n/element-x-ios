@@ -164,16 +164,14 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
                 // Use SF Symbol name from API, fallback to generic
                 let sfSymbol = app.icon.sf ?? "app.fill"
 
-                return WidgetItem(
-                    id: app.id,
-                    name: app.name,
-                    description: app.description,
-                    icon: sfSymbol,
-                    url: fullURL,
-                    apiURL: app.apiUrl,
-                    type: app.type,
-                    category: WidgetCategory(apiCategory: app.category)
-                )
+                return WidgetItem(id: app.id,
+                                  name: app.name,
+                                  description: app.description,
+                                  icon: sfSymbol,
+                                  url: fullURL,
+                                  apiURL: app.apiUrl,
+                                  type: app.type,
+                                  category: WidgetCategory(apiCategory: app.category))
             }
     }
 
@@ -183,14 +181,12 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
         let userId = userSession.clientProxy.userID
         let encodedUserId = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
         return [
-            WidgetItem(
-                id: "stats",
-                name: SL10n.appsStatistics,
-                description: SL10n.appsStatisticsDesc,
-                icon: "chart.bar.fill",
-                url: "\(baseURL)/stats/?userId=\(encodedUserId)",
-                category: .tools
-            )
+            WidgetItem(id: "stats",
+                       name: SL10n.appsStatistics,
+                       description: SL10n.appsStatisticsDesc,
+                       icon: "chart.bar.fill",
+                       url: "\(baseURL)/stats/?userId=\(encodedUserId)",
+                       category: .tools)
         ]
     }
 }

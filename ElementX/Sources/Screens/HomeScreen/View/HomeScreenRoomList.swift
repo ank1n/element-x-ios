@@ -62,12 +62,10 @@ struct SwipeActionView<Content: View>: View {
                     }
                 }
                 // Левый край скруглён (видимый), правый прямой (уходит под карточку)
-                .clipShape(.rect(
-                    topLeadingRadius: cornerRadius,
-                    bottomLeadingRadius: cornerRadius,
-                    bottomTrailingRadius: 0,
-                    topTrailingRadius: 0
-                ))
+                .clipShape(.rect(topLeadingRadius: cornerRadius,
+                                 bottomLeadingRadius: cornerRadius,
+                                 bottomTrailingRadius: 0,
+                                 topTrailingRadius: 0))
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
@@ -80,12 +78,10 @@ struct SwipeActionView<Content: View>: View {
                     }
                 }
                 // Правый край скруглён (видимый), левый прямой (уходит под карточку)
-                .clipShape(.rect(
-                    topLeadingRadius: 0,
-                    bottomLeadingRadius: 0,
-                    bottomTrailingRadius: cornerRadius,
-                    topTrailingRadius: cornerRadius
-                ))
+                .clipShape(.rect(topLeadingRadius: 0,
+                                 bottomLeadingRadius: 0,
+                                 bottomTrailingRadius: cornerRadius,
+                                 topTrailingRadius: cornerRadius))
                 .frame(maxWidth: .infinity, alignment: .trailing)
             }
 
@@ -93,79 +89,76 @@ struct SwipeActionView<Content: View>: View {
             content()
                 .offset(x: offset)
                 .zIndex(1)
-                .highPriorityGesture(
-                    DragGesture(minimumDistance: 20, coordinateSpace: .local)
-                        .onChanged { value in
-                            // Определяем ось жеста один раз в начале
-                            if gestureAxis == .undecided {
-                                let h = abs(value.translation.width)
-                                let v = abs(value.translation.height)
-                                if h > 10 || v > 10 {
-                                    gestureAxis = h > v ? .horizontal : .vertical
-                                }
-                            }
-
-                            // Вертикальный жест — это скролл, не двигаем карточку
-                            guard gestureAxis == .horizontal else { return }
-
-                            let translation = value.translation.width + prevOffset
-                            if translation > 0 {
-                                if leadingActions.isEmpty {
-                                    offset = translation * 0.2
-                                } else {
-                                    offset = min(translation, maxLeadingOffset)
-                                }
-                            } else {
-                                if trailingActions.isEmpty {
-                                    offset = translation * 0.2
-                                } else {
-                                    offset = max(translation, -maxTrailingOffset)
-                                }
+                .highPriorityGesture(DragGesture(minimumDistance: 20, coordinateSpace: .local)
+                    .onChanged { value in
+                        // Определяем ось жеста один раз в начале
+                        if gestureAxis == .undecided {
+                            let h = abs(value.translation.width)
+                            let v = abs(value.translation.height)
+                            if h > 10 || v > 10 {
+                                gestureAxis = h > v ? .horizontal : .vertical
                             }
                         }
-                        .onEnded { value in
-                            let wasHorizontal = gestureAxis == .horizontal
-                            gestureAxis = .undecided
 
-                            guard wasHorizontal else {
-                                // Вертикальный жест — сбрасываем если случайно сдвинулось
-                                if offset != prevOffset {
-                                    withAnimation(.easeOut(duration: 0.2)) {
-                                        offset = prevOffset
-                                    }
-                                }
-                                return
+                        // Вертикальный жест — это скролл, не двигаем карточку
+                        guard gestureAxis == .horizontal else { return }
+
+                        let translation = value.translation.width + prevOffset
+                        if translation > 0 {
+                            if leadingActions.isEmpty {
+                                offset = translation * 0.2
+                            } else {
+                                offset = min(translation, maxLeadingOffset)
                             }
+                        } else {
+                            if trailingActions.isEmpty {
+                                offset = translation * 0.2
+                            } else {
+                                offset = max(translation, -maxTrailingOffset)
+                            }
+                        }
+                    }
+                    .onEnded { value in
+                        let wasHorizontal = gestureAxis == .horizontal
+                        gestureAxis = .undecided
 
-                            let velocity = value.predictedEndTranslation.width - value.translation.width
-                            withAnimation(.easeOut(duration: 0.2)) {
-                                if offset > 0 {
-                                    if offset > maxLeadingOffset * snapThreshold || velocity > 200 {
-                                        offset = maxLeadingOffset
-                                        prevOffset = maxLeadingOffset
-                                    } else {
-                                        offset = 0
-                                        prevOffset = 0
-                                    }
-                                } else if offset < 0 {
-                                    if -offset > maxTrailingOffset * snapThreshold || velocity < -200 {
-                                        offset = -maxTrailingOffset
-                                        prevOffset = -maxTrailingOffset
-                                    } else {
-                                        offset = 0
-                                        prevOffset = 0
-                                    }
+                        guard wasHorizontal else {
+                            // Вертикальный жест — сбрасываем если случайно сдвинулось
+                            if offset != prevOffset {
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    offset = prevOffset
+                                }
+                            }
+                            return
+                        }
+
+                        let velocity = value.predictedEndTranslation.width - value.translation.width
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            if offset > 0 {
+                                if offset > maxLeadingOffset * snapThreshold || velocity > 200 {
+                                    offset = maxLeadingOffset
+                                    prevOffset = maxLeadingOffset
                                 } else {
                                     offset = 0
                                     prevOffset = 0
                                 }
+                            } else if offset < 0 {
+                                if -offset > maxTrailingOffset * snapThreshold || velocity < -200 {
+                                    offset = -maxTrailingOffset
+                                    prevOffset = -maxTrailingOffset
+                                } else {
+                                    offset = 0
+                                    prevOffset = 0
+                                }
+                            } else {
+                                offset = 0
+                                prevOffset = 0
                             }
                         }
-                )
+                    })
         }
     }
 
-    @ViewBuilder
     private func actionButton(_ action: SwipeAction,
                               extraLeadingPadding: CGFloat = 0,
                               extraTrailingPadding: CGFloat = 0) -> some View {
@@ -197,9 +190,11 @@ struct SwipeActionView<Content: View>: View {
 
 struct HomeScreenRoomList: View {
     @ObservedObject var context: HomeScreenViewModel.Context
-    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
+    @AppStorage("stalk_design_theme") private var designTheme = "cosmos"
 
-    private var isCosmos: Bool { designTheme == "cosmos" }
+    private var isCosmos: Bool {
+        designTheme == "cosmos"
+    }
 
     var body: some View {
         if !context.viewState.shouldHideRoomList {
@@ -229,11 +224,9 @@ struct HomeScreenRoomList: View {
                     HomeScreenKnockedCell(room: room, context: context)
                 case .room:
                     let isSelected = context.viewState.selectedRoomID == room.id
-                    SwipeActionView(
-                        leadingActions: leadingSwipeActions(for: room),
-                        trailingActions: trailingSwipeActions(for: room),
-                        cornerRadius: isCosmos ? 14 : 0
-                    ) {
+                    SwipeActionView(leadingActions: leadingSwipeActions(for: room),
+                                    trailingActions: trailingSwipeActions(for: room),
+                                    cornerRadius: isCosmos ? 14 : 0) {
                         HomeScreenRoomCell(room: room, isSelected: isSelected, mediaProvider: context.mediaProvider, action: context.send)
                     }
                     .contextMenu {
@@ -257,18 +250,14 @@ struct HomeScreenRoomList: View {
     /// Swipe right: Favourite + Archive
     private func leadingSwipeActions(for room: HomeScreenRoom) -> [SwipeAction] {
         [
-            SwipeAction(
-                title: room.isFavourite ? SL10n.actionRemoveFavorite : SL10n.actionAddFavorite,
-                icon: room.isFavourite ? "star.fill" : "star",
-                color: .orange
-            ) {
+            SwipeAction(title: room.isFavourite ? SL10n.actionRemoveFavorite : SL10n.actionAddFavorite,
+                        icon: room.isFavourite ? "star.fill" : "star",
+                        color: .orange) {
                 context.send(viewAction: .markRoomAsFavourite(roomIdentifier: room.id, isFavourite: !room.isFavourite))
             },
-            SwipeAction(
-                title: SL10n.actionArchive,
-                icon: "archivebox",
-                color: .purple
-            ) {
+            SwipeAction(title: SL10n.actionArchive,
+                        icon: "archivebox",
+                        color: .purple) {
                 context.send(viewAction: .archiveRoom(roomIdentifier: room.id))
             }
         ]
@@ -277,25 +266,19 @@ struct HomeScreenRoomList: View {
     /// Swipe left: Mute + Settings + Delete
     private func trailingSwipeActions(for room: HomeScreenRoom) -> [SwipeAction] {
         [
-            SwipeAction(
-                title: room.badges.isMuteShown ? SL10n.actionUnmute : SL10n.actionMute,
-                icon: room.badges.isMuteShown ? "bell.slash.fill" : "bell.slash",
-                color: room.badges.isMuteShown ? .green : .orange
-            ) {
+            SwipeAction(title: room.badges.isMuteShown ? SL10n.actionUnmute : SL10n.actionMute,
+                        icon: room.badges.isMuteShown ? "bell.slash.fill" : "bell.slash",
+                        color: room.badges.isMuteShown ? .green : .orange) {
                 context.send(viewAction: .toggleMuteRoom(roomIdentifier: room.id, isMuted: room.badges.isMuteShown))
             },
-            SwipeAction(
-                title: SL10n.actionSettings,
-                icon: "gearshape",
-                color: Color(.systemGray)
-            ) {
+            SwipeAction(title: SL10n.actionSettings,
+                        icon: "gearshape",
+                        color: Color(.systemGray)) {
                 context.send(viewAction: .showRoomDetails(roomIdentifier: room.id))
             },
-            SwipeAction(
-                title: SL10n.actionDelete,
-                icon: "trash",
-                color: .red
-            ) {
+            SwipeAction(title: SL10n.actionDelete,
+                        icon: "trash",
+                        color: .red) {
                 context.send(viewAction: .leaveRoom(roomIdentifier: room.id))
             }
         ]

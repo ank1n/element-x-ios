@@ -12,5 +12,5 @@ enum WidgetWebViewScreenViewAction {
 
 struct WidgetWebViewScreenViewState: BindableState {
     let widget: WidgetItem
-    var isLoading: Bool = true
+    var isLoading = true
 }

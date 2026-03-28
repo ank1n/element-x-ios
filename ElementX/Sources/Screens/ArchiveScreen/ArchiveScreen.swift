@@ -10,9 +10,11 @@ import SwiftUI
 
 struct ArchiveScreen: View {
     @ObservedObject var context: ArchiveScreenViewModel.Context
-    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
+    @AppStorage("stalk_design_theme") private var designTheme = "cosmos"
 
-    private var isCosmos: Bool { designTheme == "cosmos" }
+    private var isCosmos: Bool {
+        designTheme == "cosmos"
+    }
 
     private let bgGradientTop = Color(red: 0.90, green: 0.92, blue: 1.0)
     private let bgGradientBottom = Color(red: 0.95, green: 0.96, blue: 1.0)
@@ -29,7 +31,7 @@ struct ArchiveScreen: View {
 
     @ViewBuilder
     private var content: some View {
-        if context.viewState.rooms.isEmpty && !context.viewState.isLoading {
+        if context.viewState.rooms.isEmpty, !context.viewState.isLoading {
             emptyState
         } else {
             roomList
@@ -77,36 +79,36 @@ struct ArchiveScreen: View {
                             .padding(.horizontal, isCosmos ? 12 : 0)
                             .padding(.vertical, isCosmos ? 3 : 0)
                             .contextMenu {
-                            Button {
-                                context.send(viewAction: .unarchiveRoom(roomIdentifier: room.id))
-                            } label: {
-                                Label(SL10n.actionUnarchive, systemImage: "tray.and.arrow.up")
-                            }
+                                Button {
+                                    context.send(viewAction: .unarchiveRoom(roomIdentifier: room.id))
+                                } label: {
+                                    Label(SL10n.actionUnarchive, systemImage: "tray.and.arrow.up")
+                                }
 
-                            Button {
-                                context.send(viewAction: .showRoomDetails(roomIdentifier: room.id))
-                            } label: {
-                                Label(L10n.commonSettings, icon: \.settings)
-                            }
+                                Button {
+                                    context.send(viewAction: .showRoomDetails(roomIdentifier: room.id))
+                                } label: {
+                                    Label(L10n.commonSettings, icon: \.settings)
+                                }
 
-                            Button(role: .destructive) {
-                                context.send(viewAction: .leaveRoom(roomIdentifier: room.id))
-                            } label: {
-                                Label(L10n.actionLeaveRoom, icon: \.leave)
+                                Button(role: .destructive) {
+                                    context.send(viewAction: .leaveRoom(roomIdentifier: room.id))
+                                } label: {
+                                    Label(L10n.actionLeaveRoom, icon: \.leave)
+                                }
                             }
+                        default:
+                            HomeScreenRoomCell(room: room, isSelected: false, mediaProvider: context.mediaProvider) { _ in }
+                                .background(isCosmos ? Color(UIColor.systemBackground) : Color.clear)
+                                .clipShape(RoundedRectangle(cornerRadius: isCosmos ? 14 : 0))
+                                .shadow(color: isCosmos ? .black.opacity(0.05) : .clear, radius: 6, y: 2)
+                                .padding(.horizontal, isCosmos ? 12 : 0)
+                                .padding(.vertical, isCosmos ? 3 : 0)
                         }
-                    default:
-                        HomeScreenRoomCell(room: room, isSelected: false, mediaProvider: context.mediaProvider) { _ in }
-                            .background(isCosmos ? Color(UIColor.systemBackground) : Color.clear)
-                            .clipShape(RoundedRectangle(cornerRadius: isCosmos ? 14 : 0))
-                            .shadow(color: isCosmos ? .black.opacity(0.05) : .clear, radius: 6, y: 2)
-                            .padding(.horizontal, isCosmos ? 12 : 0)
-                            .padding(.vertical, isCosmos ? 3 : 0)
                     }
                 }
             }
-        }
-        .background(isCosmos ? Color.clear : Color.compound.bgCanvasDefault)
+            .background(isCosmos ? Color.clear : Color.compound.bgCanvasDefault)
         }
     }
 
@@ -147,11 +149,9 @@ private struct ArchiveRoomSwipeView<Content: View>: View {
 
     private var leadingActions: [ArchiveSwipeAction] {
         [
-            ArchiveSwipeAction(
-                title: SL10n.actionUnarchiveShort,
-                icon: "tray.and.arrow.up",
-                color: .green
-            ) {
+            ArchiveSwipeAction(title: SL10n.actionUnarchiveShort,
+                               icon: "tray.and.arrow.up",
+                               color: .green) {
                 context.send(viewAction: .unarchiveRoom(roomIdentifier: room.id))
             }
         ]
@@ -159,18 +159,14 @@ private struct ArchiveRoomSwipeView<Content: View>: View {
 
     private var trailingActions: [ArchiveSwipeAction] {
         [
-            ArchiveSwipeAction(
-                title: L10n.commonSettings,
-                icon: "gearshape",
-                color: Color(.systemGray)
-            ) {
+            ArchiveSwipeAction(title: L10n.commonSettings,
+                               icon: "gearshape",
+                               color: Color(.systemGray)) {
                 context.send(viewAction: .showRoomDetails(roomIdentifier: room.id))
             },
-            ArchiveSwipeAction(
-                title: SL10n.actionDelete,
-                icon: "trash",
-                color: .red
-            ) {
+            ArchiveSwipeAction(title: SL10n.actionDelete,
+                               icon: "trash",
+                               color: .red) {
                 context.send(viewAction: .leaveRoom(roomIdentifier: room.id))
             }
         ]
@@ -210,52 +206,50 @@ private struct ArchiveRoomSwipeView<Content: View>: View {
         }
         .clipped()
         .contentShape(Rectangle())
-        .highPriorityGesture(
-            DragGesture(minimumDistance: 20, coordinateSpace: .local)
-                .onChanged { value in
-                    let translation = value.translation.width + prevOffset
-                    if translation > 0 {
-                        if leadingActions.isEmpty {
-                            offset = translation * 0.2
-                        } else {
-                            let limit = maxLeadingOffset
-                            offset = translation > limit ? limit + (translation - limit) * 0.2 : translation
-                        }
+        .highPriorityGesture(DragGesture(minimumDistance: 20, coordinateSpace: .local)
+            .onChanged { value in
+                let translation = value.translation.width + prevOffset
+                if translation > 0 {
+                    if leadingActions.isEmpty {
+                        offset = translation * 0.2
                     } else {
-                        if trailingActions.isEmpty {
-                            offset = translation * 0.2
-                        } else {
-                            let limit = -maxTrailingOffset
-                            offset = translation < limit ? limit + (translation - limit) * 0.2 : translation
-                        }
+                        let limit = maxLeadingOffset
+                        offset = translation > limit ? limit + (translation - limit) * 0.2 : translation
+                    }
+                } else {
+                    if trailingActions.isEmpty {
+                        offset = translation * 0.2
+                    } else {
+                        let limit = -maxTrailingOffset
+                        offset = translation < limit ? limit + (translation - limit) * 0.2 : translation
                     }
                 }
-                .onEnded { value in
-                    let velocity = value.predictedEndTranslation.width - value.translation.width
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        if offset > 0 {
-                            if offset > maxLeadingOffset * snapThreshold || velocity > 200 {
-                                offset = maxLeadingOffset
-                                prevOffset = maxLeadingOffset
-                            } else {
-                                offset = 0
-                                prevOffset = 0
-                            }
-                        } else if offset < 0 {
-                            if -offset > maxTrailingOffset * snapThreshold || velocity < -200 {
-                                offset = -maxTrailingOffset
-                                prevOffset = -maxTrailingOffset
-                            } else {
-                                offset = 0
-                                prevOffset = 0
-                            }
+            }
+            .onEnded { value in
+                let velocity = value.predictedEndTranslation.width - value.translation.width
+                withAnimation(.easeOut(duration: 0.2)) {
+                    if offset > 0 {
+                        if offset > maxLeadingOffset * snapThreshold || velocity > 200 {
+                            offset = maxLeadingOffset
+                            prevOffset = maxLeadingOffset
                         } else {
                             offset = 0
                             prevOffset = 0
                         }
+                    } else if offset < 0 {
+                        if -offset > maxTrailingOffset * snapThreshold || velocity < -200 {
+                            offset = -maxTrailingOffset
+                            prevOffset = -maxTrailingOffset
+                        } else {
+                            offset = 0
+                            prevOffset = 0
+                        }
+                    } else {
+                        offset = 0
+                        prevOffset = 0
                     }
                 }
-        )
+            })
     }
 
     private func actionButton(action: ArchiveSwipeAction) -> some View {

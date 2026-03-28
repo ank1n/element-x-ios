@@ -10,7 +10,10 @@ import Foundation
 
 struct SavedAccount: Codable, Identifiable, Equatable {
     /// Unique identifier for the saved account
-    var id: String { "\(serverURL)_\(userId)" }
+    var id: String {
+        "\(serverURL)_\(userId)"
+    }
+
     /// The homeserver URL (e.g. "stalk.implica.ru")
     let serverURL: String
     /// The Matrix user ID (e.g. "@user:server.ru")
@@ -76,7 +79,6 @@ class SavedAccountsStore {
         accounts.removeAll { $0.id == id }
         persist(accounts)
     }
-
 
     private func persist(_ accounts: [SavedAccount]) {
         do {

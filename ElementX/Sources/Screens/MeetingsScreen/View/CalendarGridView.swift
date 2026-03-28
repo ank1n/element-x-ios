@@ -42,7 +42,9 @@ struct CalendarGridView: View {
         return f
     }()
 
-    private var dateKeyFormatter: DateFormatter { Self.dateKeyFormat }
+    private var dateKeyFormatter: DateFormatter {
+        Self.dateKeyFormat
+    }
 
     private let days: [Date] = {
         let cal = Calendar.current
@@ -87,22 +89,20 @@ struct CalendarGridView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 4)
         }
-        .gesture(
-            DragGesture(minimumDistance: 20, coordinateSpace: .local)
-                .onChanged { value in
-                    dragOffset = value.translation.height
-                }
-                .onEnded { value in
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                        if value.translation.height > 40 {
-                            isExpanded = true
-                        } else if value.translation.height < -40 {
-                            isExpanded = false
-                        }
-                        dragOffset = 0
+        .gesture(DragGesture(minimumDistance: 20, coordinateSpace: .local)
+            .onChanged { value in
+                dragOffset = value.translation.height
+            }
+            .onEnded { value in
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                    if value.translation.height > 40 {
+                        isExpanded = true
+                    } else if value.translation.height < -40 {
+                        isExpanded = false
                     }
+                    dragOffset = 0
                 }
-        )
+            })
         .onChange(of: selectedDate) {
             let selectedMonth = calendar.dateComponents([.year, .month], from: selectedDate)
             let displayedMonthComps = calendar.dateComponents([.year, .month], from: displayedMonth)
@@ -128,18 +128,12 @@ struct CalendarGridView: View {
                             dayCell(date: date, isCenter: key == scrolledDayID)
                                 .padding(.vertical, 10) // room for shadow
                                 .id(key)
-                                .background(
-                                    GeometryReader { cellGeo in
-                                        Color.clear
-                                            .preference(
-                                                key: DayCenterPreferenceKey.self,
-                                                value: [DayCenterItem(
-                                                    key: key,
-                                                    centerX: cellGeo.frame(in: .global).midX
-                                                )]
-                                            )
-                                    }
-                                )
+                                .background(GeometryReader { cellGeo in
+                                    Color.clear
+                                        .preference(key: DayCenterPreferenceKey.self,
+                                                    value: [DayCenterItem(key: key,
+                                                                          centerX: cellGeo.frame(in: .global).midX)])
+                                })
                         }
                     }
                     .scrollTargetLayout()
@@ -213,11 +207,9 @@ struct CalendarGridView: View {
                 .frame(width: 5, height: 5)
         }
         .frame(width: cellWidth, height: cellHeight)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(isCenter ? accentBlue : (isToday ? accentBlue.opacity(0.12) : Color.clear))
-                .shadow(color: isCenter ? accentBlue.opacity(0.35) : .clear, radius: 8, y: 3)
-        )
+        .background(RoundedRectangle(cornerRadius: 16)
+            .fill(isCenter ? accentBlue : (isToday ? accentBlue.opacity(0.12) : Color.clear))
+            .shadow(color: isCenter ? accentBlue.opacity(0.35) : .clear, radius: 8, y: 3))
         .transaction { $0.animation = nil }
     }
 
@@ -294,11 +286,9 @@ struct CalendarGridView: View {
             }
             .frame(height: 38)
             .frame(maxWidth: .infinity)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(isSelected ? accentBlue : Color.clear)
-                    .shadow(color: isSelected ? accentBlue.opacity(0.35) : .clear, radius: 6, y: 2)
-            )
+            .background(RoundedRectangle(cornerRadius: 10)
+                .fill(isSelected ? accentBlue : Color.clear)
+                .shadow(color: isSelected ? accentBlue.opacity(0.35) : .clear, radius: 6, y: 2))
         }
         .buttonStyle(.plain)
     }

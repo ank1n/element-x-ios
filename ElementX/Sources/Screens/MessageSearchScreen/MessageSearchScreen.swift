@@ -21,9 +21,9 @@ struct MessageSearchScreen: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if context.viewState.results.isEmpty && !context.viewState.isLoading && !context.viewState.bindings.searchQuery.isEmpty {
+            if context.viewState.results.isEmpty, !context.viewState.isLoading, !context.viewState.bindings.searchQuery.isEmpty {
                 emptyState
-            } else if context.viewState.results.isEmpty && context.viewState.bindings.searchQuery.isEmpty {
+            } else if context.viewState.results.isEmpty, context.viewState.bindings.searchQuery.isEmpty {
                 promptState
             } else {
                 resultsList
@@ -50,7 +50,7 @@ struct MessageSearchScreen: View {
                         .padding(20)
                 }
 
-                if context.viewState.hasMore && !context.viewState.isLoading {
+                if context.viewState.hasMore, !context.viewState.isLoading {
                     Button {
                         context.send(viewAction: .loadMore)
                     } label: {

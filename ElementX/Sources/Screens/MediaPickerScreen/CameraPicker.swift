@@ -90,7 +90,7 @@ final class StalkCameraViewController: UIViewController {
     private let zoomLevels: [CGFloat] = [0.5, 1.0, 2.0, 5.0]
     private let zoomLabels = ["0,5", "1", "2", "5"]
 
-    // Zoom
+    /// Zoom
     private var initialZoom: CGFloat = 1.0
 
     override func viewDidLoad() {
@@ -109,8 +109,13 @@ final class StalkCameraViewController: UIViewController {
         previewLayer?.frame = previewView.bounds
     }
 
-    override var prefersStatusBarHidden: Bool { true }
-    override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .portrait }
+    override var prefersStatusBarHidden: Bool {
+        true
+    }
+
+    override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
+        .portrait
+    }
 
     // MARK: - Setup UI
 
@@ -416,10 +421,9 @@ final class StalkCameraViewController: UIViewController {
         }
 
         // Log available cameras
-        let discovery = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.builtInUltraWideCamera, .builtInWideAngleCamera, .builtInTelephotoCamera],
-            mediaType: .video, position: .back)
-        let available = discovery.devices.map { $0.deviceType.rawValue }
+        let discovery = AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInUltraWideCamera, .builtInWideAngleCamera, .builtInTelephotoCamera],
+                                                         mediaType: .video, position: .back)
+        let available = discovery.devices.map(\.deviceType.rawValue)
         os_log("Available back cameras: %{public}@", log: cameraLog, type: .info, "\(available)")
     }
 
@@ -786,12 +790,10 @@ final class StalkCameraViewController: UIViewController {
             selectedBtn.alpha = 1.0
             otherBtn.alpha = 0.45
 
-            self.modeIndicator.frame = CGRect(
-                x: selectedBtn.frame.minX + self.modeStack.frame.minX,
-                y: self.modeStack.frame.maxY + 4,
-                width: selectedBtn.frame.width,
-                height: 3
-            )
+            self.modeIndicator.frame = CGRect(x: selectedBtn.frame.minX + self.modeStack.frame.minX,
+                                              y: self.modeStack.frame.maxY + 4,
+                                              width: selectedBtn.frame.width,
+                                              height: 3)
 
             self.shutterButton.setVideoMode(self.captureMode == .video)
         }
@@ -855,7 +857,10 @@ private final class ShutterButton: UIControl {
         setupLayers()
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError()
+    }
 
     private func setupLayers() {
         outerRing.fillColor = UIColor.clear.cgColor

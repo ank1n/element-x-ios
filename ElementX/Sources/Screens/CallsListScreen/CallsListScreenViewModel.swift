@@ -138,16 +138,14 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
                 }
             }
 
-            return CallHistoryItem(
-                id: local.id,
-                contactName: local.displayName,
-                contactId: local.roomID,
-                callType: callType,
-                timestamp: local.startedAt,
-                duration: local.duration,
-                isMissed: local.isMissed,
-                recordingURL: recordingURL
-            )
+            return CallHistoryItem(id: local.id,
+                                   contactName: local.displayName,
+                                   contactId: local.roomID,
+                                   callType: callType,
+                                   timestamp: local.startedAt,
+                                   duration: local.duration,
+                                   isMissed: local.isMissed,
+                                   recordingURL: recordingURL)
         }
 
         // Добавляем записи с сервера которые не имеют соответствия в локальной истории
@@ -255,14 +253,14 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
     private func isRecordingMatchingCall(_ recording: CallHistoryItem, localCall: LocalCallHistoryItem) -> Bool {
         // Проверяем roomID (contactId в recording может быть matrixRoomId или encoded roomName)
         let roomMatches = recording.contactId == localCall.roomID ||
-                          recording.contactId.contains(localCall.roomID)
+            recording.contactId.contains(localCall.roomID)
 
         // Проверяем близость по времени (в пределах 5 минут)
         let timeDiff = abs(recording.timestamp.timeIntervalSince(localCall.startedAt))
         let timeMatches = timeDiff < 300 // 5 минут
 
         // Вариант 1: roomID совпадает + время близко
-        if roomMatches && timeMatches {
+        if roomMatches, timeMatches {
             return true
         }
 
@@ -482,7 +480,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         }
 
         // Create URLSession with longer timeout for large files
-        let config = URLSessionConfiguration.ephemeral  // Ephemeral avoids caching issues
+        let config = URLSessionConfiguration.ephemeral // Ephemeral avoids caching issues
         config.timeoutIntervalForRequest = 120.0
         config.timeoutIntervalForResource = 300.0
         config.waitsForConnectivity = true
@@ -498,7 +496,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         request.httpMethod = "GET"
         request.setValue("*/*", forHTTPHeaderField: "Accept")
         request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
-        request.setValue("close", forHTTPHeaderField: "Connection")  // Force connection close
+        request.setValue("close", forHTTPHeaderField: "Connection") // Force connection close
         // Add auth token for Recording API endpoints
         if let token = getAccessToken() {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -529,7 +527,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
                 MXLog.info("Downloaded data size: \(data.count) bytes")
 
                 // Минимум 1KB — пустые/битые файлы
-                if data.count < 1_000 {
+                if data.count < 1000 {
                     throw CallHistoryError.serverError("File too small: \(data.count) bytes")
                 }
 
@@ -656,15 +654,13 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
                 }
                 let roomName = names.joined(separator: ", ")
 
-                let result = await userSession.clientProxy.createRoom(
-                    name: roomName,
-                    topic: nil,
-                    accessType: .private,
-                    isSpace: false,
-                    userIDs: matrixUserIDs,
-                    avatarURL: nil,
-                    aliasLocalPart: nil
-                )
+                let result = await userSession.clientProxy.createRoom(name: roomName,
+                                                                      topic: nil,
+                                                                      accessType: .private,
+                                                                      isSpace: false,
+                                                                      userIDs: matrixUserIDs,
+                                                                      avatarURL: nil,
+                                                                      aliasLocalPart: nil)
 
                 switch result {
                 case .success(let roomID):
@@ -700,14 +696,12 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
             let avatarURL = summary.avatarURL ?? summary.heroes.first?.avatarURL
 
             // Извлекаем username из matrixUserID: @user:server → @user
-            contacts.append(NewCallContact(
-                id: summary.id,
-                displayName: summary.name,
-                avatarURL: avatarURL,
-                matrixUserID: heroUserID,
-                isOnline: false,
-                isFavorite: false
-            ))
+            contacts.append(NewCallContact(id: summary.id,
+                                           displayName: summary.name,
+                                           avatarURL: avatarURL,
+                                           matrixUserID: heroUserID,
+                                           isOnline: false,
+                                           isFavorite: false))
         }
 
         contacts.sort { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
@@ -778,7 +772,7 @@ class CallHistoryService: NSObject, CallHistoryServiceProtocol, URLSessionDelega
     // MARK: - URLSessionDelegate
 
     func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
-        if allowInsecureConnection && challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust {
+        if allowInsecureConnection, challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust {
             if let serverTrust = challenge.protectionSpace.serverTrust {
                 completionHandler(.useCredential, URLCredential(trust: serverTrust))
                 return
@@ -818,7 +812,6 @@ class CallHistoryService: NSObject, CallHistoryServiceProtocol, URLSessionDelega
     }
 
     private func processResponse(data: Data, response: URLResponse, currentUserID: String?, apiBaseURL: URL? = nil) throws -> [CallHistoryItem] {
-
         guard let httpResponse = response as? HTTPURLResponse else {
             throw CallHistoryError.invalidResponse
         }

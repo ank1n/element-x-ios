@@ -65,11 +65,9 @@ class NativeLoginScreenViewModel: NativeLoginScreenViewModelType {
             do {
                 // Step 1: Headless OIDC — submit credentials to Keycloak programmatically
                 MXLog.info("sTalk NativeLogin: Starting headless OIDC auth")
-                let callbackURL = try await headlessAuthenticator.authenticate(
-                    authURL: oidcData.url,
-                    username: username,
-                    password: password
-                )
+                let callbackURL = try await headlessAuthenticator.authenticate(authURL: oidcData.url,
+                                                                               username: username,
+                                                                               password: password)
                 MXLog.info("sTalk NativeLogin: Got callback URL: \(callbackURL)")
 
                 // Step 2: Rewrite custom scheme to HTTPS if needed (same as OIDCPresenter does)
@@ -83,26 +81,20 @@ class NativeLoginScreenViewModel: NativeLoginScreenViewModelType {
                     actionsSubject.send(.signedIn(userSession))
                 case .failure(let error):
                     MXLog.error("sTalk NativeLogin: SDK login failed: \(error)")
-                    state.bindings.alertInfo = AlertInfo(
-                        id: UUID(),
-                        title: SL10n.authLoginError,
-                        message: SL10n.authLoginFailed(error.localizedDescription)
-                    )
+                    state.bindings.alertInfo = AlertInfo(id: UUID(),
+                                                         title: SL10n.authLoginError,
+                                                         message: SL10n.authLoginFailed(error.localizedDescription))
                 }
             } catch let error as HeadlessOIDCAuthenticator.AuthError {
                 MXLog.error("sTalk NativeLogin: Headless auth failed: \(error)")
-                state.bindings.alertInfo = AlertInfo(
-                    id: UUID(),
-                    title: SL10n.authLoginError,
-                    message: error.errorDescription ?? SL10n.authUnknownError
-                )
+                state.bindings.alertInfo = AlertInfo(id: UUID(),
+                                                     title: SL10n.authLoginError,
+                                                     message: error.errorDescription ?? SL10n.authUnknownError)
             } catch {
                 MXLog.error("sTalk NativeLogin: Unexpected error: \(error)")
-                state.bindings.alertInfo = AlertInfo(
-                    id: UUID(),
-                    title: SL10n.authError,
-                    message: error.localizedDescription
-                )
+                state.bindings.alertInfo = AlertInfo(id: UUID(),
+                                                     title: SL10n.authError,
+                                                     message: error.localizedDescription)
             }
 
             state.isLoading = false

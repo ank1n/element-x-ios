@@ -22,9 +22,7 @@ struct RoomAttachmentPicker: View {
         } label: {
             CompoundIcon(asset: Asset.Images.composerAttachment, size: .custom(30), relativeTo: .compound.headingLG)
                 .scaledPadding(7, relativeTo: .compound.headingLG)
-                .foregroundColor(
-                    isEnabled ? .compound.iconPrimary : .compound.iconDisabled
-                )
+                .foregroundColor(isEnabled ? .compound.iconPrimary : .compound.iconDisabled)
         }
         .buttonStyle(RoomAttachmentPickerButtonStyle())
         .accessibilityLabel(L10n.actionAddToTimeline)
@@ -54,63 +52,51 @@ private struct AttachmentPickerSheet: View {
 
     var body: some View {
         LazyVGrid(columns: columns, spacing: 14) {
-            attachmentButton(
-                icon: "camera.fill",
-                color: .orange,
-                title: SL10n.attachCamera
-            ) {
+            attachmentButton(icon: "camera.fill",
+                             color: .orange,
+                             title: SL10n.attachCamera) {
                 isPresented = false
                 context.send(viewAction: .attach(.camera))
             }
             .accessibilityIdentifier(A11yIdentifiers.roomScreen.attachmentPickerCamera)
 
-            attachmentButton(
-                icon: "photo.fill",
-                color: .purple,
-                title: SL10n.attachGallery
-            ) {
+            attachmentButton(icon: "photo.fill",
+                             color: .purple,
+                             title: SL10n.attachGallery) {
                 isPresented = false
                 context.send(viewAction: .attach(.photoLibrary))
             }
             .accessibilityIdentifier(A11yIdentifiers.roomScreen.attachmentPickerPhotoLibrary)
 
-            attachmentButton(
-                icon: "doc.fill",
-                color: StalkTheme.accent,
-                title: SL10n.attachFile
-            ) {
+            attachmentButton(icon: "doc.fill",
+                             color: StalkTheme.accent,
+                             title: SL10n.attachFile) {
                 isPresented = false
                 context.send(viewAction: .attach(.file))
             }
             .accessibilityIdentifier(A11yIdentifiers.roomScreen.attachmentPickerDocuments)
 
             if context.viewState.isLocationSharingEnabled {
-                attachmentButton(
-                    icon: "location.fill",
-                    color: .green,
-                    title: SL10n.attachLocation
-                ) {
+                attachmentButton(icon: "location.fill",
+                                 color: .green,
+                                 title: SL10n.attachLocation) {
                     isPresented = false
                     context.send(viewAction: .attach(.location))
                 }
                 .accessibilityIdentifier(A11yIdentifiers.roomScreen.attachmentPickerLocation)
             }
 
-            attachmentButton(
-                icon: "chart.bar.fill",
-                color: .cyan,
-                title: SL10n.attachPoll
-            ) {
+            attachmentButton(icon: "chart.bar.fill",
+                             color: .cyan,
+                             title: SL10n.attachPoll) {
                 isPresented = false
                 context.send(viewAction: .attach(.poll))
             }
             .accessibilityIdentifier(A11yIdentifiers.roomScreen.attachmentPickerPoll)
 
-            attachmentButton(
-                icon: "textformat",
-                color: .pink,
-                title: SL10n.attachFormat
-            ) {
+            attachmentButton(icon: "textformat",
+                             color: .pink,
+                             title: SL10n.attachFormat) {
                 isPresented = false
                 context.send(viewAction: .enableTextFormatting)
             }
@@ -120,7 +106,6 @@ private struct AttachmentPickerSheet: View {
         .padding(.top, 8)
     }
 
-    @ViewBuilder
     private func attachmentButton(icon: String, color: Color, title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 8) {

@@ -22,14 +22,10 @@ final class MessageSearchScreenCoordinator: CoordinatorProtocol {
     }
 
     init(parameters: MessageSearchScreenCoordinatorParameters) {
-        let searchService = MessageSearchService(
-            homeserverURL: parameters.clientProxy.homeserver,
-            accessTokenProvider: { try parameters.clientProxy.matrixAccessToken() }
-        )
-        viewModel = MessageSearchScreenViewModel(
-            searchService: searchService,
-            roomSummaryProvider: parameters.roomSummaryProvider
-        )
+        let searchService = MessageSearchService(homeserverURL: parameters.clientProxy.homeserver,
+                                                 accessTokenProvider: { try parameters.clientProxy.matrixAccessToken() })
+        viewModel = MessageSearchScreenViewModel(searchService: searchService,
+                                                 roomSummaryProvider: parameters.roomSummaryProvider)
 
         viewModel.actionsPublisher
             .sink { [weak self] action in

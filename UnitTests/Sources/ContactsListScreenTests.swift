@@ -4,9 +4,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-import XCTest
-
 @testable import ElementX
+import XCTest
 
 @MainActor
 class ContactsListScreenTests: XCTestCase {
@@ -58,7 +57,7 @@ class ContactsListScreenTests: XCTestCase {
         state.contacts = [
             makeContact(id: "1", name: "Alice", isOnline: true),
             makeContact(id: "2", name: "Bob", isOnline: false),
-            makeContact(id: "3", name: "Carol", isOnline: true),
+            makeContact(id: "3", name: "Carol", isOnline: true)
         ]
         XCTAssertEqual(state.onlineCount, 2)
     }
@@ -69,27 +68,23 @@ class ContactsListScreenTests: XCTestCase {
             makeContact(id: "1", name: "Alice", isFavorite: true),
             makeContact(id: "2", name: "Bob", isFavorite: false),
             makeContact(id: "3", name: "Carol", isFavorite: true),
-            makeContact(id: "4", name: "Dave", isFavorite: true),
+            makeContact(id: "4", name: "Dave", isFavorite: true)
         ]
         XCTAssertEqual(state.favoritesCount, 3)
     }
 
     // MARK: - Helpers
 
-    private func makeContact(
-        id: String,
-        name: String,
-        isOnline: Bool = false,
-        isFavorite: Bool = false
-    ) -> ContactItem {
-        ContactItem(
-            id: id,
-            displayName: name,
-            avatarURL: nil,
-            matrixUserID: "@\(name.lowercased()):example.com",
-            isOnline: isOnline,
-            lastSeenDate: nil,
-            isFavorite: isFavorite
-        )
+    private func makeContact(id: String,
+                             name: String,
+                             isOnline: Bool = false,
+                             isFavorite: Bool = false) -> ContactItem {
+        ContactItem(id: id,
+                    displayName: name,
+                    avatarURL: nil,
+                    matrixUserID: "@\(name.lowercased()):example.com",
+                    isOnline: isOnline,
+                    lastSeenDate: nil,
+                    isFavorite: isFavorite)
     }
 }

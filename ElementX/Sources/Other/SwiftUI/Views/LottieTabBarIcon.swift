@@ -28,7 +28,9 @@ class LottieContainerView: UIView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
+    required init?(coder: NSCoder) {
+        fatalError()
+    }
 
     override var intrinsicContentSize: CGSize {
         CGSize(width: iconSize, height: iconSize)
@@ -41,7 +43,7 @@ struct LottieTabBarIcon: UIViewRepresentable {
     let isSelected: Bool
     let playAnimation: Bool
     var iconSize: CGFloat = 30
-    var activeColor: UIColor = UIColor(red: 0.38, green: 0.42, blue: 0.96, alpha: 1) // sTalk blue
+    var activeColor = UIColor(red: 0.38, green: 0.42, blue: 0.96, alpha: 1) // sTalk blue
     var inactiveColor: UIColor = .systemGray
 
     func makeUIView(context: Context) -> LottieContainerView {

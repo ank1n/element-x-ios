@@ -83,10 +83,8 @@ class CallsTabFlowCoordinator: FlowCoordinatorProtocol {
         }
         let callHistoryService = CallHistoryService(baseURL: apiBaseURL, accessToken: accessToken)
 
-        let parameters = CallsListScreenCoordinatorParameters(
-            userSession: userSession,
-            callHistoryService: callHistoryService
-        )
+        let parameters = CallsListScreenCoordinatorParameters(userSession: userSession,
+                                                              callHistoryService: callHistoryService)
         let coordinator = CallsListScreenCoordinator(parameters: parameters)
 
         coordinator.actionsPublisher.sink { [weak self] action in

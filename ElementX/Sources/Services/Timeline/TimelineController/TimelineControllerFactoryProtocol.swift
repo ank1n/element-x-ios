@@ -37,6 +37,3 @@ protocol TimelineControllerFactoryProtocol {
                                                 timelineItemFactory: RoomTimelineItemFactoryProtocol,
                                                 mediaProvider: MediaProviderProtocol) async -> Result<TimelineControllerProtocol, TimelineFactoryControllerError>
 }
-
-// sourcery: AutoMockable
-extension TimelineControllerFactoryProtocol { }

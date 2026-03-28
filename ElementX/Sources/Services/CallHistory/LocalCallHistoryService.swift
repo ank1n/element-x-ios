@@ -9,17 +9,17 @@ import Foundation
 
 /// Local call history item stored on device
 struct LocalCallHistoryItem: Codable, Identifiable, Equatable {
-    let id: String  // Unique ID (UUID)
+    let id: String // Unique ID (UUID)
     let roomID: String
     var roomDisplayName: String?
     var participantUserIDs: [String]
-    var participantDisplayNames: [String: String]  // userID -> displayName
+    var participantDisplayNames: [String: String] // userID -> displayName
     let direction: CallDirection
     let startedAt: Date
     var endedAt: Date?
     var duration: TimeInterval?
     var isMissed: Bool
-    var recordingEgressId: String?  // Link to recording if available
+    var recordingEgressId: String? // Link to recording if available
 
     enum CallDirection: String, Codable {
         case incoming
@@ -80,19 +80,17 @@ class LocalCallHistoryService: LocalCallHistoryServiceProtocol {
     func startCall(roomID: String, direction: LocalCallHistoryItem.CallDirection) -> String {
         let callID = UUID().uuidString
 
-        let item = LocalCallHistoryItem(
-            id: callID,
-            roomID: roomID,
-            roomDisplayName: nil,
-            participantUserIDs: [],
-            participantDisplayNames: [:],
-            direction: direction,
-            startedAt: Date(),
-            endedAt: nil,
-            duration: nil,
-            isMissed: false,
-            recordingEgressId: nil
-        )
+        let item = LocalCallHistoryItem(id: callID,
+                                        roomID: roomID,
+                                        roomDisplayName: nil,
+                                        participantUserIDs: [],
+                                        participantDisplayNames: [:],
+                                        direction: direction,
+                                        startedAt: Date(),
+                                        endedAt: nil,
+                                        duration: nil,
+                                        isMissed: false,
+                                        recordingEgressId: nil)
 
         callHistory.insert(item, at: 0)
         trimHistory()

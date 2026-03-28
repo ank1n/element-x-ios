@@ -4,9 +4,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-import XCTest
-
 @testable import ElementX
+import XCTest
 
 @MainActor
 class StalkThemeTests: XCTestCase {

@@ -23,11 +23,9 @@ struct WidgetWebView: UIViewRepresentable {
         userContentController.add(context.coordinator, name: "matrixWidget")
 
         // Inject Widget API initialization script
-        let initScript = WKUserScript(
-            source: WidgetAPIBridge.injectionScript,
-            injectionTime: .atDocumentEnd,
-            forMainFrameOnly: false
-        )
+        let initScript = WKUserScript(source: WidgetAPIBridge.injectionScript,
+                                      injectionTime: .atDocumentEnd,
+                                      forMainFrameOnly: false)
         userContentController.addUserScript(initScript)
 
         configuration.userContentController = userContentController
@@ -187,14 +185,14 @@ enum WidgetAPIBridge {
                 }
             }
         };
-
+    
         // Listen for postMessage events and forward to native
         window.addEventListener('message', function(event) {
             if (event.data && event.data.api === 'fromWidget') {
                 window.webkit.messageHandlers.matrixWidget.postMessage(event.data);
             }
         }, false);
-
+    
         // Notify that the bridge is ready
         window.webkit.messageHandlers.matrixWidget.postMessage({
             action: 'bridge_ready'

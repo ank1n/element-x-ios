@@ -22,7 +22,7 @@ class WidgetWebViewScreenViewModel: WidgetWebViewScreenViewModelType, WidgetWebV
     override func process(viewAction: WidgetWebViewScreenViewAction) {
         switch viewAction {
         case .close:
-            break  // Handled by coordinator
+            break // Handled by coordinator
         }
     }
 }

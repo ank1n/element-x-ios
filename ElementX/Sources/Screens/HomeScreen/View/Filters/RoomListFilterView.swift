@@ -11,9 +11,11 @@ import SwiftUI
 struct RoomListFilterView: View {
     let filter: RoomListFilter
     @Binding var isActive: Bool
-    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
+    @AppStorage("stalk_design_theme") private var designTheme = "cosmos"
 
-    private var isCosmos: Bool { designTheme == "cosmos" }
+    private var isCosmos: Bool {
+        designTheme == "cosmos"
+    }
 
     var body: some View {
         if isCosmos {
@@ -74,10 +76,8 @@ struct CosmosCapsuleToggleStyle: ToggleStyle {
             .foregroundColor(configuration.isOn ? .white : .primary)
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
-            .background(
-                Capsule()
-                    .fill(configuration.isOn ? accentBlue : Color(UIColor.systemGray6))
-            )
+            .background(Capsule()
+                .fill(configuration.isOn ? accentBlue : Color(UIColor.systemGray6)))
             .animation(.easeInOut(duration: 0.2), value: configuration.isOn)
             .onTapGesture {
                 withAnimation(.easeInOut(duration: 0.2)) {

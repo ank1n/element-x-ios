@@ -27,10 +27,8 @@ final class NativeLoginScreenCoordinator: CoordinatorProtocol {
     }
 
     init(parameters: NativeLoginScreenCoordinatorParameters) {
-        viewModel = NativeLoginScreenViewModel(
-            authenticationService: parameters.authenticationService,
-            oidcData: parameters.oidcData
-        )
+        viewModel = NativeLoginScreenViewModel(authenticationService: parameters.authenticationService,
+                                               oidcData: parameters.oidcData)
 
         viewModel.actionsPublisher
             .sink { [weak self] action in
@@ -45,10 +43,8 @@ final class NativeLoginScreenCoordinator: CoordinatorProtocol {
     }
 
     func toPresentable() -> AnyView {
-        AnyView(
-            NavigationStack {
-                NativeLoginScreen(context: viewModel.context)
-            }
-        )
+        AnyView(NavigationStack {
+            NativeLoginScreen(context: viewModel.context)
+        })
     }
 }

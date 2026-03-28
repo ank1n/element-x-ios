@@ -28,7 +28,7 @@ final class WidgetsCoordinator: CoordinatorProtocol {
 
     init(parameters: WidgetsCoordinatorParameters) {
         self.parameters = parameters
-        self.widgetService = WidgetService(roomProxy: parameters.roomProxy)
+        widgetService = WidgetService(roomProxy: parameters.roomProxy)
     }
 
     func start() {
@@ -40,17 +40,13 @@ final class WidgetsCoordinator: CoordinatorProtocol {
     }
 
     func toPresentable() -> AnyView {
-        AnyView(
-            WidgetsCoordinatorView(
-                widgetService: widgetService,
-                roomId: parameters.roomProxy.id,
-                userId: parameters.userSession.clientProxy.userID,
-                displayName: parameters.userSession.clientProxy.userDisplayNamePublisher.value,
-                onDismiss: { [weak self] in
-                    self?.actionsSubject.send(.dismiss)
-                }
-            )
-        )
+        AnyView(WidgetsCoordinatorView(widgetService: widgetService,
+                                       roomId: parameters.roomProxy.id,
+                                       userId: parameters.userSession.clientProxy.userID,
+                                       displayName: parameters.userSession.clientProxy.userDisplayNamePublisher.value,
+                                       onDismiss: { [weak self] in
+                                           self?.actionsSubject.send(.dismiss)
+                                       }))
     }
 }
 
@@ -67,30 +63,26 @@ private struct WidgetsCoordinatorView: View {
 
     var body: some View {
         NavigationStack {
-            WidgetListView(
-                viewModel: WidgetListViewModel(widgetService: widgetService),
-                onWidgetSelected: { widget in
-                    selectedWidget = widget
-                }
-            )
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(L10n.actionClose) {
-                        onDismiss()
-                    }
-                }
-            }
-            .sheet(item: $selectedWidget) { widget in
-                WidgetScreen(
-                    widget: widget,
-                    roomId: roomId,
-                    userId: userId,
-                    displayName: displayName,
-                    onClose: {
-                        selectedWidget = nil
-                    }
-                )
-            }
+            WidgetListView(viewModel: WidgetListViewModel(widgetService: widgetService),
+                           onWidgetSelected: { widget in
+                               selectedWidget = widget
+                           })
+                           .toolbar {
+                               ToolbarItem(placement: .cancellationAction) {
+                                   Button(L10n.actionClose) {
+                                       onDismiss()
+                                   }
+                               }
+                           }
+                           .sheet(item: $selectedWidget) { widget in
+                               WidgetScreen(widget: widget,
+                                            roomId: roomId,
+                                            userId: userId,
+                                            displayName: displayName,
+                                            onClose: {
+                                                selectedWidget = nil
+                                            })
+                           }
         }
     }
 }

@@ -108,7 +108,7 @@ class AuthenticationFlowCoordinator: FlowCoordinatorProtocol {
         self.appSettings = appSettings
         self.analytics = analytics
         self.userIndicatorController = userIndicatorController
-        self.savedAccountsStore = SavedAccountsStore()
+        savedAccountsStore = SavedAccountsStore()
 
         navigationStackCoordinator = NavigationStackCoordinator()
 
@@ -438,10 +438,8 @@ class AuthenticationFlowCoordinator: FlowCoordinatorProtocol {
     }
 
     private func showNativeLogin(oidcData: OIDCAuthorizationDataProxy, fromState: State) {
-        let parameters = NativeLoginScreenCoordinatorParameters(
-            authenticationService: authenticationService,
-            oidcData: oidcData
-        )
+        let parameters = NativeLoginScreenCoordinatorParameters(authenticationService: authenticationService,
+                                                                oidcData: oidcData)
         let coordinator = NativeLoginScreenCoordinator(parameters: parameters)
         nativeLoginCoordinator = coordinator
 

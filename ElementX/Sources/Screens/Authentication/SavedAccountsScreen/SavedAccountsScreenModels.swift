@@ -19,7 +19,9 @@ struct SavedAccountsScreenViewState: BindableState {
     /// List of saved accounts sorted by last used
     var accounts: [SavedAccount]
     /// Whether the list is empty (first-time user)
-    var isEmpty: Bool { accounts.isEmpty }
+    var isEmpty: Bool {
+        accounts.isEmpty
+    }
 
     var bindings = SavedAccountsScreenBindings()
 }

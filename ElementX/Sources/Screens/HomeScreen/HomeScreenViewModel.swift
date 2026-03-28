@@ -8,8 +8,8 @@
 
 import AnalyticsEvents
 import Combine
-import os
 import MatrixRustSDK
+import os
 import SwiftUI
 
 typealias HomeScreenViewModelType = StateStoreViewModel<HomeScreenViewState, HomeScreenViewAction>
@@ -22,12 +22,9 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
     private let userIndicatorController: UserIndicatorControllerProtocol
     
     private let roomSummaryProvider: RoomSummaryProviderProtocol?
-    private lazy var messageSearchService: MessageSearchService = {
-        MessageSearchService(
-            homeserverURL: userSession.clientProxy.homeserver,
-            accessTokenProvider: { [weak self] in try self?.userSession.clientProxy.matrixAccessToken() ?? "" }
-        )
-    }()
+    private lazy var messageSearchService = MessageSearchService(homeserverURL: userSession.clientProxy.homeserver,
+                                                                 accessTokenProvider: { [weak self] in try self?.userSession.clientProxy.matrixAccessToken() ?? "" })
+
     private var messageSearchTask: Task<Void, Never>?
     
     private var actionsSubject: PassthroughSubject<HomeScreenViewModelAction, Never> = .init()
@@ -65,7 +62,7 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
         
         userSession.sessionSecurityStatePublisher
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] securityState in
+            .sink { [weak self] _ in
                 guard let self else { return }
 
                 // sTalk: Don't show security banners — setupAutoRecovery() handles this automatically
@@ -257,12 +254,12 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
                                               iconName: "archivebox",
                                               actionTitle: SL10n.actionUndo,
                                               action: { [weak self] in
-                    guard let self else { return }
-                    self.userIndicatorController.retractIndicatorWithId(indicatorID)
-                    Task {
-                        await self.unarchiveRoom(roomIdentifier: roomIdentifier)
-                    }
-                })
+                                                  guard let self else { return }
+                                                  self.userIndicatorController.retractIndicatorWithId(indicatorID)
+                                                  Task {
+                                                      await self.unarchiveRoom(roomIdentifier: roomIdentifier)
+                                                  }
+                                              })
                 userIndicatorController.submitIndicator(indicator)
             }
         case .openArchive:

@@ -47,15 +47,13 @@ class WidgetService: WidgetServiceProtocol {
         // In production, this should fetch m.widget and im.vector.modular.widgets state events
 
         let demoWidgets = [
-            MatrixWidget(
-                id: "stats_widget_1",
-                type: "customwidget",
-                name: SL10n.appsStatistics,
-                url: "https://stats.stalk.implica.ru/?roomId=$matrix_room_id&userId=$matrix_user_id",
-                creatorUserId: roomProxy.ownUserID,
-                waitForIframeLoad: true,
-                data: nil
-            )
+            MatrixWidget(id: "stats_widget_1",
+                         type: "customwidget",
+                         name: SL10n.appsStatistics,
+                         url: "https://stats.stalk.implica.ru/?roomId=$matrix_room_id&userId=$matrix_user_id",
+                         creatorUserId: roomProxy.ownUserID,
+                         waitForIframeLoad: true,
+                         data: nil)
         ]
 
         widgetsSubject.send(demoWidgets)
@@ -68,7 +66,7 @@ class WidgetService: WidgetServiceProtocol {
         // This would use the Matrix SDK to fetch state events
         // Implementation depends on the SDK's API
         // For now, return empty array - actual implementation needs SDK integration
-        return []
+        []
     }
 
     private func parseWidget(from stateEvent: [String: Any]) -> MatrixWidget? {
@@ -95,15 +93,13 @@ class WidgetService: WidgetServiceProtocol {
             widgetData = parseDataDictionary(data)
         }
 
-        return MatrixWidget(
-            id: stateKey,
-            type: type,
-            name: name,
-            url: url,
-            creatorUserId: creatorUserId,
-            waitForIframeLoad: waitForIframeLoad,
-            data: widgetData
-        )
+        return MatrixWidget(id: stateKey,
+                            type: type,
+                            name: name,
+                            url: url,
+                            creatorUserId: creatorUserId,
+                            waitForIframeLoad: waitForIframeLoad,
+                            data: widgetData)
     }
 
     private func parseDataDictionary(_ dict: [String: Any]) -> [String: AnyCodableValue] {

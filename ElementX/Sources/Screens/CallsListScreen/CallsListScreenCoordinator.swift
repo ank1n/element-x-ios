@@ -29,10 +29,8 @@ final class CallsListScreenCoordinator: CoordinatorProtocol {
     init(parameters: CallsListScreenCoordinatorParameters) {
         self.parameters = parameters
 
-        viewModel = CallsListScreenViewModel(
-            userSession: parameters.userSession,
-            callHistoryService: parameters.callHistoryService
-        )
+        viewModel = CallsListScreenViewModel(userSession: parameters.userSession,
+                                             callHistoryService: parameters.callHistoryService)
     }
 
     func start() {

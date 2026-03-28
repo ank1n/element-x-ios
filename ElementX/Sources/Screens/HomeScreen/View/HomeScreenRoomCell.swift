@@ -13,14 +13,17 @@ import SwiftUI
 struct HomeScreenRoomCell: View {
     @Environment(\.dynamicTypeSize) var dynamicTypeSize
     @Environment(\.redactionReasons) private var redactionReasons
-    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
+    @AppStorage("stalk_design_theme") private var designTheme = "cosmos"
 
     let room: HomeScreenRoom
     let isSelected: Bool
     let mediaProvider: MediaProviderProtocol!
     let action: (HomeScreenViewAction) -> Void
 
-    private var isCosmos: Bool { designTheme == "cosmos" }
+    private var isCosmos: Bool {
+        designTheme == "cosmos"
+    }
+
     private let verticalInsets = 12.0
     private let horizontalInsets = 16.0
     
@@ -80,7 +83,6 @@ struct HomeScreenRoomCell: View {
         }
     }
     
-    @ViewBuilder
     private var header: some View {
         HStack(alignment: .top, spacing: 16) {
             Text(room.name)
@@ -97,7 +99,6 @@ struct HomeScreenRoomCell: View {
         }
     }
     
-    @ViewBuilder
     private var footer: some View {
         HStack(alignment: .firstTextBaseline, spacing: 0) {
             ZStack(alignment: .topLeading) {
@@ -189,9 +190,11 @@ struct HomeScreenRoomCell: View {
 
 struct HomeScreenRoomCellButtonStyle: ButtonStyle {
     let isSelected: Bool
-    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
+    @AppStorage("stalk_design_theme") private var designTheme = "cosmos"
 
-    private var isCosmos: Bool { designTheme == "cosmos" }
+    private var isCosmos: Bool {
+        designTheme == "cosmos"
+    }
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label

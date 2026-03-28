@@ -150,32 +150,26 @@ class WidgetListViewModel: ObservableObject {
 
 #Preview {
     NavigationStack {
-        WidgetListView(
-            viewModel: {
-                let vm = WidgetListViewModel(widgetService: WidgetServiceMock())
-                vm.widgets = [
-                    MatrixWidget(
-                        id: "widget1",
-                        type: "customwidget",
-                        name: "Stats Widget",
-                        url: "https://stats.example.com",
-                        creatorUserId: "@admin:example.com",
-                        waitForIframeLoad: true,
-                        data: nil
-                    ),
-                    MatrixWidget(
-                        id: "widget2",
-                        type: "jitsi",
-                        name: "Video Conference",
-                        url: "https://jitsi.example.com",
-                        creatorUserId: "@admin:example.com",
-                        waitForIframeLoad: nil,
-                        data: nil
-                    )
-                ]
-                return vm
-            }(),
-            onWidgetSelected: { _ in }
-        )
+        WidgetListView(viewModel: {
+            let vm = WidgetListViewModel(widgetService: WidgetServiceMock())
+            vm.widgets = [
+                MatrixWidget(id: "widget1",
+                             type: "customwidget",
+                             name: "Stats Widget",
+                             url: "https://stats.example.com",
+                             creatorUserId: "@admin:example.com",
+                             waitForIframeLoad: true,
+                             data: nil),
+                MatrixWidget(id: "widget2",
+                             type: "jitsi",
+                             name: "Video Conference",
+                             url: "https://jitsi.example.com",
+                             creatorUserId: "@admin:example.com",
+                             waitForIframeLoad: nil,
+                             data: nil)
+            ]
+            return vm
+        }(),
+        onWidgetSelected: { _ in })
     }
 }

@@ -13,10 +13,12 @@ private enum ContactSortOrder: String {
 
 struct ContactsListScreen: View {
     @ObservedObject var context: ContactsListScreenViewModelType.Context
-    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
+    @AppStorage("stalk_design_theme") private var designTheme = "cosmos"
     @AppStorage("stalk_contacts_sort") private var sortOrder: String = ContactSortOrder.name.rawValue
 
-    private var isCosmos: Bool { designTheme == "cosmos" }
+    private var isCosmos: Bool {
+        designTheme == "cosmos"
+    }
 
     // MARK: - Cosmos Colors
 
@@ -31,12 +33,10 @@ struct ContactsListScreen: View {
         Group {
             if isCosmos {
                 ZStack {
-                    LinearGradient(
-                        colors: [bgGradientTop, bgGradientBottom, Color(UIColor.systemGroupedBackground)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .ignoresSafeArea()
+                    LinearGradient(colors: [bgGradientTop, bgGradientBottom, Color(UIColor.systemGroupedBackground)],
+                                   startPoint: .top,
+                                   endPoint: .bottom)
+                        .ignoresSafeArea()
                     cosmosContent
                 }
             } else {
@@ -86,9 +86,9 @@ struct ContactsListScreen: View {
         case .all:
             break
         case .online:
-            contacts = contacts.filter { $0.isOnline }
+            contacts = contacts.filter(\.isOnline)
         case .favorites:
-            contacts = contacts.filter { $0.isFavorite }
+            contacts = contacts.filter(\.isFavorite)
         }
 
         // Apply search
@@ -162,7 +162,7 @@ struct ContactsListScreen: View {
             Color(red: 0.9, green: 0.5, blue: 0.2),
             Color(red: 0.6, green: 0.3, blue: 0.8),
             Color(red: 0.9, green: 0.3, blue: 0.4),
-            Color(red: 0.2, green: 0.7, blue: 0.7),
+            Color(red: 0.2, green: 0.7, blue: 0.7)
         ]
         var hash: UInt64 = 5381
         for char in name.unicodeScalars {
@@ -174,7 +174,6 @@ struct ContactsListScreen: View {
 
     // MARK: - Classic Design
 
-    @ViewBuilder
     private var classicContent: some View {
         GeometryReader { geometry in
             ScrollViewReader { scrollProxy in
@@ -190,17 +189,13 @@ struct ContactsListScreen: View {
                             ForEach(groupedContacts, id: \.letter) { group in
                                 Section {
                                     ForEach(group.contacts) { contact in
-                                        SwipeActionView(
-                                            trailingActions: [
-                                                SwipeAction(
-                                                    title: contact.isFavorite ? SL10n.actionRemoveFavorite : SL10n.actionAddFavorite,
-                                                    icon: contact.isFavorite ? "star.slash" : "star.fill",
-                                                    color: .orange
-                                                ) {
-                                                    context.send(viewAction: .toggleFavorite(contact))
-                                                }
-                                            ]
-                                        ) {
+                                        SwipeActionView(trailingActions: [
+                                            SwipeAction(title: contact.isFavorite ? SL10n.actionRemoveFavorite : SL10n.actionAddFavorite,
+                                                        icon: contact.isFavorite ? "star.slash" : "star.fill",
+                                                        color: .orange) {
+                                                context.send(viewAction: .toggleFavorite(contact))
+                                            }
+                                        ]) {
                                             classicContactCell(contact)
                                         }
                                     }
@@ -218,7 +213,7 @@ struct ContactsListScreen: View {
                 .scrollDismissesKeyboard(.immediately)
                 .scrollBounceBehavior(context.viewState.contacts.isEmpty ? .basedOnSize : .automatic)
                 .overlay(alignment: .trailing) {
-                    if !groupedContacts.isEmpty && context.searchQuery.isEmpty {
+                    if !groupedContacts.isEmpty, context.searchQuery.isEmpty {
                         classicAlphabetScrubber(scrollProxy: scrollProxy)
                     }
                 }
@@ -240,17 +235,15 @@ struct ContactsListScreen: View {
         .padding(.trailing, 2)
         .padding(.vertical, 4)
         .contentShape(Rectangle())
-        .gesture(
-            DragGesture(minimumDistance: 1)
-                .onChanged { value in
-                    let index = Int(value.location.y / 14)
-                    if index >= 0, index < letters.count {
-                        withAnimation(.easeOut(duration: 0.15)) {
-                            scrollProxy.scrollTo(letters[index], anchor: .top)
-                        }
+        .gesture(DragGesture(minimumDistance: 1)
+            .onChanged { value in
+                let index = Int(value.location.y / 14)
+                if index >= 0, index < letters.count {
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        scrollProxy.scrollTo(letters[index], anchor: .top)
                     }
                 }
-        )
+            })
     }
 
     private func classicSectionHeader(_ letter: String) -> some View {
@@ -263,31 +256,18 @@ struct ContactsListScreen: View {
             .background(Color.compound.bgSubtleSecondary)
     }
 
-    @ViewBuilder
     private var classicFiltersSection: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                GenericFilterView(
-                    title: SL10n.contactsAllCount(context.viewState.contacts.count),
-                    isActive: Binding(
-                        get: { context.viewState.selectedFilter == .all },
-                        set: { if $0 { context.send(viewAction: .selectFilter(.all)) } }
-                    )
-                )
-                GenericFilterView(
-                    title: SL10n.contactsOnlineCount(context.viewState.onlineCount),
-                    isActive: Binding(
-                        get: { context.viewState.selectedFilter == .online },
-                        set: { if $0 { context.send(viewAction: .selectFilter(.online)) } }
-                    )
-                )
-                GenericFilterView(
-                    title: SL10n.contactsFavoritesCount(context.viewState.favoritesCount),
-                    isActive: Binding(
-                        get: { context.viewState.selectedFilter == .favorites },
-                        set: { if $0 { context.send(viewAction: .selectFilter(.favorites)) } }
-                    )
-                )
+                GenericFilterView(title: SL10n.contactsAllCount(context.viewState.contacts.count),
+                                  isActive: Binding(get: { context.viewState.selectedFilter == .all },
+                                                    set: { if $0 { context.send(viewAction: .selectFilter(.all)) } }))
+                GenericFilterView(title: SL10n.contactsOnlineCount(context.viewState.onlineCount),
+                                  isActive: Binding(get: { context.viewState.selectedFilter == .online },
+                                                    set: { if $0 { context.send(viewAction: .selectFilter(.online)) } }))
+                GenericFilterView(title: SL10n.contactsFavoritesCount(context.viewState.favoritesCount),
+                                  isActive: Binding(get: { context.viewState.selectedFilter == .favorites },
+                                                    set: { if $0 { context.send(viewAction: .selectFilter(.favorites)) } }))
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -407,7 +387,6 @@ struct ContactsListScreen: View {
 
     // MARK: - Cosmos Design
 
-    @ViewBuilder
     private var cosmosContent: some View {
         GeometryReader { geometry in
             ScrollViewReader { scrollProxy in
@@ -428,18 +407,14 @@ struct ContactsListScreen: View {
                                     Section {
                                         LazyVStack(spacing: 10) {
                                             ForEach(group.contacts) { contact in
-                                                SwipeActionView(
-                                                    trailingActions: [
-                                                        SwipeAction(
-                                                            title: contact.isFavorite ? SL10n.actionRemoveFavorite : SL10n.actionAddFavorite,
-                                                            icon: contact.isFavorite ? "star.slash" : "star.fill",
-                                                            color: .orange
-                                                        ) {
-                                                            context.send(viewAction: .toggleFavorite(contact))
-                                                        }
-                                                    ],
-                                                    cornerRadius: 14
-                                                ) {
+                                                SwipeActionView(trailingActions: [
+                                                    SwipeAction(title: contact.isFavorite ? SL10n.actionRemoveFavorite : SL10n.actionAddFavorite,
+                                                                icon: contact.isFavorite ? "star.slash" : "star.fill",
+                                                                color: .orange) {
+                                                        context.send(viewAction: .toggleFavorite(contact))
+                                                    }
+                                                ],
+                                                cornerRadius: 14) {
                                                     cosmosContactCell(contact)
                                                 }
                                             }
@@ -462,7 +437,7 @@ struct ContactsListScreen: View {
                 .scrollDismissesKeyboard(.immediately)
                 .scrollBounceBehavior(context.viewState.contacts.isEmpty ? .basedOnSize : .automatic)
                 .overlay(alignment: .trailing) {
-                    if !groupedContacts.isEmpty && context.searchQuery.isEmpty {
+                    if !groupedContacts.isEmpty, context.searchQuery.isEmpty {
                         cosmosAlphabetScrubber(scrollProxy: scrollProxy)
                     }
                 }
@@ -472,26 +447,19 @@ struct ContactsListScreen: View {
 
     // MARK: - Cosmos Filters
 
-    @ViewBuilder
     private var cosmosFiltersSection: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                cosmosFilterButton(
-                    title: SL10n.contactsAllCount(context.viewState.contacts.count),
-                    isActive: context.viewState.selectedFilter == .all
-                ) {
+                cosmosFilterButton(title: SL10n.contactsAllCount(context.viewState.contacts.count),
+                                   isActive: context.viewState.selectedFilter == .all) {
                     context.send(viewAction: .selectFilter(.all))
                 }
-                cosmosFilterButton(
-                    title: SL10n.contactsOnlineCount(context.viewState.onlineCount),
-                    isActive: context.viewState.selectedFilter == .online
-                ) {
+                cosmosFilterButton(title: SL10n.contactsOnlineCount(context.viewState.onlineCount),
+                                   isActive: context.viewState.selectedFilter == .online) {
                     context.send(viewAction: .selectFilter(.online))
                 }
-                cosmosFilterButton(
-                    title: SL10n.contactsFavoritesCount(context.viewState.favoritesCount),
-                    isActive: context.viewState.selectedFilter == .favorites
-                ) {
+                cosmosFilterButton(title: SL10n.contactsFavoritesCount(context.viewState.favoritesCount),
+                                   isActive: context.viewState.selectedFilter == .favorites) {
                     context.send(viewAction: .selectFilter(.favorites))
                 }
             }
@@ -507,10 +475,8 @@ struct ContactsListScreen: View {
                 .foregroundColor(isActive ? .white : .primary)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
-                .background(
-                    Capsule()
-                        .fill(isActive ? accentBlue : Color(UIColor.systemGray6))
-                )
+                .background(Capsule()
+                    .fill(isActive ? accentBlue : Color(UIColor.systemGray6)))
         }
     }
 
@@ -541,17 +507,15 @@ struct ContactsListScreen: View {
         .padding(.trailing, 2)
         .padding(.vertical, 4)
         .contentShape(Rectangle())
-        .gesture(
-            DragGesture(minimumDistance: 1)
-                .onChanged { value in
-                    let index = Int(value.location.y / 14)
-                    if index >= 0, index < letters.count {
-                        withAnimation(.easeOut(duration: 0.15)) {
-                            scrollProxy.scrollTo(letters[index], anchor: .top)
-                        }
+        .gesture(DragGesture(minimumDistance: 1)
+            .onChanged { value in
+                let index = Int(value.location.y / 14)
+                if index >= 0, index < letters.count {
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        scrollProxy.scrollTo(letters[index], anchor: .top)
                     }
                 }
-        )
+            })
     }
 
     // MARK: - Cosmos Loading

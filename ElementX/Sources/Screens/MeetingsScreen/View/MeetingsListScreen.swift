@@ -46,12 +46,10 @@ struct MeetingsListScreen: View {
     var body: some View {
         ZStack {
             // Background gradient
-            LinearGradient(
-                colors: [bgGradientTop, bgGradientBottom, Color(UIColor.systemGroupedBackground)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            LinearGradient(colors: [bgGradientTop, bgGradientBottom, Color(UIColor.systemGroupedBackground)],
+                           startPoint: .top,
+                           endPoint: .bottom)
+                .ignoresSafeArea()
 
             VStack(spacing: 0) {
                 // Header (date + refresh)
@@ -61,15 +59,11 @@ struct MeetingsListScreen: View {
                     .padding(.bottom, 10)
 
                 // Calendar (week strip / expandable month)
-                CalendarGridView(
-                    selectedDate: Binding(
-                        get: { context.viewState.selectedDate },
-                        set: { context.send(viewAction: .selectDate($0)) }
-                    ),
-                    datesWithMeetings: context.viewState.datesWithMeetings,
-                    holidays: context.viewState.holidays
-                )
-                .padding(.bottom, 8)
+                CalendarGridView(selectedDate: Binding(get: { context.viewState.selectedDate },
+                                                       set: { context.send(viewAction: .selectDate($0)) }),
+                                 datesWithMeetings: context.viewState.datesWithMeetings,
+                                 holidays: context.viewState.holidays)
+                    .padding(.bottom, 8)
 
                 // Filter row
                 filterRow
@@ -162,10 +156,8 @@ struct MeetingsListScreen: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .background(
-                    Capsule()
-                        .fill(accentBlue.opacity(0.1))
-                )
+                .background(Capsule()
+                    .fill(accentBlue.opacity(0.1)))
             }
         }
     }
@@ -197,9 +189,9 @@ struct MeetingsListScreen: View {
 
     private let parallelColors: [Color] = [
         StalkTheme.accent, // blue
-        Color(red: 0.95, green: 0.55, blue: 0.25),  // orange
-        Color(red: 0.30, green: 0.78, blue: 0.55),  // green
-        Color(red: 0.73, green: 0.45, blue: 0.90),  // purple
+        Color(red: 0.95, green: 0.55, blue: 0.25), // orange
+        Color(red: 0.30, green: 0.78, blue: 0.55), // green
+        Color(red: 0.73, green: 0.45, blue: 0.90) // purple
     ]
 
     @ViewBuilder
@@ -257,7 +249,7 @@ struct MeetingsListScreen: View {
                         parallelMeetingsRow(cluster, isToday: isToday, now: now)
                     }
 
-                    let _ = { flatIndex += cluster.count }()
+                    let _ = flatIndex += cluster.count
                 }
                 if isToday, nowInsertIndex == nil, activeMeeting == nil {
                     nowTab(nextMeeting: nil)
@@ -268,7 +260,6 @@ struct MeetingsListScreen: View {
 
     // MARK: - Meeting Card (full style)
 
-    @ViewBuilder
     private func meetingCard(_ meeting: Meeting, isActive: Bool) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
@@ -335,16 +326,13 @@ struct MeetingsListScreen: View {
         .padding(12)
         .background(isActive ? Color.green.opacity(0.05) : cardBg)
         .cornerRadius(14)
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(isActive ? Color.green.opacity(0.3) : Color.clear, lineWidth: 1)
-        )
+        .overlay(RoundedRectangle(cornerRadius: 14)
+            .stroke(isActive ? Color.green.opacity(0.3) : Color.clear, lineWidth: 1))
         .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
     }
 
     // MARK: - Timeline Meeting Row
 
-    @ViewBuilder
     private func timelineMeetingRow(_ meeting: Meeting, isActive: Bool) -> some View {
         Button {
             context.send(viewAction: .selectMeeting(meeting))
@@ -436,7 +424,6 @@ struct MeetingsListScreen: View {
         .padding(.bottom, 12)
     }
 
-    @ViewBuilder
     private func miniMeetingCard(_ meeting: Meeting, isActive: Bool, accentColor: Color) -> some View {
         HStack(spacing: 0) {
             // Vertical color bar on left edge
@@ -490,12 +477,10 @@ struct MeetingsListScreen: View {
             .padding(.vertical, 8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            ZStack {
-                cardBg
-                if isActive { Color.green.opacity(0.05) }
-            }
-        )
+        .background(ZStack {
+            cardBg
+            if isActive { Color.green.opacity(0.05) }
+        })
         .cornerRadius(14)
         .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
     }
@@ -539,7 +524,6 @@ struct MeetingsListScreen: View {
 
     // MARK: - Now Tab (зелёный блок текущего времени)
 
-    @ViewBuilder
     private func nowTab(nextMeeting: Meeting?) -> some View {
         HStack(spacing: 0) {
             // Время слева
@@ -582,12 +566,10 @@ struct MeetingsListScreen: View {
                 }
             }
             .padding(12)
-            .background(
-                ZStack {
-                    cardBg
-                    Color.green.opacity(0.05)
-                }
-            )
+            .background(ZStack {
+                cardBg
+                Color.green.opacity(0.05)
+            })
             .cornerRadius(14)
             .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
         }
@@ -665,10 +647,8 @@ struct MeetingsListScreen: View {
                     .foregroundColor(accentBlue)
                     .padding(.horizontal, 20)
                     .padding(.vertical, 8)
-                    .background(
-                        Capsule()
-                            .stroke(accentBlue, lineWidth: 1)
-                    )
+                    .background(Capsule()
+                        .stroke(accentBlue, lineWidth: 1))
             }
         }
     }
@@ -709,4 +689,3 @@ struct MeetingsListScreen: View {
         .shimmer()
     }
 }
-

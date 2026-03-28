@@ -14,7 +14,7 @@ struct RoomSearchBar: View {
     @Binding var searchQuery: String
     let resultCount: Int
     let currentIndex: Int
-    var isLoading: Bool = false
+    var isLoading = false
     let onPrevious: () -> Void
     let onNext: () -> Void
     let onDismiss: () -> Void
@@ -48,14 +48,10 @@ struct RoomSearchBar: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(
-                Capsule()
-                    .fill(accent.opacity(0.08))
-                    .overlay(
-                        Capsule()
-                            .stroke(accent.opacity(0.2), lineWidth: 1)
-                    )
-            )
+            .background(Capsule()
+                .fill(accent.opacity(0.08))
+                .overlay(Capsule()
+                    .stroke(accent.opacity(0.2), lineWidth: 1)))
 
             // Close button (icon, no text)
             Button(action: onDismiss) {
@@ -82,7 +78,7 @@ struct RoomSearchBar: View {
 struct RoomSearchNavigationBar: View {
     let resultCount: Int
     let currentIndex: Int
-    var isLoading: Bool = false
+    var isLoading = false
     let onPrevious: () -> Void
     let onNext: () -> Void
 
@@ -114,10 +110,8 @@ struct RoomSearchNavigationBar: View {
             .foregroundColor(.white)
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
-            .background(
-                Capsule()
-                    .fill(accent)
-            )
+            .background(Capsule()
+                .fill(accent))
 
             Spacer()
 
@@ -128,10 +122,8 @@ struct RoomSearchNavigationBar: View {
                         .font(.system(size: 15, weight: .bold))
                         .foregroundColor(resultCount > 0 ? accent : .secondary.opacity(0.3))
                         .frame(width: 40, height: 40)
-                        .background(
-                            Circle()
-                                .fill(resultCount > 0 ? accent.opacity(0.1) : Color(UIColor.systemGray6))
-                        )
+                        .background(Circle()
+                            .fill(resultCount > 0 ? accent.opacity(0.1) : Color(UIColor.systemGray6)))
                 }
                 .disabled(resultCount == 0)
 
@@ -140,10 +132,8 @@ struct RoomSearchNavigationBar: View {
                         .font(.system(size: 15, weight: .bold))
                         .foregroundColor(resultCount > 0 ? accent : .secondary.opacity(0.3))
                         .frame(width: 40, height: 40)
-                        .background(
-                            Circle()
-                                .fill(resultCount > 0 ? accent.opacity(0.1) : Color(UIColor.systemGray6))
-                        )
+                        .background(Circle()
+                            .fill(resultCount > 0 ? accent.opacity(0.1) : Color(UIColor.systemGray6)))
                 }
                 .disabled(resultCount == 0)
             }

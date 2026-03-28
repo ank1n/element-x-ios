@@ -22,7 +22,6 @@ struct TimelineItemStatusView: View {
         mainContent
     }
 
-    @ViewBuilder
     private var mainContent: some View {
         // sTalk: delivery checkmarks are now shown inline with timestamp
         // in TimelineItemSendInfoLabel. This badge area is no longer used.

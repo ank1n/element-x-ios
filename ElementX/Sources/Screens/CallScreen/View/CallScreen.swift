@@ -18,7 +18,9 @@ struct CallScreen: View {
     @State private var showRecordingConsent = false
     @State private var showParticipants = false
 
-    private var isMinimized: Bool { context.viewState.isMinimized }
+    private var isMinimized: Bool {
+        context.viewState.isMinimized
+    }
 
     var body: some View {
         // sTalk: Single view tree — content always at same structural position
@@ -34,13 +36,11 @@ struct CallScreen: View {
                     VStack {
                         Spacer()
                         ZStack(alignment: .bottom) {
-                            LinearGradient(
-                                colors: [.clear, .black.opacity(0.3), .black.opacity(0.75)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                            .frame(height: 140)
-                            .allowsHitTesting(false)
+                            LinearGradient(colors: [.clear, .black.opacity(0.3), .black.opacity(0.75)],
+                                           startPoint: .top,
+                                           endPoint: .bottom)
+                                .frame(height: 140)
+                                .allowsHitTesting(false)
 
                             callControlButtons
                                 .padding(.bottom, 48)
@@ -62,27 +62,23 @@ struct CallScreen: View {
         .alert(item: $context.alertInfo)
         .environment(\.colorScheme, .dark)
         .sheet(isPresented: $showRecordingConsent) {
-            RecordingConsentView(
-                onConfirm: {
-                    showRecordingConsent = false
-                    context.send(viewAction: .confirmStartRecording)
-                },
-                onCancel: {
-                    showRecordingConsent = false
-                }
-            )
-            .presentationDetents([.medium])
+            RecordingConsentView(onConfirm: {
+                                     showRecordingConsent = false
+                                     context.send(viewAction: .confirmStartRecording)
+                                 },
+                                 onCancel: {
+                                     showRecordingConsent = false
+                                 })
+                                 .presentationDetents([.medium])
         }
         .sheet(isPresented: $showParticipants) {
-            CallParticipantsSheet(
-                participants: context.viewState.participants,
-                activeParticipantIDs: Set(context.viewState.activeCallParticipantIDs),
-                mediaProvider: context.viewState.mediaProvider
-            )
-            .presentationDetents([.medium, .large])
-            .presentationCornerRadius(20)
-            .presentationDragIndicator(.visible)
-            .presentationBackground(Color(UIColor.systemBackground))
+            CallParticipantsSheet(participants: context.viewState.participants,
+                                  activeParticipantIDs: Set(context.viewState.activeCallParticipantIDs),
+                                  mediaProvider: context.viewState.mediaProvider)
+                .presentationDetents([.medium, .large])
+                .presentationCornerRadius(20)
+                .presentationDragIndicator(.visible)
+                .presentationBackground(Color(UIColor.systemBackground))
         }
     }
 
@@ -145,11 +141,9 @@ struct CallScreen: View {
     var content: some View {
         if let roomManager = context.viewState.liveKitRoomManager, context.viewState.url == nil {
             // sTalk: Native call mode — no WebView, native LiveKit rendering
-            NativeCallGridView(
-                roomManager: roomManager,
-                isDirect: context.viewState.isDirect
-            )
-            .ignoresSafeArea()
+            NativeCallGridView(roomManager: roomManager,
+                               isDirect: context.viewState.isDirect)
+                .ignoresSafeArea()
         } else if context.viewState.url == nil {
             ProgressView()
         } else {
@@ -169,59 +163,47 @@ struct CallScreen: View {
         HStack(spacing: context.viewState.isDirect ? 20 : 14) {
             // Hand raise (group only)
             if !context.viewState.isDirect {
-                CallControlButton(
-                    icon: "hand.raised.fill",
-                    label: SL10n.callHand,
-                    isActive: context.viewState.isHandRaised
-                ) {
+                CallControlButton(icon: "hand.raised.fill",
+                                  label: SL10n.callHand,
+                                  isActive: context.viewState.isHandRaised) {
                     context.send(viewAction: .toggleHandRaise)
                 }
             }
 
             // Screen share (group only)
             if !context.viewState.isDirect {
-                CallControlButton(
-                    icon: context.viewState.isScreenSharing ? "rectangle.inset.filled.and.person.filled" : "rectangle.on.rectangle",
-                    label: SL10n.callScreenShare,
-                    isActive: context.viewState.isScreenSharing
-                ) {
+                CallControlButton(icon: context.viewState.isScreenSharing ? "rectangle.inset.filled.and.person.filled" : "rectangle.on.rectangle",
+                                  label: SL10n.callScreenShare,
+                                  isActive: context.viewState.isScreenSharing) {
                     context.send(viewAction: .toggleScreenShare)
                 }
             }
 
             // Camera
-            CallControlButton(
-                icon: context.viewState.isVideoEnabled ? "video.fill" : "video.slash.fill",
-                label: SL10n.callCamera,
-                isActive: context.viewState.isVideoEnabled
-            ) {
+            CallControlButton(icon: context.viewState.isVideoEnabled ? "video.fill" : "video.slash.fill",
+                              label: SL10n.callCamera,
+                              isActive: context.viewState.isVideoEnabled) {
                 context.send(viewAction: .toggleVideo)
             }
 
             // Microphone — muted: перечёркнутый микрофон (белый фон), active: микрофон (прозрачный фон)
-            CallControlButton(
-                icon: context.viewState.isMuted ? "mic.slash.fill" : "mic.fill",
-                label: context.viewState.isMuted ? SL10n.callMicOn : SL10n.callMic,
-                isActive: !context.viewState.isMuted
-            ) {
+            CallControlButton(icon: context.viewState.isMuted ? "mic.slash.fill" : "mic.fill",
+                              label: context.viewState.isMuted ? SL10n.callMicOn : SL10n.callMic,
+                              isActive: !context.viewState.isMuted) {
                 context.send(viewAction: .toggleMute)
             }
 
             // Speaker toggle — earpiece (phone icon) ↔ speaker (speaker icon), like Telegram
-            CallControlButton(
-                icon: context.viewState.isSpeakerOn ? "speaker.wave.3.fill" : "phone.fill",
-                label: context.viewState.isSpeakerOn ? SL10n.callSpeaker : SL10n.callPhone,
-                isActive: context.viewState.isSpeakerOn
-            ) {
+            CallControlButton(icon: context.viewState.isSpeakerOn ? "speaker.wave.3.fill" : "phone.fill",
+                              label: context.viewState.isSpeakerOn ? SL10n.callSpeaker : SL10n.callPhone,
+                              isActive: context.viewState.isSpeakerOn) {
                 context.send(viewAction: .toggleSpeaker)
             }
 
             // End call
-            CallControlButton(
-                icon: "phone.down.fill",
-                label: SL10n.callEnd,
-                style: .destructive
-            ) {
+            CallControlButton(icon: "phone.down.fill",
+                              label: SL10n.callEnd,
+                              style: .destructive) {
                 context.send(viewAction: .endCall)
             }
         }
@@ -278,7 +260,7 @@ struct CallScreen: View {
         if context.viewState.isRecordingEnabled || context.viewState.isRemoteRecording {
             ToolbarItem(placement: .topBarTrailing) {
                 HStack(spacing: 6) {
-                    if context.viewState.isRemoteRecording && !context.viewState.recordingState.isRecording {
+                    if context.viewState.isRemoteRecording, !context.viewState.recordingState.isRecording {
                         // Remote recording — show red indicator, no action
                         RecordingButton(recordingState: .recording(egressId: "remote", duration: 0)) { }
                             .disabled(true)
@@ -307,7 +289,7 @@ private struct CallControlButton: View {
 
     let icon: String
     let label: String
-    var isActive: Bool = true
+    var isActive = true
     var style: Style = .normal
     let action: () -> Void
 
@@ -423,11 +405,9 @@ private struct CallView: UIViewRepresentable {
             // sTalk: Inject WebSocket interception + CSS hiding script BEFORE page loads.
             // forMainFrameOnly: false — Element Call UI renders in iframes,
             // CSS must apply to ALL frames to hide their content.
-            let wsHookScript = WKUserScript(
-                source: CallScreenJavaScriptMessageName.webSocketInterceptionScript,
-                injectionTime: .atDocumentStart,
-                forMainFrameOnly: false
-            )
+            let wsHookScript = WKUserScript(source: CallScreenJavaScriptMessageName.webSocketInterceptionScript,
+                                            injectionTime: .atDocumentStart,
+                                            forMainFrameOnly: false)
             configuration.userContentController.addUserScript(wsHookScript)
 
             if let script = viewModelContext.viewState.script {
@@ -550,8 +530,8 @@ private struct CallView: UIViewRepresentable {
             }
         }
         
-        // This function is called by the webview output routing button
-        // it allows to open the OS output selector using the hidden button.
+        /// This function is called by the webview output routing button
+        /// it allows to open the OS output selector using the hidden button.
         private func tapRoutePickerView() {
             guard let button = routePickerView.subviews.first(where: { $0 is UIButton }) as? UIButton else {
                 return

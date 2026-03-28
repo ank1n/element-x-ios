@@ -13,12 +13,14 @@ import SwiftUI
 struct HomeScreenContent: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var isArchiveRevealed = false
-    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
+    @AppStorage("stalk_design_theme") private var designTheme = "cosmos"
 
     @ObservedObject var context: HomeScreenViewModel.Context
     let scrollViewAdapter: ScrollViewAdapter
 
-    private var isCosmos: Bool { designTheme == "cosmos" }
+    private var isCosmos: Bool {
+        designTheme == "cosmos"
+    }
 
     // Cosmos colors
     private let bgGradientTop = Color(red: 0.90, green: 0.92, blue: 1.0)
@@ -80,10 +82,8 @@ struct HomeScreenContent: View {
                         }
                         .background(Color(UIColor.systemBackground))
                         .clipShape(RoundedRectangle(cornerRadius: 14))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14)
-                                .stroke(Color.black.opacity(0.06), lineWidth: 0.5)
-                        )
+                        .overlay(RoundedRectangle(cornerRadius: 14)
+                            .stroke(Color.black.opacity(0.06), lineWidth: 0.5))
                         .padding(.horizontal, 12)
                         .padding(.top, 4)
                         .redacted(reason: .placeholder)
@@ -110,9 +110,9 @@ struct HomeScreenContent: View {
                     LazyVStack(spacing: 0) {
                         Section {
                             // Archive row — hidden by default, appears on pull-down (Telegram-style)
-                            if context.viewState.archiveRoomCount > 0
-                                && !context.viewState.bindings.isSearchFieldFocused
-                                && isArchiveRevealed {
+                            if context.viewState.archiveRoomCount > 0,
+                               !context.viewState.bindings.isSearchFieldFocused,
+                               isArchiveRevealed {
                                 archiveRow
                                     .transition(.move(edge: .top).combined(with: .opacity))
                             }
@@ -134,10 +134,8 @@ struct HomeScreenContent: View {
                                     HomeScreenRoomList(context: context)
                                         .background(Color(UIColor.systemBackground))
                                         .clipShape(RoundedRectangle(cornerRadius: 14))
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 14)
-                                                .stroke(Color.black.opacity(0.06), lineWidth: 0.5)
-                                        )
+                                        .overlay(RoundedRectangle(cornerRadius: 14)
+                                            .stroke(Color.black.opacity(0.06), lineWidth: 0.5))
                                         .padding(.horizontal, 12)
                                         .padding(.top, 4)
                                 } else {
@@ -233,7 +231,7 @@ struct HomeScreenContent: View {
         let results = context.viewState.messageSearchResults
         let isLoading = context.viewState.isMessageSearchLoading
 
-        if isLoading && results.isEmpty {
+        if isLoading, results.isEmpty {
             HStack(spacing: 8) {
                 ProgressView().scaleEffect(0.8)
                 Text(SL10n.appsLoading)
@@ -292,7 +290,6 @@ struct HomeScreenContent: View {
         }
     }
 
-    @ViewBuilder
     private var topSection: some View {
         VStack(spacing: 0) {
             if case let .show(state) = context.viewState.securityBannerMode {
@@ -402,10 +399,8 @@ struct HomeScreenContent: View {
             // Scrolled up past archive row height (76pt) → hide it
             if offset > 80 {
                 // Compensate content shift so visible rooms don't jump
-                scrollView.setContentOffset(
-                    CGPoint(x: scrollView.contentOffset.x, y: scrollView.contentOffset.y - 76),
-                    animated: false
-                )
+                scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: scrollView.contentOffset.y - 76),
+                                            animated: false)
                 withAnimation(.easeOut(duration: 0.25)) {
                     isArchiveRevealed = false
                 }

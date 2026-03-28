@@ -67,7 +67,9 @@ class RoomFlowCoordinator: FlowCoordinatorProtocol {
     private let navigationStackCoordinator: NavigationStackCoordinator
     private let flowParameters: CommonFlowParameters
     
-    private var userSession: UserSessionProtocol { flowParameters.userSession }
+    private var userSession: UserSessionProtocol {
+        flowParameters.userSession
+    }
     
     private var roomProxy: JoinedRoomProxyProtocol!
     
@@ -1345,7 +1347,7 @@ class RoomFlowCoordinator: FlowCoordinatorProtocol {
 
     private func presentWidgets() {
         let parameters = WidgetsCoordinatorParameters(roomProxy: roomProxy,
-                                                       userSession: userSession)
+                                                      userSession: userSession)
         let coordinator = WidgetsCoordinator(parameters: parameters)
         coordinator.actions.sink { [weak self] action in
             switch action {

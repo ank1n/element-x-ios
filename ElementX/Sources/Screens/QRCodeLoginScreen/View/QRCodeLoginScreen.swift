@@ -11,12 +11,15 @@ import SwiftUI
 
 struct QRCodeLoginScreen: View {
     @ObservedObject var context: QRCodeLoginScreenViewModel.Context
-    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
+    @AppStorage("stalk_design_theme") private var designTheme = "cosmos"
 
     @State private var qrFrame = CGRect.zero
     @FocusState private var checkCodeInputFocus
 
-    private var isCosmos: Bool { designTheme == "cosmos" }
+    private var isCosmos: Bool {
+        designTheme == "cosmos"
+    }
+
     private let accentBlue = Color(red: 0.38, green: 0.42, blue: 0.96)
     private let bgGradientTop = Color(red: 0.90, green: 0.92, blue: 1.0)
     private let bgGradientBottom = Color(red: 0.95, green: 0.96, blue: 1.0)
@@ -238,9 +241,7 @@ struct QRCodeLoginScreen: View {
             .frame(maxWidth: 312)
             .readFrame($qrFrame)
             .background(.compound.bgCanvasDefault)
-            .overlay(
-                QRScannerViewOverlay(length: qrFrame.height)
-            )
+            .overlay(QRScannerViewOverlay(length: qrFrame.height))
     }
     
     @ViewBuilder
@@ -402,7 +403,7 @@ struct QRCodeLoginScreen_Previews: PreviewProvider, TestablePreview {
     static let loginInstructionsStateViewModel = QRCodeLoginScreenViewModel.mock(state: .loginInstructions)
     static let linkInstructionsStateViewModel = QRCodeLoginScreenViewModel.mock(state: .linkDesktopInstructions)
     
-    // Scanning
+    /// Scanning
     static let scanningStateViewModel = QRCodeLoginScreenViewModel.mock(state: .scan(.scanning))
     
     static let connectingStateViewModel = QRCodeLoginScreenViewModel.mock(state: .scan(.connecting))
@@ -415,7 +416,7 @@ struct QRCodeLoginScreen_Previews: PreviewProvider, TestablePreview {
     
     static let deviceNotSignedInStateViewModel = QRCodeLoginScreenViewModel.mock(state: .scan(.scanFailed(.deviceNotSignedIn)))
     
-    // Showing
+    /// Showing
     static let showingStateViewModel = QRCodeLoginScreenViewModel.mock(state: .displayQR(LinkNewDeviceServiceMock.mockQRCodeImage))
     
     // Displaying codes
@@ -426,7 +427,7 @@ struct QRCodeLoginScreen_Previews: PreviewProvider, TestablePreview {
     static let confirmCodeEnteredStateViewModel = QRCodeLoginScreenViewModel.mock(state: .confirmCode(.inputCode(CheckCodeSenderProxy(underlyingSender: CheckCodeSenderSDKMock()))), checkCodeInput: "12")
     static let confirmCodeInvalidStateViewModel = QRCodeLoginScreenViewModel.mock(state: .confirmCode(.invalidCode))
     
-    // Errors (no need to test them all QRCodeErrorView covers that).
+    /// Errors (no need to test them all QRCodeErrorView covers that).
     static let errorStateViewModel = QRCodeLoginScreenViewModel.mock(state: .error(.declined))
     
     static var previews: some View {

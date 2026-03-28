@@ -6,11 +6,10 @@
 // Please see LICENSE files in the repository root for full details.
 //
 
+import Combine
 @testable import ElementX
 import MatrixRustSDK
 import MatrixRustSDKMocks
-
-import Combine
 import XCTest
 
 @MainActor
@@ -559,9 +558,7 @@ class RoomScreenViewModelTests: XCTestCase {
         ServiceLocator.shared.settings.enableKeyShareOnInvite = true
         ServiceLocator.shared.settings.acknowledgedHistoryVisibleRooms = Set()
         
-        let powerlevels = RoomPowerLevelsProxyMockConfiguration(
-            canUserSendMessage: false
-        )
+        let powerlevels = RoomPowerLevelsProxyMockConfiguration(canUserSendMessage: false)
         
         let configuration = JoinedRoomProxyMockConfiguration(id: "$room:example.com", isEncrypted: true, powerLevelsConfiguration: powerlevels)
         let roomProxyMock = JoinedRoomProxyMock(configuration)

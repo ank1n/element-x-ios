@@ -13,7 +13,7 @@ import EmbeddedElementCall
 import Foundation
 import SwiftUI
 
-// Common settings between app and NSE
+/// Common settings between app and NSE
 protocol CommonSettingsProtocol {
     var logLevel: LogLevel { get }
     var traceLogPacks: Set<TraceLogPack> { get }
@@ -73,7 +73,7 @@ final class AppSettings {
         case spaceSettingsEnabled
         case createSpaceEnabled
         
-        // Search
+        /// Search
         case recentSearchQueries
 
         // Doug's tweaks 🔧
@@ -276,7 +276,9 @@ final class AppSettings {
     }
     
     private(set) var pushGatewayBaseURL: URL = "https://stalk.implica.ru"
-    var pushGatewayNotifyEndpoint: URL { pushGatewayBaseURL.appending(path: "_matrix/push/v1/notify") }
+    var pushGatewayNotifyEndpoint: URL {
+        pushGatewayBaseURL.appending(path: "_matrix/push/v1/notify")
+    }
     
     @UserPreference(key: UserDefaultsKeys.enableNotifications, defaultValue: true, storageType: .userDefaults(store))
     var enableNotifications
@@ -314,9 +316,11 @@ final class AppSettings {
     /// The configuration to use for analytics. Set to `nil` to disable analytics.
     let analyticsConfiguration: AnalyticsConfiguration? = AppSettings.makeAnalyticsConfiguration()
     /// The URL to open with more information about analytics terms. When this is `nil` the "Learn more" link will be hidden.
-    private(set) var analyticsTermsURL: URL? = nil
+    private(set) var analyticsTermsURL: URL?
     /// Whether or not there the app is able ask for user consent to enable analytics or sentry reporting.
-    var canPromptForAnalytics: Bool { analyticsConfiguration != nil || bugReportSentryURL != nil }
+    var canPromptForAnalytics: Bool {
+        analyticsConfiguration != nil || bugReportSentryURL != nil
+    }
     
     private static func makeAnalyticsConfiguration() -> AnalyticsConfiguration? {
         guard let host = Secrets.postHogHost, let apiKey = Secrets.postHogAPIKey else { return nil }
@@ -381,7 +385,7 @@ final class AppSettings {
     
     // MARK: - Maps
     
-    // maptiler base url
+    /// maptiler base url
     private(set) var mapTilerConfiguration = MapTilerConfiguration(baseURL: "https://api.maptiler.com/maps",
                                                                    apiKey: Secrets.mapLibreAPIKey,
                                                                    lightStyleID: "9bc819c8-e627-474a-a348-ec144fe3d810",
@@ -394,14 +398,14 @@ final class AppSettings {
     
     // MARK: - Feature Flags
     
-    // Spaces
+    /// Spaces
     @UserPreference(key: UserDefaultsKeys.spaceSettingsEnabled, defaultValue: false, storageType: .userDefaults(store))
     var spaceSettingsEnabled
     
     @UserPreference(key: UserDefaultsKeys.createSpaceEnabled, defaultValue: false, storageType: .userDefaults(store))
     var createSpaceEnabled
     
-    // Others
+    /// Others
     @UserPreference(key: UserDefaultsKeys.publicSearchEnabled, defaultValue: false, storageType: .userDefaults(store))
     var publicSearchEnabled
     

@@ -123,8 +123,8 @@ struct HomeScreenViewState: BindableState {
     var messageSearchResults: [MessageSearchResult] = []
     var isMessageSearchLoading = false
 
-    var archiveRoomCount: Int = 0
-    var archivePreviewText: String = ""
+    var archiveRoomCount = 0
+    var archivePreviewText = ""
 
     var visibleRooms: [HomeScreenRoom] {
         if roomListMode == .skeletons {
@@ -142,7 +142,7 @@ struct HomeScreenViewState: BindableState {
         }
     }
     
-    // Used to hide all the rooms when the search field is focused and the query is empty
+    /// Used to hide all the rooms when the search field is focused and the query is empty
     var shouldHideRoomList: Bool {
         bindings.isSearchFieldFocused && bindings.searchQuery.isEmpty
     }

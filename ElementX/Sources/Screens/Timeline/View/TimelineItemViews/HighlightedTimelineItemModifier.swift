@@ -26,10 +26,8 @@ private struct HighlightedTimelineItemModifier: ViewModifier {
                 if isHighlighted {
                     RoundedRectangle(cornerRadius: 12)
                         .fill(accentColor.opacity(0.12))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(accentColor.opacity(0.4), lineWidth: 1.5)
-                        )
+                        .overlay(RoundedRectangle(cornerRadius: 12)
+                            .stroke(accentColor.opacity(0.4), lineWidth: 1.5))
                         .padding(.horizontal, -4)
                         .padding(.vertical, -2)
                 }

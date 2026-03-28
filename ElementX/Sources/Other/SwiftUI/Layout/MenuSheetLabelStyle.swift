@@ -10,16 +10,21 @@ import SwiftUI
 
 extension ButtonStyle where Self == MenuSheetButtonStyle {
     /// A button style for buttons that are within a menu that is being presented as a sheet.
-    static var menuSheet: Self { MenuSheetButtonStyle() }
+    static var menuSheet: Self {
+        MenuSheetButtonStyle()
+    }
 }
 
 /// The style used for buttons that are part of a menu that's presented as
 /// a sheet such as `TimelineItemMenu`.
 struct MenuSheetButtonStyle: ButtonStyle {
     @Environment(\.accessibilityShowButtonShapes) private var accessibilityShowButtonShapes
-    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
+    @AppStorage("stalk_design_theme") private var designTheme = "cosmos"
 
-    private var isCosmos: Bool { designTheme == "cosmos" }
+    private var isCosmos: Bool {
+        designTheme == "cosmos"
+    }
+
     private let stalkAccent = Color(red: 0.38, green: 0.42, blue: 0.96)
 
     func makeBody(configuration: Configuration) -> some View {

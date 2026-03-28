@@ -37,8 +37,8 @@ final class MeetingsScreenCoordinator: CoordinatorProtocol {
     init(parameters: MeetingsScreenCoordinatorParameters, navigationStackCoordinator: NavigationStackCoordinator) {
         self.parameters = parameters
         self.navigationStackCoordinator = navigationStackCoordinator
-        self.service = MeetingsService(homeserver: parameters.apiURL, accessTokenProvider: parameters.accessTokenProvider)
-        self.listViewModel = MeetingsScreenViewModel(service: service)
+        service = MeetingsService(homeserver: parameters.apiURL, accessTokenProvider: parameters.accessTokenProvider)
+        listViewModel = MeetingsScreenViewModel(service: service)
 
         listViewModel.actionsPublisher
             .sink { [weak self] action in
@@ -62,12 +62,10 @@ final class MeetingsScreenCoordinator: CoordinatorProtocol {
     // MARK: - Navigation
 
     private func showDetail(_ meeting: Meeting) {
-        let viewModel = MeetingDetailViewModel(
-            meeting: meeting,
-            currentUserId: parameters.currentUserId,
-            homeserverURL: parameters.apiURL,
-            service: service
-        )
+        let viewModel = MeetingDetailViewModel(meeting: meeting,
+                                               currentUserId: parameters.currentUserId,
+                                               homeserverURL: parameters.apiURL,
+                                               service: service)
         detailViewModel = viewModel
 
         viewModel.actionsPublisher

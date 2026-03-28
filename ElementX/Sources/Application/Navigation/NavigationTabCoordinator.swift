@@ -67,8 +67,13 @@ import SwiftUI
         let module: NavigationModule
         let details: TabDetails
         
-        var id: ObjectIdentifier { module.id }
-        @MainActor var coordinator: CoordinatorProtocol? { module.coordinator }
+        var id: ObjectIdentifier {
+            module.id
+        }
+
+        @MainActor var coordinator: CoordinatorProtocol? {
+            module.coordinator
+        }
     }
     
     fileprivate var tabModules = [TabModule]() {
@@ -130,11 +135,11 @@ import SwiftUI
         sheetModule?.coordinator
     }
     
-    /// Present a sheet on top of the stack. If this NavigationStackCoordinator is embedded within a NavigationSplitCoordinator
-    /// then the presentation will be proxied to the split
-    /// - Parameters:
-    ///   - coordinator: the coordinator to display
-    ///   - animated: whether to animate the transition or not. Default is true
+    // Present a sheet on top of the stack. If this NavigationStackCoordinator is embedded within a NavigationSplitCoordinator
+    // then the presentation will be proxied to the split
+    // - Parameters:
+    //   - coordinator: the coordinator to display
+    //   - animated: whether to animate the transition or not. Default is true
 
     ///   - dismissalCallback: called when the sheet has been dismissed, programatically or otherwise
     func setSheetCoordinator(_ coordinator: (any CoordinatorProtocol)?, animated: Bool = true, dismissalCallback: (() -> Void)? = nil) {
@@ -362,20 +367,16 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
 
             // Custom Lottie Tab Bar — overlays content, hidden when inside a room
             if !shouldHideTabBar {
-                StalkTabBar(
-                    items: navigationTabCoordinator.tabModules.map { module in
-                        StalkTabItem(
-                            id: "\(module.details.tag)",
-                            title: module.details.title,
-                            sfSymbol: module.details.sfSymbol,
-                            sfSymbolSelected: module.details.sfSymbolSelected,
-                            lottieAnimation: module.details.lottieAnimation,
-                            badgeCount: module.details.badgeCount
-                        )
-                    },
-                    selectedIndex: $selectedIndex
-                )
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                StalkTabBar(items: navigationTabCoordinator.tabModules.map { module in
+                    StalkTabItem(id: "\(module.details.tag)",
+                                 title: module.details.title,
+                                 sfSymbol: module.details.sfSymbol,
+                                 sfSymbolSelected: module.details.sfSymbolSelected,
+                                 lottieAnimation: module.details.lottieAnimation,
+                                 badgeCount: module.details.badgeCount)
+                },
+                selectedIndex: $selectedIndex)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .animation(.easeInOut(duration: 0.25), value: shouldHideTabBar)
@@ -462,50 +463,40 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
             // Mini floating video window or fullscreen call
             GeometryReader { geometry in
                 coordinator.toPresentable()
-                    .frame(
-                        width: minimized ? 140 : geometry.size.width,
-                        height: minimized ? 200 : geometry.size.height
-                    )
+                    .frame(width: minimized ? 140 : geometry.size.width,
+                           height: minimized ? 200 : geometry.size.height)
                     .clipShape(RoundedRectangle(cornerRadius: minimized ? 14 : 0))
                     .shadow(color: minimized ? .black.opacity(0.4) : .clear, radius: minimized ? 10 : 0, x: 0, y: 4)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .stroke(Color.white.opacity(0.15), lineWidth: minimized ? 0.5 : 0)
-                    )
-                    .position(
-                        x: minimized
-                            ? geometry.size.width - 82 + miniCallOffset.width
-                            : geometry.size.width / 2,
+                    .overlay(RoundedRectangle(cornerRadius: 14)
+                        .stroke(Color.white.opacity(0.15), lineWidth: minimized ? 0.5 : 0))
+                    .position(x: minimized
+                        ? geometry.size.width - 82 + miniCallOffset.width
+                        : geometry.size.width / 2,
                         y: minimized
                             ? geometry.size.height - 190 + miniCallOffset.height
-                            : geometry.size.height / 2
-                    )
-                    .gesture(
-                        minimized
-                            ? DragGesture()
-                                .onChanged { value in
-                                    miniCallDragOffset = value.translation
-                                }
-                                .onEnded { value in
-                                    miniCallOffset.width += value.translation.width
-                                    miniCallOffset.height += value.translation.height
-                                    miniCallDragOffset = .zero
-                                }
-                            : nil
-                    )
+                            : geometry.size.height / 2)
+                    .gesture(minimized
+                        ? DragGesture()
+                        .onChanged { value in
+                            miniCallDragOffset = value.translation
+                        }
+                        .onEnded { value in
+                            miniCallOffset.width += value.translation.width
+                            miniCallOffset.height += value.translation.height
+                            miniCallDragOffset = .zero
+                        }
+                        : nil)
                     .offset(miniCallDragOffset)
             }
 
             // sTalk: Green "call in progress" banner at top — only when minimized
             if minimized, let callName = navigationTabCoordinator.minimizedCallDisplayName {
-                ActiveCallBanner(
-                    displayName: callName,
-                    elapsedTime: navigationTabCoordinator.minimizedCallElapsedTime,
-                    onTap: {
-                        navigationTabCoordinator.restoreCallHandler?()
-                    }
-                )
-                .transition(.move(edge: .top).combined(with: .opacity))
+                ActiveCallBanner(displayName: callName,
+                                 elapsedTime: navigationTabCoordinator.minimizedCallElapsedTime,
+                                 onTap: {
+                                     navigationTabCoordinator.restoreCallHandler?()
+                                 })
+                                 .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
         .ignoresSafeArea(.all)
@@ -572,13 +563,9 @@ private struct ActiveCallBanner: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(
-                LinearGradient(
-                    colors: [Color(red: 0.18, green: 0.8, blue: 0.44), Color(red: 0.13, green: 0.68, blue: 0.38)],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-            )
+            .background(LinearGradient(colors: [Color(red: 0.18, green: 0.8, blue: 0.44), Color(red: 0.13, green: 0.68, blue: 0.38)],
+                                       startPoint: .leading,
+                                       endPoint: .trailing))
         }
         .buttonStyle(.plain)
     }
@@ -595,4 +582,3 @@ private struct PulseAnimation: ViewModifier {
             .onAppear { isPulsing = true }
     }
 }
-

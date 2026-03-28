@@ -22,7 +22,9 @@ final class LiveKitRoomManager: ObservableObject {
     @Published private(set) var localParticipant: LocalParticipant?
 
     /// LiveKit room name (used for recording-api)
-    var roomName: String? { room.name }
+    var roomName: String? {
+        room.name
+    }
 
     // MARK: - Private
 
@@ -64,23 +66,13 @@ final class LiveKitRoomManager: ObservableObject {
         // Configure iOS audio session for VoIP BEFORE connecting
         configureAudioSession(speakerByDefault: speakerByDefault)
 
-        let connectOptions = ConnectOptions(
-            autoSubscribe: true
-        )
-        let roomOptions = RoomOptions(
-            defaultCameraCaptureOptions: CameraCaptureOptions(
-                dimensions: .h1080_169
-            ),
-            defaultAudioCaptureOptions: AudioCaptureOptions(),
-            defaultVideoPublishOptions: VideoPublishOptions(
-                encoding: VideoEncoding(maxBitrate: 3_000_000, maxFps: 30),
-                simulcast: true
-            ),
-            defaultAudioPublishOptions: AudioPublishOptions(
-                encoding: AudioEncoding(maxBitrate: 48_000),
-                dtx: false
-            )
-        )
+        let connectOptions = ConnectOptions(autoSubscribe: true)
+        let roomOptions = RoomOptions(defaultCameraCaptureOptions: CameraCaptureOptions(dimensions: .h1080_169),
+                                      defaultAudioCaptureOptions: AudioCaptureOptions(),
+                                      defaultVideoPublishOptions: VideoPublishOptions(encoding: VideoEncoding(maxBitrate: 3_000_000, maxFps: 30),
+                                                                                      simulcast: true),
+                                      defaultAudioPublishOptions: AudioPublishOptions(encoding: AudioEncoding(maxBitrate: 48000),
+                                                                                      dtx: false))
 
         try await room.connect(url: baseURL, token: token, connectOptions: connectOptions, roomOptions: roomOptions)
         MXLog.info("sTalk LiveKit: Connected to room \(room.name ?? "unknown")")
@@ -97,28 +89,17 @@ final class LiveKitRoomManager: ObservableObject {
 
         configureAudioSession(speakerByDefault: speakerByDefault)
 
-        let encryptionOptions = EncryptionOptions(
-            keyProvider: keyProvider,
-            encryptionType: .gcm
-        )
+        let encryptionOptions = EncryptionOptions(keyProvider: keyProvider,
+                                                  encryptionType: .gcm)
 
-        let connectOptions = ConnectOptions(
-            autoSubscribe: true // Subscribe immediately — SFrame handles decrypt when keys arrive
+        let connectOptions = ConnectOptions(autoSubscribe: true // Subscribe immediately — SFrame handles decrypt when keys arrive
         )
-        let roomOptions = RoomOptions(
-            defaultCameraCaptureOptions: CameraCaptureOptions(
-                dimensions: .h720_169
-            ),
-            defaultAudioCaptureOptions: AudioCaptureOptions(),
-            defaultVideoPublishOptions: VideoPublishOptions(
-                encoding: VideoEncoding(maxBitrate: 1_500_000, maxFps: 30)
-            ),
-            defaultAudioPublishOptions: AudioPublishOptions(
-                encoding: AudioEncoding(maxBitrate: 32_000),
-                dtx: false
-            ),
-            encryptionOptions: encryptionOptions
-        )
+        let roomOptions = RoomOptions(defaultCameraCaptureOptions: CameraCaptureOptions(dimensions: .h720_169),
+                                      defaultAudioCaptureOptions: AudioCaptureOptions(),
+                                      defaultVideoPublishOptions: VideoPublishOptions(encoding: VideoEncoding(maxBitrate: 1_500_000, maxFps: 30)),
+                                      defaultAudioPublishOptions: AudioPublishOptions(encoding: AudioEncoding(maxBitrate: 32000),
+                                                                                      dtx: false),
+                                      encryptionOptions: encryptionOptions)
 
         try await room.connect(url: baseURL, token: token, connectOptions: connectOptions, roomOptions: roomOptions)
         MXLog.info("sTalk LiveKit: Connected with E2EE to room \(room.name ?? "unknown")")
@@ -172,13 +153,13 @@ final class LiveKitRoomManager: ObservableObject {
     }
 
     /// Toggle screen sharing
-    @Published private(set) var isScreenSharing: Bool = false
+    @Published private(set) var isScreenSharing = false
 
     /// Toggle background blur
-    @Published private(set) var isBackgroundBlurEnabled: Bool = false
+    @Published private(set) var isBackgroundBlurEnabled = false
 
     /// Toggle noise suppression (enhanced)
-    @Published private(set) var isNoiseSuppressed: Bool = false
+    @Published private(set) var isNoiseSuppressed = false
 
     func setScreenShare(enabled: Bool) async throws {
         #if targetEnvironment(simulator)
@@ -256,11 +237,9 @@ final class LiveKitRoomManager: ObservableObject {
 
     /// Publish a generated color-cycling video track on simulator (no camera available)
     private func publishSimulatorVideoTrack() async throws {
-        let track = LocalVideoTrack.createBufferTrack(
-            name: "camera",
-            source: .camera,
-            options: BufferCaptureOptions()
-        )
+        let track = LocalVideoTrack.createBufferTrack(name: "camera",
+                                                      source: .camera,
+                                                      options: BufferCaptureOptions())
         guard let capturer = track.capturer as? BufferCapturer else { return }
         simulatorBufferCapturer = capturer
 
@@ -302,10 +281,10 @@ final class LiveKitRoomManager: ObservableObject {
             let row = baseAddress.advanced(by: y * bytesPerRow).assumingMemoryBound(to: UInt8.self)
             for x in 0..<width {
                 let offset = x * 4
-                row[offset] = bVal     // B
+                row[offset] = bVal // B
                 row[offset + 1] = gVal // G
                 row[offset + 2] = rVal // R
-                row[offset + 3] = 255  // A
+                row[offset + 3] = 255 // A
             }
         }
         CVPixelBufferUnlockBaseAddress(buffer, [])
@@ -333,11 +312,9 @@ final class LiveKitRoomManager: ObservableObject {
             if speakerByDefault {
                 options.insert(.defaultToSpeaker)
             }
-            try session.setCategory(
-                .playAndRecord,
-                mode: .voiceChat,
-                options: options
-            )
+            try session.setCategory(.playAndRecord,
+                                    mode: .voiceChat,
+                                    options: options)
             try session.setPreferredIOBufferDuration(0.005) // 5ms — reduces crackling
             try session.setPreferredSampleRate(48000)
             try session.setActive(true, options: .notifyOthersOnDeactivation)
@@ -437,7 +414,6 @@ extension LiveKitRoomManager: RoomDelegate {
             self.updateState()
         }
     }
-
 
     nonisolated func room(_ room: Room, participant: LocalParticipant, didPublishTrack publication: LocalTrackPublication) {
         Task { @MainActor in

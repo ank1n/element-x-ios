@@ -22,7 +22,9 @@ class PresenceService {
 
     private var pollingTask: Task<Void, Never>?
     private var pollingUserIDs: [String] = []
-    var currentUserIDs: [String] { pollingUserIDs }
+    var currentUserIDs: [String] {
+        pollingUserIDs
+    }
 
     let presenceSubject = CurrentValueSubject<[String: UserPresence], Never>([:])
 
@@ -78,7 +80,7 @@ class PresenceService {
             for userID in userIDs {
                 group.addTask { [weak self] in
                     guard let self else { return (userID, nil) }
-                    return (userID, await self.fetchSinglePresence(userID: userID))
+                    return await (userID, self.fetchSinglePresence(userID: userID))
                 }
             }
 

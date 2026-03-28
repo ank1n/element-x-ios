@@ -135,11 +135,9 @@ class CallHistoryCoordinator {
         }
 
         // Обновляем информацию о звонке
-        localCallHistoryService.updateCallInfo(
-            id: callID,
-            roomDisplayName: roomDisplayName,
-            participants: participants
-        )
+        localCallHistoryService.updateCallInfo(id: callID,
+                                               roomDisplayName: roomDisplayName,
+                                               participants: participants)
 
         MXLog.info("📞 CallHistory: Enriched call \(callID) with room '\(roomDisplayName ?? "nil")' and \(participants.count) participants")
     }

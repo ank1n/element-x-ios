@@ -35,21 +35,26 @@ enum ContactsListScreenViewModelAction {
 
 struct ContactsListScreenViewState: BindableState {
     var contacts: [ContactItem] = []
-    var isLoading: Bool = false
+    var isLoading = false
     var searchQuery = ""
     var selectedFilter: ContactFilter = .all
 
     // User info for avatar
-    var userID: String = ""
+    var userID = ""
     var userDisplayName: String?
     var userAvatarURL: URL?
     var requiresExtraAccountSetup = false
 
     var bindings = ContactsListScreenViewStateBindings()
 
-    // Filter counts
-    var onlineCount: Int { contacts.filter(\.isOnline).count }
-    var favoritesCount: Int { contacts.filter(\.isFavorite).count }
+    /// Filter counts
+    var onlineCount: Int {
+        contacts.filter(\.isOnline).count
+    }
+
+    var favoritesCount: Int {
+        contacts.filter(\.isFavorite).count
+    }
 }
 
 struct ContactsListScreenViewStateBindings {

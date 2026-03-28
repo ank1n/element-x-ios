@@ -18,8 +18,13 @@ final class LeaveSpaceHandleProxy {
     
     private let leaveHandle: LeaveSpaceHandleProtocol
     
-    var canLeave: Bool { mode != .lastSpaceAdmin }
-    var selectedCount: Int { rooms.count { $0.isSelected } }
+    var canLeave: Bool {
+        mode != .lastSpaceAdmin
+    }
+
+    var selectedCount: Int {
+        rooms.count { $0.isSelected }
+    }
     
     init(spaceID: String, leaveHandle: LeaveSpaceHandleProtocol) {
         id = spaceID

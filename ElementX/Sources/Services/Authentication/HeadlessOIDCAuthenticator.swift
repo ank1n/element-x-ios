@@ -284,8 +284,8 @@ final class HeadlessOIDCAuthenticator {
         let urlString = url.absoluteString
         // Only match our final redirect_uri, NOT intermediate MAS/Keycloak callbacks
         return urlString.contains("stalk.implica.ru/oidc/login") ||
-               urlString.contains("stalk.implica.ru/oidc/callback") ||
-               urlString.hasPrefix("ru.implica.stalk://")
+            urlString.contains("stalk.implica.ru/oidc/callback") ||
+            urlString.hasPrefix("ru.implica.stalk://")
     }
 
     private func extractCallbackURL(from response: HTTPURLResponse) -> URL? {

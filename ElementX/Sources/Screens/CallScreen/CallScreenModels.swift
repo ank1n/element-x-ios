@@ -28,31 +28,31 @@ struct CallScreenViewState: BindableState {
 
     // Recording state
     var recordingState: RecordingState = .idle
-    var isRecordingEnabled: Bool = true
+    var isRecordingEnabled = true
     /// sTalk: Remote recording detected (started by another participant)
-    var isRemoteRecording: Bool = false
+    var isRemoteRecording = false
 
     // sTalk: call participant info
     var roomDisplayName: String?
     var callStatus: CallStatus = .connecting
     var callElapsedTime: TimeInterval = 0
-    var isDirect: Bool = false
-    var totalMembersCount: Int = 0
-    var callParticipantsCount: Int = 0
+    var isDirect = false
+    var totalMembersCount = 0
+    var callParticipantsCount = 0
     var participants: [CallParticipantInfo] = []
     var activeCallParticipantIDs: [String] = []
     var mediaProvider: MediaProviderProtocol?
 
     // sTalk: native call control state
-    var isMuted: Bool = false
-    var isVideoEnabled: Bool = true
-    var isSpeakerOn: Bool = true
-    var isHandRaised: Bool = false
-    var isScreenSharing: Bool = false
-    var isBackgroundBlurEnabled: Bool = false
-    var wasConnected: Bool = false
+    var isMuted = false
+    var isVideoEnabled = true
+    var isSpeakerOn = true
+    var isHandRaised = false
+    var isScreenSharing = false
+    var isBackgroundBlurEnabled = false
+    var wasConnected = false
     /// sTalk: Whether the call is shown as a mini floating window
-    var isMinimized: Bool = false
+    var isMinimized = false
     /// sTalk: Native LiveKit room manager for rendering video
     var liveKitRoomManager: LiveKitRoomManager?
 
@@ -139,7 +139,9 @@ struct CallParticipantInfo: Identifiable {
     let displayName: String?
     let avatarURL: URL?
 
-    var id: String { userID }
+    var id: String {
+        userID
+    }
 }
 
 /// Identifies each event handler used by the CallScreen webview
@@ -185,13 +187,13 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 var hadActiveMedia = false;
                 var hadVideoElements = false;
                 var notified = false;
-
+            
                 function notifyCallEnded(reason) {
                     if (notified) return;
                     notified = true;
                     window.webkit.messageHandlers.\(rawValue).postMessage(reason);
                 }
-
+            
                 function checkForCallEnd() {
                     // Method 1: Lobby "Join" button (only exists when EC is in lobby state)
                     var joinBtn = document.querySelector('[data-testid="lobby_joinCall"]');
@@ -203,7 +205,7 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                     } else {
                         hasLeftLobby = true;
                     }
-
+            
                     // Method 2: Video MediaStream died
                     var videos = document.querySelectorAll('video');
                     var activeStreamCount = 0;
@@ -212,14 +214,14 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                             activeStreamCount++;
                         }
                     });
-
+            
                     if (activeStreamCount > 0) {
                         hadActiveMedia = true;
                     } else if (hadActiveMedia && hasLeftLobby) {
                         notifyCallEnded("mediaEnded");
                         return;
                     }
-
+            
                     // Method 3: Video elements removed from DOM
                     if (videos.length > 0) {
                         hadVideoElements = true;
@@ -228,7 +230,7 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                         return;
                     }
                 }
-
+            
                 var lobbyObserver = new MutationObserver(function() { checkForCallEnd(); });
                 lobbyObserver.observe(document.body || document.documentElement, { childList: true, subtree: true });
                 setInterval(checkForCallEnd, 1500);
@@ -292,7 +294,7 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                 ].join('\\n');
                 (document.documentElement || document).appendChild(s);
             })();
-
+        
             // === 3. Intercept LiveKit WebSocket — log credentials, pass through ===
             var OrigWS = window.WebSocket;
             var _intercepted = false;
@@ -318,14 +320,14 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
             window.WebSocket.OPEN = 1;
             window.WebSocket.CLOSING = 2;
             window.WebSocket.CLOSED = 3;
-
+        
             // === 4. KS-Bridge: Forward E2EE encryption_keys to key-server ===
             // Mirrors element-web KS-Bridge v7: intercepts fetch() calls that send
             // encryption_keys via sendToDevice or room events, and forwards per-participant
             // keys to key-server so recording-api and meet-app guests can decrypt media.
             (function() {
                 var KS_BASE = '/api/keys/pp';
-
+        
                 function ksPost(url, body, token) {
                     var x = new XMLHttpRequest();
                     x.open('POST', url, true);
@@ -335,11 +337,11 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                     x.onerror = function() { console.warn('[KS-Bridge-iOS] XHR error'); };
                     x.send(body);
                 }
-
+        
                 function getMatrixToken() {
                     try { return localStorage.getItem('mx_access_token') || ''; } catch(e) { return ''; }
                 }
-
+        
                 function forwardKeys(roomId, identity, keysArr) {
                     crypto.subtle.digest('SHA-256', new TextEncoder().encode(roomId + '|m.call#ROOM')).then(function(hash) {
                         var lkRoom = btoa(String.fromCharCode.apply(null, new Uint8Array(hash))).replace(/=+$/, '');
@@ -355,7 +357,7 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                         });
                     }).catch(function(e) { console.warn('[KS-Bridge-iOS] SHA error:', e); });
                 }
-
+        
                 // Intercept fetch() — catches Widget Driver HTTP calls to Synapse
                 var _fetch = window.fetch;
                 window.fetch = function(url, opts) {
@@ -397,7 +399,7 @@ enum CallScreenJavaScriptMessageName: String, CaseIterable {
                     }
                     return _fetch.apply(this, arguments);
                 };
-
+        
                 console.log('[KS-Bridge-iOS] v1 initialized (fetch intercept)');
             })();
         })();

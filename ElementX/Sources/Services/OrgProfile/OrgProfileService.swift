@@ -51,10 +51,8 @@ class OrgProfileService {
             return nil
         }
 
-        let s = OrgProfileSettings(
-            fieldJobTitleEnabled: json["field_job_title_enabled"] as? Bool ?? false,
-            fieldDepartmentEnabled: json["field_department_enabled"] as? Bool ?? false
-        )
+        let s = OrgProfileSettings(fieldJobTitleEnabled: json["field_job_title_enabled"] as? Bool ?? false,
+                                   fieldDepartmentEnabled: json["field_department_enabled"] as? Bool ?? false)
         settings = s
         os_log(.info, log: orgProfileLog, "fetchSettings: jobTitle=%d, department=%d",
                s.fieldJobTitleEnabled ? 1 : 0, s.fieldDepartmentEnabled ? 1 : 0)
@@ -73,7 +71,7 @@ class OrgProfileService {
             }
         }
 
-        guard let settings, (settings.fieldJobTitleEnabled || settings.fieldDepartmentEnabled) else { return }
+        guard let settings, settings.fieldJobTitleEnabled || settings.fieldDepartmentEnabled else { return }
 
         var results = profilesSubject.value
 
@@ -84,7 +82,7 @@ class OrgProfileService {
 
                 group.addTask { [weak self] in
                     guard let self else { return (userID, nil) }
-                    return (userID, await self.fetchSingleProfile(userID: userID))
+                    return await (userID, self.fetchSingleProfile(userID: userID))
                 }
             }
 
@@ -113,10 +111,8 @@ class OrgProfileService {
             return OrgProfile(jobTitle: nil, department: nil)
         }
 
-        let profile = OrgProfile(
-            jobTitle: json["job_title"] as? String,
-            department: json["department"] as? String
-        )
+        let profile = OrgProfile(jobTitle: json["job_title"] as? String,
+                                 department: json["department"] as? String)
         os_log(.info, log: orgProfileLog, "fetchProfile(%{public}@): title=%{public}@, dept=%{public}@",
                userID, profile.jobTitle ?? "-", profile.department ?? "-")
         return profile

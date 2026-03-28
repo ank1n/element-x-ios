@@ -53,7 +53,9 @@ enum A11yIdentifiers {
     }
     
     struct AppLockScreen {
-        func numpad(_ digit: Int) -> String { "app_lock-numpad_\(digit)" }
+        func numpad(_ digit: Int) -> String {
+            "app_lock-numpad_\(digit)"
+        }
     }
     
     struct AppLockSetupBiometricsScreen {

@@ -42,6 +42,3 @@ protocol VoiceMessageRecorderProtocol {
     func sendVoiceMessage(timelineController: TimelineControllerProtocol,
                           audioConverter: AudioConverterProtocol) async -> Result<Void, VoiceMessageRecorderError>
 }
-
-// sourcery: AutoMockable
-extension VoiceMessageRecorderProtocol { }

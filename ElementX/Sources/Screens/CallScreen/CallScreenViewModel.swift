@@ -193,33 +193,33 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         }
         
         if !useNativeCall {
-        widgetDriver.actions
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] action in
-                guard let self else { return }
+            widgetDriver.actions
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] action in
+                    guard let self else { return }
 
-                switch action {
-                case .callEnded:
-                    // sTalk: Guard against bounce-back.
-                    if self.isEndingCall {
-                        MXLog.info("sTalk: .callEnded ignored — endCall() is already in progress")
-                        return
+                    switch action {
+                    case .callEnded:
+                        // sTalk: Guard against bounce-back.
+                        if self.isEndingCall {
+                            MXLog.info("sTalk: .callEnded ignored — endCall() is already in progress")
+                            return
+                        }
+                        actionsSubject.send(.dismiss)
+                    case .mediaStateChanged(let audioEnabled, let videoEnabled):
+                        elementCallService.setAudioEnabled(audioEnabled, roomID: configuration.callRoomID)
+                        // sTalk: Sync native button state with WebView state
+                        self.state.isMuted = !audioEnabled
+                        // Don't let WebView override video state for voice calls before our explicit disable
+                        if self.startWithVideoEnabled || self.state.wasConnected {
+                            self.state.isVideoEnabled = videoEnabled
+                        }
+                        // sTalk: Mark media as ready (for video state sync),
+                        // but DON'T start timer or set connected — wait for remote to join via infoPublisher.
+                        self.state.wasConnected = true
                     }
-                    actionsSubject.send(.dismiss)
-                case .mediaStateChanged(let audioEnabled, let videoEnabled):
-                    elementCallService.setAudioEnabled(audioEnabled, roomID: configuration.callRoomID)
-                    // sTalk: Sync native button state with WebView state
-                    self.state.isMuted = !audioEnabled
-                    // Don't let WebView override video state for voice calls before our explicit disable
-                    if self.startWithVideoEnabled || self.state.wasConnected {
-                        self.state.isVideoEnabled = videoEnabled
-                    }
-                    // sTalk: Mark media as ready (for video state sync),
-                    // but DON'T start timer or set connected — wait for remote to join via infoPublisher.
-                    self.state.wasConnected = true
                 }
-            }
-            .store(in: &cancellables)
+                .store(in: &cancellables)
         } // end if !useNativeCall
 
         NotificationCenter.default
@@ -277,10 +277,10 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                        self.state.callStatus == .connected,
                        self.state.callElapsedTime > 30 {
                         let matrixRTCEmpty = callParticipants.isEmpty ||
-                           (callParticipants.count == 1 && callParticipants.contains(roomProxy.ownUserID))
+                            (callParticipants.count == 1 && callParticipants.contains(roomProxy.ownUserID))
                         let liveKitEmpty = self.liveKitRoomManager.remoteParticipants.isEmpty
                         MXLog.info("sTalk: Auto-end check — matrixRTC participants=\(callParticipants.count), liveKit remote=\(self.liveKitRoomManager.remoteParticipants.count), elapsed=\(self.state.callElapsedTime)")
-                        if matrixRTCEmpty && liveKitEmpty {
+                        if matrixRTCEmpty, liveKitEmpty {
                             MXLog.info("sTalk: Remote party left 1:1 call (both MatrixRTC and LiveKit empty) — auto-ending")
                             Task { await self.endCall() }
                         }
@@ -419,17 +419,15 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                     MXLog.info("sTalk: Starting NATIVE call mode")
                     let isEncrypted = roomProxy.infoPublisher.value.isEncrypted
                     let token = (try? (clientProxy as? ClientProxy)?.matrixAccessToken()) ?? ""
-                    let session = NativeCallSession(
-                        widgetDriver: widgetDriver,
-                        liveKitRoomManager: liveKitRoomManager,
-                        isEncrypted: isEncrypted,
-                        userId: clientProxy.userID,
-                        deviceId: clientProxy.deviceID ?? "unknown",
-                        matrixRoomId: roomProxy.id,
-                        homeserverURL: clientProxy.homeserver,
-                        accessToken: token,
-                        roomProxy: roomProxy
-                    )
+                    let session = NativeCallSession(widgetDriver: widgetDriver,
+                                                    liveKitRoomManager: liveKitRoomManager,
+                                                    isEncrypted: isEncrypted,
+                                                    userId: clientProxy.userID,
+                                                    deviceId: clientProxy.deviceID ?? "unknown",
+                                                    matrixRoomId: roomProxy.id,
+                                                    homeserverURL: clientProxy.homeserver,
+                                                    accessToken: token,
+                                                    roomProxy: roomProxy)
                     self.nativeCallSession = session
 
                     // Observe session state
@@ -452,11 +450,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                         .store(in: &cancellables)
 
                     // Start native session
-                    await session.start(
-                        baseURL: baseURL,
-                        clientID: clientID,
-                        colorScheme: colorScheme
-                    )
+                    await session.start(baseURL: baseURL,
+                                        clientID: clientID,
+                                        colorScheme: colorScheme)
 
                     // Note: NOT calling elementCallService.setupCallSession —
                     // CallKit would kill the call when WidgetDriver times out.
@@ -798,8 +794,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     /// which fails if WebView is 1x1 or deallocated. This calls widgetDriver.handleMessage() directly.
     private func sendDirectlyToWidgetDriver(_ action: ElementCallWidgetMessage.Action) async {
         let msg = ElementCallWidgetMessage(direction: .fromWidget,
-                                            action: action,
-                                            widgetId: widgetDriver.widgetID)
+                                           action: action,
+                                           widgetId: widgetDriver.widgetID)
         guard let data = try? JSONEncoder().encode(msg),
               let json = String(data: data, encoding: .utf8) else {
             stalkLog("FAILED to encode \(action.rawValue) message")
@@ -885,7 +881,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             if statusCode == 200, let events = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
                 for event in events {
                     guard let type = event["type"] as? String,
-                          (type == "org.matrix.msc3401.call.member" || type == "m.call.member"),
+                          type == "org.matrix.msc3401.call.member" || type == "m.call.member",
                           let sk = event["state_key"] as? String else { continue }
 
                     let content = event["content"] as? [String: Any] ?? [:]
@@ -1028,18 +1024,16 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             // Get participant info from room members
             if let members = await roomProxy.members() {
                 participants = members
-                    .filter { $0.isActive }
+                    .filter(\.isActive)
                     .map { ($0.userID, $0.displayName ?? $0.userID) }
             }
         }
 
         do {
-            let egressId = try await recordingService.startRecording(
-                roomName: roomName,
-                matrixRoomId: matrixRoomId,
-                participants: participants,
-                initiatedBy: initiatedBy
-            )
+            let egressId = try await recordingService.startRecording(roomName: roomName,
+                                                                     matrixRoomId: matrixRoomId,
+                                                                     participants: participants,
+                                                                     initiatedBy: initiatedBy)
             MXLog.info("Recording started with egress ID: \(egressId)")
 
             // sTalk: Link recording to call history
@@ -1083,7 +1077,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             guard let self else { return }
 
             let participants = members
-                .filter { $0.isActive }
+                .filter(\.isActive)
                 .map { CallParticipantInfo(userID: $0.userID, displayName: $0.displayName, avatarURL: $0.avatarURL) }
 
             await MainActor.run {

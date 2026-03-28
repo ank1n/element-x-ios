@@ -105,7 +105,7 @@ struct RoomScreenViewState: BindableState {
     var isSearchActive = false
     var isSearchLoading = false
     var searchResultEventIDs: [String] = []
-    var currentSearchResultIndex: Int = 0
+    var currentSearchResultIndex = 0
 
     var searchResultCount: Int {
         searchResultEventIDs.count
@@ -223,9 +223,9 @@ enum PinnedEventsBannerState: Equatable {
         }
     }
     
-    // Note that if we are setting this value, this is definitely sent from the pinned events timeline
-    // so we can assume that the pinned events timeline is already loaded and we only need to set the
-    // selection for the loaded state
+    /// Note that if we are setting this value, this is definitely sent from the pinned events timeline
+    /// so we can assume that the pinned events timeline is already loaded and we only need to set the
+    /// selection for the loaded state
     mutating func setSelectedPinnedEventID(_ eventID: String) {
         switch self {
         case .loaded(var state):

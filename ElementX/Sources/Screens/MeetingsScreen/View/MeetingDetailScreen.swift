@@ -39,16 +39,16 @@ struct MeetingDetailScreen: View {
         return f
     }()
 
-    private var meeting: Meeting { context.viewState.meeting }
+    private var meeting: Meeting {
+        context.viewState.meeting
+    }
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [bgGradientTop, bgGradientBottom, Color(UIColor.systemGroupedBackground)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            LinearGradient(colors: [bgGradientTop, bgGradientBottom, Color(UIColor.systemGroupedBackground)],
+                           startPoint: .top,
+                           endPoint: .bottom)
+                .ignoresSafeArea()
 
             ScrollView {
                 VStack(spacing: 16) {
@@ -278,7 +278,6 @@ struct MeetingDetailScreen: View {
         .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
     }
 
-    @ViewBuilder
     private func participantRow(_ participant: MeetingParticipant) -> some View {
         HStack(spacing: 10) {
             // Avatar circle with initial

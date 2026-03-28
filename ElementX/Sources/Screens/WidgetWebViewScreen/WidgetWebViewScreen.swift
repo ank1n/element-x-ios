@@ -71,16 +71,14 @@ struct AppWidgetWebView: UIViewRepresentable {
         // Inject mx_user_id into localStorage before page loads
         // (widget frontends read localStorage.getItem('mx_user_id') to identify user)
         let escapedUserId = userId.replacingOccurrences(of: "'", with: "\\'")
-        let injectScript = WKUserScript(
-            source: """
-            try {
-                localStorage.setItem('mx_user_id', '\(escapedUserId)');
-                localStorage.setItem('mx_hs_url', '\(url.scheme ?? "https")://\(url.host ?? "stalk.implica.ru")');
-            } catch(e) {}
-            """,
-            injectionTime: .atDocumentStart,
-            forMainFrameOnly: false
-        )
+        let injectScript = WKUserScript(source: """
+                                        try {
+                                            localStorage.setItem('mx_user_id', '\(escapedUserId)');
+                                            localStorage.setItem('mx_hs_url', '\(url.scheme ?? "https")://\(url.host ?? "stalk.implica.ru")');
+                                        } catch(e) {}
+                                        """,
+                                        injectionTime: .atDocumentStart,
+                                        forMainFrameOnly: false)
         configuration.userContentController.addUserScript(injectScript)
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
@@ -90,7 +88,7 @@ struct AppWidgetWebView: UIViewRepresentable {
         // Observe loading progress
         context.coordinator.progressObservation = webView.observe(\.estimatedProgress, options: .new) { webView, _ in
             DispatchQueue.main.async {
-                self.progress = webView.estimatedProgress
+                progress = webView.estimatedProgress
             }
         }
 
@@ -152,13 +150,11 @@ struct AppWidgetWebView: UIViewRepresentable {
 
 struct WidgetWebViewScreen_Previews: PreviewProvider {
     static var previews: some View {
-        let widget = WidgetItem(
-            id: "test",
-            name: "Test Widget",
-            description: "Test description",
-            icon: "chart.bar.fill",
-            url: "https://stats.stalk.implica.ru"
-        )
+        let widget = WidgetItem(id: "test",
+                                name: "Test Widget",
+                                description: "Test description",
+                                icon: "chart.bar.fill",
+                                url: "https://stats.stalk.implica.ru")
         let viewModel = WidgetWebViewScreenViewModel(widget: widget)
         NavigationStack {
             WidgetWebViewScreen(context: viewModel.context)

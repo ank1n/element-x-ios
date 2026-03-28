@@ -110,14 +110,12 @@ final class MessageSearchService {
                     senderDisplayName = senderProfile["displayname"] as? String
                 }
 
-                results.append(MessageSearchResult(
-                    eventID: eventID,
-                    roomID: roomID,
-                    senderID: senderID,
-                    senderDisplayName: senderDisplayName ?? senderID,
-                    body: body,
-                    timestamp: date
-                ))
+                results.append(MessageSearchResult(eventID: eventID,
+                                                   roomID: roomID,
+                                                   senderID: senderID,
+                                                   senderDisplayName: senderDisplayName ?? senderID,
+                                                   body: body,
+                                                   timestamp: date))
             }
         }
 
@@ -141,7 +139,9 @@ struct MessageSearchResult: Identifiable {
     let body: String
     let timestamp: Date
 
-    var id: String { eventID }
+    var id: String {
+        eventID
+    }
 }
 
 enum MessageSearchError: Error {

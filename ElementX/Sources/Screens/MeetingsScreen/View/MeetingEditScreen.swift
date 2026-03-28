@@ -26,12 +26,10 @@ struct MeetingEditScreen: View {
     var body: some View {
         ZStack(alignment: .top) {
             // Background
-            LinearGradient(
-                colors: [bgGradientTop, bgGradientBottom, Color(UIColor.systemGroupedBackground)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            LinearGradient(colors: [bgGradientTop, bgGradientBottom, Color(UIColor.systemGroupedBackground)],
+                           startPoint: .top,
+                           endPoint: .bottom)
+                .ignoresSafeArea()
 
             ScrollView {
                 VStack(spacing: 16) {
@@ -59,7 +57,6 @@ struct MeetingEditScreen: View {
                 .padding(.top, 12)
                 .padding(.bottom, 32)
             }
-
         }
         .navigationTitle(context.viewState.navigationTitle)
         .navigationBarTitleDisplayMode(.inline)
@@ -97,36 +94,29 @@ struct MeetingEditScreen: View {
 
     private var mainInfoCard: some View {
         VStack(spacing: 0) {
-            cardField(
-                icon: "pencil.line",
-                placeholder: SL10n.meetingNamePlaceholder,
-                text: $context.title,
-                field: .title
-            )
+            cardField(icon: "pencil.line",
+                      placeholder: SL10n.meetingNamePlaceholder,
+                      text: $context.title,
+                      field: .title)
 
             Divider().padding(.leading, 48)
 
-            cardFieldMultiline(
-                icon: "text.alignleft",
-                placeholder: SL10n.meetingDescription,
-                text: $context.description
-            )
+            cardFieldMultiline(icon: "text.alignleft",
+                               placeholder: SL10n.meetingDescription,
+                               text: $context.description)
 
             Divider().padding(.leading, 48)
 
-            cardField(
-                icon: "mappin",
-                placeholder: SL10n.meetingLocation,
-                text: $context.location,
-                field: .location
-            )
+            cardField(icon: "mappin",
+                      placeholder: SL10n.meetingLocation,
+                      text: $context.location,
+                      field: .location)
         }
         .background(cardBg)
         .cornerRadius(16)
         .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
     }
 
-    @ViewBuilder
     private func cardField(icon: String, placeholder: String, text: Binding<String>, field: Field) -> some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
@@ -142,7 +132,6 @@ struct MeetingEditScreen: View {
         .padding(.vertical, 14)
     }
 
-    @ViewBuilder
     private func cardFieldMultiline(icon: String, placeholder: String, text: Binding<String>) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: icon)

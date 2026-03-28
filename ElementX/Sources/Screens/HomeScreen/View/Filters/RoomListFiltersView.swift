@@ -12,13 +12,17 @@ struct RoomListFiltersView: View {
     let leadingID = "leading"
     @Binding var state: RoomListFiltersState
     @Namespace private var namespace
-    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
+    @AppStorage("stalk_design_theme") private var designTheme = "cosmos"
 
-    private var isCosmos: Bool { designTheme == "cosmos" }
+    private var isCosmos: Bool {
+        designTheme == "cosmos"
+    }
 
     /// When you connect a mouse on macOS the scrollbars aren't hidden. This is some extra padding
     /// applied to the scroll view content to make sure the bars don't overlap the filters.
-    private var macScrollBarPadding: CGFloat { ProcessInfo.processInfo.isiOSAppOnMac ? 16 : 0 }
+    private var macScrollBarPadding: CGFloat {
+        ProcessInfo.processInfo.isiOSAppOnMac ? 16 : 0
+    }
 
     /// All filters in stable order (enum declaration order, never reorders)
     /// In Cosmos: hide invites and lowPriority — not part of our design

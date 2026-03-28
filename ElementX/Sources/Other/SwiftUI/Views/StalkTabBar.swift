@@ -43,7 +43,7 @@ struct StalkTabItem: Identifiable {
     let sfSymbol: String?
     let sfSymbolSelected: String?
     let lottieAnimation: String?
-    var badgeCount: Int = 0
+    var badgeCount = 0
 
     init(id: String, title: String,
          sfSymbol: String? = nil, sfSymbolSelected: String? = nil,
@@ -91,14 +91,10 @@ struct NotchTabBarShape: Shape {
         let arcEnd = Angle.degrees(357)
 
         // Compute arc start/end points
-        let startPt = CGPoint(
-            x: centerX + arcR * CGFloat(cos(arcStart.radians)),
-            y: arcCY + arcR * CGFloat(sin(arcStart.radians))
-        )
-        let endPt = CGPoint(
-            x: centerX + arcR * CGFloat(cos(arcEnd.radians)),
-            y: arcCY + arcR * CGFloat(sin(arcEnd.radians))
-        )
+        let startPt = CGPoint(x: centerX + arcR * CGFloat(cos(arcStart.radians)),
+                              y: arcCY + arcR * CGFloat(sin(arcStart.radians)))
+        let endPt = CGPoint(x: centerX + arcR * CGFloat(cos(arcEnd.radians)),
+                            y: arcCY + arcR * CGFloat(sin(arcEnd.radians)))
 
         // Wide shoulder for gradual descent from flat top into arc around FAB
         let shoulder: CGFloat = 44
@@ -113,10 +109,8 @@ struct NotchTabBarShape: Shape {
         // Bottom-left
         path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
         path.addLine(to: CGPoint(x: rect.minX, y: top + cr))
-        path.addQuadCurve(
-            to: CGPoint(x: rect.minX + cr, y: top),
-            control: CGPoint(x: rect.minX, y: top)
-        )
+        path.addQuadCurve(to: CGPoint(x: rect.minX + cr, y: top),
+                          control: CGPoint(x: rect.minX, y: top))
 
         // Flat top to left shoulder entry
         if entryX > rect.minX + cr {
@@ -126,37 +120,29 @@ struct NotchTabBarShape: Shape {
         // Left bezier: gradual descent — starts flat, slowly dips, then wraps into arc
         // cp1 stays on top line far along → long flat run before dipping
         // cp2 near arc entry with gradual vertical approach
-        path.addCurve(
-            to: startPt,
-            control1: CGPoint(x: entryX + shoulder * 0.65, y: top),
-            control2: CGPoint(x: startPt.x - shoulder * 0.08, y: top + dipY * 0.55)
-        )
+        path.addCurve(to: startPt,
+                      control1: CGPoint(x: entryX + shoulder * 0.65, y: top),
+                      control2: CGPoint(x: startPt.x - shoulder * 0.08, y: top + dipY * 0.55))
 
         // Arc wrapping around the circle
-        path.addArc(
-            center: CGPoint(x: centerX, y: arcCY),
-            radius: arcR,
-            startAngle: arcStart,
-            endAngle: arcEnd,
-            clockwise: true
-        )
+        path.addArc(center: CGPoint(x: centerX, y: arcCY),
+                    radius: arcR,
+                    startAngle: arcStart,
+                    endAngle: arcEnd,
+                    clockwise: true)
 
         // Right bezier: mirror — gradual ascent from arc back to flat top
-        path.addCurve(
-            to: CGPoint(x: exitX, y: top),
-            control1: CGPoint(x: endPt.x + shoulder * 0.08, y: top + dipY * 0.55),
-            control2: CGPoint(x: exitX - shoulder * 0.65, y: top)
-        )
+        path.addCurve(to: CGPoint(x: exitX, y: top),
+                      control1: CGPoint(x: endPt.x + shoulder * 0.08, y: top + dipY * 0.55),
+                      control2: CGPoint(x: exitX - shoulder * 0.65, y: top))
 
         // Flat top to right corner
         if exitX < rect.maxX - cr {
             path.addLine(to: CGPoint(x: rect.maxX - cr, y: top))
         }
 
-        path.addQuadCurve(
-            to: CGPoint(x: rect.maxX, y: top + cr),
-            control: CGPoint(x: rect.maxX, y: top)
-        )
+        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: top + cr),
+                          control: CGPoint(x: rect.maxX, y: top))
         path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
 
         path.closeSubpath()
@@ -169,11 +155,13 @@ struct NotchTabBarShape: Shape {
 struct StalkTabBar: View {
     let items: [StalkTabItem]
     @Binding var selectedIndex: Int
-    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
+    @AppStorage("stalk_design_theme") private var designTheme = "cosmos"
 
     @State private var animatingIndex: Int?
 
-    private var isCosmos: Bool { designTheme == "cosmos" }
+    private var isCosmos: Bool {
+        designTheme == "cosmos"
+    }
 
     var body: some View {
         if isCosmos {
@@ -198,16 +186,14 @@ struct StalkTabBar: View {
     private let accentCircle = Color.white
     private let accentIcon = Color(red: 0.38, green: 0.42, blue: 0.96) // sTalk blue
 
-    // Dark purple gradient for cosmos bar
+    /// Dark purple gradient for cosmos bar
     private var barGradient: LinearGradient {
-        LinearGradient(
-            colors: [
-                Color(red: 0.93, green: 0.94, blue: 1.0),  // almost white blue top
-                Color(red: 0.87, green: 0.89, blue: 0.98)  // very light blue bottom
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
+        LinearGradient(colors: [
+            Color(red: 0.93, green: 0.94, blue: 1.0), // almost white blue top
+            Color(red: 0.87, green: 0.89, blue: 0.98) // very light blue bottom
+        ],
+        startPoint: .top,
+        endPoint: .bottom)
     }
 
     // Icon colors
@@ -228,20 +214,16 @@ struct StalkTabBar: View {
         .frame(height: barHeight)
         .padding(.horizontal, barPadH)
         // Dark rounded bar with arc-notch following circle curvature
-        .background(
-            NotchTabBarShape(
-                notchFraction: selectedFraction,
-                circleRadius: circleSize / 2,
-                circleCenterY: circleSize / 2 + circleOffset, // actual circle center Y from bar top
-                gapSize: notchGap,
-                cornerRadius: barCorner
-            )
-            .fill(barGradient)
-            .shadow(color: Color(red: 0.50, green: 0.45, blue: 0.70).opacity(0.25), radius: 10, y: -3)
-            .shadow(color: .black.opacity(0.08), radius: 4, y: -1)
-            .padding(.horizontal, barPadH)
-            .animation(.spring(response: 0.4, dampingFraction: 0.72), value: selectedIndex)
-        )
+        .background(NotchTabBarShape(notchFraction: selectedFraction,
+                                     circleRadius: circleSize / 2,
+                                     circleCenterY: circleSize / 2 + circleOffset, // actual circle center Y from bar top
+                                     gapSize: notchGap,
+                                     cornerRadius: barCorner)
+                .fill(barGradient)
+                .shadow(color: Color(red: 0.50, green: 0.45, blue: 0.70).opacity(0.25), radius: 10, y: -3)
+                .shadow(color: .black.opacity(0.08), radius: 4, y: -1)
+                .padding(.horizontal, barPadH)
+                .animation(.spring(response: 0.4, dampingFraction: 0.72), value: selectedIndex))
         // Bright circle sitting in the notch
         .overlay(alignment: .top) {
             circleOverlay
@@ -375,15 +357,13 @@ struct StalkTabBar: View {
             let lottieInactiveUIColor: UIColor = isCosmos
                 ? UIColor(red: 0.45, green: 0.45, blue: 0.60, alpha: 1)
                 : .systemGray
-            LottieTabBarIcon(
-                animationName: lottie,
-                isSelected: isActive,
-                playAnimation: animatingIndex == index,
-                iconSize: lottieSize,
-                activeColor: lottieActiveUIColor,
-                inactiveColor: lottieInactiveUIColor
-            )
-            .scaleEffect(lottieScale)
+            LottieTabBarIcon(animationName: lottie,
+                             isSelected: isActive,
+                             playAnimation: animatingIndex == index,
+                             iconSize: lottieSize,
+                             activeColor: lottieActiveUIColor,
+                             inactiveColor: lottieInactiveUIColor)
+                .scaleEffect(lottieScale)
         } else if let sfSymbol = item.sfSymbol {
             let name = isActive ? (item.sfSymbolSelected ?? sfSymbol) : sfSymbol
             let fontSize: CGFloat = isCosmos ? (isActive ? 15 : 27) : 26

@@ -120,7 +120,6 @@ private struct TimelineItemSendInfoLabel: View {
         }
     }
     
-    @ViewBuilder
     var content: some View {
         HStack(spacing: 4) {
             Text(sendInfo.localizedString)
@@ -168,9 +167,9 @@ private struct TimelineItemSendInfo {
 
     /// sTalk: delivery checkmark status shown inline with timestamp
     enum DeliveryCheckmark {
-        case sending    // circle
-        case sent       // single gray ✓
-        case read       // double blue ✓✓
+        case sending // circle
+        case sent // single gray ✓
+        case read // double blue ✓✓
     }
 
     /// Describes how the content and the send info should be arranged inside a bubble

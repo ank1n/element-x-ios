@@ -96,9 +96,9 @@ class ContactsTabFlowCoordinator: FlowCoordinatorProtocol {
 
     private func openRoom(roomID: String) {
         let roomFlowCoordinator = RoomFlowCoordinator(roomID: roomID,
-                                                       isChildFlow: true,
-                                                       navigationStackCoordinator: navigationStackCoordinator,
-                                                       flowParameters: flowParameters)
+                                                      isChildFlow: true,
+                                                      navigationStackCoordinator: navigationStackCoordinator,
+                                                      flowParameters: flowParameters)
 
         roomFlowCoordinator.actions.sink { [weak self] action in
             guard let self else { return }

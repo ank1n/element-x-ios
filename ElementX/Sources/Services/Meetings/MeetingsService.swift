@@ -75,7 +75,9 @@ struct MeetingParticipant: Identifiable, Equatable, Codable {
     let userId: String
     let rsvp: RSVPStatus
 
-    var id: String { userId }
+    var id: String {
+        userId
+    }
 
     var displayName: String {
         let name = userId
@@ -106,13 +108,13 @@ struct HolidaysResponse: Codable {
 
 struct MeetingRequest: Encodable {
     let title: String
-    var description: String = ""
+    var description = ""
     let startTime: Date
     let endTime: Date
-    var isIndefinite: Bool = false
-    var location: String = ""
+    var isIndefinite = false
+    var location = ""
     var participants: [String] = []
-    var accessLevel: String = "private"
+    var accessLevel = "private"
     var meetingCode: String?
 
     enum CodingKeys: String, CodingKey {
@@ -286,7 +288,7 @@ class MeetingsService {
         return try Self.decoder.decode(HolidaysResponse.self, from: data).holidays
     }
 
-    // Legacy RSVP (for CallsListScreen compatibility)
+    /// Legacy RSVP (for CallsListScreen compatibility)
     func rsvp(meetingId: Int, response rsvpResponse: String) async -> Bool {
         do {
             let body = try JSONSerialization.data(withJSONObject: ["rsvp": rsvpResponse])

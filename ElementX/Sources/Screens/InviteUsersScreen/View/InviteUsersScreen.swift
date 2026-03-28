@@ -11,11 +11,13 @@ import SwiftUI
 
 struct InviteUsersScreen: View {
     @ObservedObject var context: InviteUsersScreenViewModel.Context
-    @AppStorage("stalk_design_theme") private var designTheme: String = "cosmos"
+    @AppStorage("stalk_design_theme") private var designTheme = "cosmos"
 
     @State private var formWidth = CGFloat.zero
 
-    private var isCosmos: Bool { designTheme == "cosmos" }
+    private var isCosmos: Bool {
+        designTheme == "cosmos"
+    }
 
     private let bgGradientTop = Color(red: 0.90, green: 0.92, blue: 1.0)
     private let bgGradientBottom = Color(red: 0.95, green: 0.96, blue: 1.0)
@@ -38,17 +40,17 @@ struct InviteUsersScreen: View {
                 .background(isCosmos ? Color.clear.ignoresSafeArea() : Color.compound.bgSubtleSecondaryLevel0.ignoresSafeArea())
         }
         .scrollDismissesKeyboard(.immediately)
-            .navigationTitle(L10n.screenCreateRoomAddPeopleTitle)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { toolbar }
-            .searchController(query: $context.searchQuery,
-                              placeholder: L10n.commonSearchForSomeone,
-                              showsCancelButton: false,
-                              disablesInteractiveDismiss: true,
-                              accessibilityFocusOnStart: true)
-            .compoundSearchField()
-            .alert(item: $context.alertInfo)
-            .navigationBarBackButtonHidden(context.viewState.isSkippable)
+        .navigationTitle(L10n.screenCreateRoomAddPeopleTitle)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { toolbar }
+        .searchController(query: $context.searchQuery,
+                          placeholder: L10n.commonSearchForSomeone,
+                          showsCancelButton: false,
+                          disablesInteractiveDismiss: true,
+                          accessibilityFocusOnStart: true)
+        .compoundSearchField()
+        .alert(item: $context.alertInfo)
+        .navigationBarBackButtonHidden(context.viewState.isSkippable)
     }
     
     // MARK: - Private

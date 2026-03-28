@@ -68,10 +68,10 @@ struct WidgetAPIMessage {
         }
         self.api = api
         self.action = action
-        self.widgetId = json["widgetId"] as? String ?? ""
-        self.requestId = json["requestId"] as? String ?? ""
+        widgetId = json["widgetId"] as? String ?? ""
+        requestId = json["requestId"] as? String ?? ""
         self.data = json["data"] as? [String: Any]
-        self.rawJSON = json
+        rawJSON = json
     }
 
     /// Check if this is a toWidget message with a specific event type

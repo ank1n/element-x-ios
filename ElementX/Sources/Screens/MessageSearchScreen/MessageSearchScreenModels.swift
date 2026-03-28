@@ -38,5 +38,7 @@ struct MessageSearchScreenResult: Identifiable {
     let body: String
     let timestamp: Date
 
-    var id: String { eventID }
+    var id: String {
+        eventID
+    }
 }

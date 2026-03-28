@@ -70,7 +70,6 @@ struct CallParticipantsSheet: View {
 
     // MARK: - Row
 
-    @ViewBuilder
     private func participantRow(_ participant: CallParticipantInfo, isActive: Bool) -> some View {
         HStack(spacing: 12) {
             // Avatar
@@ -133,7 +132,7 @@ struct CallParticipantsSheet: View {
             Color(red: 0.9, green: 0.5, blue: 0.2),
             Color(red: 0.6, green: 0.3, blue: 0.8),
             Color(red: 0.2, green: 0.6, blue: 0.9),
-            Color(red: 0.9, green: 0.3, blue: 0.4),
+            Color(red: 0.9, green: 0.3, blue: 0.4)
         ]
         var hash: UInt64 = 5381
         for char in name.unicodeScalars {

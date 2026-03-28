@@ -144,8 +144,8 @@ struct AuthenticationStartScreen: View {
 private struct STalkLogoWithVoiceWave: View {
     @State private var time: CGFloat = 0
 
-    // Speech amplitude pattern — just the phrase, no long silence at the end.
-    // "При-вет! [pause] Как де-ла? [pause] Э-то сТалк! [tiny gap]"
+    /// Speech amplitude pattern — just the phrase, no long silence at the end.
+    /// "При-вет! [pause] Как де-ла? [pause] Э-то сТалк! [tiny gap]"
     private static let speechPattern: [CGFloat] = {
         var p: [CGFloat] = []
         // При (4 bars)
@@ -183,7 +183,7 @@ private struct STalkLogoWithVoiceWave: View {
     private let barWidth: CGFloat = 3.0
     private let maxBarHeight: CGFloat = 45
     // Speed: how many pattern slots the head advances per second
-    private let slotsPerSecond: Double = 14.0
+    private let slotsPerSecond = 14.0
 
     var body: some View {
         SwiftUI.TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
@@ -211,7 +211,9 @@ private struct STalkLogoWithVoiceWave: View {
                     // Which pattern slot was playing when the head passed this bar?
                     let slotsAgo = Int(dist)
                     var patIdx = currentPatternSlot - slotsAgo
-                    while patIdx < 0 { patIdx += patternLen }
+                    while patIdx < 0 {
+                        patIdx += patternLen
+                    }
                     patIdx = patIdx % patternLen
 
                     let targetAmp = Self.speechPattern[patIdx]
@@ -232,19 +234,15 @@ private struct STalkLogoWithVoiceWave: View {
                     path.addLine(to: CGPoint(x: x2, y: y2))
 
                     let opacity = 0.15 + amplitude * 0.7
-                    context.stroke(
-                        path,
-                        with: .color(Color(red: 0.2, green: 0.45, blue: 0.9).opacity(opacity)),
-                        lineWidth: barWidth
-                    )
+                    context.stroke(path,
+                                   with: .color(Color(red: 0.2, green: 0.45, blue: 0.9).opacity(opacity)),
+                                   lineWidth: barWidth)
 
                     // Glow for active bars
                     if amplitude > 0.3 {
-                        context.stroke(
-                            path,
-                            with: .color(Color(red: 0.3, green: 0.5, blue: 1.0).opacity(amplitude * 0.3)),
-                            lineWidth: barWidth + 3
-                        )
+                        context.stroke(path,
+                                       with: .color(Color(red: 0.3, green: 0.5, blue: 1.0).opacity(amplitude * 0.3)),
+                                       lineWidth: barWidth + 3)
                     }
                 }
             }

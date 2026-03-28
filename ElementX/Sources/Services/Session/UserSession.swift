@@ -73,58 +73,56 @@ class UserSession: UserSessionProtocol {
     /// Recovery key is stored via Matrix custom account data event `im.stalk.recovery_key`
     private func setupAutoRecovery() {
         var autoRecoveryCancellable: AnyCancellable?
-        autoRecoveryCancellable = Publishers.CombineLatest(
-            clientProxy.verificationStatePublisher,
-            clientProxy.secureBackupController.recoveryState
-        )
-        .receive(on: DispatchQueue.main)
-        .sink { [weak self] verificationState, recoveryState in
-            guard let self else {
-                autoRecoveryCancellable?.cancel()
-                return
-            }
+        autoRecoveryCancellable = Publishers.CombineLatest(clientProxy.verificationStatePublisher,
+                                                           clientProxy.secureBackupController.recoveryState)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] verificationState, recoveryState in
+                guard let self else {
+                    autoRecoveryCancellable?.cancel()
+                    return
+                }
 
-            MXLog.info("sTalk: E2EE state — verification: \(verificationState), recovery: \(recoveryState)")
+                MXLog.info("sTalk: E2EE state — verification: \(verificationState), recovery: \(recoveryState)")
 
-            switch (verificationState, recoveryState) {
-            case (.verified, .disabled), (.verified, .incomplete):
-                // First device or broken state: generate recovery key
-                autoRecoveryCancellable?.cancel()
-                autoRecoveryCancellable = nil
-                MXLog.info("sTalk: Auto-enabling recovery (verified, state: \(recoveryState))")
-                Task {
-                    let result = await self.clientProxy.secureBackupController.generateRecoveryKey()
-                    switch result {
-                    case .success(let key):
-                        MXLog.info("sTalk: Recovery enabled (key length: \(key.count))")
-                        // Store recovery key on server for other devices
-                        await Self.storeRecoveryKeyOnServer(key: key, clientProxy: self.clientProxy)
-                    case .failure(let error):
-                        MXLog.error("sTalk: Recovery failed: \(error)")
+                switch (verificationState, recoveryState) {
+                case (.verified, .disabled), (.verified, .incomplete):
+                    // First device or broken state: generate recovery key
+                    autoRecoveryCancellable?.cancel()
+                    autoRecoveryCancellable = nil
+                    MXLog.info("sTalk: Auto-enabling recovery (verified, state: \(recoveryState))")
+                    Task {
+                        let result = await self.clientProxy.secureBackupController.generateRecoveryKey()
+                        switch result {
+                        case .success(let key):
+                            MXLog.info("sTalk: Recovery enabled (key length: \(key.count))")
+                            // Store recovery key on server for other devices
+                            await Self.storeRecoveryKeyOnServer(key: key, clientProxy: self.clientProxy)
+                        case .failure(let error):
+                            MXLog.error("sTalk: Recovery failed: \(error)")
+                        }
                     }
-                }
 
-            case (.verified, .enabled):
-                autoRecoveryCancellable?.cancel()
-                autoRecoveryCancellable = nil
-                MXLog.info("sTalk: E2EE fully set up — checking if recovery key is stored on server")
-                Task {
-                    await self.ensureRecoveryKeyStoredOnServer()
-                }
+                case (.verified, .enabled):
+                    autoRecoveryCancellable?.cancel()
+                    autoRecoveryCancellable = nil
+                    MXLog.info("sTalk: E2EE fully set up — checking if recovery key is stored on server")
+                    Task {
+                        await self.ensureRecoveryKeyStoredOnServer()
+                    }
 
-            case (.unverified, .disabled), (.unverified, .enabled), (.unverified, .incomplete):
-                // Second device: try to recover using stored recovery key
-                autoRecoveryCancellable?.cancel()
-                autoRecoveryCancellable = nil
-                MXLog.info("sTalk: Unverified device — attempting auto-verify with stored recovery key")
-                Task {
-                    await self.autoVerifyWithStoredRecoveryKey()
-                }
+                case (.unverified, .disabled), (.unverified, .enabled), (.unverified, .incomplete):
+                    // Second device: try to recover using stored recovery key
+                    autoRecoveryCancellable?.cancel()
+                    autoRecoveryCancellable = nil
+                    MXLog.info("sTalk: Unverified device — attempting auto-verify with stored recovery key")
+                    Task {
+                        await self.autoVerifyWithStoredRecoveryKey()
+                    }
 
-            default:
-                break // .unknown — wait for state to settle
+                default:
+                    break // .unknown — wait for state to settle
+                }
             }
-        }
         autoRecoveryCancellable?.store(in: &cancellables)
     }
 

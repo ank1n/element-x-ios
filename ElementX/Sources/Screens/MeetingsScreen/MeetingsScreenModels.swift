@@ -72,8 +72,8 @@ enum MeetingDetailViewModelAction {
 
 struct MeetingDetailViewState: BindableState {
     var meeting: Meeting
-    var currentUserId: String = ""
-    var homeserverURL: String = ""
+    var currentUserId = ""
+    var homeserverURL = ""
     var isLoading = false
     var linkCopied = false
     var bindings = MeetingDetailViewStateBindings()
@@ -117,8 +117,13 @@ struct MeetingEditViewState: BindableState {
     var searchResults: [UserProfileProxy] = []
     var isSearching = false
 
-    var isEditing: Bool { meetingId != nil }
-    var navigationTitle: String { isEditing ? SL10n.meetingEdit : SL10n.meetingNew }
+    var isEditing: Bool {
+        meetingId != nil
+    }
+
+    var navigationTitle: String {
+        isEditing ? SL10n.meetingEdit : SL10n.meetingNew
+    }
 }
 
 struct MeetingEditViewStateBindings {
