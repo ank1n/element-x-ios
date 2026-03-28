@@ -569,23 +569,13 @@ final class NativeCallSession: ObservableObject {
         // Process toWidget messages
         if message.api == "toWidget" {
             if message.action == "capabilities" {
-                // Driver asks "what capabilities do you want?" — respond with our list
-                let caps = [
-                    "org.matrix.msc3819.send.to_device:io.element.call.encryption_keys",
-                    "org.matrix.msc3819.receive.to_device:io.element.call.encryption_keys",
-                    "org.matrix.msc2762.send.state_event:org.matrix.msc3401.call.member",
-                    "org.matrix.msc2762.receive.state_event:org.matrix.msc3401.call.member",
-                    "org.matrix.msc2762.send.delayed_event",
-                    "org.matrix.msc2762.update.delayed_event",
-                    "requires_client"
-                ]
-                let capsJSON = caps.map { "\"\($0)\"" }.joined(separator: ",")
+                // Driver asks "what capabilities do you want?" — respond with Capabilities struct
                 Task {
                     let response = """
-                    {"api":"fromWidget","action":"capabilities","widgetId":"\(message.widgetId)","requestId":"\(message.requestId)","response":{"capabilities":[\(capsJSON)]}}
+                    {"api":"fromWidget","action":"capabilities","widgetId":"\(message.widgetId)","requestId":"\(message.requestId)","response":{"capabilities":{"read":["org.matrix.msc3819.receive.to_device:io.element.call.encryption_keys","org.matrix.msc2762.receive.state_event:org.matrix.msc3401.call.member"],"send":["org.matrix.msc3819.send.to_device:io.element.call.encryption_keys","org.matrix.msc2762.send.state_event:org.matrix.msc3401.call.member"],"requires_client":true,"update_delayed_event":true,"send_delayed_event":true}}}
                     """
                     await widgetDriver.handleMessage(response)
-                    MXLog.info("sTalk NativeCall: Responded to capabilities with \(caps.count) permissions")
+                    MXLog.info("sTalk NativeCall: Responded to capabilities with struct format")
                 }
             } else {
                 Task {
