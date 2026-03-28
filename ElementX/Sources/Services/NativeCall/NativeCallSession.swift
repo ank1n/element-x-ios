@@ -146,10 +146,17 @@ final class NativeCallSession: ObservableObject {
             // Listen to room timeline for incoming encryption keys
             listenForEncryptionKeysFromTimeline()
 
-            // Send our key
+            // Send our key + periodic resend (remote may join later)
             Task { [weak self] in
                 try? await Task.sleep(for: .seconds(3))
                 await self?.sendOurEncryptionKey()
+
+                // Resend every 10s for 2 minutes (covers late joiners)
+                for _ in 0..<12 {
+                    try? await Task.sleep(for: .seconds(10))
+                    guard let self, self.sessionState == .connected else { return }
+                    await self.sendOurEncryptionKey()
+                }
             }
         }
 
