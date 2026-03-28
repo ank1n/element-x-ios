@@ -489,6 +489,17 @@ final class NativeCallSession: ObservableObject {
     // MARK: - Call Notification
 
     private func sendCallNotification() async {
+        // Send via WidgetDriver (Megolm encrypted in encrypted rooms)
+        let notification = """
+        {"api":"fromWidget","action":"send_event","widgetId":"\(widgetDriver.widgetID)","requestId":"native-notify-\(UUID().uuidString)","data":{"type":"org.matrix.msc4075.rtc.notification","content":{"application":"m.call","call_id":"","m.mentions":{"user_ids":[]},"sender_ts":\(Int(Date().timeIntervalSince1970 * 1000)),"lifetime":90000,"notification_type":"ring"}}}
+        """
+
+        Task.detached { [widgetDriver] in
+            let result = await widgetDriver.handleMessage(notification)
+            MXLog.info("sTalk NativeCall: Call notification via Widget API → \(result)")
+        }
+
+        // Fallback: also try REST API (may work in unencrypted rooms)
         let encodedRoom = matrixRoomId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? matrixRoomId
         let txnId = UUID().uuidString
         let url = "\(homeserverURL)/_matrix/client/v3/rooms/\(encodedRoom)/send/org.matrix.msc4075.rtc.notification/\(txnId)"
