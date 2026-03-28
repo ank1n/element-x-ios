@@ -103,7 +103,7 @@ final class LiveKitRoomManager: ObservableObject {
         )
 
         let connectOptions = ConnectOptions(
-            autoSubscribe: false // Manual subscribe after keys arrive
+            autoSubscribe: true // Subscribe immediately — SFrame handles decrypt when keys arrive
         )
         let roomOptions = RoomOptions(
             defaultCameraCaptureOptions: CameraCaptureOptions(
