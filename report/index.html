@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>sTalk vs Telegram iOS — Сравнение UI</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', sans-serif; background: #f5f5f7; color: #1d1d1f; padding: 40px 20px; max-width: 1400px; margin: 0 auto; }
+h1 { text-align: center; font-size: 36px; margin-bottom: 8px; }
+.subtitle { text-align: center; color: #86868b; margin-bottom: 12px; font-size: 16px; }
+.legend { text-align: center; color: #86868b; margin-bottom: 40px; font-size: 13px; }
+.legend code { background: #e8e8ed; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+
+.tab-section { background: white; border-radius: 20px; padding: 32px; margin-bottom: 32px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+.tab-header { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+.tab-name { font-size: 24px; font-weight: 700; }
+.score { display: inline-block; padding: 4px 14px; border-radius: 20px; font-weight: 600; font-size: 14px; color: white; }
+.score-high { background: #34c759; }
+.score-mid { background: #ff9500; }
+.score-low { background: #ff3b30; }
+.score-info { background: #007AFF; }
+.tag { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; }
+.tag-new { background: #e8f5e9; color: #2e7d32; }
+.tag-unique { background: #e3f2fd; color: #1565c0; }
+.tag-match { background: #f3e5f5; color: #7b1fa2; }
+
+.comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: start; }
+.side { }
+.side-label { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: #86868b; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+.side-label .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.dot-tg { background: #0088cc; }
+.dot-st { background: #7b1fa2; }
+
+.screenshot-wrap { text-align: center; }
+.screenshot-wrap img { max-height: 580px; border-radius: 24px; box-shadow: 0 8px 30px rgba(0,0,0,0.12); border: 2px solid #e5e5e7; }
+.screenshot-wrap .caption { font-size: 11px; color: #86868b; margin-top: 8px; }
+
+.diff-table { width: 100%; margin-top: 20px; border-collapse: collapse; font-size: 14px; }
+.diff-table th { text-align: left; padding: 10px 12px; background: #f5f5f7; border-bottom: 1px solid #e5e5e7; font-weight: 600; }
+.diff-table td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; }
+.diff-table .status-ok { color: #34c759; font-weight: 700; }
+.diff-table .status-warn { color: #ff9500; font-weight: 700; }
+.diff-table .status-bad { color: #ff3b30; font-weight: 700; }
+.diff-table .status-info { color: #007AFF; font-weight: 700; }
+
+.summary-box { background: linear-gradient(135deg, #0088cc 0%, #5856d6 100%); color: white; border-radius: 20px; padding: 32px; margin-bottom: 32px; }
+.summary-box h2 { font-size: 22px; margin-bottom: 16px; }
+.summary-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
+.summary-card { background: rgba(255,255,255,0.15); border-radius: 12px; padding: 16px; text-align: center; backdrop-filter: blur(10px); }
+.summary-card .name { font-size: 13px; opacity: 0.85; margin-bottom: 4px; }
+.summary-card .pct { font-size: 28px; font-weight: 700; }
+.summary-card .verdict { font-size: 11px; opacity: 0.7; margin-top: 4px; }
+
+.insight-box { background: #f0f4ff; border: 1px solid #c8d6f0; border-radius: 12px; padding: 20px; margin-top: 20px; }
+.insight-box h3 { color: #007AFF; margin-bottom: 8px; font-size: 15px; }
+.insight-box p { font-size: 14px; line-height: 1.6; color: #333; }
+.insight-box ul { padding-left: 20px; margin-top: 8px; }
+.insight-box li { margin-bottom: 4px; font-size: 14px; color: #333; }
+
+.critical { background: #fff5f5; border: 1px solid #ffcccc; border-radius: 12px; padding: 20px; margin-top: 20px; }
+.critical h3 { color: #ff3b30; margin-bottom: 8px; font-size: 15px; }
+.critical ul { padding-left: 20px; }
+.critical li { margin-bottom: 4px; color: #333; font-size: 14px; }
+
+.bonus { background: #f0faf0; border: 1px solid #c8e6c9; border-radius: 12px; padding: 20px; margin-top: 20px; }
+.bonus h3 { color: #34c759; margin-bottom: 8px; font-size: 15px; }
+.bonus ul { padding-left: 20px; }
+.bonus li { margin-bottom: 4px; color: #333; font-size: 14px; }
+
+.actions-section { background: white; border-radius: 20px; padding: 32px; margin-bottom: 32px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); border: 2px solid #5856d6; }
+.actions-section h2 { color: #5856d6; margin-bottom: 20px; font-size: 22px; }
+.action-group { margin-bottom: 24px; }
+.action-group h3 { font-size: 16px; margin-bottom: 12px; }
+.action-group h3 .emoji { margin-right: 8px; }
+
+@media (max-width: 900px) {
+  .comparison { grid-template-columns: 1fr; }
+  .summary-grid { grid-template-columns: repeat(3, 1fr); }
+}
+</style>
+</head>
+<body>
+
+<h1>sTalk iOS vs Telegram iOS</h1>
+<p class="subtitle">Сравнение с реальным интерфейсом Telegram (классический дизайн, до Liquid Glass)</p>
+<p class="legend">
+  Дата: 09.02.2026 &nbsp;|&nbsp;
+  <code>ref-tg-*.png</code> = скриншоты Telegram iOS (classic) &nbsp;|&nbsp;
+  <code>report-*.png</code> = sTalk (sim2, dp.bondar@stalk.implica.ru)
+</p>
+
+<!-- ====== SUMMARY ====== -->
+<div class="summary-box">
+  <h2>Общая оценка близости к Telegram</h2>
+  <div class="summary-grid">
+    <div class="summary-card">
+      <div class="name">Контакты</div>
+      <div class="pct">70%</div>
+      <div class="verdict">Больше чем у TG</div>
+    </div>
+    <div class="summary-card" style="background:rgba(52,199,89,0.35)">
+      <div class="name">Звонки</div>
+      <div class="pct">80%</div>
+      <div class="verdict">Очень близко!</div>
+    </div>
+    <div class="summary-card">
+      <div class="name">Чаты</div>
+      <div class="pct">65%</div>
+      <div class="verdict">Нужна работа</div>
+    </div>
+    <div class="summary-card" style="background:rgba(0,136,204,0.3)">
+      <div class="name">Приложения</div>
+      <div class="pct">N/A</div>
+      <div class="verdict">Уникально для sTalk</div>
+    </div>
+    <div class="summary-card" style="background:rgba(52,199,89,0.25)">
+      <div class="name">Настройки</div>
+      <div class="pct">75%</div>
+      <div class="verdict">Близко</div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== TAB BAR ====== -->
+<div class="tab-section">
+  <div class="tab-header">
+    <span class="tab-name">Tab Bar</span>
+    <span class="score score-mid">65%</span>
+  </div>
+  <div class="comparison">
+    <div class="side">
+      <div class="side-label"><span class="dot dot-tg"></span> Telegram iOS</div>
+      <div class="insight-box" style="background:#f8f9fa; border-color:#e0e0e0;">
+        <p><strong>4 вкладки:</strong></p>
+        <table class="diff-table" style="margin-top:8px;">
+          <tr><td>Contacts</td><td><code>person.fill</code> (active: filled blue)</td></tr>
+          <tr><td>Calls</td><td><code>phone.fill</code></td></tr>
+          <tr><td>Chats</td><td><code>message.fill</code> + красный badge</td></tr>
+          <tr><td>Settings</td><td><code>gearshape</code></td></tr>
+        </table>
+        <p style="margin-top:12px; font-size:13px; color:#666;">Непрозрачный белый фон, тонкий separator сверху. Активный = filled + blue, неактивный = outline + gray.</p>
+      </div>
+    </div>
+    <div class="side">
+      <div class="side-label"><span class="dot dot-st"></span> sTalk</div>
+      <div class="insight-box" style="background:#faf5ff; border-color:#e1bee7;">
+        <p><strong>5 вкладок:</strong></p>
+        <table class="diff-table" style="margin-top:8px;">
+          <tr><td>Контакты</td><td><code>person</code> (Lottie)</td></tr>
+          <tr><td>Звонки</td><td><code>phone</code> (Lottie)</td></tr>
+          <tr><td>Чаты</td><td><code>bubble.left.and.bubble.right</code> (Lottie)</td></tr>
+          <tr><td>Приложения</td><td><code>square.grid.2x2</code> (SF Symbol)</td></tr>
+          <tr><td>Настройки</td><td><code>gearshape</code> (Lottie)</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <table class="diff-table">
+    <tr><th>Элемент</th><th>Telegram</th><th>sTalk</th><th>Статус</th></tr>
+    <tr><td>Количество вкладок</td><td>4</td><td>5 (+Приложения)</td><td class="status-info">+ уникальная вкладка</td></tr>
+    <tr><td>Иконка Контакты</td><td><code>person.fill</code></td><td><code>person</code> (Lottie)</td><td class="status-warn">&#9888; Lottie, не SF</td></tr>
+    <tr><td>Иконка Чаты</td><td><code>message.fill</code> (один пузырь)</td><td><code>bubble.left.and.bubble.right</code> (два)</td><td class="status-warn">&#9888; Другая иконка</td></tr>
+    <tr><td>Название 5-й</td><td>Settings</td><td>Настройки</td><td class="status-ok">&#10003; Совпадает!</td></tr>
+    <tr><td>Иконка 5-й</td><td><code>gearshape</code></td><td><code>gearshape</code></td><td class="status-ok">&#10003; Совпадает!</td></tr>
+    <tr><td>Active = filled</td><td>Da (person.fill, phone.fill...)</td><td>Нет (outline всегда)</td><td class="status-warn">&#9888;</td></tr>
+    <tr><td>Цвет активного</td><td>Синий #007AFF</td><td>Синий</td><td class="status-ok">&#10003;</td></tr>
+    <tr><td>Badge на Chats</td><td>Красный кружок с числом</td><td>Красный кружок</td><td class="status-ok">&#10003;</td></tr>
+    <tr><td>Тип иконок</td><td>SF Symbols</td><td>Lottie (4) + SF (1)</td><td class="status-warn">&#9888;</td></tr>
+  </table>
+
+  <div class="insight-box">
+    <h3>Ключевое наблюдение</h3>
+    <p>Старый отчёт говорил "Настройки" неправильно, должно быть "Профиль" — но в реальном Telegram 5-я вкладка тоже <strong>"Settings"</strong> с иконкой <code>gearshape</code>! Наша реализация <strong>совпадает</strong> с Telegram.</p>
+    <p style="margin-top:8px;">Telegram использует <strong>4 вкладки</strong>, у нас 5 — дополнительная "Приложения" — это фича sTalk, не баг.</p>
+  </div>
+</div>
+
+<!-- ====== КОНТАКТЫ ====== -->
+<div class="tab-section">
+  <div class="tab-header">
+    <span class="tab-name">1. Контакты</span>
+    <span class="score score-mid">70%</span>
+    <span class="tag tag-new">Больше фич чем TG</span>
+  </div>
+  <div class="comparison">
+    <div class="side">
+      <div class="side-label"><span class="dot dot-tg"></span> Telegram iOS</div>
+      <div class="screenshot-wrap">
+        <img src="ref-tg-contacts.png" alt="Telegram — Contacts">
+        <div class="caption">Centered title, NO фильтров, NO поиска, сортировка по online/last seen</div>
+      </div>
+    </div>
+    <div class="side">
+      <div class="side-label"><span class="dot dot-st"></span> sTalk</div>
+      <div class="screenshot-wrap">
+        <img src="report-contacts.png" alt="sTalk — Контакты">
+        <div class="caption">Large title, underline-фильтры, поиск, алфавитные секции + scrubber</div>
+      </div>
+    </div>
+  </div>
+
+  <table class="diff-table">
+    <tr><th>Элемент</th><th>Telegram</th><th>sTalk</th><th>Статус</th></tr>
+    <tr><td>Заголовок</td><td>"Contacts" (centered, standard)</td><td>"Контакты" (large title, left)</td><td class="status-warn">&#9888; Другой стиль</td></tr>
+    <tr><td>Фильтры</td><td><strong>НЕТ</strong> — плоский список</td><td>Underline: Все, В сети, Избранные</td><td class="status-info">+ Бонус sTalk</td></tr>
+    <tr><td>Строка поиска</td><td>Нет (скрыта в скролле?)</td><td>Есть, видна сразу</td><td class="status-info">+ Бонус sTalk</td></tr>
+    <tr><td>Кнопка "+"</td><td>Справа в nav bar</td><td>Справа в nav bar</td><td class="status-ok">&#10003;</td></tr>
+    <tr><td>Add People Nearby</td><td>Есть (location)</td><td>Нет</td><td class="status-warn">&#9888;</td></tr>
+    <tr><td>Invite Friends</td><td>Есть</td><td>Нет</td><td class="status-warn">&#9888;</td></tr>
+    <tr><td>Сортировка списка</td><td>По online/last seen</td><td>По алфавиту (A-Z)</td><td class="status-warn">&#9888; Другая логика</td></tr>
+    <tr><td>Онлайн-индикатор</td><td>"online" зелёным текстом</td><td>"не в сети" серым</td><td class="status-warn">&#9888;</td></tr>
+    <tr><td>Last seen</td><td>"last seen X ago"</td><td>"не в сети"</td><td class="status-warn">&#9888; Менее детально</td></tr>
+    <tr><td>Алфавитные секции</td><td>Нет (плоский список)</td><td>Есть + scrubber справа</td><td class="status-info">+ Бонус sTalk</td></tr>
+    <tr><td>Кнопка сортировки</td><td>Нет</td><td>Есть (слева вверху)</td><td class="status-info">+ Бонус sTalk</td></tr>
+  </table>
+
+  <div class="bonus">
+    <h3>sTalk расширяет Telegram</h3>
+    <ul>
+      <li>Фильтры (Все / В сети / Избранные) — Telegram показывает всех в одном списке</li>
+      <li>Строка поиска видна сразу, а не скрыта за pull-to-reveal</li>
+      <li>Алфавитный scrubber для быстрой навигации</li>
+      <li>Кнопка сортировки</li>
+    </ul>
+  </div>
+
+  <div class="insight-box">
+    <h3>Что можно улучшить для большего сходства</h3>
+    <ul>
+      <li>Онлайн-статус: показывать "online" зелёным или "last seen X ago" вместо просто "не в сети"</li>
+      <li>Добавить "Пригласить друзей" в начало списка</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ====== ЗВОНКИ ====== -->
+<div class="tab-section">
+  <div class="tab-header">
+    <span class="tab-name">2. Звонки</span>
+    <span class="score score-high">80%</span>
+    <span class="tag tag-match">Очень близко к TG!</span>
+  </div>
+  <div class="comparison">
+    <div class="side">
+      <div class="side-label"><span class="dot dot-tg"></span> Telegram iOS</div>
+      <div class="screenshot-wrap">
+        <img src="ref-tg-calls.png" alt="Telegram — Calls">
+        <div class="caption">Edit слева, pill "All"/"Missed" по центру, phone+ справа, NO large title</div>
+      </div>
+    </div>
+    <div class="side">
+      <div class="side-label"><span class="dot dot-st"></span> sTalk</div>
+      <div class="screenshot-wrap">
+        <img src="report-calls.png" alt="sTalk — Звонки">
+        <div class="caption">Изменить слева, pill "Все"/"Пропущенн..." по центру, AI-бот справа, NO title</div>
+      </div>
+    </div>
+  </div>
+
+  <table class="diff-table">
+    <tr><th>Элемент</th><th>Telegram</th><th>sTalk</th><th>Статус</th></tr>
+    <tr><td>Заголовок</td><td><strong>НЕТ</strong> (нет large title!)</td><td><strong>НЕТ</strong></td><td class="status-ok">&#10003; Совпадает!</td></tr>
+    <tr><td>Стиль фильтров</td><td><strong>Pill segmented</strong> control</td><td><strong>Pill segmented</strong> control</td><td class="status-ok">&#10003; Совпадает!</td></tr>
+    <tr><td>Фильтры</td><td>All / Missed</td><td>Все / Пропущенные</td><td class="status-ok">&#10003; Совпадает!</td></tr>
+    <tr><td>Кнопка Edit</td><td>"Edit" слева</td><td>"Изменить" слева</td><td class="status-ok">&#10003;</td></tr>
+    <tr><td>Кнопка звонка</td><td>Телефон+ справа</td><td>Телефон + AI-бот</td><td class="status-warn">&#9888; Дополнительная</td></tr>
+    <tr><td>Строка поиска</td><td>Нет (видимо скрыта)</td><td>Есть</td><td class="status-info">+ Бонус</td></tr>
+    <tr><td>Ячейка звонка</td><td>Аватар + имя + направление + дата + (i)</td><td>Пусто (нет данных)</td><td class="status-warn">&#9888; Нет данных для сравнения</td></tr>
+    <tr><td>Пропущенные = красный</td><td>Да (имя красным)</td><td>Не проверено</td><td>—</td></tr>
+    <tr><td>Кнопка (i) у звонка</td><td>Есть, синяя</td><td>Не проверено</td><td>—</td></tr>
+  </table>
+
+  <div class="insight-box">
+    <h3>Важное открытие!</h3>
+    <p>Старый отчёт оценивал Звонки на <strong>40%</strong> и считал pill-фильтры ошибкой. Но реальный Telegram <strong>тоже использует pill segmented control</strong> на вкладке Calls! И тоже <strong>без large title</strong>!</p>
+    <p style="margin-top:8px;">Наша реализация на самом деле <strong>очень близка к Telegram</strong>. Оценка повышена до <strong>80%</strong>.</p>
+  </div>
+</div>
+
+<!-- ====== ЧАТЫ ====== -->
+<div class="tab-section">
+  <div class="tab-header">
+    <span class="tab-name">3. Чаты</span>
+    <span class="score score-mid">65%</span>
+  </div>
+  <div class="comparison">
+    <div class="side">
+      <div class="side-label"><span class="dot dot-tg"></span> Telegram iOS</div>
+      <div class="screenshot-wrap">
+        <img src="ref-tg-chats.png" alt="Telegram — Chats">
+        <div class="caption">Edit слева, "Chats" centered, compose справа, search bar, NO фильтр-табов, swipe actions</div>
+      </div>
+    </div>
+    <div class="side">
+      <div class="side-label"><span class="dot dot-st"></span> sTalk</div>
+      <div class="screenshot-wrap">
+        <img src="report-chats.png" alt="sTalk — Чаты">
+        <div class="caption">Изменить слева, "Чаты" large title, compose справа, underline фильтры, NO поиска</div>
+      </div>
+    </div>
+  </div>
+
+  <table class="diff-table">
+    <tr><th>Элемент</th><th>Telegram</th><th>sTalk</th><th>Статус</th></tr>
+    <tr><td>Заголовок</td><td>"Chats" (centered, standard)</td><td>"Чаты" (large title, left)</td><td class="status-warn">&#9888; Другой стиль</td></tr>
+    <tr><td>Строка поиска</td><td><strong>Есть</strong> ("Search for messages or users")</td><td><strong>НЕТ</strong></td><td class="status-bad">&#10007; Отсутствует</td></tr>
+    <tr><td>Фильтр-табы</td><td><strong>НЕТ</strong> (плоский список чатов)</td><td>Underline: Непрочитанные, Пользователи, Комнаты, Избран...</td><td class="status-info">+ Бонус sTalk</td></tr>
+    <tr><td>Кнопка Edit</td><td>"Edit" слева</td><td>"Изменить" слева</td><td class="status-ok">&#10003;</td></tr>
+    <tr><td>Кнопка Compose</td><td>Иконка справа</td><td>Иконка справа</td><td class="status-ok">&#10003;</td></tr>
+    <tr><td>Swipe actions</td><td>Mute/Delete/Archive (right), Unread/Pin (left)</td><td>Есть (не видно на скриншоте)</td><td class="status-ok">&#10003;</td></tr>
+    <tr><td>Pin indicator</td><td>Булавка справа от закреплённых</td><td>Не проверено</td><td>—</td></tr>
+    <tr><td>Unread badge</td><td>Синий/голубой кружок с числом</td><td>Зелёный кружок</td><td class="status-warn">&#9888; Другой цвет</td></tr>
+    <tr><td>Ячейка чата</td><td>Аватар + имя + preview + время</td><td>Аватар + имя + preview + время</td><td class="status-ok">&#10003;</td></tr>
+    <tr><td>Двойная галочка</td><td>Синяя (прочитано)</td><td>Не проверено</td><td>—</td></tr>
+  </table>
+
+  <div class="critical">
+    <h3>Главное отличие</h3>
+    <ul>
+      <li><strong>Нет строки поиска</strong> — в Telegram это основной элемент навигации на Chats</li>
+      <li><strong>Бейджи синие в Telegram, зелёные у нас</strong> — косметическое, но заметное</li>
+    </ul>
+  </div>
+
+  <div class="insight-box">
+    <h3>Наблюдение</h3>
+    <p>В классическом Telegram <strong>нет фильтр-табов</strong> на экране Chats (они появились позже как "Folders"). Наши underline-фильтры — это расширение от sTalk. Фильтр "Все" отсутствует, что логично если фильтры — бонус.</p>
+    <p style="margin-top:8px;">Telegram использует <strong>Folders</strong> (папки) для фильтрации, которые отображаются как табы вверху экрана. У нас вместо них underline-фильтры с другими категориями.</p>
+  </div>
+</div>
+
+<!-- ====== ПРИЛОЖЕНИЯ ====== -->
+<div class="tab-section">
+  <div class="tab-header">
+    <span class="tab-name">4. Приложения</span>
+    <span class="score score-info">Уникально</span>
+    <span class="tag tag-unique">Нет аналога в TG</span>
+  </div>
+  <div class="comparison">
+    <div class="side">
+      <div class="side-label"><span class="dot dot-tg"></span> Telegram iOS</div>
+      <div class="insight-box" style="background:#f8f9fa; border-color:#e0e0e0; min-height: 200px; display:flex; align-items:center; justify-content:center;">
+        <p style="text-align:center; color:#86868b; font-size: 16px;">
+          В Telegram нет отдельной вкладки "Приложения".<br><br>
+          Бот-меню и Mini Apps доступны через:<br>
+          &bull; Поиск (@bot)<br>
+          &bull; Attachment menu<br>
+          &bull; Inline keyboard buttons
+        </p>
+      </div>
+    </div>
+    <div class="side">
+      <div class="side-label"><span class="dot dot-st"></span> sTalk</div>
+      <div class="screenshot-wrap">
+        <img src="report-apps.png" alt="sTalk — Приложения">
+        <div class="caption">Large title, поиск, underline-фильтры, список виджетов</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bonus">
+    <h3>Уникальная фича sTalk</h3>
+    <ul>
+      <li>Централизованный доступ к виджетам и приложениям</li>
+      <li>Фильтрация по категориям (Продуктивность, Связь, Инструменты)</li>
+      <li>Поиск среди приложений</li>
+      <li>В Telegram подобного нет — бот-экосистема разбросана по разным местам</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ====== НАСТРОЙКИ ====== -->
+<div class="tab-section">
+  <div class="tab-header">
+    <span class="tab-name">5. Настройки</span>
+    <span class="score score-mid">75%</span>
+  </div>
+  <div class="comparison">
+    <div class="side">
+      <div class="side-label"><span class="dot dot-tg"></span> Telegram iOS</div>
+      <div class="insight-box" style="background:#f8f9fa; border-color:#e0e0e0;">
+        <p><strong>Settings (4-я вкладка в Telegram)</strong></p>
+        <p style="margin-top:8px; font-size:14px;">В Telegram вкладка "Settings" содержит:</p>
+        <ul style="margin-top:8px; padding-left:20px; font-size:13px;">
+          <li>Аватар + имя + телефон + QR-код</li>
+          <li>"Set Profile Photo" / "Set Emoji Status"</li>
+          <li>Saved Messages, My Stories, Devices</li>
+          <li>Notifications and Sounds</li>
+          <li>Privacy and Security</li>
+          <li>Data and Storage</li>
+          <li>Appearance</li>
+          <li>Power Saving</li>
+          <li>Language</li>
+          <li>Stickers and Emoji</li>
+          <li>Premium, Stars, Business</li>
+        </ul>
+        <p style="margin-top:8px; font-size:12px; color:#86868b;">Скриншот Settings в Telegram не предоставлен — сравнение по памяти</p>
+      </div>
+    </div>
+    <div class="side">
+      <div class="side-label"><span class="dot dot-st"></span> sTalk</div>
+      <div class="screenshot-wrap">
+        <img src="report-settings.png" alt="sTalk — Настройки">
+        <div class="caption">Large title, аватар, кнопки редактирования, секции: Аккаунт, Приватность, Поддержка</div>
+      </div>
+    </div>
+  </div>
+
+  <table class="diff-table">
+    <tr><th>Элемент</th><th>Telegram</th><th>sTalk</th><th>Статус</th></tr>
+    <tr><td>Название вкладки</td><td>"Settings"</td><td>"Настройки"</td><td class="status-ok">&#10003; Совпадает!</td></tr>
+    <tr><td>Иконка вкладки</td><td><code>gearshape</code></td><td><code>gearshape</code></td><td class="status-ok">&#10003; Совпадает!</td></tr>
+    <tr><td>Аватар + имя</td><td>Сверху, крупно</td><td>Сверху, крупно</td><td class="status-ok">&#10003;</td></tr>
+    <tr><td>Кнопки профиля</td><td>Set Profile Photo / Set Emoji Status</td><td>Изменить фото / Изменить имя</td><td class="status-ok">&#10003; Аналогично</td></tr>
+    <tr><td>Уведомления</td><td>Notifications and Sounds</td><td>Уведомления</td><td class="status-ok">&#10003;</td></tr>
+    <tr><td>Безопасность</td><td>Privacy and Security</td><td>Блокировка + Шифрование + Приватность</td><td class="status-ok">&#10003; Более детально</td></tr>
+    <tr><td>Внешний вид</td><td>Appearance (тема, шрифт)</td><td>Нет отдельного пункта</td><td class="status-bad">&#10007;</td></tr>
+    <tr><td>Данные и хранилище</td><td>Data and Storage</td><td>Нет</td><td class="status-bad">&#10007;</td></tr>
+    <tr><td>Устройства</td><td>Devices</td><td>Управление устройствами</td><td class="status-ok">&#10003;</td></tr>
+    <tr><td>Saved Messages</td><td>Есть (вверху)</td><td>Нет</td><td class="status-warn">&#9888;</td></tr>
+  </table>
+</div>
+
+<!-- ====== ЭКРАН ЧАТА (БОНУС) ====== -->
+<div class="tab-section">
+  <div class="tab-header">
+    <span class="tab-name">Бонус: Экран чата</span>
+    <span class="score score-info">Для справки</span>
+  </div>
+  <div class="comparison">
+    <div class="side">
+      <div class="side-label"><span class="dot dot-tg"></span> Telegram iOS — Chat Room</div>
+      <div class="screenshot-wrap">
+        <img src="ref-tg-chat-room.png" alt="Telegram — Chat">
+        <div class="caption">Зелёные/белые пузыри, имя + last seen вверху, фото inline</div>
+      </div>
+    </div>
+    <div class="side">
+      <div class="side-label"><span class="dot dot-tg"></span> Telegram iOS — Contact Info</div>
+      <div class="screenshot-wrap">
+        <img src="ref-tg-contact-info.png" alt="Telegram — Contact Info">
+        <div class="caption">Info: аватар, online, телефоны, bio, username, действия</div>
+      </div>
+    </div>
+  </div>
+  <div class="insight-box">
+    <h3>Элементы для будущей реализации</h3>
+    <ul>
+      <li>Зелёные пузыри исходящих сообщений (классический Telegram стиль)</li>
+      <li>"last seen just now" / "online" в header чата</li>
+      <li>Фото с превью размера файла (IMG_0475.PNG, 2.4 MB)</li>
+      <li>Contact Info: телефоны, bio, username, Shared Media, Groups In Common</li>
+      <li>Start Secret Chat / Block User</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ====== ПЛАН ДЕЙСТВИЙ ====== -->
+<div class="actions-section">
+  <h2>План действий: приблизить к Telegram</h2>
+
+  <div class="action-group">
+    <h3><span class="emoji">&#128308;</span> Критические (высокий приоритет)</h3>
+    <table class="diff-table">
+      <tr><th>#</th><th>Задача</th><th>Экран</th><th>Сложность</th></tr>
+      <tr><td>1</td><td><strong>Добавить строку поиска</strong> на вкладку Чаты</td><td>Чаты</td><td>Низкая</td></tr>
+      <tr><td>2</td><td><strong>SF Symbols вместо Lottie</strong> — filled для active, outline для inactive</td><td>Tab Bar</td><td>Низкая</td></tr>
+      <tr><td>3</td><td><strong>Иконка Чаты</strong> → <code>message</code> / <code>message.fill</code> (один пузырь, как в TG)</td><td>Tab Bar</td><td>Низкая</td></tr>
+    </table>
+  </div>
+
+  <div class="action-group">
+    <h3><span class="emoji">&#128992;</span> Желательные (средний приоритет)</h3>
+    <table class="diff-table">
+      <tr><th>#</th><th>Задача</th><th>Экран</th><th>Сложность</th></tr>
+      <tr><td>4</td><td>Онлайн-статус: "online" зелёным / "last seen X ago"</td><td>Контакты</td><td>Средняя</td></tr>
+      <tr><td>5</td><td>Цвет unread badge → синий (как в TG) вместо зелёного</td><td>Чаты</td><td>Низкая</td></tr>
+      <tr><td>6</td><td>Добавить "Внешний вид" и "Данные и хранилище"</td><td>Настройки</td><td>Средняя</td></tr>
+      <tr><td>7</td><td>Добавить "Пригласить друзей" в Контакты</td><td>Контакты</td><td>Низкая</td></tr>
+    </table>
+  </div>
+
+  <div class="action-group">
+    <h3><span class="emoji">&#128309;</span> Косметические (низкий приоритет)</h3>
+    <table class="diff-table">
+      <tr><th>#</th><th>Задача</th><th>Экран</th><th>Сложность</th></tr>
+      <tr><td>8</td><td>Centered title вместо large title (Чаты, Контакты)</td><td>Все</td><td>Низкая</td></tr>
+      <tr><td>9</td><td>Saved Messages в Настройках</td><td>Настройки</td><td>Средняя</td></tr>
+      <tr><td>10</td><td>Pin indicator (булавка) для закреплённых чатов</td><td>Чаты</td><td>Низкая</td></tr>
+    </table>
+  </div>
+
+  <div class="insight-box" style="margin-top:20px;">
+    <h3>Итого: что уже хорошо</h3>
+    <ul>
+      <li><strong>Звонки</strong> — pill segmented, без title — точно как в Telegram!</li>
+      <li><strong>Tab Bar</strong> — 5-я вкладка "Настройки" + gearshape — совпадает с TG</li>
+      <li><strong>Приложения</strong> — уникальная фича, отсутствующая в Telegram</li>
+      <li><strong>Контакты</strong> — превосходят Telegram по функциональности (фильтры, scrubber)</li>
+      <li><strong>Swipe actions</strong> — реализованы (Mute/Delete/Archive)</li>
+      <li><strong>Профиль в Настройках</strong> — аватар, имя, кнопки — структурно совпадает</li>
+    </ul>
+  </div>
+</div>
+
+</body>
+</html>

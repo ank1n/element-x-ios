@@ -1,0 +1,129 @@
+name: iOS CI — Build, Test, Smoke
+
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - 'ios/**'
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - 'ios/**'
+
+env:
+  SIMULATOR_ID: A50D4EE6-BCA4-4E20-A3CF-A855F9498FAF
+  SIMULATOR_NAME: "iPhone 17 Pro Max"
+  APP_BUNDLE_ID: ru.implica.stalk
+  JAVA_HOME: /opt/homebrew/opt/openjdk@17
+
+jobs:
+  build:
+    name: Build
+    runs-on: self-hosted
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Build for Simulator
+        run: |
+          xcodebuild -project ElementX.xcodeproj \
+            -scheme ElementX \
+            -sdk iphonesimulator \
+            -destination "id=$SIMULATOR_ID" \
+            -derivedDataPath build \
+            build \
+            | tail -20
+          echo "BUILD_APP_PATH=build/Build/Products/Debug-iphonesimulator/ElementX.app" >> $GITHUB_ENV
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: self-hosted
+    needs: build
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Run Unit Tests (sTalk)
+        run: |
+          xcodebuild -project ElementX.xcodeproj \
+            -scheme UnitTests \
+            -sdk iphonesimulator \
+            -destination "id=$SIMULATOR_ID" \
+            -derivedDataPath build \
+            test \
+            -only-testing:UnitTests/StalkThemeTests \
+            -only-testing:UnitTests/CallScreenViewModelTests \
+            -only-testing:UnitTests/ContactsListScreenTests \
+            -only-testing:UnitTests/CallsListScreenTests \
+            -only-testing:UnitTests/MeetingsScreenTests \
+            2>&1 | grep -E "Test Case|Test Suite.*(passed|failed)|error:" | tail -40
+
+  smoke-tests:
+    name: Smoke Tests (Maestro)
+    runs-on: self-hosted
+    needs: build
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Build & Install App
+        run: |
+          xcodebuild -project ElementX.xcodeproj \
+            -scheme ElementX \
+            -sdk iphonesimulator \
+            -destination "id=$SIMULATOR_ID" \
+            -derivedDataPath build \
+            build
+          xcrun simctl install "$SIMULATOR_ID" build/Build/Products/Debug-iphonesimulator/ElementX.app
+          xcrun simctl launch "$SIMULATOR_ID" "$APP_BUNDLE_ID"
+          sleep 5
+
+      - name: Run Smoke Tests
+        run: |
+          export PATH="$HOME/.maestro/bin:$JAVA_HOME/bin:$PATH"
+          .maestro/smoke/run_smoke.sh
+        continue-on-error: true
+
+      - name: Upload Screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-screenshots
+          path: /tmp/maestro_smoke_*.png
+          retention-days: 7
+
+  build-device:
+    name: Build for Device
+    runs-on: self-hosted
+    needs: [unit-tests]
+    if: github.ref == 'refs/heads/develop'
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Build for iPhone
+        run: |
+          xcodebuild -project ElementX.xcodeproj \
+            -scheme ElementX \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build-device \
+            -allowProvisioningUpdates \
+            build \
+            | tail -10

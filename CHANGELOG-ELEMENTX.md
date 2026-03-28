@@ -1360,6 +1360,389 @@ git cherry-pick c5bf455
 
 ---
 
+### 30. CallScreen v5 — Native LiveKit Video + Phase 4 Cleanup
+
+**Дата**: 2026-02-15
+**Коммиты**: `0b7b947c` (Phase 4 cleanup), предыдущие фазы в серии коммитов develop
+
+#### Описание:
+Замена WKWebView Element Call на нативное LiveKit видео. WebView остаётся невидимым (0×0) только для Widget API signaling. Фаза 4 — удаление мёртвого кода WebView-эры.
+
+#### Фазы:
+1. **LiveKit SDK + WS-перехват** — добавлен LiveKit Swift SDK через SPM, JS хук перехватывает LiveKit credentials из WebSocket Element Call
+2. **Нативное видео** — `LiveKitRoomManager` подключается к SFU, `NativeCallVideoView` рендерит видео через SwiftUI
+3. **Переключение** — WebView скрыт (0×0), фейковый WebSocket блокирует LiveKit в WebView, нативный SDK управляет камерой/микрофоном
+4. **Cleanup** — удалены: `clickElementCallHangup()`, `killWebViewMedia()`, `updateOutputsListOnWeb()`, `handleOutputDeviceSelected()`, JS handlers (`showNativeOutputDevicePicker`, `onOutputDeviceSelect`, `onBackButtonPressed`), WebView PiP код, `requestPictureInPictureHandler`
+
+#### Добавлено:
+- Proximity monitoring — автовключение proximity sensor при разговоре через ресивер (earpiece)
+- `AVAudioSession.routeChangeNotification` handler для speaker/earpiece detection
+
+#### Новые файлы:
+- `ElementX/Sources/Services/LiveKit/LiveKitRoomManager.swift`
+- `ElementX/Sources/Screens/CallScreen/View/NativeCallVideoView.swift`
+
+#### Изменённые файлы:
+- `CallScreenViewModel.swift` — нативные mute/camera, proximity, cleanup
+- `CallScreenModels.swift` — WS hook JS, удалены мёртвые enum cases
+- `CallScreen.swift` — WebView 0×0, нативное видео overlay, удалён PiP
+
+#### Коммит для применения:
+```bash
+git cherry-pick 0b7b947c  # Phase 4 cleanup
+# + предыдущие коммиты Phase 1-3 из ветки develop
+```
+
+---
+
+### 31. OIDC Login Fix — AASA + HTTPS Redirect + Entitlements
+
+**Дата**: 2026-02-15
+**Коммит**: `1d312d9d`
+
+#### Описание:
+Фикс OIDC авторизации через ASWebAuthenticationSession. Основная проблема — `.https()` callback URL требует Apple App Site Association (AASA) файл на сервере, которого не было. MAS (Matrix Authentication Service) не принимает custom URL schemes — только HTTPS.
+
+#### Изменения:
+- Развёрнут AASA на `stalk.implica.ru/.well-known/apple-app-site-association` (K8s: ConfigMap → nginx → Ingress)
+- `AppSettings.oidcRedirectURL` восстановлен на `https://stalk.implica.ru/oidc/login`
+- Entitlements: добавлены `applinks:stalk.implica.ru` + `webcredentials:stalk.implica.ru`
+- `AuthenticationFlowCoordinator`: обработка дублирующих переходов `savedAccountsScreen → savedAccountsScreen` (вместо fatalError)
+
+#### K8s инфраструктура (на сервере):
+- ConfigMap `apple-app-site-association` в namespace `matrix`
+- Deployment `aasa-server` (nginx:alpine)
+- Service `aasa-server:80`
+- Ingress route `/.well-known/apple-app-site-association` в `stalk-ingress`
+
+#### Изменённые файлы:
+- `ElementX/Sources/Application/Settings/AppSettings.swift`
+- `ElementX/Sources/FlowCoordinators/AuthenticationFlowCoordinator.swift`
+- `ElementX/SupportingFiles/ElementX.entitlements`
+
+#### Коммит для применения:
+```bash
+git cherry-pick 1d312d9d
+```
+
+---
+
+### 32. Stale-While-Revalidate кеширование + управление кешем в настройках
+
+**Дата**: 2026-02-18
+**Коммит**: `160a6132`
+
+#### Описание:
+Кеширование данных для ускорения приложения. Паттерн Stale-While-Revalidate: данные мгновенно показываются из кеша, обновляются в фоне с сервера. Экран управления кешем в настройках.
+
+#### Функциональность:
+- **STalkCacheService** — actor-based кеш с двумя уровнями: in-memory + JSON-файлы на диске (Library/Caches/)
+- **Виджеты (Apps)** — кеш на 1 час, мгновенный показ из кеша при открытии, обновление в фоне
+- **Записи звонков (Calls)** — кеш на 5 минут, статус "прослушано" сохраняется между сессиями
+- **Профили пользователей** — кеш на 30 минут, без спиннера при повторном открытии
+- **Аватарки (Kingfisher)** — disk cache 100 МБ / 7 дней, не перезагружаются при background/foreground
+- **Настройки → Хранилище → Кеш и данные** — отображение размера и очистка (API кеш, изображения, записи)
+- **Очистка при logout** — все кеши (API + Kingfisher disk/memory) очищаются
+- **Pull-to-refresh** — принудительное обновление с сервера, минуя кеш
+
+#### Изменённые файлы:
+- `Services/Cache/STalkCacheService.swift` **(NEW)** — actor-based кеш сервис
+- `Application/ServiceLocator.swift` — регистрация cacheService
+- `Application/AppCoordinator.swift` — инициализация + очистка при clearCache
+- `WidgetsListScreen/WidgetsListScreenModels.swift` — +Codable к WidgetItem, WidgetCategory
+- `WidgetsListScreen/WidgetsListScreenViewModel.swift` — SWR для виджетов
+- `CallsListScreen/CallsListScreenModels.swift` — +Codable к CallHistoryItem, +isListened
+- `CallsListScreen/CallsListScreenViewModel.swift` — SWR для записей, кеш listened status
+- `UserProfileScreen/UserProfileScreenViewModel.swift` — SWR для профиля
+- `Services/Users/UserProfileProxy.swift` — +Codable
+- `Other/Extensions/ImageCache.swift` — disk cache 100MB/7 дней
+- `Services/UserSession/UserSessionStore.swift` — очистка кешей при logout
+- `Settings/SettingsScreen/` — добавлен пункт "Кеш и данные"
+- `Settings/CacheAndStorageScreen/` **(NEW)** — экран управления кешем
+- `FlowCoordinators/SettingsFlowCoordinator.swift` — routing на CacheAndStorageScreen
+
+#### Коммит для применения:
+```bash
+git cherry-pick 160a6132
+```
+
+---
+
+### 33. Telegram-style архив чатов
+
+**Дата**: 2026-02-18
+**Коммит**: `5a1ffdba`
+
+#### Описание:
+Архив чатов в стиле Telegram. Свайп "Архив" убирает чат из основного списка. Строка "Архив" появляется вверху списка чатов с превью и счётчиком. Тап на строку открывает экран с архивными чатами. Свайп "Разархив." возвращает чат обратно. Архивные чаты автоматически мьютятся (подавление уведомлений).
+
+#### Функциональность:
+- **Свайп "Архив"** (фиолетовый) на чате → убирает из основного списка (flagAsLowPriority + mute)
+- **Строка "Архив"** вверху списка чатов — иконка, превью имён, счётчик, шеврон
+- **Экран "Архив"** — отдельный список архивных комнат с кнопкой назад
+- **Свайп "Разархив."** (зелёный) → возврат в основной список (unflag + unmute)
+- **Пустое состояние** — "Архив пуст" с иконкой archivebox
+- **Контекстное меню** в архиве — Разархивировать, Настройки, Покинуть
+- **Подавление уведомлений** — автоматический mute при архивации, unmute при разархивации
+- **lowPriorityFilterEnabled** = true по умолчанию (SDK фильтр .nonLowPriority)
+
+#### Изменённые файлы:
+- `Screens/ArchiveScreen/ArchiveScreen.swift` **(NEW)** — View с списком архивных чатов + swipe actions
+- `Screens/ArchiveScreen/ArchiveScreenViewModel.swift` **(NEW)** — ViewModel с фильтром .lowPriority
+- `Screens/ArchiveScreen/ArchiveScreenModels.swift` **(NEW)** — State/Action модели
+- `Screens/ArchiveScreen/ArchiveScreenCoordinator.swift` **(NEW)** — Coordinator pattern
+- `Application/Settings/AppSettings.swift` — lowPriorityFilterEnabled default → true
+- `Screens/HomeScreen/HomeScreenModels.swift` — +archiveRoomCount, +archivePreviewText, +openArchive, +presentArchive
+- `Screens/HomeScreen/HomeScreenViewModel.swift` — +setupArchiveSubscription, +mute при архивации
+- `Screens/HomeScreen/View/HomeScreenContent.swift` — +archiveRow (строка "Архив")
+- `Screens/HomeScreen/HomeScreenCoordinator.swift` — +presentArchive action
+- `FlowCoordinators/ChatsTabFlowCoordinator.swift` — +presentArchiveScreen навигация
+
+#### Коммит для применения:
+```bash
+git cherry-pick 5a1ffdba
+```
+
+---
+
+### 34. Telegram-style архив v2 — trailing свайп + undo toast
+
+**Дата**: 2026-02-18
+**Коммит**: `bfcef467`
+
+#### Описание:
+Доработка архива до полного Telegram-стиля: архивация по свайпу ВЛЕВО (trailing), undo toast "Чат архивирован" с кнопкой "Отменить".
+
+#### Функциональность:
+- **Архив в trailing swipe** — кнопка "Архив" теперь при свайпе влево (как в Telegram), а не вправо
+- **Undo toast** — после архивации показывается toast "Чат архивирован" с кнопкой "Отменить" (2.5 сек)
+- **Кнопка "Отменить"** — разархивирует чат (flagAsLowPriority(false) + restoreDefaultNotificationMode)
+- **UserIndicator с action** — расширен для поддержки интерактивных toast'ов (actionTitle + action closure)
+
+#### Изменённые файлы:
+- `Other/UserIndicator/UserIndicator.swift` — +actionTitle, +action, manual Equatable conformance
+- `Other/UserIndicator/UserIndicatorToastView.swift` — рендеринг кнопки action в toast
+- `Screens/HomeScreen/HomeScreenViewModel.swift` — undo toast при архивации + unarchiveRoom helper
+- `Screens/HomeScreen/View/HomeScreenRoomList.swift` — "Архив" из leading → trailing actions
+
+#### Коммит для применения:
+```bash
+git cherry-pick bfcef467
+```
+
+### 35. Telegram-style pull-to-reveal архив + fix unmute
+
+**Дата**: 2026-02-19
+**Коммит**: `bc872ec5`
+
+#### Описание:
+Переделка строки архива под стиль Telegram: голубая иконка, pull-to-reveal поведение, исправление unmute.
+
+#### Изменения:
+- 🔵 Строка "Архив": голубая иконка 52pt (вместо серой 40pt), убраны счётчик и шеврон
+- 🫣 Архив скрыт по умолчанию — не рендерится пока пользователь не потянет список вниз (overscroll > 60pt)
+- ↕️ При прокрутке вверх (offset > 80pt) архив автоматически скрывается с компенсацией сдвига контента
+- 🎬 Анимация появления/скрытия `.easeOut(duration: 0.25)` с transition `.move(edge: .top)`
+- 🔔 Fix unmute: `setNotificationMode(.allMessages)` вместо `restoreDefaultNotificationMode` — теперь unmute работает для архивных комнат
+
+#### Изменённые файлы:
+- `Screens/HomeScreen/View/HomeScreenContent.swift` — pull-to-reveal архив, overscroll detection, Telegram-style иконка
+- `Screens/HomeScreen/HomeScreenViewModel.swift` — fix unmute через `.allMessages`
+
+#### Коммит для применения:
+```bash
+git cherry-pick bc872ec5
+```
+
+---
+
+### 36. Presence (онлайн-статус) контактов + отправка своего presence
+
+**Дата**: 2026-02-19
+**Коммиты**: `d3bd8a10`, `db9f5403`
+
+#### Описание:
+Реальный онлайн-статус контактов через Matrix Presence API. Зелёная точка и "в сети" для онлайн-пользователей, "был(а) X мин./ч. назад" для оффлайн. Приложение отправляет свой presence — другие видят нас "в сети". Polling каждые 30 сек.
+
+#### Функциональность:
+- **GET** `/_matrix/client/v3/presence/{userId}/status` — получение статуса собеседников
+- **PUT** `/_matrix/client/v3/presence/{userId}/status` — отправка своего статуса (online/offline)
+- **Polling** каждые 30 сек — обновление статусов всех контактов
+- **Lifecycle** — foreground → online + restart polling, background → offline + stop polling
+- **Фильтр "В сети"** — показывает только онлайн-контактов (реальные данные вместо захардкоженных)
+
+#### Новые файлы:
+- `ElementX/Sources/Services/Presence/PresenceService.swift` — HTTP-сервис presence (async/await, TaskGroup для параллельных запросов)
+
+#### Изменённые файлы:
+- `ContactsListScreenModels.swift` — `matrixUserID: String?` в ContactItem, `isOnline`/`lastSeenDate` → var
+- `ContactsListScreenViewModel.swift` — setupPresenceService(), applyPresence(), lifecycle handlers
+- `ContactsTabFlowCoordinator.swift` — передача PresenceService (не требуется, создаётся в VM)
+
+#### Технические детали:
+- Access token: `(clientProxy as? ClientProxy)?.matrixAccessToken()`
+- Homeserver URL: strip trailing slash (избежание двойного `//`)
+- UserID encoding: `@` и `:` percent-encoded в URL path
+- Heroes: `summary.heroes.first?.userID` для определения собеседника в DM
+
+#### Коммиты для применения:
+```bash
+git cherry-pick d3bd8a10  # feat: базовая реализация presence
+git cherry-pick db9f5403  # fix: trailing slash, percent-encode, foreground restart
+```
+
+---
+
+### 37. Избранные контакты — свайп влево + фильтр "Избранные"
+
+**Дата**: 2026-02-19
+**Коммиты**: `2e2d2f4d`, `a3e4b0b2`
+
+#### Описание:
+Избранные контакты в стиле Telegram. Свайп влево на контакте открывает оранжевую кнопку "Избранное" (как swipe actions в чатах). Фильтр "Избранные" показывает только отмеченных. Данные сохраняются в UserDefaults.
+
+#### Функциональность:
+- **Свайп влево** на контакте → оранжевая кнопка "Избранное" (звёздочка)
+- **Повторный свайп** → "Убрать" (star.slash) — снимает из избранных
+- **Фильтр "Избранные"** — показывает только отмеченные контакты
+- **Персистентность** — UserDefaults (`ru.implica.stalk.favoriteContacts`)
+- **SwipeActionView** — переиспользован кастомный компонент из чатов (сделан internal)
+
+#### Изменённые файлы:
+- `ContactsListScreenModels.swift` — `isFavorite: Bool` в ContactItem, `toggleFavorite(ContactItem)` action
+- `ContactsListScreenViewModel.swift` — `favoriteRoomIDs: Set<String>`, toggleFavorite(), saveFavorites()
+- `ContactsListScreen.swift` — SwipeActionView wrapper, фильтр .favorites, убраны кнопки-звёздочки
+- `HomeScreenRoomList.swift` — `SwipeAction` и `SwipeActionView` из `private` → `internal`
+
+#### Коммиты для применения:
+```bash
+git cherry-pick 2e2d2f4d  # feat: избранные контакты (модель + логика + UI)
+git cherry-pick a3e4b0b2  # refactor: свайп влево вместо кнопки-звёздочки
+```
+
+### 38. VoIP Push — Sygnal push gateway + VoIP pusher registration
+
+**Дата**: 2026-02-25
+**Коммиты**: `fd61566c`
+
+#### Описание:
+Настройка VoIP Push уведомлений для мгновенных входящих звонков через PushKit + CallKit. Развёрнут Sygnal push gateway на K8s, обновлён push gateway URL, реализована отправка VoIP push token на сервер.
+
+#### Функциональность:
+- **Sygnal push gateway** развёрнут на K8s (namespace `matrix`, порт 5000)
+- **Ingress** настроен: `/_matrix/push` → Sygnal (перед `/_matrix` → Synapse)
+- **pushGatewayBaseURL** обновлён с `matrix.org` на `stalk.implica.ru`
+- **VoIP pusher registration** — `didUpdate pushCredentials` теперь отправляет VoIP token на сервер
+- **Well-known** обновлён с `org.matrix.msc3881.push_gateway`
+- **Два app_id** в Sygnal: `ru.implica.stalk.ios.dev` (обычные push) и `ru.implica.stalk.voip` (VoIP)
+
+#### Серверные изменения (K8s):
+- ConfigMap `sygnal-config` — конфиг Sygnal с APNs apps
+- Secret `sygnal-apns-key` — APNs `.p8` ключ (placeholder, требует реальный ключ)
+- Deployment `sygnal` — matrixdotorg/sygnal:latest
+- Service `sygnal` — ClusterIP:5000
+- Ingress route `/_matrix/push` в stalk-ingress
+- Well-known ConfigMap обновлён с push_gateway
+
+#### Изменённые файлы (iOS):
+- `AppSettings.swift:278` — `pushGatewayBaseURL` → `https://stalk.implica.ru`
+- `ElementCallService.swift:36` — `voipDeviceToken: Data?` для хранения VoIP токена
+- `ElementCallService.swift:46-48` — регистрация VoIP pusher при получении clientProxy
+- `ElementCallService.swift:185-195` — `didUpdate pushCredentials` реализация
+- `ElementCallService.swift:345-370` — `registerVoIPPusher()` метод
+
+#### ⚠️ Требуется для завершения:
+1. **APNs ключ (.p8)** — сгенерировать в Apple Developer Portal и загрузить в K8s Secret `sygnal-apns-key`
+2. **KEY_ID** — обновить `PLACEHOLDER_KEY_ID` в ConfigMap `sygnal-config` на реальный Key ID
+3. Перезапустить Sygnal pod после обновления ключа
+
+#### Коммиты для применения:
+```bash
+git cherry-pick fd61566c  # feat(VoIP): push gateway URL + VoIP pusher registration
+```
+
+---
+
+### 39. Org-profile — должность и отдел в контактах
+
+**Дата**: 2026-03-05
+**Коммит**: `ddb70669`
+**Задача**: STMOB-51
+
+#### Что сделано:
+- Добавлены поля `jobTitle` и `department` в `ContactItem`
+- Создан `OrgProfileService` — загрузка данных из `/api/org-profile/:userId`
+- Проверка включённых полей через `/api/org-profile/settings`
+- Subtitle "должность · отдел" отображается под именем контакта
+- Одноразовая загрузка профилей (кеш в `CurrentValueSubject`)
+
+#### Затронутые файлы:
+- `ContactsListScreenModels.swift` — поля `jobTitle`, `department` в `ContactItem`
+- `ContactsListScreenViewModel.swift` — `OrgProfileService` интеграция
+- `ContactsListScreen.swift` — subtitle в ячейке контакта
+- `Services/OrgProfile/OrgProfileService.swift` — **новый файл**
+
+#### Коммиты для применения:
+```bash
+git cherry-pick ddb70669  # feat(Contacts): org-profile — должность и отдел
+```
+
+---
+
+### 40. Meetings-api — расписание встреч на вкладке Звонки
+
+**Дата**: 2026-03-05
+**Коммит**: `0262289a`
+**Задача**: STMOB-52
+
+#### Что сделано:
+- `MeetingsService` — загрузка встреч из `/api/meetings` + RSVP через `/api/meetings/:id/rsvp`
+- Секция "Встречи" над историей звонков с календарной иконкой (день/число)
+- RSVP кнопки (✓ принять / ✗ отклонить) для pending приглашений
+- Кнопка "Присоединиться" (video) для принятых встреч с matrix room
+- Время, место, количество участников, статус RSVP
+- Фильтрация: только предстоящие (не cancelled, не прошедшие)
+
+#### Затронутые файлы:
+- `Services/Meetings/MeetingsService.swift` — **новый файл**
+- `CallsListScreenModels.swift` — actions + state для meetings
+- `CallsListScreenViewModel.swift` — MeetingsService интеграция
+- `CallsListScreen.swift` — meetingCell + RSVP UI
+
+#### Коммиты для применения:
+```bash
+git cherry-pick 0262289a  # feat(Calls): meetings-api — расписание встреч
+```
+
+---
+
+### 41. Избранные сообщения (Bookmarks) — сохранение/удаление через контекстное меню
+
+**Дата**: 2026-03-23
+
+#### Что сделано:
+- `BookmarkService` — локальное хранение избранных сообщений в UserDefaults (до 500 шт.)
+- `BookmarkedMessage` модель — eventID, roomID, senderID, senderName, body preview (200 chars), timestamp
+- Действие "В избранное" / "Из избранного" в контекстном меню сообщений (long press)
+- Иконка `favourite` из Compound Design Tokens
+- Регистрация `BookmarkService` в `ServiceLocator` (singleton)
+- Строки уже были в `SL10n`: `bookmarkAdd`, `bookmarkRemove`, `bookmarkTitle`, `bookmarkEmpty`
+
+#### Затронутые файлы:
+- `Services/Bookmark/BookmarkService.swift` — **новый файл**
+- `Application/ServiceLocator.swift` — регистрация BookmarkService
+- `Application/AppCoordinator.swift` — setupBookmarkService() при запуске
+- `Timeline/View/ItemMenu/TimelineItemMenuAction.swift` — `.bookmark` / `.removeBookmark` cases
+- `Timeline/View/ItemMenu/TimelineItemMenuActionProvider.swift` — добавление bookmark action с проверкой isBookmarked
+- `Timeline/TimelineInteractionHandler.swift` — обработка bookmark/removeBookmark действий
+
+#### Коммиты для применения:
+```bash
+git cherry-pick <commit>  # feat(Bookmarks): bookmark/unbookmark messages via context menu
+```
+
+---
+
 ## 🎯 Текущий статус
 
 **Версия Element X**: Форк на основе upstream develop
@@ -1394,8 +1777,19 @@ git cherry-pick c5bf455
 - ✅ Исправление конфликта LiveKit SDK + адаптация API (#27)
 - ✅ Виджеты — реальные URL с продакшена (#28)
 - ✅ Виджет статистики — персональная информация пользователя (#29)
+- ✅ CallScreen v5 — Native LiveKit Video + Phase 4 Cleanup (#30)
+- ✅ OIDC Login Fix — AASA + HTTPS Redirect + Entitlements (#31)
+- ✅ SWR кеширование данных + управление кешем в настройках (#32)
+- ✅ Telegram-style архив чатов (#33)
+- ✅ Telegram-style архив v2 — trailing свайп + undo toast (#34)
+- ✅ Pull-to-reveal архив + fix unmute (#35)
+- ✅ Presence (онлайн-статус) контактов + отправка своего presence (#36)
+- ✅ Избранные контакты — свайп влево + фильтр "Избранные" (#37)
+- ✅ VoIP Push — Sygnal push gateway + VoIP pusher registration (#38)
+- ✅ Org-profile — должность и отдел в контактах (#39)
+- ✅ Meetings-api — расписание встреч на вкладке Звонки (#40)
 
-**Последний коммит**: `c5bf455` - Виджет статистики с персональной информацией
+**Последний коммит**: `0262289a` - feat(Calls): meetings-api — расписание встреч
 
 ---
 
@@ -1432,6 +1826,13 @@ git cherry-pick c5bf455
 - [ ] Применить коммит #27: Исправление конфликта LiveKit SDK + API (`3cd7b9b`)
 - [ ] Применить коммит #28: Виджеты — реальные URL (`333daf5`)
 - [ ] Применить коммит #29: Виджет статистики — userId (`c5bf455`)
+- [ ] Применить коммит #30: CallScreen v5 — Native LiveKit + cleanup (`0b7b947c` + серия)
+- [ ] Применить коммит #31: OIDC Login Fix — AASA + entitlements (`1d312d9d`)
+- [ ] Применить коммит #33: Telegram-style архив чатов (`5a1ffdba`)
+- [ ] Применить коммит #34: Архив v2 — trailing свайп + undo toast (`bfcef467`)
+- [ ] Применить коммит #35: Pull-to-reveal архив + fix unmute (`bc872ec5`)
+- [ ] Применить коммиты #36: Presence контактов (`d3bd8a10`, `db9f5403`)
+- [ ] Применить коммиты #37: Избранные контакты (`2e2d2f4d`, `a3e4b0b2`)
 - [ ] Разрешить конфликты в UserSessionFlowCoordinator.swift
 - [ ] Проект собирается без ошибок
 - [ ] 5 вкладок с SF Symbol иконками работают
@@ -1451,4 +1852,4 @@ git cherry-pick c5bf455
 ---
 
 **Дата создания**: 2026-01-28
-**Последнее обновление**: 2026-02-13
+**Последнее обновление**: 2026-03-05

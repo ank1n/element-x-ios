@@ -65,6 +65,26 @@
 | 18 | Миграция на stalk.implica.ru — динамические URL | `8d9ef0f` |
 | 19 | Telegram-style Tab Bar — SF Symbols filled/outline, зелёные бабблы | `c220ddc` |
 | 20 | Inline titles на всех экранах (убраны large titles) | `c220ddc`, `71745dc` |
+| 21 | Навигация контакт → чат (как в Telegram) | `e49ba44` |
+| 22 | Фильтр пустых комнат в контактах | `7bbfa2b` |
+| 23 | Поиск сообщений внутри чата | `d8fb603` |
+| 24 | Telegram-style CallScreen UI — CSS injection | `d0f38ce` |
+| 25 | CallScreen v4 — 5 нативных кнопок, grid | `53dd858` |
+| 26 | Исправление конфликта LiveKit SDK + API | `3cd7b9b` |
+| 27 | Виджеты — реальные URL с продакшена | `333daf5` |
+| 28 | Виджет статистики — userId | `c5bf455` |
+| 29 | CallScreen v5 — Native LiveKit + cleanup | `0b7b947c` |
+| 30 | OIDC Login Fix — AASA + HTTPS + Entitlements | `1d312d9d` |
+| 31 | SWR кеширование + управление кешем | `160a6132` |
+| 32 | Telegram-style архив чатов | `5a1ffdba` |
+| 33 | Архив v2 — trailing свайп + undo toast | `bfcef467` |
+| 34 | Pull-to-reveal архив + fix unmute | `bc872ec5` |
+| 35 | Presence (онлайн-статус) контактов | `d3bd8a10` |
+| 36 | Избранные контакты — свайп + фильтр | `2e2d2f4d` |
+| 37 | VoIP Push — Sygnal + pusher registration | `fd61566c` |
+| 38 | KS-Bridge — E2EE ключи для key-server | `e478bd4d` |
+| 39 | Org-profile — должность и отдел в контактах | `ddb70669` |
+| 40 | Meetings-api — расписание встреч на вкладке Звонки | `0262289a` |
 
 ## Ограничения
 - Работает только на Симуляторе (не физические устройства)
