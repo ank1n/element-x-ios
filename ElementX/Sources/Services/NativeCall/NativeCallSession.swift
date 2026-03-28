@@ -297,9 +297,11 @@ final class NativeCallSession: ObservableObject {
     /// Converts raw Data to a String where each byte maps 1:1 (ISO Latin-1)
     /// LiveKit SDK will .utf8 encode this — for ASCII-range bytes it's identical
     private func setRawKeyInProvider(_ provider: BaseKeyProvider, key: Data, participantId: String, index: Int32) {
-        // Access rtcKeyProvider directly to pass raw bytes (not UTF-8 string)
-        provider.rtcKeyProvider.setKey(key, with: index, forParticipant: participantId)
-        MXLog.info("sTalk E2EE: Raw key set (\(key.count) bytes) for \(participantId)")
+        // Use standard setKey(String) — LiveKit SDK handles key derivation internally
+        // Key is base64 string → UTF-8 bytes → HKDF → AES key
+        let keyString = key.base64EncodedString()
+        provider.setKey(key: keyString, participantId: participantId, index: index)
+        MXLog.info("sTalk E2EE: Key set as string (\(keyString.prefix(8))...) for \(participantId) index=\(index)")
     }
 
     // MARK: - E2EE Key Exchange
@@ -728,12 +730,12 @@ final class NativeCallSession: ObservableObject {
                 }
 
                 let ourIdentity = "\(userId):\(deviceId)"
+                setRawKeyInProvider(keyProvider, key: ourEncryptionKeyRaw!, participantId: ourIdentity, index: 0)
+                MXLog.info("sTalk NativeCall E2EE: Our key set for \(ourIdentity)")
 
-                // DEBUG: Connect WITHOUT E2EE to test if video works, keep key exchange for future
-                MXLog.info("sTalk NativeCall E2EE: DEBUG — connecting WITHOUT EncryptionOptions (key exchange still active)")
-
-                // DEBUG: Connect WITHOUT E2EE — test if video passes through
-                try await liveKitRoomManager.connect(wsURL: url, token: token, speakerByDefault: false)
+                try await liveKitRoomManager.connectWithE2EE(
+                    wsURL: url, token: token, keyProvider: keyProvider, speakerByDefault: false
+                )
             } else {
                 try await liveKitRoomManager.connect(wsURL: url, token: token, speakerByDefault: false)
             }
