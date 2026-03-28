@@ -603,6 +603,7 @@ final class NativeCallSession: ObservableObject {
 
         // Also check any direction for encryption_keys
         if messageString.contains("encryption_keys") {
+            MXLog.info("sTalk NativeCall E2EE RAW: \(messageString.prefix(500))")
             handleEncryptionKeys(message)
         }
     }

@@ -86,18 +86,26 @@ struct WidgetAPIMessage {
 
     /// Extract E2EE encryption keys
     func extractEncryptionKeys() -> E2EEKeyInfo? {
-        guard let content = data?["content"] as? [String: Any],
-              let keysObj = content["keys"] as? [String: Any],
-              let key = keysObj["key"] as? String,
-              let index = keysObj["index"] as? Int else {
-            return nil
-        }
+        guard let content = data?["content"] as? [String: Any] else { return nil }
 
         let sender = data?["sender"] as? String ?? ""
-        let deviceId = (content["member"] as? [String: Any])?["claimed_device_id"] as? String ?? ""
+        let deviceId = content["device_id"] as? String
+            ?? (content["member"] as? [String: Any])?["claimed_device_id"] as? String ?? ""
         let participantId = sender.isEmpty ? "" : "\(sender):\(deviceId)"
 
-        return E2EEKeyInfo(key: key, index: index, participantId: participantId)
+        // Try keys as array [{key, index}] (EC format)
+        if let keysArray = content["keys"] as? [[String: Any]], let first = keysArray.first,
+           let key = first["key"] as? String, let index = first["index"] as? Int {
+            return E2EEKeyInfo(key: key, index: index, participantId: participantId)
+        }
+
+        // Try keys as object {key, index}
+        if let keysObj = content["keys"] as? [String: Any],
+           let key = keysObj["key"] as? String, let index = keysObj["index"] as? Int {
+            return E2EEKeyInfo(key: key, index: index, participantId: participantId)
+        }
+
+        return nil
     }
 
     /// Extract LiveKit focus from call.member event
