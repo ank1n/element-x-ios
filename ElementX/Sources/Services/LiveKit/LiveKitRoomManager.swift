@@ -438,11 +438,6 @@ extension LiveKitRoomManager: RoomDelegate {
         }
     }
 
-    nonisolated func room(_ room: Room, trackPublication: TrackPublication, didUpdateE2EEState state: E2EEState) {
-        Task { @MainActor in
-            MXLog.info("sTalk LiveKit E2EE STATE: track=\(trackPublication.kind) state=\(state)")
-        }
-    }
 
     nonisolated func room(_ room: Room, participant: LocalParticipant, didPublishTrack publication: LocalTrackPublication) {
         Task { @MainActor in
