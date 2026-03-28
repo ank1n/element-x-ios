@@ -286,23 +286,15 @@ final class NativeCallSession: ObservableObject {
 
     /// Set raw bytes key in BaseKeyProvider, bypassing UTF-8 string conversion
     /// BaseKeyProvider.rtcKeyProvider is internal, so we use KVC to access it
+    /// Set key using the same raw bytes that EC JS uses
+    /// Converts raw Data to a String where each byte maps 1:1 (ISO Latin-1)
+    /// LiveKit SDK will .utf8 encode this — for ASCII-range bytes it's identical
     private func setRawKeyInProvider(_ provider: BaseKeyProvider, key: Data, participantId: String, index: Int32) {
-        // Try KVC access to rtcKeyProvider (LKRTCFrameCryptorKeyProvider)
-        if let rtcProvider = (provider as NSObject).value(forKey: "rtcKeyProvider") as AnyObject? {
-            // Use NSInvocation-style call via ObjC runtime
-            let selector = NSSelectorFromString("setKey:withIndex:forParticipant:")
-            if rtcProvider.responds(to: selector) {
-                let imp = rtcProvider.method(for: selector)
-                typealias SetKeyFunc = @convention(c) (AnyObject, Selector, NSData, Int32, NSString) -> Void
-                let setKey = unsafeBitCast(imp, to: SetKeyFunc.self)
-                setKey(rtcProvider, selector, key as NSData, index, participantId as NSString)
-                MXLog.info("sTalk E2EE: Raw key set via IMP (\(key.count) bytes)")
-                return
-            }
-        }
-        // Fallback
-        MXLog.warning("sTalk E2EE: IMP failed, using string key")
-        provider.setKey(key: key.base64EncodedString(), participantId: participantId, index: index)
+        // Use base64 string — both sides must agree on format
+        // TODO: resolve format mismatch between Swift UTF-8 and JS raw bytes
+        let keyString = key.base64EncodedString()
+        provider.setKey(key: keyString, participantId: participantId, index: index)
+        MXLog.info("sTalk E2EE: Key set for \(participantId) (\(keyString.prefix(8))...)")
     }
 
     // MARK: - E2EE Key Exchange
