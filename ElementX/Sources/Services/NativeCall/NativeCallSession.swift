@@ -24,7 +24,12 @@ final class NativeCallSession: ObservableObject {
 
     private let widgetDriver: ElementCallWidgetDriverProtocol
     private let liveKitRoomManager: LiveKitRoomManager
-    private let keyProvider = BaseKeyProvider(isSharedKey: false)
+    // Match EC JS parameters: ratchetWindowSize: 10, keyringSize: 256
+    private let keyProvider = BaseKeyProvider(options: KeyProviderOptions(
+        sharedKey: false,
+        ratchetWindowSize: 10,
+        keyRingSize: 256
+    ))
     private let isEncrypted: Bool
     private let userId: String
     private let deviceId: String
