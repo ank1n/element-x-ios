@@ -427,7 +427,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                         deviceId: clientProxy.deviceID ?? "unknown",
                         matrixRoomId: roomProxy.id,
                         homeserverURL: clientProxy.homeserver,
-                        accessToken: token
+                        accessToken: token,
+                        roomProxy: roomProxy
                     )
                     self.nativeCallSession = session
 

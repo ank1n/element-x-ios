@@ -31,6 +31,7 @@ final class NativeCallSession: ObservableObject {
     private let matrixRoomId: String
     private let homeserverURL: String
     private let accessToken: String
+    private let roomProxy: JoinedRoomProxyProtocol?
 
     // MARK: - LiveKit Config
     // TODO: Move to AppSettings or server config
@@ -58,7 +59,8 @@ final class NativeCallSession: ObservableObject {
          deviceId: String,
          matrixRoomId: String,
          homeserverURL: String,
-         accessToken: String) {
+         accessToken: String,
+         roomProxy: JoinedRoomProxyProtocol? = nil) {
         self.widgetDriver = widgetDriver
         self.liveKitRoomManager = liveKitRoomManager
         self.isEncrypted = isEncrypted
@@ -67,6 +69,7 @@ final class NativeCallSession: ObservableObject {
         self.matrixRoomId = matrixRoomId
         self.homeserverURL = homeserverURL.hasSuffix("/") ? String(homeserverURL.dropLast()) : homeserverURL
         self.accessToken = accessToken
+        self.roomProxy = roomProxy
     }
 
     // MARK: - Start
