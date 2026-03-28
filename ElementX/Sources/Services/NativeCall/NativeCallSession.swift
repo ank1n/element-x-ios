@@ -9,7 +9,7 @@
 import Combine
 import CryptoKit
 import Foundation
-import LiveKit
+@testable import LiveKit
 import MatrixRustSDK
 import SwiftUI
 
@@ -290,11 +290,9 @@ final class NativeCallSession: ObservableObject {
     /// Converts raw Data to a String where each byte maps 1:1 (ISO Latin-1)
     /// LiveKit SDK will .utf8 encode this — for ASCII-range bytes it's identical
     private func setRawKeyInProvider(_ provider: BaseKeyProvider, key: Data, participantId: String, index: Int32) {
-        // Use base64 string — both sides must agree on format
-        // TODO: resolve format mismatch between Swift UTF-8 and JS raw bytes
-        let keyString = key.base64EncodedString()
-        provider.setKey(key: keyString, participantId: participantId, index: index)
-        MXLog.info("sTalk E2EE: Key set for \(participantId) (\(keyString.prefix(8))...)")
+        // Access rtcKeyProvider directly to pass raw bytes (not UTF-8 string)
+        provider.rtcKeyProvider.setKey(key, with: index, forParticipant: participantId)
+        MXLog.info("sTalk E2EE: Raw key set (\(key.count) bytes) for \(participantId)")
     }
 
     // MARK: - E2EE Key Exchange
