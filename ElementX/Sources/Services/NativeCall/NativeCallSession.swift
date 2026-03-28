@@ -301,10 +301,6 @@ final class NativeCallSession: ObservableObject {
         // Pass raw bytes directly — MUST match JS importKey("raw", buffer) = same 16 bytes
         // setKey(String) uses .utf8 which gives DIFFERENT bytes (24 vs 16) — incompatible
         provider.rtcKeyProvider.setKey(key, with: index, forParticipant: participantId)
-        // Also update currentKeyIndex through public API
-        if index >= 0 {
-            provider.setCurrentKeyIndex(index)
-        }
         MXLog.info("sTalk E2EE: Raw key (\(key.count) bytes) set for \(participantId) idx=\(index)")
     }
 
@@ -686,9 +682,12 @@ final class NativeCallSession: ObservableObject {
 
         MXLog.info("sTalk NativeCall: E2EE key from \(keyInfo.participantId) index=\(keyInfo.index)")
 
-        // Decode base64 → raw bytes, set via KVC
+        // Decode base64 → raw bytes
         if let rawKey = Data(base64Encoded: keyInfo.key) {
-            setRawKeyInProvider(keyProvider, key: rawKey, participantId: keyInfo.participantId, index: Int32(keyInfo.index))
+            // Set key for the given index AND all previous indexes (in case we missed earlier keys)
+            for idx in 0...Int32(keyInfo.index) {
+                setRawKeyInProvider(keyProvider, key: rawKey, participantId: keyInfo.participantId, index: idx)
+            }
         } else {
             keyProvider.setKey(key: keyInfo.key, participantId: keyInfo.participantId, index: Int32(keyInfo.index))
         }
