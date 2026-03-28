@@ -126,7 +126,8 @@ final class NativeCallSession: ObservableObject {
             await widgetDriver.handleMessage(contentLoaded)
             MXLog.info("sTalk NativeCall: WidgetDriver — content_loaded sent")
 
-            try? await Task.sleep(for: .seconds(1))
+            // Wait for capabilities negotiation to complete (async)
+            try? await Task.sleep(for: .seconds(5))
 
             // Step 3: io.element.join — trigger MatrixRTC
             let joinCall = """
