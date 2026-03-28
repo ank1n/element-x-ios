@@ -297,19 +297,15 @@ final class NativeCallSession: ObservableObject {
     /// Converts raw Data to a String where each byte maps 1:1 (ISO Latin-1)
     /// LiveKit SDK will .utf8 encode this — for ASCII-range bytes it's identical
     private func setRawKeyInProvider(_ provider: BaseKeyProvider, key: Data, participantId: String, index: Int32) {
-        // Convert raw bytes to String via Latin1 (1 byte = 1 char, preserves all bytes 0-255)
-        // Then setKey(String) → .utf8 encoding. For bytes 0-127 UTF-8 = Latin1 (same byte).
-        // For bytes 128-255 UTF-8 gives 2 bytes — NOT same as raw byte.
-        //
-        // So: use public API setKey(String) with base64 key.
-        // LiveKit SDK: setKey("base64str") → .utf8(24 bytes) → HKDF → AES
-        // JS SDK: importKey("raw", decode(base64str)=16 bytes) → HKDF → AES
-        // These ARE different — but LiveKit says they're compatible.
-        //
-        // Maybe JS SDK also uses base64 string for HKDF? Let me pass base64 through standard API.
-        let b64 = key.base64EncodedString()
-        provider.setKey(key: b64, participantId: participantId, index: index)
-        MXLog.info("sTalk E2EE: Key set via setKey(String) b64=\(b64.prefix(8))... for \(participantId) idx=\(index)")
+        // @testable import LiveKit gives access to rtcKeyProvider
+        // Pass raw bytes directly — MUST match JS importKey("raw", buffer) = same 16 bytes
+        // setKey(String) uses .utf8 which gives DIFFERENT bytes (24 vs 16) — incompatible
+        provider.rtcKeyProvider.setKey(key, with: index, forParticipant: participantId)
+        // Also update currentKeyIndex through public API
+        if index >= 0 {
+            provider.setCurrentKeyIndex(index)
+        }
+        MXLog.info("sTalk E2EE: Raw key (\(key.count) bytes) set for \(participantId) idx=\(index)")
     }
 
     // MARK: - E2EE Key Exchange
