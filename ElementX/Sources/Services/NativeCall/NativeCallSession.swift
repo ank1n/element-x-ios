@@ -138,15 +138,13 @@ final class NativeCallSession: ObservableObject {
 
         // E2EE key exchange
         if isEncrypted {
+            // Listen to room timeline for incoming encryption keys
+            listenForEncryptionKeysFromTimeline()
+
             // Send our key
             Task { [weak self] in
                 try? await Task.sleep(for: .seconds(3))
                 await self?.sendOurEncryptionKey()
-            }
-            // Poll for remote keys from room timeline
-            Task { [weak self] in
-                try? await Task.sleep(for: .seconds(2))
-                await self?.pollForEncryptionKeys()
             }
         }
 
@@ -343,7 +341,57 @@ final class NativeCallSession: ObservableObject {
         MXLog.info("sTalk NativeCall E2EE: Key send tasks launched")
     }
 
-    // MARK: - E2EE Key Polling from Room Timeline
+    // MARK: - E2EE Key from Room Timeline
+
+    private func listenForEncryptionKeysFromTimeline() {
+        guard let roomProxy else {
+            MXLog.warning("sTalk NativeCall E2EE: No roomProxy — can't listen to timeline")
+            return
+        }
+
+        roomProxy.timeline.timelineItemProvider.updatePublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] items, _ in
+                guard let self else { return }
+                for item in items {
+                    guard case .event(let eventItem) = item else { continue }
+
+                    // Check if it's a custom event (encryption_keys)
+                    if case .msgLike(let msgContent) = eventItem.content,
+                       case .other(let eventType) = msgContent.kind {
+                        if case .other(let typeStr) = eventType, typeStr.contains("encryption_keys") {
+                            // Parse key from debugInfo originalJSON
+                            let debugInfo = eventItem.debugInfo
+                            if let json = debugInfo.originalJSON,
+                               let data = json.data(using: .utf8),
+                               let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                               let content = dict["content"] as? [String: Any],
+                               let sender = dict["sender"] as? String,
+                               sender != self.userId {
+
+                                let deviceId = content["device_id"] as? String ?? ""
+                                let participantId = "\(sender):\(deviceId)"
+
+                                if let keys = content["keys"] as? [[String: Any]] {
+                                    for keyObj in keys {
+                                        if let key = keyObj["key"] as? String,
+                                           let index = keyObj["index"] as? Int,
+                                           let rawKey = Data(base64Encoded: key) {
+                                            self.setRawKeyInProvider(self.keyProvider, key: rawKey, participantId: participantId, index: Int32(index))
+                                            self.participantKeys[participantId] = true
+                                            MXLog.info("sTalk NativeCall E2EE: 🔑 KEY FROM TIMELINE! \(participantId) index=\(index)")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .store(in: &cancellables)
+
+        MXLog.info("sTalk NativeCall E2EE: Listening to room timeline for encryption_keys")
+    }
 
     private func pollForEncryptionKeys() async {
         // Poll room messages for io.element.call.encryption_keys events
