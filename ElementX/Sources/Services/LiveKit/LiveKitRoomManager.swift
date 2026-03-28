@@ -94,10 +94,11 @@ final class LiveKitRoomManager: ObservableObject {
 
         let connectOptions = ConnectOptions(autoSubscribe: true // Subscribe immediately — SFrame handles decrypt when keys arrive
         )
-        let roomOptions = RoomOptions(defaultCameraCaptureOptions: CameraCaptureOptions(dimensions: .h720_169),
+        let roomOptions = RoomOptions(defaultCameraCaptureOptions: CameraCaptureOptions(dimensions: .h1080_169),
                                       defaultAudioCaptureOptions: AudioCaptureOptions(),
-                                      defaultVideoPublishOptions: VideoPublishOptions(encoding: VideoEncoding(maxBitrate: 1_500_000, maxFps: 30)),
-                                      defaultAudioPublishOptions: AudioPublishOptions(encoding: AudioEncoding(maxBitrate: 32000),
+                                      defaultVideoPublishOptions: VideoPublishOptions(encoding: VideoEncoding(maxBitrate: 3_000_000, maxFps: 30),
+                                                                                      simulcast: true),
+                                      defaultAudioPublishOptions: AudioPublishOptions(encoding: AudioEncoding(maxBitrate: 48000),
                                                                                       dtx: false),
                                       encryptionOptions: encryptionOptions)
 
