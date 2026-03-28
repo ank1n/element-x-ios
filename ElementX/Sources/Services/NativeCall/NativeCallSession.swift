@@ -574,7 +574,7 @@ final class NativeCallSession: ObservableObject {
                 // Response must be toWidget (not fromWidget!) — driver expects toWidget response.
                 Task {
                     let response = """
-                    {"api":"toWidget","action":"capabilities","widgetId":"\(message.widgetId)","requestId":"\(message.requestId)","data":{},"response":{"capabilities":{"read":["org.matrix.msc3819.receive.to_device:io.element.call.encryption_keys","org.matrix.msc2762.receive.state_event:org.matrix.msc3401.call.member"],"send":["org.matrix.msc3819.send.to_device:io.element.call.encryption_keys","org.matrix.msc2762.send.state_event:org.matrix.msc3401.call.member"],"requires_client":true,"update_delayed_event":true,"send_delayed_event":true}}}
+                    {"api":"toWidget","action":"capabilities","widgetId":"\(message.widgetId)","requestId":"\(message.requestId)","data":{},"response":{"capabilities":["org.matrix.msc3819.receive.to_device:io.element.call.encryption_keys","org.matrix.msc3819.send.to_device:io.element.call.encryption_keys","org.matrix.msc2762.receive.state_event:org.matrix.msc3401.call.member","org.matrix.msc2762.send.state_event:org.matrix.msc3401.call.member","org.matrix.msc2762.send.delayed_event","org.matrix.msc2762.update.delayed_event","io.element.requires_client"]}}
                     """
                     MXLog.info("sTalk NativeCall: Sending toWidget response: \(String(response.prefix(200)))")
                     let result = await widgetDriver.handleMessage(response)
