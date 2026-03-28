@@ -490,6 +490,8 @@ final class NativeCallSession: ObservableObject {
 
     private func sendCallNotification() async {
         // Send via WidgetDriver (Megolm encrypted in encrypted rooms)
+        // m.mentions with empty user_ids — notifies all room members
+
         let notification = """
         {"api":"fromWidget","action":"send_event","widgetId":"\(widgetDriver.widgetID)","requestId":"native-notify-\(UUID().uuidString)","data":{"type":"org.matrix.msc4075.rtc.notification","content":{"application":"m.call","call_id":"","m.mentions":{"user_ids":[]},"sender_ts":\(Int(Date().timeIntervalSince1970 * 1000)),"lifetime":90000,"notification_type":"ring"}}}
         """
