@@ -23,8 +23,6 @@ struct CallScreen: View {
     }
 
     var body: some View {
-        // sTalk: Single view tree — content always at same structural position
-        // to prevent WKWebView recreation on minimize/restore
         NavigationStack {
             ZStack {
                 content
@@ -46,6 +44,7 @@ struct CallScreen: View {
                                 .padding(.bottom, 48)
                         }
                     }
+                    .ignoresSafeArea(.container, edges: .bottom)
                 } else {
                     // sTalk: Mini controls for floating window
                     miniControls
@@ -59,6 +58,7 @@ struct CallScreen: View {
                 if !isMinimized { toolbar }
             }
         }
+        .ignoresSafeArea()
         .alert(item: $context.alertInfo)
         .environment(\.colorScheme, .dark)
         .sheet(isPresented: $showRecordingConsent) {
@@ -142,7 +142,8 @@ struct CallScreen: View {
         if let roomManager = context.viewState.liveKitRoomManager, context.viewState.url == nil {
             // sTalk: Native call mode — no WebView, native LiveKit rendering
             NativeCallGridView(roomManager: roomManager,
-                               isDirect: context.viewState.isDirect)
+                               isDirect: context.viewState.isDirect,
+                               isMinimized: isMinimized)
                 .ignoresSafeArea()
         } else if context.viewState.url == nil {
             ProgressView()

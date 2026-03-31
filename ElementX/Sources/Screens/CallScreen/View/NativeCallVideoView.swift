@@ -39,13 +39,14 @@ struct NativeCallVideoView: UIViewRepresentable {
 struct NativeCallGridView: View {
     @ObservedObject var roomManager: LiveKitRoomManager
     let isDirect: Bool
+    var isMinimized = false
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
             if isDirect {
-                DirectCallLayout(roomManager: roomManager)
+                DirectCallLayout(roomManager: roomManager, isMinimized: isMinimized)
             } else {
                 GroupCallLayout(roomManager: roomManager)
             }
@@ -58,8 +59,9 @@ struct NativeCallGridView: View {
 /// Fullscreen remote video with a draggable self-view PiP in the corner.
 private struct DirectCallLayout: View {
     @ObservedObject var roomManager: LiveKitRoomManager
+    var isMinimized = false
     @State private var selfViewOffset: CGSize = .zero
-    @State private var selfViewCorner: PipCorner = .topRight
+    @State private var selfViewCorner: PipCorner = .bottomRight
 
     var body: some View {
         GeometryReader { geometry in
@@ -73,8 +75,8 @@ private struct DirectCallLayout: View {
                     remotePlaceholder
                 }
 
-                // Local self-view — small draggable PiP in corner
-                if let localTrack = roomManager.localVideoTrack {
+                // Local self-view — only in fullscreen mode, hide in minimized
+                if !isMinimized, let localTrack = roomManager.localVideoTrack {
                     selfViewPip(track: localTrack, in: geometry)
                 }
             }
@@ -136,27 +138,58 @@ private struct DirectCallLayout: View {
                                              padding: padding,
                                              safeArea: safeArea)
 
-        NativeCallVideoView(track: track, mirror: true)
-            .frame(width: pipWidth, height: pipHeight)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .shadow(color: .black.opacity(0.4), radius: 8, x: 0, y: 4)
-            .position(x: anchor.x + selfViewOffset.width, y: anchor.y + selfViewOffset.height)
-            .gesture(DragGesture()
-                .onChanged { value in
-                    selfViewOffset = value.translation
+        ZStack(alignment: .topTrailing) {
+            NativeCallVideoView(track: track, mirror: true)
+
+            // Camera flip button
+            Button {
+                Task { try? await roomManager.switchCamera() }
+            } label: {
+                Image(systemName: "arrow.triangle.2.circlepath.camera.fill")
+                    .font(.system(size: 14))
+                    .foregroundColor(.white)
+                    .frame(width: 32, height: 32)
+                    .background(Color.black.opacity(0.4))
+                    .clipShape(Circle())
+            }
+            .padding(6)
+
+            // "Вы" label at bottom-left
+            VStack {
+                Spacer()
+                HStack {
+                    Text(SL10n.callsYou)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.black.opacity(0.4))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .padding(6)
+                    Spacer()
                 }
-                .onEnded { value in
-                    let finalPoint = CGPoint(x: anchor.x + value.translation.width,
-                                             y: anchor.y + value.translation.height)
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                        selfViewCorner = PipCorner.nearest(to: finalPoint,
-                                                           in: geometry.size,
-                                                           pipSize: CGSize(width: pipWidth, height: pipHeight),
-                                                           padding: padding,
-                                                           safeArea: safeArea)
-                        selfViewOffset = .zero
-                    }
-                })
+            }
+        }
+        .frame(width: pipWidth, height: pipHeight)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .shadow(color: .black.opacity(0.4), radius: 8, x: 0, y: 4)
+        .position(x: anchor.x + selfViewOffset.width, y: anchor.y + selfViewOffset.height)
+        .simultaneousGesture(DragGesture(minimumDistance: 10)
+            .onChanged { value in
+                selfViewOffset = value.translation
+            }
+            .onEnded { value in
+                let finalPoint = CGPoint(x: anchor.x + value.translation.width,
+                                         y: anchor.y + value.translation.height)
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    selfViewCorner = PipCorner.nearest(to: finalPoint,
+                                                       in: geometry.size,
+                                                       pipSize: CGSize(width: pipWidth, height: pipHeight),
+                                                       padding: padding,
+                                                       safeArea: safeArea)
+                    selfViewOffset = .zero
+                }
+            })
     }
 }
 

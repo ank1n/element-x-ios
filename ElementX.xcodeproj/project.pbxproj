@@ -209,6 +209,7 @@
 		21F29351EDD7B2A5534EE862 /* SecureBackupKeyBackupScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD558A898847C179E4B7A237 /* SecureBackupKeyBackupScreen.swift */; };
 		221A7F92116722322AE150AE /* StartChatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0367E0AF1163F42292D788BD /* StartChatTests.swift */; };
 		22882C710BC99EC34A5024A0 /* UITestsScreenIdentifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CEBE5EA91E8691EDF364EC2 /* UITestsScreenIdentifier.swift */; };
+		229692E68E534799A8D86830 /* NativeCallModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80F74EF812940DFAD9CACE3 /* NativeCallModels.swift */; };
 		22B380C579C148BA0BFB5952 /* Secrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3557ACB95D0F666EF5AF0CE /* Secrets.swift */; };
 		22BA593A5E19D8D3DE2FAA6F /* TimelineEventContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F926D08EB3D622A480BCA71 /* TimelineEventContent.swift */; };
 		22C5483D01EEB290B8339817 /* HomeScreenInviteCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8FC33C3F6BF597E095CE9FA /* HomeScreenInviteCell.swift */; };
@@ -546,6 +547,9 @@
 		5CEA0BF496F00339A9E4486B /* TimelineItemProviderProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 829D3CE4F6C4DF6CC02D33C3 /* TimelineItemProviderProtocol.swift */; };
 		5D03E9442F41447E005E37E2 /* LiveKit in Frameworks */ = {isa = PBXBuildFile; productRef = F1A2B3C4D5E6F78901234568 /* LiveKit */; };
 		5D27B6537591471A42C89027 /* EmoteRoomTimelineItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 450E04B2A976CC4C8CC1807C /* EmoteRoomTimelineItem.swift */; };
+		5D4C00A42F786ADE0085F424 /* NativeCallModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80F74EF812940DFAD9CACE3 /* NativeCallModels.swift */; };
+		5D4C00A52F786ADE0085F424 /* NativeCallSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0077B6E066604496A50C82E8 /* NativeCallSession.swift */; };
+		5D4C00A62F786ADE0085F424 /* LiveKit in Frameworks */ = {isa = PBXBuildFile; productRef = 07AF86BFF3964FFFBFE861DA /* LiveKit */; };
 		5D52925FEB1B780C65B0529F /* PinnedEventsTimelineScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA4F6D7000EDCD187E0989E7 /* PinnedEventsTimelineScreen.swift */; };
 		5D53AE9342A4C06B704247ED /* MediaLoaderProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A02406480C351B8C6E0682C /* MediaLoaderProtocol.swift */; };
 		5D56CE09743C6B90C21B04C2 /* RoomMembersListScreenViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E9E0929CEFA356090BE5FB8 /* RoomMembersListScreenViewModelTests.swift */; };
@@ -1107,6 +1111,7 @@
 		B5E455C9689EA600EDB3E9E0 /* NavigationRootCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA28F29C9F93E93CC3C2C715 /* NavigationRootCoordinator.swift */; };
 		B6048166B4AA4CEFEA9B77A6 /* InfoPlistReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A580295A56B55A856CC4084 /* InfoPlistReader.swift */; };
 		B6064D82FCDCB829601C1F59 /* SecureBackupLogoutConfirmationScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37FEE10AB666891E6A675E5E /* SecureBackupLogoutConfirmationScreen.swift */; };
+		B67B63F810D045148C17E812 /* NativeCallSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0077B6E066604496A50C82E8 /* NativeCallSession.swift */; };
 		B6B62437B92B6CA4083AA899 /* SessionDirectories.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43C2067FF58B4996323EB40C /* SessionDirectories.swift */; };
 		B6DA66EFC13A90846B625836 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 91DE43B8815918E590912DDA /* InfoPlist.strings */; };
 		B6DF6B6FA8734B70F9BF261E /* BlurHashDecode.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5272BC4A60B6AD7553BACA1 /* BlurHashDecode.swift */; };
@@ -1412,7 +1417,6 @@
 		EAC6FE2CD4F50A43068ADCD8 /* PostHog in Frameworks */ = {isa = PBXBuildFile; productRef = 4278261E147DB2DE5CFB7FC5 /* PostHog */; };
 		EAF2B3E6C6AEC4AD3A8BD454 /* RoomMemberDetailsScreenViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84A87D0471D438A233C2CF4A /* RoomMemberDetailsScreenViewModel.swift */; };
 		EB87DF90CF6F8D5D12404C6E /* SecureBackupLogoutConfirmationScreenViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 848F69921527D31CAACB93AF /* SecureBackupLogoutConfirmationScreenViewModelTests.swift */; };
-		EB88DBD77221E2CFE463018C /* NSE.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 0D8F620C8B314840D8602E3F /* NSE.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		EB9F4688006B52E69DF5358F /* BlankFormCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C7F63EB1525E697CAEB002B /* BlankFormCoordinator.swift */; };
 		EBE13FAB4E29738AC41BD3E5 /* InfoPlistReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A580295A56B55A856CC4084 /* InfoPlistReader.swift */; };
 		EC09E502A21E4EAA8B367AB8 /* ReportContentScreenViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30EA681527A8FE65E4C8E9A9 /* ReportContentScreenViewModelTests.swift */; };
@@ -1542,9 +1546,6 @@
 		FF7E8ECC8E7E1D1851517536 /* PollFormScreenViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 347D708104CCEF771428C9A3 /* PollFormScreenViewModelTests.swift */; };
 		FF9C06BBF6AC6F1CFFBEBFFC /* target.yml in Resources */ = {isa = PBXBuildFile; fileRef = 90791B9C739C716A40E1B230 /* target.yml */; };
 		FFD52DCDA6962055A363CC8F /* IdentityResetHandleSDKMock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EFB1D29B0870AFB6A56E9B8 /* IdentityResetHandleSDKMock.swift */; };
-
-		229692E68E534799A8D86830 /* NativeCallModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80F74EF812940DFAD9CACE3 /* NativeCallModels.swift */; };
-		B67B63F810D045148C17E812 /* NativeCallSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0077B6E066604496A50C82E8 /* NativeCallSession.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1597,13 +1598,6 @@
 			remoteGlobalIDString = C0FAEB81CFD9776CD78CE489;
 			remoteInfo = ElementX;
 		};
-		AE0C21E7E01A23610E54DF9D /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = AC22997D58D612146053154D /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = FEB53A5BC378C913769656D8;
-			remoteInfo = NSE;
-		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -1634,6 +1628,7 @@
 /* Begin PBXFileReference section */
 		002399C6CB875C4EBB01CBC0 /* MediaEventsTimelineScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaEventsTimelineScreen.swift; sourceTree = "<group>"; };
 		00245D40CD90FD71D6A05239 /* EmojiPickerScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiPickerScreen.swift; sourceTree = "<group>"; };
+		0077B6E066604496A50C82E8 /* NativeCallSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCallSession.swift; sourceTree = "<group>"; };
 		007C16779FDCF10DA4F1A510 /* LinkNewDeviceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkNewDeviceService.swift; sourceTree = "<group>"; };
 		00AFC5F08734C2EA4EE79C59 /* IdentityConfirmationScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdentityConfirmationScreen.swift; sourceTree = "<group>"; };
 		00E5B2CBEF8F96424F095508 /* RoomDetailsEditScreenViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomDetailsEditScreenViewModelTests.swift; sourceTree = "<group>"; };
@@ -2596,6 +2591,7 @@
 		A7C4EA55DA62F9D0F984A2AE /* CollapsibleTimelineItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollapsibleTimelineItem.swift; sourceTree = "<group>"; };
 		A7D452AF7B5F7E3A0A7DB54C /* SessionVerificationScreenViewModelProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionVerificationScreenViewModelProtocol.swift; sourceTree = "<group>"; };
 		A7E37072597F67C4DD8CC2DB /* ComposerDraftServiceProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerDraftServiceProtocol.swift; sourceTree = "<group>"; };
+		A80F74EF812940DFAD9CACE3 /* NativeCallModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCallModels.swift; sourceTree = "<group>"; };
 		A84D413BF49F0E980F010A6B /* LogViewerScreenCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogViewerScreenCoordinator.swift; sourceTree = "<group>"; };
 		A8558D41DD4B553A752C868A /* StackedAvatarsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StackedAvatarsView.swift; sourceTree = "<group>"; };
 		A861DA5932B128FE1DCB5CE2 /* InviteUsersScreenCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InviteUsersScreenCoordinator.swift; sourceTree = "<group>"; };
@@ -3092,9 +3088,6 @@
 		FEC4B431B0117BDEE697DB4A /* ComposerDisabledView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerDisabledView.swift; sourceTree = "<group>"; };
 		FF720BA68256297680980481 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		FFECCE59967018204876D0A5 /* LocationMarkerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationMarkerView.swift; sourceTree = "<group>"; };
-
-		A80F74EF812940DFAD9CACE3 /* NativeCallModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCallModels.swift; sourceTree = "<group>"; };
-		0077B6E066604496A50C82E8 /* NativeCallSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCallSession.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -3102,6 +3095,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5D4C00A62F786ADE0085F424 /* LiveKit in Frameworks */,
 				3C6F0B79986322CFD16A2F82 /* Foundation.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -3295,7 +3289,6 @@
 				46C80CDAE83211DE3C7E6E9B /* Info.plist */,
 				97D5089D59B1682AAAACBD44 /* BroadcastExtension.entitlements */,
 			);
-			name = BroadcastExtension;
 			path = BroadcastExtension;
 			sourceTree = "<group>";
 		};
@@ -3367,8 +3360,8 @@
 				A30A573FEA8EA30EC3F3BABF /* OrgProfile */,
 				FBC5E3CD6A94D1F926AE5713 /* Meetings */,
 				1C34166E019C188FE5338FDA /* Search */,
-			
-				4D1224452B0140E28F0DCA67 /* NativeCall */,);
+				4D1224452B0140E28F0DCA67 /* NativeCall */,
+			);
 			path = Services;
 			sourceTree = "<group>";
 		};
@@ -3544,7 +3537,6 @@
 			children = (
 				031FA32B8C6A217508A40153 /* MessageSearchService.swift */,
 			);
-			name = Search;
 			path = Search;
 			sourceTree = "<group>";
 		};
@@ -3764,7 +3756,6 @@
 				2CDA48590C8B9CFF4317DD9D /* MeetingEditViewModel.swift */,
 				591895758A5AF66AC2B3E344 /* MeetingsScreenCoordinator.swift */,
 			);
-			name = MeetingsScreen;
 			path = MeetingsScreen;
 			sourceTree = "<group>";
 		};
@@ -4510,6 +4501,15 @@
 			path = UnitTests;
 			sourceTree = "<group>";
 		};
+		4D1224452B0140E28F0DCA67 /* NativeCall */ = {
+			isa = PBXGroup;
+			children = (
+				A80F74EF812940DFAD9CACE3 /* NativeCallModels.swift */,
+				0077B6E066604496A50C82E8 /* NativeCallSession.swift */,
+			);
+			path = NativeCall;
+			sourceTree = "<group>";
+		};
 		4D963F50D7AA8FE302CA8ACF /* LabsScreen */ = {
 			isa = PBXGroup;
 			children = (
@@ -4649,7 +4649,6 @@
 				1AAF461C15B294FDF0C7B10F /* NativeLoginScreenViewModel.swift */,
 				95DF44AD49167A41F0C4CDEC /* NativeLoginScreenCoordinator.swift */,
 			);
-			name = NativeLoginScreen;
 			path = NativeLoginScreen;
 			sourceTree = "<group>";
 		};
@@ -4742,7 +4741,6 @@
 				51AA68B2193B1CF1D1F4F5AB /* ArchiveScreen.swift */,
 				401679E47A0B92B9BFE40941 /* ArchiveScreenCoordinator.swift */,
 			);
-			name = ArchiveScreen;
 			path = ArchiveScreen;
 			sourceTree = "<group>";
 		};
@@ -5983,7 +5981,6 @@
 			children = (
 				7DECF4674CFB64C23C62C8B0 /* OrgProfileService.swift */,
 			);
-			name = OrgProfile;
 			path = OrgProfile;
 			sourceTree = "<group>";
 		};
@@ -6382,7 +6379,6 @@
 				4F51F8549AA634F4A191C675 /* MeetingDetailScreen.swift */,
 				64F1462CE64924137E31439B /* MeetingEditScreen.swift */,
 			);
-			name = View;
 			path = View;
 			sourceTree = "<group>";
 		};
@@ -6829,7 +6825,6 @@
 			children = (
 				7E398B0560B1C7859311FB74 /* STalkCacheService.swift */,
 			);
-			name = Cache;
 			path = Cache;
 			sourceTree = "<group>";
 		};
@@ -6841,7 +6836,6 @@
 				2806375505BDAE44A5D93B68 /* MessageSearchScreen.swift */,
 				938D1E4DED47E8379D6642E9 /* MessageSearchScreenCoordinator.swift */,
 			);
-			name = MessageSearchScreen;
 			path = MessageSearchScreen;
 			sourceTree = "<group>";
 		};
@@ -6867,7 +6861,6 @@
 				C511D69AEA064294477B191E /* CacheAndStorageScreenCoordinator.swift */,
 				A90F7B0B7CA1748469B6F9EC /* CacheAndStorageScreen.swift */,
 			);
-			name = CacheAndStorageScreen;
 			path = CacheAndStorageScreen;
 			sourceTree = "<group>";
 		};
@@ -7236,7 +7229,6 @@
 			children = (
 				DEF3461D9D4D0A632F23F5D3 /* MeetingsService.swift */,
 			);
-			name = Meetings;
 			path = Meetings;
 			sourceTree = "<group>";
 		};
@@ -7322,16 +7314,6 @@
 				6792D400AF30A6F2ACD426E4 /* View */,
 			);
 			path = JoinRoomScreen;
-			sourceTree = "<group>";
-		};
-
-		4D1224452B0140E28F0DCA67 /* NativeCall */ = {
-			isa = PBXGroup;
-			children = (
-				A80F74EF812940DFAD9CACE3 /* NativeCallModels.swift */,
-				0077B6E066604496A50C82E8 /* NativeCallSession.swift */,
-			);
-			path = NativeCall;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -8105,9 +8087,8 @@
 				D98B5EE8C4F5A2CE84687AE8 /* UTType.swift in Sources */,
 				34357B287357BC0B9715DD51 /* UserAgentBuilder.swift in Sources */,
 				683154AD739245E56F37921E /* UserPreference.swift in Sources */,
-			
-				229692E68E534799A8D86830 /* NativeCallModels.swift in Sources */,
-				B67B63F810D045148C17E812 /* NativeCallSession.swift in Sources */,
+				5D4C00A42F786ADE0085F424 /* NativeCallModels.swift in Sources */,
+				5D4C00A52F786ADE0085F424 /* NativeCallSession.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -9434,9 +9415,9 @@
 				CB8B296BCB938166EC048DBA /* MessageSearchScreen.swift in Sources */,
 				C73B0B5A5D1CF7E89B00E7B6 /* MessageSearchScreenCoordinator.swift in Sources */,
 				26B8ED4777E4DD0A6452B1F7 /* MessageSearchService.swift in Sources */,
-			
 				229692E68E534799A8D86830 /* NativeCallModels.swift in Sources */,
-				B67B63F810D045148C17E812 /* NativeCallSession.swift in Sources */,);
+				B67B63F810D045148C17E812 /* NativeCallSession.swift in Sources */,
+			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		BAD5CD7BE53A7C832569B67A /* Sources */ = {
@@ -9496,11 +9477,6 @@
 			isa = PBXTargetDependency;
 			target = C0FAEB81CFD9776CD78CE489 /* ElementX */;
 			targetProxy = 4D8DD8FE84794CA168A8499A /* PBXContainerItemProxy */;
-		};
-		2C29670603B37E38705D5FF1 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = FEB53A5BC378C913769656D8 /* NSE */;
-			targetProxy = AE0C21E7E01A23610E54DF9D /* PBXContainerItemProxy */;
 		};
 		2E32BC489F482046B8B1460F /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -9772,7 +9748,7 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = BroadcastExtension/BroadcastExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 54NX5S5VS2;
+				DEVELOPMENT_TEAM = Z44H678J3R;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = BroadcastExtension/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -9794,8 +9770,9 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = NSE/SupportingFiles/NSE.entitlements;
+				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = "$(CURRENT_PROJECT_VERSION)";
-				DEVELOPMENT_TEAM = 54NX5S5VS2;
+				DEVELOPMENT_TEAM = "";
 				INFOPLIST_FILE = NSE/SupportingFiles/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -9804,9 +9781,10 @@
 				);
 				MARKETING_VERSION = "$(MARKETING_VERSION)";
 				OTHER_SWIFT_FLAGS = "-DIS_NSE";
-				PRODUCT_BUNDLE_IDENTIFIER = "${BASE_BUNDLE_IDENTIFIER}.nse";
+				PRODUCT_BUNDLE_IDENTIFIER = ru.implica.stalk;
 				PRODUCT_DISPLAY_NAME = "$(APP_DISPLAY_NAME)";
 				PRODUCT_NAME = NSE;
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = iphoneos;
 				SWIFT_OBJC_INTERFACE_HEADER_NAME = "GeneratedInterface-Swift.h";
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -9860,7 +9838,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = "$(CURRENT_PROJECT_VERSION)";
 				DEVELOPMENT_ASSET_PATHS = DevelopmentAssets/Media;
-				DEVELOPMENT_TEAM = 54NX5S5VS2;
+				DEVELOPMENT_TEAM = Z44H678J3R;
 				INFOPLIST_FILE = ElementX/SupportingFiles/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -9892,7 +9870,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = "$(CURRENT_PROJECT_VERSION)";
 				DEVELOPMENT_ASSET_PATHS = DevelopmentAssets/Media;
-				DEVELOPMENT_TEAM = 54NX5S5VS2;
+				DEVELOPMENT_TEAM = Z44H678J3R;
 				INFOPLIST_FILE = ElementX/SupportingFiles/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -9938,7 +9916,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = ShareExtension/SupportingFiles/ShareExtension.entitlements;
 				CURRENT_PROJECT_VERSION = "$(CURRENT_PROJECT_VERSION)";
-				DEVELOPMENT_TEAM = 54NX5S5VS2;
+				DEVELOPMENT_TEAM = Z44H678J3R;
 				INFOPLIST_FILE = ShareExtension/SupportingFiles/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -9959,7 +9937,7 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				APP_DISPLAY_NAME = sTalk;
-				APP_GROUP_IDENTIFIER = group.ru.implica.stalk;
+				APP_GROUP_IDENTIFIER = group.ru.implica.stalk.app;
 				APP_NAME = ElementX;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "colors/accent-color";
 				BASE_BUNDLE_IDENTIFIER = ru.implica.stalk;
@@ -9996,7 +9974,7 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = 54NX5S5VS2;
+				DEVELOPMENT_TEAM = Z44H678J3R;
 				ENABLE_BITCODE = NO;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -10029,7 +10007,7 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				APP_DISPLAY_NAME = sTalk;
-				APP_GROUP_IDENTIFIER = group.ru.implica.stalk;
+				APP_GROUP_IDENTIFIER = group.ru.implica.stalk.app;
 				APP_NAME = ElementX;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "colors/accent-color";
 				BASE_BUNDLE_IDENTIFIER = ru.implica.stalk;
@@ -10066,7 +10044,7 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = 54NX5S5VS2;
+				DEVELOPMENT_TEAM = Z44H678J3R;
 				ENABLE_BITCODE = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -10107,7 +10085,7 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = BroadcastExtension/BroadcastExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 54NX5S5VS2;
+				DEVELOPMENT_TEAM = Z44H678J3R;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = BroadcastExtension/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -10184,8 +10162,9 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = NSE/SupportingFiles/NSE.entitlements;
+				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = "$(CURRENT_PROJECT_VERSION)";
-				DEVELOPMENT_TEAM = 54NX5S5VS2;
+				DEVELOPMENT_TEAM = "";
 				INFOPLIST_FILE = NSE/SupportingFiles/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -10194,9 +10173,10 @@
 				);
 				MARKETING_VERSION = "$(MARKETING_VERSION)";
 				OTHER_SWIFT_FLAGS = "-DIS_NSE";
-				PRODUCT_BUNDLE_IDENTIFIER = "${BASE_BUNDLE_IDENTIFIER}.nse";
+				PRODUCT_BUNDLE_IDENTIFIER = ru.implica.stalk;
 				PRODUCT_DISPLAY_NAME = "$(APP_DISPLAY_NAME)";
 				PRODUCT_NAME = NSE;
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = iphoneos;
 				SWIFT_OBJC_INTERFACE_HEADER_NAME = "GeneratedInterface-Swift.h";
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -10232,7 +10212,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = ShareExtension/SupportingFiles/ShareExtension.entitlements;
 				CURRENT_PROJECT_VERSION = "$(CURRENT_PROJECT_VERSION)";
-				DEVELOPMENT_TEAM = 54NX5S5VS2;
+				DEVELOPMENT_TEAM = Z44H678J3R;
 				INFOPLIST_FILE = ShareExtension/SupportingFiles/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

@@ -46,7 +46,7 @@ struct CallScreenViewState: BindableState {
     // sTalk: native call control state
     var isMuted = false
     var isVideoEnabled = true
-    var isSpeakerOn = true
+    var isSpeakerOn = false
     var isHandRaised = false
     var isScreenSharing = false
     var isBackgroundBlurEnabled = false

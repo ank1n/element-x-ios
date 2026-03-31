@@ -439,6 +439,16 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                             case .connected:
                                 self.state.liveKitRoomManager = self.liveKitRoomManager
                                 self.state.wasConnected = true
+                                // NativeCallSession always enables camera on connect.
+                                // Sync UI state and disable if incoming call (startWithVideoEnabled=false)
+                                if self.startWithVideoEnabled {
+                                    self.state.isVideoEnabled = true
+                                } else {
+                                    Task {
+                                        try? await self.liveKitRoomManager.setCamera(enabled: false)
+                                        self.state.isVideoEnabled = false
+                                    }
+                                }
                             case .failed:
                                 self.actionsSubject.send(.dismiss)
                             case .disconnected:
@@ -681,6 +691,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 case .disconnected:
                     if self.state.wasConnected {
                         MXLog.info("sTalk LiveKit: Disconnected after being connected — remote may have ended call")
+                        // NativeCallSession handles auto-end via its own connectionState/participants observers
+                        // which triggers sessionState → .disconnected → dismiss in setupCall()
                     }
                 default:
                     break

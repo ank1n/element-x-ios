@@ -126,6 +126,26 @@ final class LiveKitRoomManager: ObservableObject {
         updateState()
     }
 
+    /// Switch between front and back camera
+    func switchCamera() async throws {
+        #if !targetEnvironment(simulator)
+        guard let publication = room.localParticipant.firstCameraPublication else {
+            MXLog.warning("sTalk LiveKit: switchCamera — no camera publication")
+            return
+        }
+        guard let track = publication.track as? LocalVideoTrack else {
+            MXLog.warning("sTalk LiveKit: switchCamera — track is not LocalVideoTrack")
+            return
+        }
+        guard let source = track.capturer as? CameraCapturer else {
+            MXLog.warning("sTalk LiveKit: switchCamera — capturer is not CameraCapturer, type: \(type(of: track.capturer))")
+            return
+        }
+        let result = try await source.switchCameraPosition()
+        MXLog.info("sTalk LiveKit: Camera switched, result=\(result)")
+        #endif
+    }
+
     func setMicrophone(enabled: Bool) async throws {
         #if targetEnvironment(simulator)
         if enabled {

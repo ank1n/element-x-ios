@@ -4,7 +4,7 @@
 <dict>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.ru.implica.stalk</string>
+		<string>group.ru.implica.stalk.app</string>
 	</array>
 </dict>
 </plist>

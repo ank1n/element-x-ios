@@ -49,6 +49,7 @@ final class NativeCallSession: ObservableObject {
     private var participantKeys: [String: Bool] = [:]
     private var pendingParticipants: [String: RemoteParticipant] = [:]
     private var credentialsReceived = false
+    private var hasSeenRemoteParticipant = false
     private var livekitBaseURL: String?
 
     // MARK: - Internal
@@ -159,6 +160,32 @@ final class NativeCallSession: ObservableObject {
                 }
             }
         }
+
+        // Observe LiveKit disconnect → auto-end call
+        liveKitRoomManager.$connectionState
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] state in
+                guard let self else { return }
+                if state == .disconnected, self.sessionState == .connected {
+                    MXLog.info("sTalk NativeCall: LiveKit disconnected while connected — ending session")
+                    self.sessionState = .disconnected
+                }
+            }
+            .store(in: &cancellables)
+
+        // Observe remote participants leaving (auto-end when last one leaves)
+        liveKitRoomManager.$remoteParticipants
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] participants in
+                guard let self, self.sessionState == .connected else { return }
+                if !participants.isEmpty {
+                    self.hasSeenRemoteParticipant = true
+                } else if self.hasSeenRemoteParticipant {
+                    MXLog.info("sTalk NativeCall: All remote participants left after being connected — ending session")
+                    Task { await self.stop() }
+                }
+            }
+            .store(in: &cancellables)
 
         // Generate JWT and connect to LiveKit
         sessionState = .waitingForCredentials
@@ -350,7 +377,41 @@ final class NativeCallSession: ObservableObject {
             MXLog.info("sTalk NativeCall E2EE: room event result=\(result)")
         }
 
+        // Publish key to key-server so recording-api can decrypt
+        Task.detached { [weak self] in
+            await self?.publishKeyToKeyServer(key: key)
+        }
+
         MXLog.info("sTalk NativeCall E2EE: Key send tasks launched")
+    }
+
+    /// Publish our E2EE key to the key-server for recording decryption
+    private func publishKeyToKeyServer(key: String) async {
+        guard let roomName = generateLiveKitRoomName() else { return }
+        let identity = "\(userId):\(deviceId)"
+        let encodedRoom = roomName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? roomName
+        let encodedIdentity = identity.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? identity
+
+        // Key-server — existing ingress at /api/keys
+        let keyServerURL = "https://stalk.implica.ru/api/keys/pp/\(encodedRoom)/\(encodedIdentity)"
+
+        guard let url = URL(string: keyServerURL) else { return }
+        let body: [String: Any] = ["key": key, "keyIndex": 0]
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else { return }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            MXLog.info("sTalk NativeCall E2EE: Key published to key-server → \(status)")
+        } catch {
+            MXLog.error("sTalk NativeCall E2EE: Key publish to key-server failed: \(error)")
+        }
     }
 
     // MARK: - E2EE Key from Room Timeline

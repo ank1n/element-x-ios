@@ -28,6 +28,6 @@
 		<string>$(PRODUCT_MODULE_NAME).SampleHandler</string>
 	</dict>
 	<key>RTCAppGroupIdentifier</key>
-	<string>group.ru.implica.stalk</string>
+	<string>group.ru.implica.stalk.app</string>
 </dict>
 </plist>

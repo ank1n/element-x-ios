@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>RTCAppGroupIdentifier</key>
-	<string>group.ru.implica.stalk</string>
+	<string>group.ru.implica.stalk.app</string>
 	<key>RTCScreenSharingExtension</key>
 	<string>ru.implica.stalk.broadcast</string>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>

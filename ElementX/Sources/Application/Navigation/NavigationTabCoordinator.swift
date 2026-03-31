@@ -459,47 +459,45 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
     @ViewBuilder
     private func callOverlay(coordinator: any CoordinatorProtocol) -> some View {
         let minimized = navigationTabCoordinator.isCallMinimized
-        ZStack(alignment: .top) {
-            // Mini floating video window or fullscreen call
-            GeometryReader { geometry in
-                coordinator.toPresentable()
-                    .frame(width: minimized ? 140 : geometry.size.width,
-                           height: minimized ? 200 : geometry.size.height)
-                    .clipShape(RoundedRectangle(cornerRadius: minimized ? 14 : 0))
-                    .shadow(color: minimized ? .black.opacity(0.4) : .clear, radius: minimized ? 10 : 0, x: 0, y: 4)
-                    .overlay(RoundedRectangle(cornerRadius: 14)
-                        .stroke(Color.white.opacity(0.15), lineWidth: minimized ? 0.5 : 0))
-                    .position(x: minimized
-                        ? geometry.size.width - 82 + miniCallOffset.width
-                        : geometry.size.width / 2,
-                        y: minimized
-                            ? geometry.size.height - 190 + miniCallOffset.height
-                            : geometry.size.height / 2)
-                    .gesture(minimized
-                        ? DragGesture()
-                        .onChanged { value in
-                            miniCallDragOffset = value.translation
-                        }
-                        .onEnded { value in
-                            miniCallOffset.width += value.translation.width
-                            miniCallOffset.height += value.translation.height
-                            miniCallDragOffset = .zero
-                        }
-                        : nil)
-                    .offset(miniCallDragOffset)
-            }
+        if minimized {
+            ZStack(alignment: .top) {
+                // Mini floating video window
+                GeometryReader { geometry in
+                    coordinator.toPresentable()
+                        .frame(width: 140, height: 200)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .shadow(color: .black.opacity(0.4), radius: 10, x: 0, y: 4)
+                        .overlay(RoundedRectangle(cornerRadius: 14)
+                            .stroke(Color.white.opacity(0.15), lineWidth: 0.5))
+                        .position(x: geometry.size.width - 82 + miniCallOffset.width,
+                                  y: geometry.size.height - 190 + miniCallOffset.height)
+                        .gesture(DragGesture()
+                            .onChanged { value in
+                                miniCallDragOffset = value.translation
+                            }
+                            .onEnded { value in
+                                miniCallOffset.width += value.translation.width
+                                miniCallOffset.height += value.translation.height
+                                miniCallDragOffset = .zero
+                            })
+                        .offset(miniCallDragOffset)
+                }
 
-            // sTalk: Green "call in progress" banner at top — only when minimized
-            if minimized, let callName = navigationTabCoordinator.minimizedCallDisplayName {
-                ActiveCallBanner(displayName: callName,
-                                 elapsedTime: navigationTabCoordinator.minimizedCallElapsedTime,
-                                 onTap: {
-                                     navigationTabCoordinator.restoreCallHandler?()
-                                 })
-                                 .transition(.move(edge: .top).combined(with: .opacity))
+                // sTalk: Green "call in progress" banner at top
+                if let callName = navigationTabCoordinator.minimizedCallDisplayName {
+                    ActiveCallBanner(displayName: callName,
+                                     elapsedTime: navigationTabCoordinator.minimizedCallElapsedTime,
+                                     onTap: {
+                                         navigationTabCoordinator.restoreCallHandler?()
+                                     })
+                                     .transition(.move(edge: .top).combined(with: .opacity))
+                }
             }
+        } else {
+            // Fullscreen — no GeometryReader/position, just fill entire screen
+            coordinator.toPresentable()
+                .ignoresSafeArea()
         }
-        .ignoresSafeArea(.all)
     }
 
     @State private var miniCallOffset: CGSize = .zero
