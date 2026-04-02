@@ -6,6 +6,9 @@
 
 import Combine
 import Foundation
+import os.log
+
+private let meetingsVMLog = OSLog(subsystem: "ru.implica.stalk", category: "MeetingsVM")
 
 typealias MeetingsScreenViewModelType = StateStoreViewModel<MeetingsScreenViewState, MeetingsScreenViewAction>
 
@@ -39,22 +42,31 @@ class MeetingsScreenViewModel: MeetingsScreenViewModelType {
     }
 
     private func fetchAll() {
+        os_log(.default, log: meetingsVMLog, "fetchAll: starting")
         Task { [weak self] in
             guard let self else { return }
             do {
-                async let meetingsResult = service.fetchMeetingsList()
-                async let holidaysResult = service.fetchHolidays()
+                os_log(.default, log: meetingsVMLog, "fetchAll: fetching meetings...")
+                let meetings = try await service.fetchMeetingsList()
+                os_log(.default, log: meetingsVMLog, "fetchAll: got %d meetings", meetings.count)
 
-                let meetings = try await meetingsResult
-                let holidays = try await holidaysResult
+                var holidays: Set<String> = []
+                do {
+                    let h = try await service.fetchHolidays()
+                    holidays = Set(h)
+                    os_log(.default, log: meetingsVMLog, "fetchAll: got %d holidays", h.count)
+                } catch {
+                    os_log(.error, log: meetingsVMLog, "fetchAll: holidays failed (non-fatal): %{public}@", error.localizedDescription)
+                }
 
                 state.meetings = meetings
                     .filter { $0.status != .cancelled }
                     .sorted { $0.startTime < $1.startTime }
-                state.holidays = Set(holidays)
+                state.holidays = holidays
                 state.isLoading = false
-                MXLog.info("sTalk: Loaded \(meetings.count) meetings, \(holidays.count) holidays")
+                os_log(.default, log: meetingsVMLog, "fetchAll: done, showing %d meetings", state.meetings.count)
             } catch {
+                os_log(.error, log: meetingsVMLog, "fetchAll: FAILED: %{public}@", error.localizedDescription)
                 MXLog.error("sTalk: Failed to fetch meetings: \(error)")
                 state.isLoading = false
                 state.errorMessage = SL10n.meetingLoadError

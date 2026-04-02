@@ -295,10 +295,12 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
             if let heroUserID { userIDs.append(heroUserID) }
         }
 
-        // Source 2: 2-member rooms (not isDirect, but only 2 active members → treat as contact)
+        // Source 2: 2-member rooms (not isDirect, but exactly 1 hero = 1 other person → treat as contact)
         for summary in summaries where !summary.isDirect {
             guard summary.activeMembersCount == 2,
+                  summary.heroes.count == 1,
                   !summary.name.hasPrefix("Empty Room"),
+                  !summary.name.contains(","),
                   !seen.contains(summary.id) else { continue }
 
             // Skip if the hero user was already added from a DM

@@ -60,6 +60,7 @@ class AuthenticationStartScreenViewModel: AuthenticationStartScreenViewModelType
         }
         
         super.init(initialViewState: initialViewState)
+        state.accountProviders = appSettings.accountProviders
     }
 
     override func process(viewAction: AuthenticationStartScreenViewAction) {
@@ -76,6 +77,18 @@ class AuthenticationStartScreenViewModel: AuthenticationStartScreenViewModelType
         case .reportProblem:
             if canReportProblem {
                 actionsSubject.send(.reportProblem)
+            }
+        case .selectServer(let server):
+            state.serverName = server
+        case .addServer(let server):
+            let address = server.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !address.isEmpty, !state.accountProviders.contains(address) else { return }
+            state.accountProviders.append(address)
+            state.serverName = address
+        case .removeServer(let server):
+            state.accountProviders.removeAll { $0 == server }
+            if state.serverName == server {
+                state.serverName = state.accountProviders.first
             }
         }
     }

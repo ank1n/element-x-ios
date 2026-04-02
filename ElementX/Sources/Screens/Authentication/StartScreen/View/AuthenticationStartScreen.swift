@@ -14,12 +14,19 @@ struct AuthenticationStartScreen: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     let context: AuthenticationStartScreenViewModel.Context
+    @State private var showServerSheet = false
+    @State private var newServerAddress = ""
 
     var body: some View {
         GeometryReader { geometry in
             VStack(alignment: .leading, spacing: 0) {
+                // Server pill at top
+                serverPill
+                    .frame(width: geometry.size.width)
+                    .padding(.top, 8)
+
                 Spacer()
-                    .frame(height: UIConstants.spacerHeight(in: geometry))
+                    .frame(height: max(0, UIConstants.spacerHeight(in: geometry) - 20))
 
                 content
                     .frame(width: geometry.size.width)
@@ -50,6 +57,9 @@ struct AuthenticationStartScreen: View {
         }
         .introspect(.window, on: .supportedVersions) { window in
             context.send(viewAction: .updateWindow(window))
+        }
+        .sheet(isPresented: $showServerSheet) {
+            serverSelectionSheet
         }
     }
 
@@ -128,6 +138,144 @@ struct AuthenticationStartScreen: View {
         }
         .padding(.horizontal, verticalSizeClass == .compact ? 128 : 24)
         .readableFrame()
+    }
+
+    // MARK: - Server Pill
+
+    private let pillAccent = Color(red: 0.38, green: 0.42, blue: 0.96)
+
+    var serverPill: some View {
+        Button { showServerSheet = true } label: {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 6, height: 6)
+                if let name = context.viewState.serverName {
+                    Text(name)
+                        .font(.system(size: 13, weight: .semibold))
+                } else {
+                    Image(systemName: "plus")
+                        .font(.system(size: 12, weight: .bold))
+                    Text(SL10n.authAddServer)
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 9)
+            .background(Capsule().fill(Color(red: 0.22, green: 0.25, blue: 0.45)))
+            .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
+        }
+    }
+
+    // MARK: - Server Selection Sheet
+
+    @State private var isAddingServer = false
+
+    var serverSelectionSheet: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(context.viewState.accountProviders, id: \.self) { server in
+                        Button {
+                            context.send(viewAction: .selectServer(server))
+                            showServerSheet = false
+                        } label: {
+                            HStack(spacing: 12) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(pillAccent.opacity(0.12))
+                                        .frame(width: 36, height: 36)
+                                    Text(String(server.prefix(1)).uppercased())
+                                        .font(.system(size: 16, weight: .bold))
+                                        .foregroundColor(pillAccent)
+                                }
+                                Text(server)
+                                    .font(.system(size: 15, weight: .medium))
+                                    .foregroundColor(.primary)
+                                Spacer()
+                                if context.viewState.serverName == server {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.system(size: 20))
+                                        .foregroundColor(pillAccent)
+                                }
+                            }
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                context.send(viewAction: .removeServer(server))
+                            } label: {
+                                Label(SL10n.authDeleteServer, systemImage: "trash")
+                            }
+                        }
+                    }
+
+                    // Inline add field (shown when + tapped)
+                    if isAddingServer {
+                        HStack {
+                            TextField(SL10n.authServerPlaceholder, text: $newServerAddress)
+                                .autocorrectionDisabled()
+                                .textInputAutocapitalization(.never)
+                                .keyboardType(.URL)
+                                .onSubmit { commitNewServer() }
+                            Button { commitNewServer() } label: {
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.system(size: 22))
+                                    .foregroundColor(isValidServerAddress(newServerAddress) ? .green : .gray)
+                            }
+                            .disabled(!isValidServerAddress(newServerAddress))
+                        }
+                    }
+                } header: {
+                    HStack {
+                        Text(SL10n.authServers)
+                        Spacer()
+                        Button {
+                            withAnimation { isAddingServer.toggle() }
+                        } label: {
+                            Image(systemName: isAddingServer ? "xmark" : "plus")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(pillAccent)
+                        }
+                    }
+                }
+            }
+            .navigationTitle(SL10n.authSelectServer)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(L10n.actionCancel) {
+                        showServerSheet = false
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium])
+    }
+
+    private func commitNewServer() {
+        let address = newServerAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard isValidServerAddress(address) else { return }
+        guard !context.viewState.accountProviders.contains(address) else { return }
+        context.send(viewAction: .addServer(address))
+        newServerAddress = ""
+        isAddingServer = false
+    }
+
+    /// Validates that the address looks like a domain name (has dots) or an IPv4 address
+    private func isValidServerAddress(_ input: String) -> Bool {
+        let address = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !address.isEmpty else { return false }
+        // Must contain at least one dot (domain or IP)
+        guard address.contains(".") else { return false }
+        // Check it's not a duplicate
+        if context.viewState.accountProviders.contains(address) { return false }
+        // Basic domain/IP pattern: segments separated by dots, no spaces
+        let parts = address.split(separator: ".")
+        guard parts.count >= 2 else { return false }
+        return parts.allSatisfy { !$0.isEmpty }
     }
 
     var versionText: Text {

@@ -47,8 +47,8 @@ class NativeLoginScreenViewModel: NativeLoginScreenViewModelType {
         case .cancel:
             Task {
                 await authenticationService.abortOIDCLogin(data: oidcData)
+                actionsSubject.send(.cancelled)
             }
-            actionsSubject.send(.cancelled)
         }
     }
 

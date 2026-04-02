@@ -104,22 +104,27 @@ struct MeetingsListScreen: View {
     private let today = Date()
 
     private var headerView: some View {
-        HStack(alignment: .center, spacing: 10) {
-            Text(dayNumberFormatter.string(from: today))
-                .font(.system(size: 38, weight: .bold))
-                .foregroundColor(.primary)
+        Button {
+            context.send(viewAction: .selectDate(today))
+        } label: {
+            HStack(alignment: .center, spacing: 10) {
+                Text(dayNumberFormatter.string(from: today))
+                    .font(.system(size: 38, weight: .bold))
+                    .foregroundColor(.primary)
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(weekdayFormatter.string(from: today).capitalized)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.secondary)
-                Text(monthYearFormatter.string(from: today).capitalized)
-                    .font(.system(size: 13))
-                    .foregroundColor(.secondary)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(weekdayFormatter.string(from: today).capitalized)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.secondary)
+                    Text(monthYearFormatter.string(from: today).capitalized)
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
             }
-
-            Spacer()
         }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Filter Row

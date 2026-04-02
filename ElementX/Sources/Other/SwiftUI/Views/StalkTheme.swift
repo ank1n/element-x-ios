@@ -212,6 +212,11 @@ enum SL10n {
     static let authError = NSLocalizedString("stalk_auth_error", tableName: "Localizable", value: "Ошибка", comment: "Error title")
     static let authTagline = NSLocalizedString("stalk_auth_tagline", tableName: "Localizable", value: "Корпоративный мессенджер с видеозвонками\nдля команд, которые ценят безопасность\nи контроль над данными", comment: "App tagline")
     static let authInvalidCredentials = NSLocalizedString("stalk_auth_invalid_credentials", tableName: "Localizable", value: "Неверный логин или пароль", comment: "Invalid credentials error")
+    static let authAddServer = NSLocalizedString("stalk_auth_add_server", tableName: "Localizable", value: "Добавить сервер", comment: "Add server button")
+    static let authServers = NSLocalizedString("stalk_auth_servers", tableName: "Localizable", value: "Серверы", comment: "Servers section title")
+    static let authSelectServer = NSLocalizedString("stalk_auth_select_server", tableName: "Localizable", value: "Выбор сервера", comment: "Select server title")
+    static let authServerPlaceholder = NSLocalizedString("stalk_auth_server_placeholder", tableName: "Localizable", value: "Адрес сервера", comment: "Server address placeholder")
+    static let authDeleteServer = NSLocalizedString("stalk_auth_delete_server", tableName: "Localizable", value: "Удалить", comment: "Delete server button")
 
     static func authLoginFailed(_ error: String) -> String {
         String(format: NSLocalizedString("stalk_auth_login_failed", tableName: "Localizable", value: "Не удалось завершить авторизацию: %@", comment: "Login failed message"), error)

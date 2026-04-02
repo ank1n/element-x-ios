@@ -71,7 +71,7 @@ struct MeetingDetailScreen: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
-                .padding(.bottom, 32)
+                .padding(.bottom, 100)
             }
         }
         .navigationTitle(SL10n.meetingTitle)

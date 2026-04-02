@@ -9,7 +9,7 @@
 import Combine
 import CryptoKit
 import Foundation
-@testable import LiveKit
+import LiveKit
 import MatrixRustSDK
 import SwiftUI
 
@@ -331,7 +331,7 @@ final class NativeCallSession: ObservableObject {
     /// LiveKit SDK will .utf8 encode this — for ASCII-range bytes it's identical
     private func setRawKeyInProvider(_ provider: BaseKeyProvider, key: Data, participantId: String, index: Int32) {
         // webrtc 144 with useHKDF:true does HKDF internally — pass RAW bytes only
-        provider.rtcKeyProvider.setKey(key, with: index, forParticipant: participantId)
+        provider.setRawKey(key, participantId: participantId, index: index)
         MXLog.info("sTalk E2EE: Raw key (\(key.count) bytes) for \(participantId) idx=\(index)")
     }
 

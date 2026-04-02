@@ -33,15 +33,18 @@ enum AuthenticationStartScreenViewModelAction: Equatable {
 struct AuthenticationStartScreenViewState: BindableState {
     /// The presentation anchor used for OIDC authentication.
     var window: UIWindow?
-    
-    let serverName: String?
+
+    var serverName: String?
     let showCreateAccountButton: Bool
     let showQRCodeLoginButton: Bool
-    
+
     let hideBrandChrome: Bool
-    
+
+    /// All configured account providers
+    var accountProviders: [String] = []
+
     var bindings = AuthenticationStartScreenViewStateBindings()
-    
+
     var loginButtonTitle: String {
         if hideBrandChrome {
             SL10n.authLogin
@@ -55,6 +58,8 @@ struct AuthenticationStartScreenViewState: BindableState {
 
 struct AuthenticationStartScreenViewStateBindings {
     var alertInfo: AlertInfo<AuthenticationStartScreenAlertType>?
+    var showServerSheet = false
+    var newServerAddress = ""
 }
 
 enum AuthenticationStartScreenAlertType {
@@ -64,9 +69,12 @@ enum AuthenticationStartScreenAlertType {
 enum AuthenticationStartScreenViewAction {
     /// Updates the window used as the OIDC presentation anchor.
     case updateWindow(UIWindow)
-    
+
     case loginWithQR
     case login
     case register
     case reportProblem
+    case selectServer(String)
+    case addServer(String)
+    case removeServer(String)
 }

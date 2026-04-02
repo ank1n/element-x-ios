@@ -44,6 +44,28 @@ struct Meeting: Identifiable, Equatable, Codable {
     let participants: [MeetingParticipant]
     let attachments: [MeetingAttachment]?
 
+    /// Decode only known fields, ignore any extras from API
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(Int.self, forKey: .id)
+        title = try c.decode(String.self, forKey: .title)
+        description = try c.decodeIfPresent(String.self, forKey: .description) ?? ""
+        creatorId = try c.decodeIfPresent(String.self, forKey: .creatorId) ?? ""
+        matrixRoomId = try c.decodeIfPresent(String.self, forKey: .matrixRoomId)
+        meetingCode = try c.decodeIfPresent(String.self, forKey: .meetingCode)
+        location = try c.decodeIfPresent(String.self, forKey: .location) ?? ""
+        startTime = try c.decode(Date.self, forKey: .startTime)
+        endTime = try c.decode(Date.self, forKey: .endTime)
+        isIndefinite = try c.decodeIfPresent(Bool.self, forKey: .isIndefinite) ?? false
+        accessLevel = try c.decodeIfPresent(String.self, forKey: .accessLevel) ?? "private"
+        recordingAccess = try c.decodeIfPresent(String.self, forKey: .recordingAccess)
+        status = try c.decodeIfPresent(MeetingStatus.self, forKey: .status) ?? .scheduled
+        createdAt = try c.decodeIfPresent(Date.self, forKey: .createdAt)
+        updatedAt = try c.decodeIfPresent(Date.self, forKey: .updatedAt)
+        participants = try c.decodeIfPresent([MeetingParticipant].self, forKey: .participants) ?? []
+        attachments = try c.decodeIfPresent([MeetingAttachment].self, forKey: .attachments)
+    }
+
     enum CodingKeys: String, CodingKey {
         case id, title, description, location, status, participants, attachments
         case creatorId = "creator_id"
@@ -94,8 +116,8 @@ struct MeetingParticipant: Identifiable, Equatable, Codable {
 
 struct MeetingAttachment: Identifiable, Equatable, Codable {
     let id: Int
-    let filename: String
-    let url: String
+    let filename: String?
+    let url: String?
 }
 
 struct MeetingsListResponse: Codable {
@@ -231,9 +253,30 @@ class MeetingsService {
             }
             throw URLError(.badServerResponse)
         }
-        let meetings = try Self.decoder.decode(MeetingsListResponse.self, from: data).meetings
-        os_log(.default, log: meetingsLog, "fetchMeetingsList: decoded %d meetings", meetings.count)
-        return meetings
+        do {
+            let meetings = try Self.decoder.decode(MeetingsListResponse.self, from: data).meetings
+            os_log(.default, log: meetingsLog, "fetchMeetingsList: decoded %d meetings", meetings.count)
+            return meetings
+        } catch {
+            // Try to decode first meeting individually to find exact field
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let arr = json["meetings"] as? [[String: Any]],
+               let first = arr.first {
+                let keys = first.keys.sorted().joined(separator: ", ")
+                os_log(.error, log: meetingsLog, "fetchMeetingsList: first meeting keys: %{public}@", keys)
+                // Try decoding just the first one
+                do {
+                    let firstData = try JSONSerialization.data(withJSONObject: first)
+                    _ = try Self.decoder.decode(Meeting.self, from: firstData)
+                    os_log(.default, log: meetingsLog, "fetchMeetingsList: first meeting decoded OK individually")
+                } catch {
+                    os_log(.error, log: meetingsLog, "fetchMeetingsList: first meeting decode error: %{public}@", String(describing: error))
+                }
+            }
+            let preview = String(data: data.prefix(500), encoding: .utf8) ?? "binary"
+            os_log(.error, log: meetingsLog, "fetchMeetingsList: decode error: %{public}@\nPreview: %{public}@", String(describing: error), preview)
+            throw error
+        }
     }
 
     func fetchMeeting(id: Int) async throws -> Meeting {
