@@ -103,9 +103,21 @@ struct CallsListScreen: View {
         GeometryReader { geometry in
             ScrollView {
                 LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    // Upcoming meetings section
+                    if !upcomingMeetings.isEmpty {
+                        Section {
+                            ForEach(upcomingMeetings) { meeting in
+                                classicMeetingCell(meeting)
+                            }
+                        } header: {
+                            classicDateSectionHeader(SL10n.meetingTitle)
+                        }
+                    }
+
+                    // Call history + past meetings
                     if context.viewState.isLoading {
                         classicLoadingCells
-                    } else if groupedHistory.isEmpty {
+                    } else if groupedHistory.isEmpty, upcomingMeetings.isEmpty {
                         classicEmptyStateView(minHeight: geometry.size.height)
                     } else {
                         ForEach(groupedHistory, id: \.title) { group in
@@ -421,9 +433,25 @@ struct CallsListScreen: View {
 
                     // Content
                     LazyVStack(spacing: 0) {
+                        // Upcoming meetings
+                        if !upcomingMeetings.isEmpty {
+                            Section {
+                                VStack(spacing: 8) {
+                                    ForEach(upcomingMeetings) { meeting in
+                                        cosmosMeetingCellInline(meeting, isLast: meeting.id == upcomingMeetings.last?.id)
+                                    }
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                            } header: {
+                                cosmosDateSectionHeader(SL10n.meetingTitle)
+                            }
+                        }
+
+                        // Call history + past meetings
                         if context.viewState.isLoading {
                             cosmosLoadingCells
-                        } else if groupedHistory.isEmpty {
+                        } else if groupedHistory.isEmpty, upcomingMeetings.isEmpty {
                             cosmosEmptyStateView(minHeight: geometry.size.height - 140)
                         } else {
                             ForEach(groupedHistory, id: \.title) { group in
@@ -869,14 +897,27 @@ struct CallsListScreen: View {
         }
     }
 
+    /// Upcoming meetings (today and future) where I'm creator or participant
+    private var upcomingMeetings: [Meeting] {
+        let myID = context.viewState.userID
+        return context.viewState.meetings.filter { meeting in
+            !meeting.isPast &&
+                (meeting.creatorId == myID ||
+                    meeting.participants.contains(where: { $0.userId == myID }))
+        }
+        .sorted { $0.startTime < $1.startTime }
+    }
+
     private var unifiedHistory: [HistoryItem] {
         var items: [HistoryItem] = []
 
-        // Past meetings where I'm the creator or was a participant
+        // Past meetings that actually happened (active/completed), not just scheduled
         let myID = context.viewState.userID
         let pastMeetings = context.viewState.meetings.filter { meeting in
-            meeting.isPast && (meeting.creatorId == myID ||
-                meeting.participants.contains(where: { $0.userId == myID }))
+            meeting.isPast &&
+                (meeting.status == .active || meeting.status == .completed) &&
+                (meeting.creatorId == myID ||
+                    meeting.participants.contains(where: { $0.userId == myID }))
         }
         items += pastMeetings.map { .meeting($0) }
 

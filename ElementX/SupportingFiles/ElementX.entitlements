@@ -10,6 +10,8 @@
 	</array>
 	<key>com.apple.security.network.client</key>
 	<true/>
+	<key>aps-environment</key>
+	<string>production</string>
 	<key>keychain-access-groups</key>
 	<array>
 		<string>$(KEYCHAIN_ACCESS_GROUP_IDENTIFIER)</string>

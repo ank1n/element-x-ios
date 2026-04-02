@@ -345,8 +345,7 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
     func notificationTapped(content: UNNotificationContent) async {
         MXLog.info("Tapped Notification")
         
-        guard let roomID = content.roomID,
-              content.receiverID != nil else {
+        guard let roomID = content.roomID else {
             return
         }
         

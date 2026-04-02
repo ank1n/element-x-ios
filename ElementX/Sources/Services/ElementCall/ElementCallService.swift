@@ -195,56 +195,60 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     }
     
     func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping () -> Void) {
+        // iOS REQUIRES reportNewIncomingCall for every VoIP push, otherwise the app is killed.
+        // If payload is missing required fields, report a fake call and immediately cancel it.
+
         guard let roomID = payload.dictionaryPayload[ElementCallServiceNotificationKey.roomID.rawValue] as? String else {
-            MXLog.error("Something went wrong, missing room identifier for incoming voip call: \(payload)")
+            MXLog.error("Missing room identifier for incoming voip call, reporting and cancelling: \(payload.dictionaryPayload)")
+            reportAndCancelFakeCall(completion: completion)
             return
         }
-        
-        guard let rtcNotificationID = payload.dictionaryPayload[ElementCallServiceNotificationKey.rtcNotifyEventID.rawValue] as? String else {
-            MXLog.error("Something went wrong, missing rtc notification event identifier for incoming voip call: \(payload)")
-            return
-        }
-        
+
+        let rtcNotificationID = payload.dictionaryPayload[ElementCallServiceNotificationKey.rtcNotifyEventID.rawValue] as? String
+
         guard ongoingCallID?.roomID != roomID else {
-            MXLog.warning("Call already ongoing for room \(roomID), ignoring incoming push")
+            MXLog.warning("Call already ongoing for room \(roomID), reporting and cancelling")
+            reportAndCancelFakeCall(completion: completion)
             return
         }
-        
+
         let callID = CallID(callKitID: UUID(), roomID: roomID, rtcNotificationID: rtcNotificationID)
         incomingCallID = callID
-        
-        guard let expirationDate = (payload.dictionaryPayload[ElementCallServiceNotificationKey.expirationDate.rawValue] as? Date) else {
-            MXLog.error("Something went wrong, missing expiration timestamp for incoming voip call: \(payload)")
-            return
-        }
-        
+
+        let expirationDate = payload.dictionaryPayload[ElementCallServiceNotificationKey.expirationDate.rawValue] as? Date
         let nowDate = timeProvider.now()
-        
-        guard nowDate < expirationDate else {
-            MXLog.warning("Call expired for room \(roomID), ignoring incoming push")
+
+        if let expirationDate, nowDate >= expirationDate {
+            MXLog.warning("Call expired for room \(roomID), reporting and cancelling")
+            reportAndCancelFakeCall(completion: completion)
             return
         }
-        
-        let ringDuration: Duration = .seconds(min(expirationDate.timeIntervalSince1970 - nowDate.timeIntervalSince1970, 90))
-        
+
+        let ringDuration: Duration
+        if let expirationDate {
+            ringDuration = .seconds(min(expirationDate.timeIntervalSince1970 - nowDate.timeIntervalSince1970, 90))
+        } else {
+            ringDuration = .seconds(30)
+        }
+
         let roomDisplayName = payload.dictionaryPayload[ElementCallServiceNotificationKey.roomDisplayName.rawValue] as? String
-        
+
         let update = CXCallUpdate()
         update.hasVideo = true
-        update.localizedCallerName = roomDisplayName
+        update.localizedCallerName = roomDisplayName ?? "Входящий звонок"
         // https://stackoverflow.com/a/41230020/730924
         update.remoteHandle = .init(type: .generic, value: roomID)
-        
+
         callProvider.reportNewIncomingCall(with: callID.callKitID, update: update) { [weak self] error in
             if let error {
                 MXLog.error("Failed reporting new incoming call with error: \(error)")
             }
-            
+
             self?.actionsSubject.send(.receivedIncomingCallRequest)
-            
+
             completion()
         }
-        
+
         endUnansweredCallTask = Task { [weak self] in
             try? await self?.timeProvider.clock.sleep(for: ringDuration)
 
@@ -257,6 +261,24 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
                 // Notify about missed call
                 actionsSubject.send(.missedCall(roomID: incomingCallID.roomID))
             }
+        }
+    }
+
+    /// Report a fake incoming call and immediately cancel it to satisfy iOS VoIP push requirement
+    private func reportAndCancelFakeCall(completion: @escaping () -> Void) {
+        let fakeCallID = UUID()
+        let update = CXCallUpdate()
+        update.hasVideo = false
+        update.localizedCallerName = "sTalk"
+        update.remoteHandle = .init(type: .generic, value: "unknown")
+
+        callProvider.reportNewIncomingCall(with: fakeCallID, update: update) { [weak self] error in
+            if let error {
+                MXLog.error("Failed reporting fake call: \(error)")
+            }
+            // Immediately end the fake call
+            self?.callProvider.reportCall(with: fakeCallID, endedAt: nil, reason: .remoteEnded)
+            completion()
         }
     }
     
