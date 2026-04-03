@@ -67,51 +67,70 @@ class NotificationServiceExtension: UNNotificationServiceExtension {
     }
     
     private func handle(_ request: UNNotificationRequest, withContentHandler contentHandler: @escaping (UNNotificationContent) -> Void) async {
-        guard !DataProtectionManager.isDeviceLockedAfterReboot(containerURL: URL.appGroupContainerDirectory),
-              let roomID = request.content.roomID,
-              let eventID = request.content.eventID,
-              let clientID = request.content.pusherNotificationClientIdentifier,
-              let credentials = keychainController.restorationTokens().first(where: { $0.restorationToken.pusherNotificationClientIdentifier == clientID }) else {
-            // We cannot process this notification, it might be due to one of these:
-            // - Device rebooted and locked
-            // - Not a Matrix notification
-            // - User is not signed in
-            // - NotificationID could not be resolved
+        let isDeviceLocked = DataProtectionManager.isDeviceLockedAfterReboot(containerURL: URL.appGroupContainerDirectory)
+        let roomID = request.content.roomID
+        let eventID = request.content.eventID
+        let clientID = request.content.pusherNotificationClientIdentifier
+        let credentials = clientID.flatMap { id in
+            keychainController.restorationTokens().first(where: { $0.restorationToken.pusherNotificationClientIdentifier == id })
+        }
+
+        // If we can't fully process, at least show a useful fallback notification
+        guard !isDeviceLocked, let roomID, let eventID, let clientID, let credentials else {
+            MXLog.info("\(tag) Cannot fully process notification — showing fallback. locked=\(isDeviceLocked) room=\(roomID ?? "nil") event=\(eventID ?? "nil") clientID=\(clientID ?? "nil") credentials=\(credentials != nil)")
+            if let mutableContent = request.content.mutableCopy() as? UNMutableNotificationContent {
+                mutableContent.title = "sTalk"
+                mutableContent.body = "Новое сообщение"
+                // Preserve room_id for tap navigation
+                if let roomID {
+                    mutableContent.roomID = roomID
+                }
+                // Set receiver_id from first available credentials so tap works
+                if let firstCreds = keychainController.restorationTokens().first {
+                    mutableContent.receiverID = firstCreds.userID
+                }
+                return contentHandler(mutableContent)
+            }
             return contentHandler(request.content)
         }
-        
+
         let homeserverURL = credentials.restorationToken.session.homeserverUrl
         await appHooks.remoteSettingsHook.loadCache(forHomeserver: homeserverURL, applyingTo: settings)
-        
+
         guard let mutableContent = request.content.mutableCopy() as? UNMutableNotificationContent else {
             return contentHandler(request.content)
         }
-        
+
         MXLog.info("\(tag) #########################################")
-        
+
         ExtensionLogger.logMemory(with: tag)
-        
+
         MXLog.info("\(tag) Received payload: \(request.content.userInfo)")
-        
+
         do {
             let userSession = try await NSEUserSession(credentials: credentials,
                                                        roomID: roomID,
                                                        clientSessionDelegate: keychainController,
                                                        appHooks: appHooks,
                                                        appSettings: settings)
-            
+
             notificationHandler = NotificationHandler(userSession: userSession,
                                                       settings: settings,
                                                       contentHandler: contentHandler,
                                                       notificationContent: mutableContent,
                                                       tag: tag)
-            
+
             ExtensionLogger.logMemory(with: tag)
             MXLog.info("\(tag) Configured user session")
-            
+
             await notificationHandler?.processEvent(eventID, roomID: roomID)
         } catch {
             MXLog.error("Failed creating user session with error: \(error)")
+            // Fallback: show basic notification even if session fails
+            mutableContent.title = "sTalk"
+            mutableContent.body = "Новое сообщение"
+            if mutableContent.roomID == nil { mutableContent.roomID = roomID }
+            contentHandler(mutableContent)
         }
     }
     

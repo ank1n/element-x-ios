@@ -41,11 +41,6 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
             // observation set in `incomingCallID` occurs *before* the user session is restored.
             // So observe when the client proxy is set to fix this (the method guards for the call).
             Task { await observeIncomingCall() }
-
-            // Register VoIP pusher if we already have a token
-            if let voipDeviceToken {
-                Task { await registerVoIPPusher(with: voipDeviceToken) }
-            }
         }
     }
     
@@ -183,15 +178,8 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     // MARK: - PKPushRegistryDelegate
     
     func pushRegistry(_ registry: PKPushRegistry, didUpdate pushCredentials: PKPushCredentials, for type: PKPushType) {
-        guard type == .voIP else { return }
-
-        let token = pushCredentials.token
-        voipDeviceToken = token
-
-        let tokenHex = token.map { String(format: "%02x", $0) }.joined()
-        MXLog.info("Received VoIP push token: \(tokenHex.prefix(8))...")
-
-        Task { await registerVoIPPusher(with: token) }
+        // Don't register VoIP pusher with Synapse — this causes ALL events to come via VoIP push.
+        // VoIP pushes are sent by Matrix Rust SDK directly via to-device messages (MSC4075).
     }
     
     func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping () -> Void) {
@@ -264,20 +252,19 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         }
     }
 
-    /// Report a fake incoming call and immediately cancel it to satisfy iOS VoIP push requirement
+    /// Report a fake incoming call and immediately cancel it to satisfy iOS VoIP push requirement.
+    /// iOS kills the app if reportNewIncomingCall is not called for every VoIP push.
+    /// We report and instantly end the call so the user sees nothing.
     private func reportAndCancelFakeCall(completion: @escaping () -> Void) {
         let fakeCallID = UUID()
         let update = CXCallUpdate()
         update.hasVideo = false
-        update.localizedCallerName = "sTalk"
-        update.remoteHandle = .init(type: .generic, value: "unknown")
+        update.localizedCallerName = ""
+        update.remoteHandle = .init(type: .generic, value: "silent")
 
-        callProvider.reportNewIncomingCall(with: fakeCallID, update: update) { [weak self] error in
-            if let error {
-                MXLog.error("Failed reporting fake call: \(error)")
-            }
-            // Immediately end the fake call
-            self?.callProvider.reportCall(with: fakeCallID, endedAt: nil, reason: .remoteEnded)
+        callProvider.reportNewIncomingCall(with: fakeCallID, update: update) { [weak self] _ in
+            // End immediately — before iOS has a chance to show CallKit UI
+            self?.callProvider.reportCall(with: fakeCallID, endedAt: Date(), reason: .remoteEnded)
             completion()
         }
     }
