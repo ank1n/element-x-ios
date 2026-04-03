@@ -8,7 +8,10 @@
 
 import Combine
 import MatrixRustSDK
+import os.log
 import UserNotifications
+
+private let nseLog = OSLog(subsystem: "ru.implica.stalk.nse", category: "NSE")
 
 // The lifecycle of the NSE looks something like the following:
 //  1)  App receives notification
@@ -75,9 +78,20 @@ class NotificationServiceExtension: UNNotificationServiceExtension {
             keychainController.restorationTokens().first(where: { $0.restorationToken.pusherNotificationClientIdentifier == id })
         }
 
+        let allTokens = keychainController.restorationTokens()
+        os_log(.default, log: nseLog, "NSE handle: locked=%{public}d room=%{public}@ event=%{public}@ clientID=%{public}@ storedTokens=%d",
+               isDeviceLocked, roomID ?? "nil", eventID ?? "nil", clientID ?? "nil", allTokens.count)
+        for (idx, t) in allTokens.enumerated() {
+            os_log(.default, log: nseLog, "NSE token[%d]: userID=%{public}@ pusherClientID=%{public}@",
+                   idx, t.userID, t.restorationToken.pusherNotificationClientIdentifier ?? "nil")
+        }
+        os_log(.default, log: nseLog, "NSE payload keys: %{public}@",
+               (request.content.userInfo.keys.map { String(describing: $0) }).joined(separator: ", "))
+
         // If we can't fully process, at least show a useful fallback notification
         guard !isDeviceLocked, let roomID, let eventID, let clientID, let credentials else {
-            MXLog.info("\(tag) Cannot fully process notification — showing fallback. locked=\(isDeviceLocked) room=\(roomID ?? "nil") event=\(eventID ?? "nil") clientID=\(clientID ?? "nil") credentials=\(credentials != nil)")
+            os_log(.error, log: nseLog, "NSE fallback: locked=%{public}d room=%{public}@ event=%{public}@ clientID=%{public}@ credentialsFound=%{public}d",
+                   isDeviceLocked, roomID ?? "nil", eventID ?? "nil", clientID ?? "nil", credentials != nil ? 1 : 0)
             if let mutableContent = request.content.mutableCopy() as? UNMutableNotificationContent {
                 mutableContent.title = "sTalk"
                 mutableContent.body = "Новое сообщение"
@@ -105,7 +119,7 @@ class NotificationServiceExtension: UNNotificationServiceExtension {
 
         ExtensionLogger.logMemory(with: tag)
 
-        MXLog.info("\(tag) Received payload: \(request.content.userInfo)")
+        os_log(.default, log: nseLog, "NSE processing: homeserver=%{public}@ room=%{public}@", homeserverURL, roomID)
 
         do {
             let userSession = try await NSEUserSession(credentials: credentials,
@@ -113,6 +127,7 @@ class NotificationServiceExtension: UNNotificationServiceExtension {
                                                        clientSessionDelegate: keychainController,
                                                        appHooks: appHooks,
                                                        appSettings: settings)
+            os_log(.default, log: nseLog, "NSE session created OK")
 
             notificationHandler = NotificationHandler(userSession: userSession,
                                                       settings: settings,
@@ -125,7 +140,7 @@ class NotificationServiceExtension: UNNotificationServiceExtension {
 
             await notificationHandler?.processEvent(eventID, roomID: roomID)
         } catch {
-            MXLog.error("Failed creating user session with error: \(error)")
+            os_log(.error, log: nseLog, "NSE session FAILED: %{public}@", String(describing: error))
             // Fallback: show basic notification even if session fails
             mutableContent.title = "sTalk"
             mutableContent.body = "Новое сообщение"
