@@ -52,9 +52,10 @@ settings:
   ENABLE_BITCODE: false
   APP_NAME: sTalk
   KEYCHAIN_ACCESS_GROUP_IDENTIFIER: "$(DEVELOPMENT_TEAM).$(BASE_BUNDLE_IDENTIFIER)"
-  MARKETING_VERSION: 26.01.1
-  CURRENT_PROJECT_VERSION: 1
+  MARKETING_VERSION: 26.01.2
+  CURRENT_PROJECT_VERSION: 15
   SUPPORTS_MACCATALYST: false
+  DEVELOPMENT_TEAM: Z44H678J3R
 
 include:
 - path: app.yml
@@ -97,6 +98,11 @@ packages:
     exactVersion: 2.41.0
     # path: ../matrix-rich-text-editor/platforms/ios/lib/WysiwygComposer
   
+  # LiveKit (native calls)
+  LiveKit:
+    url: https://github.com/ank1n/client-sdk-swift.git
+    branch: main
+
   # External dependencies
   Algorithms:
     url: https://github.com/apple/swift-algorithms
@@ -109,7 +115,7 @@ packages:
     from: 1.0.6
   Collections:
     url: https://github.com/apple/swift-collections
-    minorVersion: 1.3.0
+    minorVersion: 1.2.1
   DeviceKit:
     url: https://github.com/devicekit/DeviceKit
     minorVersion: 5.7.0

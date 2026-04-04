@@ -6,7 +6,7 @@
       "location" : "https://github.com/ank1n/client-sdk-swift.git",
       "state" : {
         "branch" : "main",
-        "revision" : "8684dc32d20561561fb0ae38a2604762916b00ee"
+        "revision" : "ce7100611c1ab7ed1d51540ba8853ca58853bf8f"
       }
     },
     {
@@ -320,8 +320,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-protobuf.git",
       "state" : {
-        "revision" : "c5ab62237f21cad094812719a1bbe29443407c5f",
-        "version" : "1.34.1"
+        "revision" : "a008af1a102ff3dd6cc3764bb69bf63226d0f5f6",
+        "version" : "1.36.1"
       }
     },
     {
@@ -383,8 +383,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/livekit/webrtc-xcframework.git",
       "state" : {
-        "revision" : "0cdbbd1731050137dd7f3678c8ee626e1a32570c",
-        "version" : "137.7151.13"
+        "revision" : "14a945724d81cfe5a8ce331e4af15d205d2afb85",
+        "version" : "144.7559.1"
       }
     },
     {

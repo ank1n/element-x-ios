@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>method</key>
+	<string>app-store-connect</string>
+	<key>teamID</key>
+	<string>Z44H678J3R</string>
+	<key>signingStyle</key>
+	<string>manual</string>
+	<key>provisioningProfiles</key>
+	<dict>
+		<key>ru.implica.stalk</key>
+		<string>sTalk AppStore</string>
+		<key>ru.implica.stalk.nse</key>
+		<string>sTalk NSE AppStore</string>
+		<key>ru.implica.stalk.shareextension</key>
+		<string>sTalk ShareExtension AppStore</string>
+		<key>ru.implica.stalk.broadcast</key>
+		<string>sTalk Broadcast AppStore</string>
+	</dict>
+	<key>signingCertificate</key>
+	<string>Apple Distribution</string>
+	<key>uploadSymbols</key>
+	<true/>
+	<key>uploadBitcode</key>
+	<false/>
+</dict>
+</plist>

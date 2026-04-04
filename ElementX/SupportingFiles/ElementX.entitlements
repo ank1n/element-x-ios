@@ -2,6 +2,16 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>aps-environment</key>
+	<string>production</string>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:stalk.implica.ru</string>
+		<string>applinks:call.stalk.implica.ru</string>
+		<string>webcredentials:stalk.implica.ru</string>
+	</array>
+	<key>com.apple.developer.usernotifications.communication</key>
+	<true/>
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
 	<key>com.apple.security.application-groups</key>
@@ -10,8 +20,6 @@
 	</array>
 	<key>com.apple.security.network.client</key>
 	<true/>
-	<key>aps-environment</key>
-	<string>production</string>
 	<key>keychain-access-groups</key>
 	<array>
 		<string>$(KEYCHAIN_ACCESS_GROUP_IDENTIFIER)</string>

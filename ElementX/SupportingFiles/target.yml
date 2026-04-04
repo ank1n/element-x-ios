@@ -110,7 +110,7 @@ targets:
     entitlements:
       path: ElementX.entitlements
       properties:
-        aps-environment: development
+        aps-environment: production
         com.apple.developer.associated-domains:
         - applinks:stalk.implica.ru
         - applinks:call.stalk.implica.ru
@@ -131,7 +131,10 @@ targets:
         MARKETING_VERSION: $(MARKETING_VERSION)
         CURRENT_PROJECT_VERSION: $(CURRENT_PROJECT_VERSION)
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        DEVELOPMENT_TEAM: $(DEVELOPMENT_TEAM)
+        DEVELOPMENT_TEAM: Z44H678J3R
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "Apple Distribution"
+        PROVISIONING_PROFILE_SPECIFIER: "sTalk AppStore"
         SWIFT_OBJC_BRIDGING_HEADER: ElementX/SupportingFiles/ElementX-Bridging-Header.h
         SWIFT_OBJC_INTERFACE_HEADER_NAME: GeneratedInterface-Swift.h
         PILLS_UT_TYPE_IDENTIFIER: $(BASE_BUNDLE_IDENTIFIER).pills
@@ -246,6 +249,7 @@ targets:
     - package: DSWaveformImage
       product: DSWaveformImageViews
     - package: Lottie
+    - package: LiveKit
 
     sources:
     - path: ../Sources
