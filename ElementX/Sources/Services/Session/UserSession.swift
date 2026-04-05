@@ -8,6 +8,9 @@
 
 import Combine
 import Foundation
+import os.log
+
+private let e2eeLog = OSLog(subsystem: "ru.implica.stalk", category: "E2EE")
 
 class UserSession: UserSessionProtocol {
     private var cancellables = Set<AnyCancellable>()
@@ -82,23 +85,30 @@ class UserSession: UserSessionProtocol {
                     return
                 }
 
+                os_log(.default, log: e2eeLog, "E2EE state — verification: %{public}@, recovery: %{public}@", String(describing: verificationState), String(describing: recoveryState))
                 MXLog.info("sTalk: E2EE state — verification: \(verificationState), recovery: \(recoveryState)")
 
                 switch (verificationState, recoveryState) {
                 case (.verified, .disabled), (.verified, .incomplete):
-                    // First device or broken state: generate recovery key
+                    // Try to restore from server first (may be re-install, not first device)
                     autoRecoveryCancellable?.cancel()
                     autoRecoveryCancellable = nil
-                    MXLog.info("sTalk: Auto-enabling recovery (verified, state: \(recoveryState))")
+                    os_log(.default, log: e2eeLog, "Verified + %{public}@ — trying server key first", String(describing: recoveryState))
+                    MXLog.info("sTalk: Verified + \(recoveryState) — trying server recovery key first")
                     Task {
-                        let result = await self.clientProxy.secureBackupController.generateRecoveryKey()
-                        switch result {
-                        case .success(let key):
-                            MXLog.info("sTalk: Recovery enabled (key length: \(key.count))")
-                            // Store recovery key on server for other devices
-                            await Self.storeRecoveryKeyOnServer(key: key, clientProxy: self.clientProxy)
-                        case .failure(let error):
-                            MXLog.error("sTalk: Recovery failed: \(error)")
+                        // First try to recover with existing key from server
+                        let restored = await self.tryRestoreFromServerKey()
+                        if !restored {
+                            // No key on server or invalid — truly first device, generate new
+                            MXLog.info("sTalk: No valid server key — generating new recovery key (first device)")
+                            let result = await self.clientProxy.secureBackupController.generateRecoveryKey()
+                            switch result {
+                            case .success(let key):
+                                MXLog.info("sTalk: Recovery enabled (key length: \(key.count))")
+                                await Self.storeRecoveryKeyOnServer(key: key, clientProxy: self.clientProxy)
+                            case .failure(let error):
+                                MXLog.error("sTalk: Recovery failed: \(error)")
+                            }
                         }
                     }
 
@@ -124,6 +134,53 @@ class UserSession: UserSessionProtocol {
                 }
             }
         autoRecoveryCancellable?.store(in: &cancellables)
+    }
+
+    /// Try to restore E2EE keys using recovery key from server.
+    /// Returns true if restoration succeeded.
+    private func tryRestoreFromServerKey() async -> Bool {
+        let homeserverURL = clientProxy.homeserver.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let accessToken = try? clientProxy.matrixAccessToken() else {
+            MXLog.error("sTalk: tryRestore — no access token")
+            return false
+        }
+
+        let encodedUserID = clientProxy.userID.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? clientProxy.userID
+        guard let url = URL(string: "\(homeserverURL)/_matrix/client/v3/user/\(encodedUserID)/account_data/im.stalk.recovery_key") else {
+            return false
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let recoveryKey = json["key"] as? String, !recoveryKey.isEmpty else {
+                os_log(.default, log: e2eeLog, "tryRestore — no key on server (HTTP %d)", (response as? HTTPURLResponse)?.statusCode ?? -1)
+                MXLog.info("sTalk: tryRestore — no recovery key on server")
+                return false
+            }
+
+            os_log(.default, log: e2eeLog, "tryRestore — found key (length: %d), attempting recover...", recoveryKey.count)
+            MXLog.info("sTalk: tryRestore — found key (length: \(recoveryKey.count)), attempting recover...")
+            let result = await clientProxy.secureBackupController.confirmRecoveryKey(recoveryKey)
+            switch result {
+            case .success:
+                os_log(.default, log: e2eeLog, "tryRestore — SUCCESS! Keys restored")
+                MXLog.info("sTalk: tryRestore — recovery key confirmed, keys restored!")
+                return true
+            case .failure(let error):
+                os_log(.error, log: e2eeLog, "tryRestore — FAILED: %{public}@", String(describing: error))
+                MXLog.error("sTalk: tryRestore — confirmRecoveryKey failed: \(error)")
+                return false
+            }
+        } catch {
+            MXLog.error("sTalk: tryRestore — fetch error: \(error)")
+            return false
+        }
     }
 
     /// Check if recovery key is stored on server; if not, regenerate and store it

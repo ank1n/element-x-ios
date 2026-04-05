@@ -8,7 +8,10 @@
 
 import CallKit
 import MatrixRustSDK
+import os.log
 import UserNotifications
+
+private let nseHandlerLog = OSLog(subsystem: "ru.implica.stalk.nse", category: "Handler")
 
 class NotificationHandler {
     private let userSession: NSEUserSession
@@ -98,8 +101,12 @@ class NotificationHandler {
             return .shouldDisplay
         }
         
-        switch try? event.content() {
+        let eventContent = try? event.content()
+        os_log(.default, log: nseHandlerLog, "Event content type: %{public}@", String(describing: eventContent))
+
+        switch eventContent {
         case .messageLike(let messageContent):
+            os_log(.default, log: nseHandlerLog, "MessageLike content: %{public}@", String(describing: messageContent))
             switch messageContent {
             case .poll,
                  .roomEncrypted,
@@ -173,8 +180,9 @@ class NotificationHandler {
         // - the main app picks this up in `PKPushRegistry.didReceiveIncomingPushWith` and
         // `CXProvider.reportNewIncomingCall` to show the system UI and handle actions on it.
         // N.B. this flow works properly only when background processing capabilities are enabled
+        os_log(.default, log: nseHandlerLog, "handleCallNotification: type=%{public}@ room=%{public}@ expiration=%llu", String(describing: notificationType), roomID, expirationTimestamp)
         guard notificationType == .ring else {
-            MXLog.info("Non-ringing call notification, handling as push notification")
+            os_log(.default, log: nseHandlerLog, "Non-ringing call, showing as notification")
             return .shouldDisplay
         }
         
@@ -216,11 +224,12 @@ class NotificationHandler {
                        ElementCallServiceNotificationKey.expirationDate.rawValue: expirationDate,
                        ElementCallServiceNotificationKey.rtcNotifyEventID.rawValue: rtcNotifyEventID] as [String: Any]
         
+        os_log(.default, log: nseHandlerLog, "Attempting CXProvider.reportNewIncomingVoIPPushPayload for room=%{public}@ display=%{public}@", roomID, roomDisplayName)
         do {
             try await CXProvider.reportNewIncomingVoIPPushPayload(payload)
-            MXLog.info("Call notification delegated to CallKit")
+            os_log(.default, log: nseHandlerLog, "Call notification delegated to CallKit OK")
         } catch {
-            MXLog.error("Failed reporting voip call with error: \(error). Handling as push notification")
+            os_log(.error, log: nseHandlerLog, "reportNewIncomingVoIPPushPayload FAILED: %{public}@", String(describing: error))
             return .shouldDisplay
         }
         
