@@ -308,6 +308,17 @@ class ClientProxy: ClientProxyProtocol {
         try client.session().accessToken
     }
 
+    /// sTalk: Force token refresh by making a lightweight SDK request.
+    /// Call this when custom API endpoints return 401 (expired OIDC token).
+    /// MAS tokens expire every 15 min — SDK refreshes automatically for its own calls,
+    /// but our custom API calls (meetings, recordings) need fresh tokens too.
+    func forceTokenRefresh() async {
+        // displayName() makes a real server request (/profile/{userId}/displayname)
+        // which triggers SDK's internal OIDC token refresh if expired.
+        // After this call, client.session().accessToken returns the fresh token.
+        _ = try? await client.displayName()
+    }
+
     var canDeactivateAccount: Bool {
         client.canDeactivateAccount()
     }

@@ -76,6 +76,7 @@ struct MeetingDetailScreen: View {
         }
         .navigationTitle(SL10n.meetingTitle)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarVisibility(.hidden, for: .tabBar)
     }
 
     // MARK: - Header Card
@@ -280,17 +281,16 @@ struct MeetingDetailScreen: View {
 
     private func participantRow(_ participant: MeetingParticipant) -> some View {
         HStack(spacing: 10) {
-            // Avatar circle with initial
-            ZStack {
-                Circle()
-                    .fill(avatarColor(for: participant.displayName))
-                Text(String(participant.displayName.prefix(1)).uppercased())
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.white)
-            }
-            .frame(width: 32, height: 32)
+            // Avatar from Matrix profile
+            let profile = context.viewState.participantProfiles[participant.userId]
+            let name = profile?.displayName ?? participant.displayName
+            LoadableAvatarImage(url: profile?.avatarURL,
+                                name: name,
+                                contentID: participant.userId,
+                                avatarSize: .custom(32),
+                                mediaProvider: context.viewState.mediaProvider)
 
-            Text(participant.displayName)
+            Text(name)
                 .font(.system(size: 14))
                 .foregroundColor(.primary)
 

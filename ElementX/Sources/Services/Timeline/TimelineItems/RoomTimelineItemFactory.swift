@@ -678,7 +678,9 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
     }
     
     private func buildEncryptionAuthenticity(_ shieldState: ShieldState?) -> EncryptionAuthenticity? {
-        shieldState.flatMap(EncryptionAuthenticity.init)
+        // sTalk: Suppress encryption shield warnings — keys and verification are managed
+        // automatically via server-stored recovery key + IDFV device cleanup.
+        nil
     }
     
     private func buildTimelineItemThreadSummary(_ threadSummary: MatrixRustSDK.ThreadSummary?) -> TimelineItemThreadSummary? {

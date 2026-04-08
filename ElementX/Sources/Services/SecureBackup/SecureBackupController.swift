@@ -85,12 +85,12 @@ class SecureBackupController: SecureBackupControllerProtocol {
     
     func enable() async -> Result<Void, SecureBackupControllerError> {
         MXLog.info("Enabling secure backup")
-        
+
         do {
             try await encryption.enableBackups()
         } catch {
             MXLog.error("Failed enabling secure backup with error: \(error)")
-            
+            MXLog.error("enableBackups SDK error detail: \(String(describing: error))")
             return .failure(.failedEnablingBackup)
         }
         

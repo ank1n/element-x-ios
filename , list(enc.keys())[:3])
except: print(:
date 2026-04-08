@@ -1,0 +1,43 @@
+=== @ms.implica:stalk.implica.ru ===
+--- Active devices (last 3): ---
+                  device_id                  |        display_name        |   last_seen   
+---------------------------------------------+----------------------------+---------------
+ 9C8cpBg4n5                                  | sTalk на iPhone 13 Pro Max | 1775501344012
+ bs94NOJMSo                                  | sTalk on Chrome for macOS  | 1775497727683
+ ISmApdBLedPQhGplqAZJneGkS821PqkmkFeiwu1LYrU | self_signing signing key   |              
+(3 rows)
+
+--- SSSS keys: ---
+ m.secret_storage.key.QkaiUcPwPncH1h2rVrnevMCBjrKgnexb
+ m.secret_storage.key.xWL5oZ4ogNa39XGJZhUbZkAd8pJO9YQT
+ m.secret_storage.key.jPkYyyoKgjsyXsd0nzEYmojamyNn8Lfa
+ m.secret_storage.key.SyX4wHe0vGgHrA78utHfsRcWexsvlxN6
+
+Default:  {"key":"SyX4wHe0vGgHrA78utHfsRcWexsvlxN6"}
+
+--- Cross-signing encrypted key count: ---
+
+=== @tymbay:stalk.implica.ru ===
+--- Active devices (last 3): ---
+                  device_id                  |                  display_name                  |   last_seen   
+---------------------------------------------+------------------------------------------------+---------------
+ h8GiJ398tj4VE2WN496TJ9qKCl2o6i+6ziisgUkynHw |                                                | 1775501163997
+ STALK_2A489DF909                            | 00000000000000000STAK0WEB1 на Chrome для macOS | 1775501082636
+ tKVWIH16np                                  | sTalk на Mac                                   | 1775489390714
+(3 rows)
+
+--- SSSS keys: ---
+ m.secret_storage.key.QJN7zkDchFL54la2xcykxAWqgmZ1pOnr
+ m.secret_storage.key.itTH0F03NMEkIxZS7LtlVAcpktbCH1AZ
+ m.secret_storage.key.QSgb6dMhuJRU7tcZeermb2vWxHObdw8p
+ m.secret_storage.key.ljRNPm240XL4mVw3tAW0XuDRShz1Aiun
+ m.secret_storage.key.YxpgRKZhrJjbjPDa4epfmVyOrnGnaRos
+ m.secret_storage.key.ieSdyRV0Xubn5zEITd9Y3xZMGA6E6hQl
+ m.secret_storage.key.P01fwOXwRf64hyfju0xXO09PV3xhUVOc
+ m.secret_storage.key.zD3lNtsSece7bNkjMmyFjZElzfP5g8tk
+ m.secret_storage.key.QVNppAeXjXePsQYzj4nLoTlR4qXQlQYs
+
+Default:  {"key":"QVNppAeXjXePsQYzj4nLoTlR4qXQlQYs"}
+
+--- Cross-signing encrypted key count: ---
+

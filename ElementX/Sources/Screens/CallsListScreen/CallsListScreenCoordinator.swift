@@ -15,6 +15,7 @@ struct CallsListScreenCoordinatorParameters {
 enum CallsListScreenCoordinatorAction {
     case showSettings
     case startCall(userId: String)
+    case showCallDetail(CallHistoryItem)
 }
 
 final class CallsListScreenCoordinator: CoordinatorProtocol {
@@ -48,6 +49,8 @@ final class CallsListScreenCoordinator: CoordinatorProtocol {
                 if let first = userIDs.first {
                     self.actionsSubject.send(.startCall(userId: first))
                 }
+            case .showCallDetail(let call):
+                self.actionsSubject.send(.showCallDetail(call))
             }
         }
         .store(in: &cancellables)

@@ -109,6 +109,14 @@ struct CalendarGridView: View {
             if selectedMonth != displayedMonthComps {
                 displayedMonth = selectedDate
             }
+            // Sync week strip scroll position when selectedDate changes
+            let key = dateKeyFormatter.string(from: selectedDate)
+            if scrolledDayID != key {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
+                    scrolledDayID = key
+                    scrollProxy?.scrollTo(key, anchor: .center)
+                }
+            }
         }
     }
 

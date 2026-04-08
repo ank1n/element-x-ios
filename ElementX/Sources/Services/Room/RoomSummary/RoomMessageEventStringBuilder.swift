@@ -42,11 +42,11 @@ struct RoomMessageEventStringBuilder {
             }
             message = content
         case .image(let content):
-            message = buildMessage(for: destination, caption: content.caption, type: L10n.commonImage)
+            message = buildMessage(for: destination, caption: content.caption ?? content.filename, type: L10n.commonImage)
         case .video(let content):
-            message = buildMessage(for: destination, caption: content.caption, type: L10n.commonVideo)
+            message = buildMessage(for: destination, caption: content.caption ?? content.filename, type: L10n.commonVideo)
         case .file(let content):
-            message = buildMessage(for: destination, caption: content.caption, type: L10n.commonFile)
+            message = buildMessage(for: destination, caption: content.caption ?? content.filename, type: L10n.commonFile)
         case .location:
             var content = AttributedString(L10n.commonSharedLocation)
             if destination == .pinnedEvent {

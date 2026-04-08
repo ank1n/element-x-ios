@@ -24,12 +24,22 @@ enum MeetingsScreenViewModelAction {
     case dismiss
 }
 
+/// Resolved participant info for display (name + avatar URL)
+struct ResolvedParticipant: Equatable {
+    let displayName: String
+    let avatarURL: URL?
+}
+
 struct MeetingsScreenViewState: BindableState {
     var meetings: [Meeting] = []
     var holidays: Set<String> = [] // "YYYY-MM-DD"
     var selectedDate: Date = .now
     var isLoading = true
     var errorMessage: String?
+    /// userId → resolved display name + avatar URL
+    var participantProfiles: [String: ResolvedParticipant] = [:]
+    /// Media provider for loading avatar images
+    var mediaProvider: MediaProviderProtocol?
     var bindings = MeetingsScreenViewStateBindings()
 
     /// Meetings for the selected date
@@ -76,6 +86,8 @@ struct MeetingDetailViewState: BindableState {
     var homeserverURL = ""
     var isLoading = false
     var linkCopied = false
+    var participantProfiles: [String: ResolvedParticipant] = [:]
+    var mediaProvider: MediaProviderProtocol?
     var bindings = MeetingDetailViewStateBindings()
 
     var isCreator: Bool {

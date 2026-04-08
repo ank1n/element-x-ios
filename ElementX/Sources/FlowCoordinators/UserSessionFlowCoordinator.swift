@@ -273,6 +273,8 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                     navigationTabCoordinator.selectedTab = .profile
                 case .startCall(let roomID):
                     Task { await self.presentCallScreen(roomID: roomID) }
+                case .hideTabBar(let hide):
+                    appsTabDetails.barVisibilityOverride = hide ? .hidden : .visible
                 }
             }
             .store(in: &cancellables)

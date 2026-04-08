@@ -71,13 +71,27 @@ struct MeetingsListScreen: View {
                     .padding(.bottom, 8)
 
                 // Meetings list
-                ScrollView {
-                    meetingsContent
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 70)
-                }
-                .refreshable {
-                    context.send(viewAction: .refresh)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        meetingsContent
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 70)
+                    }
+                    .refreshable {
+                        context.send(viewAction: .refresh)
+                    }
+                    .onChange(of: context.viewState.selectedDate) {
+                        if Calendar.current.isDateInToday(context.viewState.selectedDate) {
+                            scrollToNow(proxy: proxy)
+                        }
+                    }
+                    .onChange(of: context.viewState.meetingsForSelectedDate.count) {
+                        // Scroll when meetings data arrives (loading finished or data changed)
+                        if Calendar.current.isDateInToday(context.viewState.selectedDate),
+                           !context.viewState.meetingsForSelectedDate.isEmpty {
+                            scrollToNow(proxy: proxy)
+                        }
+                    }
                 }
             }
         }
@@ -220,11 +234,20 @@ struct MeetingsListScreen: View {
             let nextMeeting: Meeting? = isToday ? meetings.first(where: { $0.startTime > now }) : nil
             let clusters = clusterMeetings(meetings)
 
-            LazyVStack(spacing: 0) {
-                // Track flat index for nowTab insertion
-                var flatIndex = 0
+            VStack(spacing: 0) {
+                // Pre-compute flat start index for each cluster
+                let clusterStartIndices: [Int] = {
+                    var indices = [Int]()
+                    var idx = 0
+                    for cluster in clusters {
+                        indices.append(idx)
+                        idx += cluster.count
+                    }
+                    return indices
+                }()
+
                 ForEach(Array(clusters.enumerated()), id: \.offset) { clusterIdx, cluster in
-                    let clusterStartFlatIdx = flatIndex
+                    let clusterStartFlatIdx = clusterStartIndices[clusterIdx]
 
                     // Now tab before this cluster?
                     if let ni = nowInsertIndex, ni >= clusterStartFlatIdx, ni < clusterStartFlatIdx + cluster.count {
@@ -245,16 +268,12 @@ struct MeetingsListScreen: View {
                     }
 
                     if cluster.count == 1 {
-                        // Single meeting — full width
                         let meeting = cluster[0]
                         let isActive = isToday && meeting.startTime <= now && meeting.endTime > now
                         timelineMeetingRow(meeting, isActive: isActive)
                     } else {
-                        // Parallel meetings — side by side
                         parallelMeetingsRow(cluster, isToday: isToday, now: now)
                     }
-
-                    let _ = flatIndex += cluster.count
                 }
                 if isToday, nowInsertIndex == nil, activeMeeting == nil {
                     nowTab(nextMeeting: nil)
@@ -308,15 +327,30 @@ struct MeetingsListScreen: View {
 
             HStack(spacing: 12) {
                 if !meeting.participants.isEmpty {
-                    HStack(spacing: 4) {
-                        Image(systemName: "person.2.fill")
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary.opacity(0.7))
-                        Text("\(meeting.participants.count)")
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
+                    // Participant avatars (overlapping)
+                    HStack(spacing: -6) {
+                        ForEach(meeting.participants.prefix(5)) { participant in
+                            let profile = context.viewState.participantProfiles[participant.userId]
+                            let name = profile?.displayName ?? participantDisplayName(participant.userId)
+                            LoadableAvatarImage(url: profile?.avatarURL,
+                                                name: name,
+                                                contentID: participant.userId,
+                                                avatarSize: .custom(22),
+                                                mediaProvider: context.viewState.mediaProvider)
+                                .overlay(Circle().stroke(Color(UIColor.systemBackground), lineWidth: 1.5))
+                        }
+                        if meeting.participants.count > 5 {
+                            Text("+\(meeting.participants.count - 5)")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(.secondary)
+                                .frame(width: 22, height: 22)
+                                .background(Circle().fill(Color(UIColor.systemGray5)))
+                                .overlay(Circle().stroke(Color(UIColor.systemBackground), lineWidth: 1.5))
+                        }
                     }
                 }
+
+                Spacer()
 
                 HStack(spacing: 4) {
                     Image(systemName: "clock")
@@ -329,10 +363,22 @@ struct MeetingsListScreen: View {
             }
         }
         .padding(12)
-        .background(isActive ? Color.green.opacity(0.05) : cardBg)
+        .padding(.leading, 4)
+        .background(HStack(spacing: 0) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(meeting.isPast ? Color.secondary.opacity(0.3) : meeting.labelColor)
+                .frame(width: 3)
+            Spacer()
+        })
+        .background(LinearGradient(colors: [
+                Color(UIColor.systemBackground),
+                (isActive ? Color.green : meeting.labelColor).opacity(0.1)
+            ],
+            startPoint: .leading,
+            endPoint: .trailing))
         .cornerRadius(14)
         .overlay(RoundedRectangle(cornerRadius: 14)
-            .stroke(isActive ? Color.green.opacity(0.3) : Color.clear, lineWidth: 1))
+            .stroke(isActive ? Color.green.opacity(0.3) : meeting.labelColor.opacity(0.15), lineWidth: 1))
         .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
     }
 
@@ -413,14 +459,12 @@ struct MeetingsListScreen: View {
 
             // Side-by-side mini cards
             HStack(spacing: 6) {
-                ForEach(Array(meetings.enumerated()), id: \.element.id) { idx, meeting in
+                ForEach(Array(meetings.enumerated()), id: \.element.id) { _, meeting in
                     let isActive = isToday && meeting.startTime <= now && meeting.endTime > now
-                    let color = parallelColors[idx % parallelColors.count]
-
                     Button {
                         context.send(viewAction: .selectMeeting(meeting))
                     } label: {
-                        miniMeetingCard(meeting, isActive: isActive, accentColor: color)
+                        miniMeetingCard(meeting, isActive: isActive, accentColor: meeting.labelColor)
                     }
                     .buttonStyle(.plain)
                 }
@@ -579,6 +623,7 @@ struct MeetingsListScreen: View {
             .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
         }
         .padding(.bottom, 12)
+        .id("now_tab")
     }
 
     // MARK: - Status
@@ -618,6 +663,27 @@ struct MeetingsListScreen: View {
         case .completed: return .gray
         case .cancelled: return .red
         }
+    }
+
+    private func scrollToNow(proxy: ScrollViewProxy) {
+        // Multiple attempts with increasing delays to handle layout timing
+        for delay in [0.1, 0.4, 0.8] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    proxy.scrollTo("now_tab", anchor: .center)
+                }
+            }
+        }
+    }
+
+    /// Extract display name from Matrix userId: @name:server → name
+    private func participantDisplayName(_ userId: String) -> String {
+        guard userId.hasPrefix("@") else { return userId }
+        let withoutAt = String(userId.dropFirst())
+        if let colonIdx = withoutAt.firstIndex(of: ":") {
+            return String(withoutAt[withoutAt.startIndex..<colonIdx])
+        }
+        return withoutAt
     }
 
     private func durationText(_ meeting: Meeting) -> String {

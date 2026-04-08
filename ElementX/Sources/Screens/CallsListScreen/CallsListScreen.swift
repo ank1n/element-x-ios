@@ -26,11 +26,15 @@ struct CallsListScreen: View {
     enum CallFilter: CaseIterable {
         case all
         case missed
+        case incoming
+        case outgoing
 
         var title: String {
             switch self {
             case .all: return SL10n.callsAll
             case .missed: return SL10n.callsMissed
+            case .incoming: return "Входящие"
+            case .outgoing: return "Исходящие"
             }
         }
     }
@@ -103,21 +107,10 @@ struct CallsListScreen: View {
         GeometryReader { geometry in
             ScrollView {
                 LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
-                    // Upcoming meetings section
-                    if !upcomingMeetings.isEmpty {
-                        Section {
-                            ForEach(upcomingMeetings) { meeting in
-                                classicMeetingCell(meeting)
-                            }
-                        } header: {
-                            classicDateSectionHeader(SL10n.meetingTitle)
-                        }
-                    }
-
-                    // Call history + past meetings
+                    // Call history + past meetings (no upcoming meetings — this is call history, not calendar)
                     if context.viewState.isLoading {
                         classicLoadingCells
-                    } else if groupedHistory.isEmpty, upcomingMeetings.isEmpty {
+                    } else if groupedHistory.isEmpty {
                         classicEmptyStateView(minHeight: geometry.size.height)
                     } else {
                         ForEach(groupedHistory, id: \.title) { group in
@@ -300,7 +293,7 @@ struct CallsListScreen: View {
                     HStack(alignment: .top) {
                         Text(call.contactName)
                             .font(.compound.bodyLGSemibold)
-                            .foregroundColor(call.isMissed ? .compound.textCriticalPrimary : .compound.textPrimary)
+                            .foregroundColor(.compound.textPrimary)
                             .lineLimit(1)
 
                         Spacer()
@@ -317,7 +310,7 @@ struct CallsListScreen: View {
 
                         Text(callDescription(for: call))
                             .font(.compound.bodySM)
-                            .foregroundColor(.compound.textSecondary)
+                            .foregroundColor(call.isMissed ? .compound.textCriticalPrimary : .compound.textSecondary)
 
                         if call.hasRecording {
                             Image(systemName: "waveform")
@@ -348,6 +341,21 @@ struct CallsListScreen: View {
                                         .font(.system(size: 12))
                                         .foregroundColor(isPlayingCall(call) ? .compound.textOnSolidPrimary : .compound.iconPrimary)
                                 }
+                            }
+                        }
+                        .buttonStyle(.plain)
+
+                        // Transcription detail button
+                        Button {
+                            context.send(viewAction: .showCallDetail(call))
+                        } label: {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.compound.bgSubtleSecondary)
+                                    .frame(width: 36, height: 36)
+                                Image(systemName: "text.bubble")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.compound.iconPrimary)
                             }
                         }
                         .buttonStyle(.plain)
@@ -434,24 +442,10 @@ struct CallsListScreen: View {
                     // Content
                     LazyVStack(spacing: 0) {
                         // Upcoming meetings
-                        if !upcomingMeetings.isEmpty {
-                            Section {
-                                VStack(spacing: 8) {
-                                    ForEach(upcomingMeetings) { meeting in
-                                        cosmosMeetingCellInline(meeting, isLast: meeting.id == upcomingMeetings.last?.id)
-                                    }
-                                }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
-                            } header: {
-                                cosmosDateSectionHeader(SL10n.meetingTitle)
-                            }
-                        }
-
-                        // Call history + past meetings
+                        // Call history + past meetings (no upcoming meetings — this is call history, not calendar)
                         if context.viewState.isLoading {
                             cosmosLoadingCells
-                        } else if groupedHistory.isEmpty, upcomingMeetings.isEmpty {
+                        } else if groupedHistory.isEmpty {
                             cosmosEmptyStateView(minHeight: geometry.size.height - 140)
                         } else {
                             ForEach(groupedHistory, id: \.title) { group in
@@ -635,17 +629,7 @@ struct CallsListScreen: View {
             HStack(spacing: 14) {
                 // Avatar with direction badge
                 ZStack(alignment: .bottomTrailing) {
-                    if call.isMissed {
-                        Circle()
-                            .fill(Color.red.opacity(0.15))
-                            .frame(width: 52, height: 52)
-                            .overlay {
-                                Image(systemName: "phone.arrow.down.left")
-                                    .font(.system(size: 20, weight: .semibold))
-                                    .foregroundColor(.red)
-                            }
-                    } else if call.isGroupCall {
-                        // Наложенные аватарки для группового звонка
+                    if call.isGroupCall {
                         groupCallAvatars(call)
                     } else {
                         LoadableAvatarImage(url: call.avatarURL,
@@ -655,21 +639,19 @@ struct CallsListScreen: View {
                                             mediaProvider: context.mediaProvider)
                     }
 
-                    // Direction badge
-                    if !call.isMissed {
-                        ZStack {
-                            Circle()
-                                .fill(Color(UIColor.systemBackground))
-                                .frame(width: 22, height: 22)
-                            Circle()
-                                .fill(callDirectionColor(for: call))
-                                .frame(width: 18, height: 18)
-                            Image(systemName: callDirectionIcon(for: call))
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundColor(.white)
-                        }
-                        .offset(x: 2, y: 2)
+                    // Direction badge (red for missed)
+                    ZStack {
+                        Circle()
+                            .fill(Color(UIColor.systemBackground))
+                            .frame(width: 22, height: 22)
+                        Circle()
+                            .fill(call.isMissed ? .red : callDirectionColor(for: call))
+                            .frame(width: 18, height: 18)
+                        Image(systemName: callDirectionIcon(for: call))
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.white)
                     }
+                    .offset(x: 2, y: 2)
                 }
 
                 // Call info
@@ -677,24 +659,24 @@ struct CallsListScreen: View {
                     HStack(alignment: .top) {
                         Text(call.contactName)
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(call.isMissed ? .red : .primary)
+                            .foregroundColor(.primary)
                             .lineLimit(1)
 
                         Spacer()
 
                         Text(timeAgo(from: call.timestamp))
                             .font(.system(size: 13))
-                            .foregroundColor(call.isMissed ? .red.opacity(0.7) : .secondary)
+                            .foregroundColor(.secondary)
                     }
 
                     HStack(spacing: 4) {
                         Image(systemName: callIcon(for: call))
                             .font(.system(size: 11))
-                            .foregroundColor(call.isMissed ? .red.opacity(0.7) : .secondary)
+                            .foregroundColor(call.isMissed ? .red : .secondary)
 
                         Text(callDescription(for: call))
                             .font(.system(size: 13))
-                            .foregroundColor(call.isMissed ? .red.opacity(0.7) : .secondary)
+                            .foregroundColor(call.isMissed ? .red : .secondary)
 
                         if call.hasRecording {
                             Image(systemName: "waveform")
@@ -724,6 +706,21 @@ struct CallsListScreen: View {
                                         .font(.system(size: 12))
                                         .foregroundColor(isPlayingCall(call) ? .white : .primary)
                                 }
+                            }
+                        }
+                        .buttonStyle(.plain)
+
+                        // Transcription detail button
+                        Button {
+                            context.send(viewAction: .showCallDetail(call))
+                        } label: {
+                            ZStack {
+                                Circle()
+                                    .fill(Color(UIColor.systemGray6))
+                                    .frame(width: 36, height: 36)
+                                Image(systemName: "text.bubble")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(accentBlue)
                             }
                         }
                         .buttonStyle(.plain)
@@ -865,6 +862,10 @@ struct CallsListScreen: View {
             break
         case .missed:
             calls = calls.filter(\.isMissed)
+        case .incoming:
+            calls = calls.filter { $0.callType == .incoming }
+        case .outgoing:
+            calls = calls.filter { $0.callType == .outgoing || $0.callType == .video }
         }
 
         return calls

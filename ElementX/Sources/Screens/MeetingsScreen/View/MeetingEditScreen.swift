@@ -60,6 +60,7 @@ struct MeetingEditScreen: View {
         }
         .navigationTitle(context.viewState.navigationTitle)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarVisibility(.hidden, for: .tabBar)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button(SL10n.actionCancel) {

@@ -13,6 +13,7 @@ enum CallsListScreenViewAction {
     case makeCall(contactIDs: [String], isVideo: Bool)
     case playRecording(CallHistoryItem)
     case seekPlayback(progress: Double)
+    case showCallDetail(CallHistoryItem)
     case refresh
     // Meetings
     case rsvpMeeting(meetingId: Int, response: String)
@@ -23,6 +24,7 @@ enum CallsListScreenViewModelAction {
     case showSettings
     case startCall(userId: String)
     case startGroupCall(userIDs: [String], isVideo: Bool)
+    case showCallDetail(CallHistoryItem)
 }
 
 /// Контакт для экрана "Новый звонок"

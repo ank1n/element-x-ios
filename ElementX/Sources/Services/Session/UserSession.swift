@@ -9,6 +9,7 @@
 import Combine
 import Foundation
 import os.log
+import UIKit
 
 private let e2eeLog = OSLog(subsystem: "ru.implica.stalk", category: "E2EE")
 
@@ -85,7 +86,7 @@ class UserSession: UserSessionProtocol {
                     return
                 }
 
-                os_log(.default, log: e2eeLog, "E2EE state — verification: %{public}@, recovery: %{public}@", String(describing: verificationState), String(describing: recoveryState))
+                os_log(.fault, log: e2eeLog, "E2EE state — verification: %{public}@, recovery: %{public}@", String(describing: verificationState), String(describing: recoveryState))
                 MXLog.info("sTalk: E2EE state — verification: \(verificationState), recovery: \(recoveryState)")
 
                 switch (verificationState, recoveryState) {
@@ -93,7 +94,7 @@ class UserSession: UserSessionProtocol {
                     // Try to restore from server first (may be re-install, not first device)
                     autoRecoveryCancellable?.cancel()
                     autoRecoveryCancellable = nil
-                    os_log(.default, log: e2eeLog, "Verified + %{public}@ — trying server key first", String(describing: recoveryState))
+                    os_log(.fault, log: e2eeLog, "Verified + %{public}@ — trying server key first", String(describing: recoveryState))
                     MXLog.info("sTalk: Verified + \(recoveryState) — trying server recovery key first")
                     Task {
                         // First try to recover with existing key from server
@@ -118,12 +119,14 @@ class UserSession: UserSessionProtocol {
                     MXLog.info("sTalk: E2EE fully set up — checking if recovery key is stored on server")
                     Task {
                         await self.ensureRecoveryKeyStoredOnServer()
+                        await self.cleanupOldDevicesByIDFV()
                     }
 
-                case (.unverified, .disabled), (.unverified, .enabled), (.unverified, .incomplete):
-                    // Second device: try to recover using stored recovery key
+                case (.unverified, .disabled), (.unverified, .enabled), (.unverified, .incomplete), (.unverified, .unknown):
+                    // Second device or unknown state: try to recover using stored recovery key
                     autoRecoveryCancellable?.cancel()
                     autoRecoveryCancellable = nil
+                    os_log(.fault, log: e2eeLog, "Unverified + %{public}@ — attempting auto-verify", String(describing: recoveryState))
                     MXLog.info("sTalk: Unverified device — attempting auto-verify with stored recovery key")
                     Task {
                         await self.autoVerifyWithStoredRecoveryKey()
@@ -145,7 +148,7 @@ class UserSession: UserSessionProtocol {
             return false
         }
 
-        let encodedUserID = clientProxy.userID.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? clientProxy.userID
+        let encodedUserID = clientProxy.userID
         guard let url = URL(string: "\(homeserverURL)/_matrix/client/v3/user/\(encodedUserID)/account_data/im.stalk.recovery_key") else {
             return false
         }
@@ -159,21 +162,21 @@ class UserSession: UserSessionProtocol {
             guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let recoveryKey = json["key"] as? String, !recoveryKey.isEmpty else {
-                os_log(.default, log: e2eeLog, "tryRestore — no key on server (HTTP %d)", (response as? HTTPURLResponse)?.statusCode ?? -1)
+                os_log(.fault, log: e2eeLog, "tryRestore — no key on server (HTTP %d)", (response as? HTTPURLResponse)?.statusCode ?? -1)
                 MXLog.info("sTalk: tryRestore — no recovery key on server")
                 return false
             }
 
-            os_log(.default, log: e2eeLog, "tryRestore — found key (length: %d), attempting recover...", recoveryKey.count)
+            os_log(.fault, log: e2eeLog, "tryRestore — found key (length: %d), attempting recover...", recoveryKey.count)
             MXLog.info("sTalk: tryRestore — found key (length: \(recoveryKey.count)), attempting recover...")
             let result = await clientProxy.secureBackupController.confirmRecoveryKey(recoveryKey)
             switch result {
             case .success:
-                os_log(.default, log: e2eeLog, "tryRestore — SUCCESS! Keys restored")
+                os_log(.fault, log: e2eeLog, "tryRestore — SUCCESS! Keys restored")
                 MXLog.info("sTalk: tryRestore — recovery key confirmed, keys restored!")
                 return true
             case .failure(let error):
-                os_log(.error, log: e2eeLog, "tryRestore — FAILED: %{public}@", String(describing: error))
+                os_log(.fault, log: e2eeLog, "tryRestore — FAILED: %{public}@", String(describing: error))
                 MXLog.error("sTalk: tryRestore — confirmRecoveryKey failed: \(error)")
                 return false
             }
@@ -183,35 +186,36 @@ class UserSession: UserSessionProtocol {
         }
     }
 
-    /// Check if recovery key is stored on server; if not, regenerate and store it
+    /// Ensure recovery key and backup are properly set up on server.
+    /// Deletes stale backup, creates new one, uploads all local Megolm keys.
     private func ensureRecoveryKeyStoredOnServer() async {
-        let homeserverURL = clientProxy.homeserver.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard let accessToken = try? clientProxy.matrixAccessToken() else { return }
+        os_log(.fault, log: e2eeLog, "ensureRecovery: starting...")
 
-        let encodedUserID = clientProxy.userID.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? clientProxy.userID
-        guard let url = URL(string: "\(homeserverURL)/_matrix/client/v3/user/\(encodedUserID)/account_data/im.stalk.recovery_key") else { return }
+        // Step 1: Delete old backup (may be encrypted with wrong key)
+        os_log(.fault, log: e2eeLog, "ensureRecovery: deleting old backup versions...")
+        await deleteAllBackupVersions()
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        // Step 2: Enable backup (creates new backup version, uploads all local keys)
+        os_log(.fault, log: e2eeLog, "ensureRecovery: enabling backup...")
+        let backupResult = await clientProxy.secureBackupController.enable()
+        os_log(.fault, log: e2eeLog, "ensureRecovery: enableBackups result: %{public}@", String(describing: backupResult))
 
-        if let (data, response) = try? await URLSession.shared.data(for: request),
-           let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200,
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           json["key"] is String {
-            MXLog.info("sTalk: Recovery key already stored on server")
-            return
-        }
-
-        // Key not on server — regenerate (reset) and store
-        MXLog.info("sTalk: Recovery key not on server — regenerating and storing")
+        // Step 3: Regenerate recovery key and store on server
+        os_log(.fault, log: e2eeLog, "ensureRecovery: regenerating recovery key...")
         let result = await clientProxy.secureBackupController.generateRecoveryKey()
         switch result {
         case .success(let key):
+            os_log(.fault, log: e2eeLog, "ensureRecovery: got key (length: %d), storing on server...", key.count)
             await Self.storeRecoveryKeyOnServer(key: key, clientProxy: clientProxy)
+            os_log(.fault, log: e2eeLog, "ensureRecovery: DONE — backup created + key stored")
         case .failure(let error):
-            MXLog.error("sTalk: Failed to regenerate recovery key: \(error)")
+            os_log(.fault, log: e2eeLog, "ensureRecovery: generateRecoveryKey FAILED: %{public}@", String(describing: error))
         }
+
+        // Step 4: Wait for backup upload to complete
+        os_log(.fault, log: e2eeLog, "ensureRecovery: waiting for backup upload...")
+        _ = await clientProxy.secureBackupController.waitForKeyBackupUpload(uploadStateSubject: .init(.waiting))
+        os_log(.fault, log: e2eeLog, "ensureRecovery: backup upload complete")
     }
 
     /// Store recovery key on Matrix server via custom account data event
@@ -222,7 +226,7 @@ class UserSession: UserSessionProtocol {
             return
         }
 
-        let encodedUserID = clientProxy.userID.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? clientProxy.userID
+        let encodedUserID = clientProxy.userID
         guard let url = URL(string: "\(homeserverURL)/_matrix/client/v3/user/\(encodedUserID)/account_data/im.stalk.recovery_key") else {
             MXLog.error("sTalk: Invalid URL for account data")
             return
@@ -253,19 +257,21 @@ class UserSession: UserSessionProtocol {
     /// Fetch stored recovery key from server and use it to verify this device.
     /// If no key found, bootstrap recovery directly (first device scenario).
     private func autoVerifyWithStoredRecoveryKey() async {
+        os_log(.fault, log: e2eeLog, "autoVerify: starting")
         guard !isAutoRecoveryInProgress else {
-            MXLog.info("sTalk: Auto-recovery already in progress, skipping")
+            os_log(.fault, log: e2eeLog, "autoVerify: already in progress, skipping")
             return
         }
         isAutoRecoveryInProgress = true
         defer { isAutoRecoveryInProgress = false }
         let homeserverURL = clientProxy.homeserver.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard let accessToken = try? clientProxy.matrixAccessToken() else {
-            MXLog.error("sTalk: Can't fetch recovery key — no access token")
+            os_log(.fault, log: e2eeLog, "autoVerify: no access token!")
             return
         }
+        os_log(.fault, log: e2eeLog, "autoVerify: homeserver=%{public}@ token=%{public}@...", homeserverURL, String(accessToken.prefix(10)))
 
-        let encodedUserID = clientProxy.userID.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? clientProxy.userID
+        let encodedUserID = clientProxy.userID
         guard let url = URL(string: "\(homeserverURL)/_matrix/client/v3/user/\(encodedUserID)/account_data/im.stalk.recovery_key") else {
             MXLog.error("sTalk: Invalid URL for account data")
             return
@@ -275,8 +281,12 @@ class UserSession: UserSessionProtocol {
         request.httpMethod = "GET"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
 
+        os_log(.fault, log: e2eeLog, "autoVerify: URL=%{public}@", url.absoluteString)
+        request.timeoutInterval = 10
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+            os_log(.fault, log: e2eeLog, "autoVerify: HTTP %d, %d bytes", statusCode, data.count)
             guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
                 // No recovery key on server — first device scenario.
                 // Instead of waiting for SDK to auto-verify (which may never happen),
@@ -289,29 +299,104 @@ class UserSession: UserSessionProtocol {
 
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let recoveryKey = json["key"] as? String else {
-                MXLog.error("sTalk: Invalid recovery key data from server")
+                os_log(.fault, log: e2eeLog, "autoVerify: invalid JSON or missing key. Raw: %{public}@", String(data: data, encoding: .utf8) ?? "binary")
                 return
             }
 
-            MXLog.info("sTalk: Got recovery key from server (length: \(recoveryKey.count)), attempting recover...")
-            let result = await clientProxy.secureBackupController.confirmRecoveryKey(recoveryKey)
+            os_log(.fault, log: e2eeLog, "autoVerify: got key (length: %d), checking if backup exists...", recoveryKey.count)
+
+            // Check if key backup exists on server before trying to recover
+            let backupExists = await clientProxy.secureBackupController.keyBackupState.value != .unknown
+            os_log(.fault, log: e2eeLog, "autoVerify: backup state: %{public}@", String(describing: clientProxy.secureBackupController.keyBackupState.value))
+
+            os_log(.fault, log: e2eeLog, "autoVerify: calling confirmRecoveryKey (with 15s timeout)...")
+
+            // Wrap in timeout to prevent indefinite hang if backup doesn't exist
+            let result: Result<Void, SecureBackupControllerError> = await withTaskGroup(of: Result<Void, SecureBackupControllerError>?.self) { group in
+                group.addTask {
+                    await self.clientProxy.secureBackupController.confirmRecoveryKey(recoveryKey)
+                }
+                group.addTask {
+                    try? await Task.sleep(for: .seconds(15))
+                    return nil // timeout sentinel
+                }
+                if let first = await group.next(), let result = first {
+                    group.cancelAll()
+                    return result
+                }
+                // Timeout reached
+                group.cancelAll()
+                os_log(.fault, log: e2eeLog, "autoVerify: confirmRecoveryKey TIMED OUT (15s)")
+                return .failure(.failedConfirmingRecoveryKey)
+            }
             switch result {
             case .success:
-                MXLog.info("sTalk: Recovery key confirmed successfully")
-                // Wait a moment for verification state to propagate
-                try? await Task.sleep(for: .seconds(2))
-                let currentState = clientProxy.verificationStatePublisher.value
-                MXLog.info("sTalk: After confirm — verification state: \(currentState)")
-                if currentState != .verified {
-                    MXLog.info("sTalk: Still unverified after confirm — doing full bootstrap")
-                    await bootstrapRecoveryForFirstDevice()
+                os_log(.fault, log: e2eeLog, "autoVerify: confirmRecoveryKey SUCCESS! Keys restored from backup.")
+                // Wait for SDK to process recovery and potentially auto-verify device
+                for i in 1...5 {
+                    try? await Task.sleep(for: .seconds(2))
+                    let currentState = clientProxy.verificationStatePublisher.value
+                    os_log(.fault, log: e2eeLog, "autoVerify: check %d/5 — state: %{public}@", i, String(describing: currentState))
+                    if currentState == .verified {
+                        os_log(.fault, log: e2eeLog, "autoVerify: device auto-verified after recovery!")
+                        await cleanupOldDevicesByIDFV()
+                        return
+                    }
                 }
+                // Still unverified after 10s — explicitly cross-sign device
+                os_log(.fault, log: e2eeLog, "autoVerify: still unverified after 10s — cross-signing device via resetIdentity")
+                await selfVerifyDevice()
+                await cleanupOldDevicesByIDFV()
             case .failure(let error):
-                MXLog.error("sTalk: Recovery key verification failed: \(error) — doing full bootstrap")
+                os_log(.fault, log: e2eeLog, "autoVerify: confirmRecoveryKey FAILED: %{public}@", String(describing: error))
                 await bootstrapRecoveryForFirstDevice()
+                await cleanupOldDevicesByIDFV()
             }
         } catch {
-            MXLog.error("sTalk: Failed to fetch recovery key: \(error)")
+            os_log(.fault, log: e2eeLog, "autoVerify: network error: %{public}@", String(describing: error))
+        }
+    }
+
+    /// Cross-sign this device after successful key recovery.
+    /// Unlike bootstrapRecoveryForFirstDevice(), this preserves existing key backup
+    /// (Megolm keys are already restored). Only resets cross-signing identity and SSSS.
+    private func selfVerifyDevice() async {
+        os_log(.fault, log: e2eeLog, "selfVerify: resetting identity to cross-sign device...")
+
+        // Step 1: Reset identity — creates new cross-signing keys + signs this device
+        let resetResult = await clientProxy.resetIdentity()
+        switch resetResult {
+        case .success(let handle):
+            if let handle {
+                os_log(.fault, log: e2eeLog, "selfVerify: OIDC auth required — cancelling (server needs _allow_cross_signing_replacement_without_uia)")
+                await handle.cancel()
+                return
+            }
+            os_log(.fault, log: e2eeLog, "selfVerify: identity reset succeeded — device should be cross-signed")
+        case .failure(let error):
+            os_log(.fault, log: e2eeLog, "selfVerify: resetIdentity failed: %{public}@", String(describing: error))
+            return
+        }
+
+        // Wait for SDK to process new cross-signing keys
+        try? await Task.sleep(for: .seconds(3))
+
+        let state = clientProxy.verificationStatePublisher.value
+        os_log(.fault, log: e2eeLog, "selfVerify: after reset — verification state: %{public}@", String(describing: state))
+
+        // Step 2: Clean up old SSSS (now invalid after identity reset)
+        await cleanupServerE2EEState()
+
+        // Step 3: Create new SSSS with new cross-signing keys + new backup + recovery key
+        // Existing backup is deleted and recreated with current keys (including recovered Megolm keys)
+        let result = await clientProxy.secureBackupController.forceEnableRecovery()
+        switch result {
+        case .success(let key):
+            os_log(.fault, log: e2eeLog, "selfVerify: recovery enabled — key length: %d", key.count)
+            await Self.storeRecoveryKeyOnServer(key: key, clientProxy: clientProxy)
+            os_log(.fault, log: e2eeLog, "selfVerify: DONE — device verified + recovery key stored on server")
+        case .failure(let error):
+            os_log(.fault, log: e2eeLog, "selfVerify: forceEnableRecovery failed: %{public}@", String(describing: error))
         }
     }
 
@@ -319,6 +404,7 @@ class UserSession: UserSessionProtocol {
     /// which calls enableRecovery() directly. This does a FULL bootstrap:
     /// creates SSSS with cross-signing private keys, backup, and recovery key.
     private func bootstrapRecoveryForFirstDevice() async {
+        os_log(.fault, log: e2eeLog, "bootstrap: STARTING full E2EE bootstrap...")
         // Small delay to let SDK settle after login
         try? await Task.sleep(for: .seconds(3))
 
@@ -368,7 +454,7 @@ class UserSession: UserSessionProtocol {
     private func cleanupServerE2EEState() async {
         let homeserverURL = clientProxy.homeserver.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard let accessToken = try? clientProxy.matrixAccessToken() else { return }
-        let encodedUserID = clientProxy.userID.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? clientProxy.userID
+        let encodedUserID = clientProxy.userID
         let baseURL = "\(homeserverURL)/_matrix/client/v3/user/\(encodedUserID)/account_data"
 
         // Account data events to clear
@@ -435,5 +521,122 @@ class UserSession: UserSessionProtocol {
         // Wait for SDK to detect that backup is gone
         MXLog.info("sTalk: Waiting for SDK to update backup state...")
         try? await Task.sleep(for: .seconds(3))
+    }
+
+    // MARK: - Device Cleanup (IDFV)
+
+    /// IDFV tag prefix used in device display_name to identify the physical device.
+    private static let idfvTagPrefix = "[idfv:"
+    private static let idfvTagSuffix = "]"
+
+    /// Clean up old Matrix devices that belong to the same physical device (same IDFV).
+    /// Each reinstall creates a new device_id, but IDFV stays the same.
+    /// After successful verification, we tag current device with IDFV and delete old ones.
+    private func cleanupOldDevicesByIDFV() async {
+        guard let idfv = await UIDevice.current.identifierForVendor?.uuidString else {
+            os_log(.fault, log: e2eeLog, "cleanup: no IDFV available")
+            return
+        }
+
+        let homeserverURL = clientProxy.homeserver.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let accessToken = try? clientProxy.matrixAccessToken() else { return }
+        let currentDeviceID = clientProxy.deviceID
+
+        os_log(.fault, log: e2eeLog, "cleanup: IDFV=%{public}@, current device=%{public}@", idfv, currentDeviceID ?? "nil")
+
+        // Step 1: Tag current device with IDFV in display_name
+        let idfvTag = "\(Self.idfvTagPrefix)\(idfv)\(Self.idfvTagSuffix)"
+        if let deviceID = currentDeviceID {
+            await tagDeviceWithIDFV(deviceID: deviceID, idfvTag: idfvTag, homeserverURL: homeserverURL, accessToken: accessToken)
+        }
+
+        // Step 2: List all devices
+        guard let devicesURL = URL(string: "\(homeserverURL)/_matrix/client/v3/devices") else { return }
+        var request = URLRequest(url: devicesURL)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let devices = json["devices"] as? [[String: Any]] else {
+            os_log(.fault, log: e2eeLog, "cleanup: failed to list devices")
+            return
+        }
+
+        os_log(.fault, log: e2eeLog, "cleanup: found %d devices total", devices.count)
+
+        // Step 3: Find and delete old devices with same IDFV
+        var deletedCount = 0
+        for device in devices {
+            guard let deviceID = device["device_id"] as? String,
+                  deviceID != currentDeviceID,
+                  let displayName = device["display_name"] as? String,
+                  displayName.contains(idfvTag) else {
+                continue
+            }
+
+            os_log(.fault, log: e2eeLog, "cleanup: deleting old device %{public}@ (same IDFV)", deviceID)
+            await deleteDevice(deviceID: deviceID, homeserverURL: homeserverURL, accessToken: accessToken)
+            deletedCount += 1
+        }
+
+        os_log(.fault, log: e2eeLog, "cleanup: deleted %d old devices with same IDFV", deletedCount)
+    }
+
+    /// Tag a device's display_name with IDFV identifier.
+    private func tagDeviceWithIDFV(deviceID: String, idfvTag: String, homeserverURL: String, accessToken: String) async {
+        // First get current display_name
+        guard let url = URL(string: "\(homeserverURL)/_matrix/client/v3/devices/\(deviceID)") else { return }
+        var getRequest = URLRequest(url: url)
+        getRequest.httpMethod = "GET"
+        getRequest.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        guard let (data, _) = try? await URLSession.shared.data(for: getRequest),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let currentName = json["display_name"] as? String else { return }
+
+        // Don't re-tag if already tagged
+        if currentName.contains(idfvTag) { return }
+
+        // Remove old IDFV tag if present (from different IDFV — shouldn't happen but just in case)
+        var cleanName = currentName
+        if let range = cleanName.range(of: " \\[idfv:[^\\]]+\\]", options: .regularExpression) {
+            cleanName.removeSubrange(range)
+        }
+
+        let newName = "\(cleanName) \(idfvTag)"
+
+        var putRequest = URLRequest(url: url)
+        putRequest.httpMethod = "PUT"
+        putRequest.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        putRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        putRequest.httpBody = try? JSONSerialization.data(withJSONObject: ["display_name": newName])
+
+        if let (_, response) = try? await URLSession.shared.data(for: putRequest),
+           let httpResponse = response as? HTTPURLResponse {
+            os_log(.fault, log: e2eeLog, "cleanup: tagged device %{public}@ — status %d", deviceID, httpResponse.statusCode)
+        }
+    }
+
+    /// Delete a single device from the server.
+    private func deleteDevice(deviceID: String, homeserverURL: String, accessToken: String) async {
+        guard let url = URL(string: "\(homeserverURL)/_matrix/client/v3/devices/\(deviceID)") else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // Empty auth dict — may work if UIA is not required or server allows it
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["auth": [:]])
+
+        if let (data, response) = try? await URLSession.shared.data(for: request),
+           let httpResponse = response as? HTTPURLResponse {
+            if httpResponse.statusCode == 200 || httpResponse.statusCode == 204 {
+                os_log(.fault, log: e2eeLog, "cleanup: deleted device %{public}@", deviceID)
+            } else {
+                let body = String(data: data, encoding: .utf8) ?? ""
+                os_log(.fault, log: e2eeLog, "cleanup: failed to delete %{public}@ — %d: %{public}@", deviceID, httpResponse.statusCode, body)
+            }
+        }
     }
 }

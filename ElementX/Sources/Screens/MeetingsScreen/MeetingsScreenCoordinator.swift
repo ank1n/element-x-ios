@@ -9,13 +9,16 @@ import SwiftUI
 
 enum MeetingsScreenCoordinatorAction {
     case startCall(roomID: String)
+    case hideTabBar(Bool)
 }
 
 struct MeetingsScreenCoordinatorParameters {
     let apiURL: String
     let accessTokenProvider: () throws -> String
+    let forceTokenRefresh: (() async -> Void)?
     let currentUserId: String
     let clientProxy: ClientProxyProtocol
+    var mediaProvider: MediaProviderProtocol?
 }
 
 final class MeetingsScreenCoordinator: CoordinatorProtocol {
@@ -37,8 +40,8 @@ final class MeetingsScreenCoordinator: CoordinatorProtocol {
     init(parameters: MeetingsScreenCoordinatorParameters, navigationStackCoordinator: NavigationStackCoordinator) {
         self.parameters = parameters
         self.navigationStackCoordinator = navigationStackCoordinator
-        service = MeetingsService(homeserver: parameters.apiURL, accessTokenProvider: parameters.accessTokenProvider)
-        listViewModel = MeetingsScreenViewModel(service: service)
+        service = MeetingsService(homeserver: parameters.apiURL, accessTokenProvider: parameters.accessTokenProvider, forceTokenRefresh: parameters.forceTokenRefresh)
+        listViewModel = MeetingsScreenViewModel(service: service, clientProxy: parameters.clientProxy, mediaProvider: parameters.mediaProvider)
 
         listViewModel.actionsPublisher
             .sink { [weak self] action in
@@ -65,7 +68,9 @@ final class MeetingsScreenCoordinator: CoordinatorProtocol {
         let viewModel = MeetingDetailViewModel(meeting: meeting,
                                                currentUserId: parameters.currentUserId,
                                                homeserverURL: parameters.apiURL,
-                                               service: service)
+                                               service: service,
+                                               clientProxy: parameters.clientProxy,
+                                               mediaProvider: parameters.mediaProvider)
         detailViewModel = viewModel
 
         viewModel.actionsPublisher
@@ -87,7 +92,10 @@ final class MeetingsScreenCoordinator: CoordinatorProtocol {
             }
             .store(in: &cancellables)
 
-        navigationStackCoordinator.push(MeetingDetailCoordinatorShim(viewModel: viewModel))
+        actionsSubject.send(.hideTabBar(true))
+        navigationStackCoordinator.push(MeetingDetailCoordinatorShim(viewModel: viewModel), dismissalCallback: { [weak self] in
+            self?.actionsSubject.send(.hideTabBar(false))
+        })
     }
 
     private func showEdit(meeting: Meeting?) {
@@ -108,7 +116,10 @@ final class MeetingsScreenCoordinator: CoordinatorProtocol {
             }
             .store(in: &cancellables)
 
-        navigationStackCoordinator.push(MeetingEditCoordinatorShim(viewModel: viewModel))
+        actionsSubject.send(.hideTabBar(true))
+        navigationStackCoordinator.push(MeetingEditCoordinatorShim(viewModel: viewModel), dismissalCallback: { [weak self] in
+            self?.actionsSubject.send(.hideTabBar(false))
+        })
     }
 }
 

@@ -11,6 +11,7 @@ import SwiftState
 enum WidgetsTabFlowCoordinatorAction {
     case showSettings
     case startCall(roomID: String)
+    case hideTabBar(Bool)
 }
 
 class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
@@ -120,10 +121,13 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
             }
             // Pass a closure so each API call gets a fresh OIDC token
             let clientProxy = userSession.clientProxy
+            let concreteProxy = clientProxy as? ClientProxy
             let parameters = MeetingsScreenCoordinatorParameters(apiURL: baseURL,
                                                                  accessTokenProvider: { try clientProxy.matrixAccessToken() },
+                                                                 forceTokenRefresh: { await concreteProxy?.forceTokenRefresh() },
                                                                  currentUserId: userSession.clientProxy.userID,
-                                                                 clientProxy: clientProxy)
+                                                                 clientProxy: clientProxy,
+                                                                 mediaProvider: userSession.mediaProvider)
             let coordinator = MeetingsScreenCoordinator(parameters: parameters,
                                                         navigationStackCoordinator: navigationStackCoordinator)
             coordinator.actionsPublisher
@@ -131,6 +135,8 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
                     switch action {
                     case .startCall(let roomID):
                         self?.actionsSubject.send(.startCall(roomID: roomID))
+                    case .hideTabBar(let hide):
+                        self?.actionsSubject.send(.hideTabBar(hide))
                     }
                 }
                 .store(in: &cancellables)

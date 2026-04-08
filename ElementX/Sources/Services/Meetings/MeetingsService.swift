@@ -7,6 +7,7 @@
 import Combine
 import Foundation
 import os.log
+import SwiftUI
 
 private let meetingsLog = OSLog(subsystem: "ru.implica.stalk", category: "Meetings")
 
@@ -39,6 +40,7 @@ struct Meeting: Identifiable, Equatable, Codable {
     let accessLevel: String
     let recordingAccess: String?
     var status: MeetingStatus
+    let colorLabel: String
     let createdAt: Date?
     let updatedAt: Date?
     let participants: [MeetingParticipant]
@@ -60,6 +62,7 @@ struct Meeting: Identifiable, Equatable, Codable {
         accessLevel = try c.decodeIfPresent(String.self, forKey: .accessLevel) ?? "private"
         recordingAccess = try c.decodeIfPresent(String.self, forKey: .recordingAccess)
         status = try c.decodeIfPresent(MeetingStatus.self, forKey: .status) ?? .scheduled
+        colorLabel = try c.decodeIfPresent(String.self, forKey: .colorLabel) ?? "green"
         createdAt = try c.decodeIfPresent(Date.self, forKey: .createdAt)
         updatedAt = try c.decodeIfPresent(Date.self, forKey: .updatedAt)
         participants = try c.decodeIfPresent([MeetingParticipant].self, forKey: .participants) ?? []
@@ -68,6 +71,7 @@ struct Meeting: Identifiable, Equatable, Codable {
 
     enum CodingKeys: String, CodingKey {
         case id, title, description, location, status, participants, attachments
+        case colorLabel = "color_label"
         case creatorId = "creator_id"
         case matrixRoomId = "matrix_room_id"
         case meetingCode = "meeting_code"
@@ -90,6 +94,22 @@ struct Meeting: Identifiable, Equatable, Codable {
 
     var isPast: Bool {
         endTime < Date()
+    }
+
+    /// Color from color_label (matches web LABEL_COLORS)
+    var labelColor: Color {
+        switch colorLabel {
+        case "green": return Color(red: 0.05, green: 0.74, blue: 0.55) // #0DBD8B
+        case "blue": return Color(red: 0.15, green: 0.39, blue: 0.92) // #2563EB
+        case "purple": return Color(red: 0.55, green: 0.36, blue: 0.96) // #8B5CF6
+        case "orange": return Color(red: 0.96, green: 0.62, blue: 0.04) // #F59E0B
+        case "red": return Color(red: 0.94, green: 0.27, blue: 0.27) // #EF4444
+        default: return Color(red: 0.05, green: 0.74, blue: 0.55) // green default
+        }
+    }
+
+    var labelColorBg: Color {
+        labelColor.opacity(0.06)
     }
 }
 
@@ -190,11 +210,15 @@ class MeetingsService {
         return d
     }()
 
+    /// Closure to force SDK token refresh (triggers a lightweight SDK request)
+    private var forceTokenRefresh: (() async -> Void)?
+
     /// Initialize with a closure that returns a fresh access token each time.
     /// OIDC tokens expire frequently; calling matrixAccessToken() each request ensures we use a valid one.
-    init(homeserver: String, accessTokenProvider: @escaping () throws -> String) {
+    init(homeserver: String, accessTokenProvider: @escaping () throws -> String, forceTokenRefresh: (() async -> Void)? = nil) {
         self.homeserver = homeserver.hasSuffix("/") ? String(homeserver.dropLast()) : homeserver
         self.accessTokenProvider = accessTokenProvider
+        self.forceTokenRefresh = forceTokenRefresh
         os_log(.default, log: meetingsLog, "MeetingsService init: homeserver=%{public}@", self.homeserver)
     }
 
@@ -208,26 +232,41 @@ class MeetingsService {
     }
 
     func fetchMeetings() async {
-        guard let url = URL(string: "\(homeserver)/api/meetings"),
-              let token = try? currentAccessToken() else { return }
+        guard let url = URL(string: "\(homeserver)/api/meetings") else { return }
 
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 15
+        // Retry up to 2 times — first attempt may fail with 401 if token expired,
+        // SDK will refresh it in background, second attempt uses fresh token.
+        for attempt in 1...2 {
+            guard let token = try? currentAccessToken() else { return }
 
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                os_log(.error, log: meetingsLog, "fetchMeetings: HTTP %d", (response as? HTTPURLResponse)?.statusCode ?? -1)
+            var request = URLRequest(url: url)
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.timeoutInterval = 15
+
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+
+                if statusCode == 401, attempt < 2 {
+                    os_log(.default, log: meetingsLog, "fetchMeetings: 401 — token expired, forcing SDK refresh...")
+                    await forceTokenRefresh?()
+                    continue
+                }
+
+                guard statusCode == 200 else {
+                    os_log(.error, log: meetingsLog, "fetchMeetings: HTTP %d", statusCode)
+                    return
+                }
+
+                let decoded = try Self.decoder.decode(MeetingsListResponse.self, from: data)
+                let relevant = decoded.meetings.filter { $0.status != .cancelled }
+                os_log(.default, log: meetingsLog, "fetchMeetings: %d meetings (%d relevant)", decoded.meetings.count, relevant.count)
+                meetingsSubject.send(relevant)
+                return
+            } catch {
+                os_log(.error, log: meetingsLog, "fetchMeetings error: %{public}@", error.localizedDescription)
                 return
             }
-
-            let decoded = try Self.decoder.decode(MeetingsListResponse.self, from: data)
-            let relevant = decoded.meetings.filter { $0.status != .cancelled }
-            os_log(.default, log: meetingsLog, "fetchMeetings: %d meetings (%d relevant)", decoded.meetings.count, relevant.count)
-            meetingsSubject.send(relevant)
-        } catch {
-            os_log(.error, log: meetingsLog, "fetchMeetings error: %{public}@", error.localizedDescription)
         }
     }
 
@@ -238,13 +277,26 @@ class MeetingsService {
 
         os_log(.default, log: meetingsLog, "fetchMeetingsList: GET %{public}@", urlStr)
 
-        let token = try currentAccessToken()
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 15
+        // Retry on 401 — token may be expired, SDK refreshes in background
+        var data: Data!
+        var statusCode = -1
+        for attempt in 1...2 {
+            let token = try currentAccessToken()
+            var request = URLRequest(url: url)
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.timeoutInterval = 15
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+            let (respData, response) = try await URLSession.shared.data(for: request)
+            data = respData
+            statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+
+            if statusCode == 401, attempt < 2 {
+                os_log(.default, log: meetingsLog, "fetchMeetingsList: 401 — forcing SDK token refresh...")
+                await forceTokenRefresh?()
+                continue
+            }
+            break
+        }
         os_log(.default, log: meetingsLog, "fetchMeetingsList: HTTP %d, %d bytes", statusCode, data.count)
 
         if statusCode != 200 {

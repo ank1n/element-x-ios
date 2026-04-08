@@ -6,6 +6,7 @@
 
 import Combine
 import Foundation
+import os.log
 
 typealias CallsListScreenViewModelType = StateStoreViewModel<CallsListScreenViewState, CallsListScreenViewAction>
 
@@ -57,6 +58,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         setupLocalHistorySubscription()
         loadListenedRecordingIDs()
         loadRecordingsFromServer()
+        loadCallEventsFromRooms()
         setupMeetingsService()
     }
 
@@ -76,10 +78,13 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
             handleMakeCall(contactIDs: contactIDs, isVideo: isVideo)
         case .playRecording(let call):
             handlePlayRecording(call)
+        case .showCallDetail(let call):
+            actionsSubject.send(.showCallDetail(call))
         case .seekPlayback(let progress):
             Task { await audioPlayer.seek(to: progress) }
         case .refresh:
             loadRecordingsFromServer(forceRefresh: true)
+            loadCallEventsFromRooms()
             Task { await meetingsService?.fetchMeetings() }
         case .rsvpMeeting(let meetingId, let response):
             handleRSVP(meetingId: meetingId, response: response)
@@ -165,7 +170,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         applyListenedStatus()
         state.isLoading = false
 
-        // Resolve avatar URLs from room proxies
+        // Resolve room names, avatars, and participant info
         resolveAvatars()
     }
 
@@ -188,6 +193,19 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
                         self.state.callHistory[i].participantCount = memberCount
                     }
                     updated = true
+                }
+
+                // Resolve room name for calls with default name (from room events)
+                // Like web: uses room.name for display
+                let currentName = state.callHistory[i].contactName
+                if currentName == SL10n.callDefault || currentName == SL10n.callsVideoCall {
+                    let roomName = info.displayName
+                    if let roomName, !roomName.isEmpty, roomName != "Empty Room" {
+                        await MainActor.run {
+                            self.state.callHistory[i].contactName = roomName
+                        }
+                        updated = true
+                    }
                 }
 
                 // Для групповых комнат (>2 участников) — загружаем аватарки участников
@@ -285,6 +303,229 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         return false
     }
 
+    // MARK: - Call Events from Matrix Rooms
+
+    /// Fetch call history from Matrix room events (call.member).
+    /// This covers calls WITHOUT recordings that wouldn't appear from the recording API.
+    private func loadCallEventsFromRooms() {
+        let homeserver = userSession.clientProxy.homeserver.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let ownUserID = userSession.clientProxy.userID
+        let concreteProxy = userSession.clientProxy as? ClientProxy
+
+        MXLog.info("📞 loadCallEventsFromRooms: starting... (proxy: \(concreteProxy != nil))")
+
+        Task {
+            // Force token refresh before fetching (MAS tokens expire every 15 min)
+            await concreteProxy?.forceTokenRefresh()
+
+            guard let token = try? concreteProxy?.matrixAccessToken() else {
+                MXLog.error("📞 loadCallEventsFromRooms: no access token after refresh")
+                return
+            }
+
+            // Get rooms from SDK room list
+            let summaries = userSession.clientProxy.roomSummaryProvider.roomListPublisher.value
+            // Only check DM rooms and small group rooms (where calls happen)
+            let callRoomIDs = summaries.filter { $0.activeMembersCount <= 10 }.map(\.id)
+
+            MXLog.info("📞 Loading call events from \(callRoomIDs.count) rooms")
+
+            // Debug: write room scan info
+            var scanDebug = ["ROOMS SCAN: \(callRoomIDs.count) rooms, homeserver=\(homeserver), hasToken=\(token.prefix(10))...\n"]
+
+            var callEvents: [CallHistoryItem] = []
+            let thirtyDaysAgo = Date().addingTimeInterval(-30 * 24 * 3600)
+            let sessionGapMs = 60000 // Same as web: 60s gap = new call session
+
+            for roomID in callRoomIDs {
+                guard let events = await fetchCallMemberEvents(roomID: roomID, homeserver: homeserver, accessToken: token) else {
+                    scanDebug.append("  \(roomID.prefix(30)): FAILED (nil)\n")
+                    continue
+                }
+                if events.isEmpty {
+                    continue
+                }
+                scanDebug.append("  \(roomID.prefix(30)): \(events.count) events\n")
+                // Dump first 3 events for debug
+                for e in events.prefix(3) {
+                    let ts = e["origin_server_ts"] as? Int ?? 0
+                    let sender = e["sender"] as? String ?? "?"
+                    let content = e["content"] as? [String: Any] ?? [:]
+                    let memberships = content["memberships"] as? [[String: Any]] ?? []
+                    let application = content["application"] as? String
+                    scanDebug.append("    ts=\(ts) sender=\(sender.prefix(20)) memberships=\(memberships.count) app=\(application ?? "nil") keys=\(content.keys.sorted())\n")
+                }
+
+                // Group into call sessions (like web's extractCallSessions)
+                let calls = extractCallSessions(events, roomID: roomID, ownUserID: ownUserID, cutoffDate: thirtyDaysAgo, sessionGapMs: sessionGapMs)
+                callEvents.append(contentsOf: calls)
+            }
+            try? scanDebug.joined().write(toFile: NSTemporaryDirectory() + "stalk_roomscan_debug.txt", atomically: true, encoding: .utf8)
+
+            MXLog.info("📞 Found \(callEvents.count) calls from room events")
+            // Debug: write room event calls to tmp file
+            let df2 = DateFormatter(); df2.dateFormat = "yyyy-MM-dd HH:mm"
+            var debugLines2 = ["ROOM EVENT CALLS: \(callEvents.count)\n"]
+            for c in callEvents.sorted(by: { $0.timestamp > $1.timestamp }) {
+                debugLines2.append("\(c.id.prefix(35)) | \(df2.string(from: c.timestamp)) | \(c.contactName)\n")
+            }
+            try? debugLines2.joined().write(toFile: NSTemporaryDirectory() + "stalk_roomcalls_debug.txt", atomically: true, encoding: .utf8)
+
+            await MainActor.run {
+                // Merge with existing — add only calls that don't match server recordings
+                for call in callEvents {
+                    let alreadyExists = serverRecordings.contains { existing in
+                        existing.contactId == call.contactId &&
+                            abs(existing.timestamp.timeIntervalSince(call.timestamp)) < 300
+                    }
+                    if !alreadyExists {
+                        serverRecordings.append(call)
+                    }
+                }
+                let localCalls = localCallHistoryService.getAllCalls()
+                updateCallHistoryFromLocal(localCalls)
+            }
+        }
+    }
+
+    /// Fetch call.member events from a room via Matrix API
+    private func fetchCallMemberEvents(roomID: String, homeserver: String, accessToken: String) async -> [[String: Any]]? {
+        guard let encodedRoomID = roomID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { return nil }
+
+        let filterJSON = "{\"types\":[\"org.matrix.msc3401.call.member\"]}"
+        guard let encodedFilter = filterJSON.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: "\(homeserver)/_matrix/client/v3/rooms/\(encodedRoomID)/messages?dir=b&limit=100&filter=\(encodedFilter)") else { return nil }
+
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 10
+
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let httpResponse = response as? HTTPURLResponse else { return nil }
+
+        if httpResponse.statusCode == 401 {
+            MXLog.info("📞 fetchCallMemberEvents: 401 for room \(roomID.prefix(20))")
+            return nil
+        }
+
+        guard httpResponse.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let chunk = json["chunk"] as? [[String: Any]] else { return nil }
+
+        return chunk
+    }
+
+    /// Group call.member events into call sessions (mirrors web's extractCallSessions)
+    private func extractCallSessions(_ events: [[String: Any]], roomID: String, ownUserID: String, cutoffDate: Date, sessionGapMs: Int) -> [CallHistoryItem] {
+        // Sort by timestamp ascending
+        let sorted = events.sorted { ($0["origin_server_ts"] as? Int ?? 0) < ($1["origin_server_ts"] as? Int ?? 0) }
+
+        var sessions: [CallHistoryItem] = []
+        var sessionStart = 0
+        var sessionEnd = 0
+        var caller: String?
+        var allParticipants = Set<String>()
+        var activeParticipants = Set<String>()
+        var inSession = false
+
+        func flushSession() {
+            guard inSession, let caller else { return }
+            let date = Date(timeIntervalSince1970: TimeInterval(sessionStart) / 1000)
+            guard date > cutoffDate else { inSession = false; return }
+
+            let isIncoming = caller != ownUserID
+            let duration = TimeInterval(sessionEnd - sessionStart) / 1000
+            let isMissed = isIncoming && !allParticipants.contains(ownUserID)
+
+            sessions.append(CallHistoryItem(id: "rtc_\(roomID.hashValue)_\(sessionStart)",
+                                            contactName: SL10n.callDefault,
+                                            contactId: roomID,
+                                            callType: isIncoming ? .incoming : .outgoing,
+                                            timestamp: date,
+                                            duration: duration > 5 ? duration : nil,
+                                            isMissed: isMissed,
+                                            recordingURL: nil))
+            inSession = false
+        }
+
+        for event in sorted {
+            guard let ts = event["origin_server_ts"] as? Int else { continue }
+            let sender = event["sender"] as? String ?? ""
+            let content = event["content"] as? [String: Any]
+            // MatrixRTC: join = has "application" field (like web's isRtcJoin)
+            // OR legacy: has non-empty "memberships" array
+            let hasApplication = content?["application"] as? String != nil
+            let memberships = content?["memberships"] as? [[String: Any]] ?? []
+            let isJoin = hasApplication || !memberships.isEmpty
+
+            if isJoin {
+                if !inSession || (ts - sessionEnd) > sessionGapMs {
+                    flushSession()
+                    sessionStart = ts
+                    sessionEnd = ts
+                    caller = sender
+                    allParticipants = [sender]
+                    activeParticipants = [sender]
+                    inSession = true
+                } else {
+                    allParticipants.insert(sender)
+                    activeParticipants.insert(sender)
+                    sessionEnd = ts
+                }
+            } else {
+                if inSession {
+                    sessionEnd = ts
+                    activeParticipants.remove(sender)
+                    if activeParticipants.isEmpty {
+                        flushSession()
+                    }
+                }
+            }
+        }
+        flushSession()
+        return sessions
+    }
+
+    /// Parse call.member events into CallHistoryItem entries
+    private func parseCallEvents(_ events: [[String: Any]], roomID: String, ownUserID: String, cutoffDate: Date) -> [CallHistoryItem] {
+        var calls: [CallHistoryItem] = []
+        // Group by call session: events close in time (within 60s) from the same room = same call
+        var processedTimestamps = Set<Int>()
+
+        for event in events {
+            guard let ts = event["origin_server_ts"] as? Int else { continue }
+            let date = Date(timeIntervalSince1970: TimeInterval(ts) / 1000)
+            guard date > cutoffDate else { continue }
+
+            // Round to nearest minute to group related events
+            let minuteKey = ts / 60000
+            guard !processedTimestamps.contains(minuteKey) else { continue }
+            processedTimestamps.insert(minuteKey)
+
+            let sender = event["sender"] as? String ?? ""
+            let callType: CallHistoryItem.CallType = (sender == ownUserID) ? .outgoing : .incoming
+
+            // Check if call has active members (content.memberships array)
+            let content = event["content"] as? [String: Any]
+            let memberships = content?["memberships"] as? [[String: Any]] ?? []
+
+            // Empty memberships = hangup event, skip
+            if memberships.isEmpty { continue }
+
+            let call = CallHistoryItem(id: "matrix_\(roomID)_\(ts)",
+                                       contactName: SL10n.callDefault,
+                                       contactId: roomID,
+                                       callType: callType,
+                                       timestamp: date,
+                                       duration: nil,
+                                       isMissed: false,
+                                       recordingURL: nil)
+            calls.append(call)
+        }
+
+        return calls
+    }
+
     // MARK: - Server Recordings
 
     private static let recordingsCacheKey = "recordings-list"
@@ -316,6 +557,13 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
             do {
                 let recordings = try await callHistoryService.fetchRecordings(currentUserID: currentUserID)
                 MXLog.info("📞 Updated \(recordings.count) recordings from server")
+                // Debug: write recordings to tmp file for inspection
+                let df = DateFormatter(); df.dateFormat = "yyyy-MM-dd HH:mm"
+                var debugLines = ["SERVER RECORDINGS: \(recordings.count)\n"]
+                for r in recordings {
+                    debugLines.append("\(r.id.prefix(25)) | \(df.string(from: r.timestamp)) | \(r.contactName)\n")
+                }
+                try? debugLines.joined().write(toFile: NSTemporaryDirectory() + "stalk_recordings_debug.txt", atomically: true, encoding: .utf8)
 
                 // Save to cache
                 await ServiceLocator.shared.cacheService?.save(recordings, forKey: Self.recordingsCacheKey, ttl: Self.recordingsCacheTTL)
@@ -602,7 +850,9 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         }
 
         let homeserver = userSession.clientProxy.homeserver
-        meetingsService = MeetingsService(homeserver: homeserver, accessTokenProvider: { try concreteProxy.matrixAccessToken() })
+        meetingsService = MeetingsService(homeserver: homeserver,
+                                          accessTokenProvider: { try concreteProxy.matrixAccessToken() },
+                                          forceTokenRefresh: { await concreteProxy.forceTokenRefresh() })
 
         meetingsService?.meetingsSubject
             .receive(on: DispatchQueue.main)
@@ -733,6 +983,8 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
 
 protocol CallHistoryServiceProtocol: AnyObject {
     func fetchRecordings(currentUserID: String?) async throws -> [CallHistoryItem]
+    func fetchTranscription(egressId: String) async throws -> TranscriptionData
+    func retryTranscription(egressId: String) async throws -> TranscriptionData
 }
 
 class CallHistoryService: NSObject, CallHistoryServiceProtocol, URLSessionDelegate {
@@ -740,10 +992,14 @@ class CallHistoryService: NSObject, CallHistoryServiceProtocol, URLSessionDelega
     private var urlSession: URLSession
     private let allowInsecureConnection: Bool
     private var accessToken: String?
+    private var accessTokenProvider: (() throws -> String)?
+    private var forceTokenRefresh: (() async -> Void)?
 
-    init(baseURL: URL, accessToken: String? = nil, urlSession: URLSession? = nil, allowInsecureConnection: Bool = false) {
+    init(baseURL: URL, accessToken: String? = nil, accessTokenProvider: (() throws -> String)? = nil, forceTokenRefresh: (() async -> Void)? = nil, urlSession: URLSession? = nil, allowInsecureConnection: Bool = false) {
         self.baseURL = baseURL
         self.accessToken = accessToken
+        self.accessTokenProvider = accessTokenProvider
+        self.forceTokenRefresh = forceTokenRefresh
         self.allowInsecureConnection = allowInsecureConnection
 
         let configuration = URLSessionConfiguration.default
@@ -783,28 +1039,40 @@ class CallHistoryService: NSObject, CallHistoryServiceProtocol, URLSessionDelega
 
     func fetchRecordings(currentUserID: String?) async throws -> [CallHistoryItem] {
         let url = baseURL.appendingPathComponent("api/recording/list")
-        print("📞 FETCH: URL = \(url.absoluteString)")
+        MXLog.info("📞 FETCH: URL = \(url.absoluteString)")
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        if let accessToken {
-            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        }
-        request.timeoutInterval = 30.0
-
-        // Retry up to 3 times
+        // Retry up to 3 times, refreshing token on 401
         var lastError: Error?
         for attempt in 1...3 {
+            // Get fresh token each attempt (SDK may have refreshed it)
+            let token = (try? accessTokenProvider?()) ?? accessToken
+
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            if let token {
+                request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            }
+            request.timeoutInterval = 30.0
+
             do {
-                print("📞 FETCH: Attempt \(attempt)...")
+                MXLog.info("📞 FETCH: Attempt \(attempt)...")
                 let (data, response) = try await urlSession.data(for: request)
-                print("📞 FETCH: Got response, data size: \(data.count)")
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+                MXLog.info("📞 FETCH: HTTP \(statusCode), data size: \(data.count)")
+
+                // On 401, wait for SDK to refresh token and retry
+                if statusCode == 401, attempt < 3 {
+                    MXLog.info("📞 FETCH: 401 — forcing SDK token refresh...")
+                    await forceTokenRefresh?()
+                    continue
+                }
+
                 return try processResponse(data: data, response: response, currentUserID: currentUserID, apiBaseURL: baseURL)
             } catch {
-                print("📞 FETCH: Attempt \(attempt) failed: \(error)")
+                MXLog.error("📞 FETCH: Attempt \(attempt) failed: \(error)")
                 lastError = error
                 if attempt < 3 {
-                    try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+                    try? await Task.sleep(for: .seconds(1))
                 }
             }
         }
@@ -829,6 +1097,52 @@ class CallHistoryService: NSObject, CallHistoryServiceProtocol, URLSessionDelega
 
         return recordings.compactMap { $0.toCallHistoryItem(currentUserID: currentUserID, apiBaseURL: apiBaseURL) }
             .sorted { $0.timestamp > $1.timestamp }
+    }
+
+    func fetchTranscription(egressId: String) async throws -> TranscriptionData {
+        let url = baseURL.appendingPathComponent("api/recording/transcription/\(egressId)")
+        return try await performAuthenticatedRequest(url: url, method: "GET")
+    }
+
+    func retryTranscription(egressId: String) async throws -> TranscriptionData {
+        let url = baseURL.appendingPathComponent("api/recording/transcription/\(egressId)/retry")
+        return try await performAuthenticatedRequest(url: url, method: "POST")
+    }
+
+    private func performAuthenticatedRequest<T: Decodable>(url: URL, method: String) async throws -> T {
+        var lastError: Error?
+        for attempt in 1...3 {
+            let token = (try? accessTokenProvider?()) ?? accessToken
+
+            var request = URLRequest(url: url)
+            request.httpMethod = method
+            if let token {
+                request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            }
+            request.timeoutInterval = 30.0
+
+            do {
+                let (data, response) = try await urlSession.data(for: request)
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+
+                if statusCode == 401, attempt < 3 {
+                    await forceTokenRefresh?()
+                    continue
+                }
+
+                guard statusCode == 200 else {
+                    throw CallHistoryError.serverError("HTTP \(statusCode)")
+                }
+
+                return try JSONDecoder().decode(T.self, from: data)
+            } catch {
+                lastError = error
+                if attempt < 3 {
+                    try? await Task.sleep(for: .seconds(1))
+                }
+            }
+        }
+        throw lastError ?? CallHistoryError.invalidResponse
     }
 }
 

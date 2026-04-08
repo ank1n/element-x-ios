@@ -10,18 +10,72 @@ import UIKit
 
 class MeetingDetailViewModel: MeetingDetailViewModelType {
     private let service: MeetingsService
+    private let clientProxy: ClientProxyProtocol?
     private let actionsSubject: PassthroughSubject<MeetingDetailViewModelAction, Never> = .init()
 
     var actionsPublisher: AnyPublisher<MeetingDetailViewModelAction, Never> {
         actionsSubject.eraseToAnyPublisher()
     }
 
-    init(meeting: Meeting, currentUserId: String, homeserverURL: String, service: MeetingsService) {
+    init(meeting: Meeting, currentUserId: String, homeserverURL: String, service: MeetingsService,
+         clientProxy: ClientProxyProtocol? = nil, mediaProvider: MediaProviderProtocol? = nil) {
         self.service = service
+        self.clientProxy = clientProxy
         var initialState = MeetingDetailViewState(meeting: meeting)
         initialState.currentUserId = currentUserId
         initialState.homeserverURL = homeserverURL
+        initialState.mediaProvider = mediaProvider
+        // Apply cached profiles immediately
+        let cached = MeetingsScreenViewModel.profileCache
+        let participantIDs = Set(meeting.participants.map(\.userId))
+        initialState.participantProfiles = cached.filter { participantIDs.contains($0.key) }
         super.init(initialViewState: initialState)
+
+        // Resolve any missing profiles
+        let missingIDs = participantIDs.filter { cached[$0] == nil }
+        if !missingIDs.isEmpty {
+            resolveProfiles(userIDs: missingIDs)
+        }
+    }
+
+    private func resolveProfiles(userIDs: Set<String>) {
+        guard let clientProxy else { return }
+        let roomId = state.meeting.matrixRoomId
+
+        Task { [weak self] in
+            guard let self else { return }
+            var newProfiles: [String: ResolvedParticipant] = [:]
+
+            // Try room members first (local SDK cache)
+            if let roomId,
+               let roomProxyType = await clientProxy.roomForIdentifier(roomId),
+               case .joined(let roomProxy) = roomProxyType,
+               let members = await roomProxy.members() {
+                for member in members where userIDs.contains(member.userID) {
+                    let resolved = ResolvedParticipant(displayName: member.displayName ?? member.userID,
+                                                       avatarURL: member.avatarURL)
+                    newProfiles[member.userID] = resolved
+                    MeetingsScreenViewModel.profileCache[member.userID] = resolved
+                }
+            }
+
+            // Fallback for any still missing
+            for userId in userIDs where newProfiles[userId] == nil {
+                let result = await clientProxy.profile(for: userId)
+                if case .success(let profile) = result {
+                    let resolved = ResolvedParticipant(displayName: profile.displayName ?? userId,
+                                                       avatarURL: profile.avatarURL)
+                    newProfiles[userId] = resolved
+                    MeetingsScreenViewModel.profileCache[userId] = resolved
+                }
+            }
+
+            if !newProfiles.isEmpty {
+                await MainActor.run { [newProfiles] in
+                    self.state.participantProfiles.merge(newProfiles) { _, new in new }
+                }
+            }
+        }
     }
 
     override func process(viewAction: MeetingDetailViewAction) {
