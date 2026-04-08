@@ -177,85 +177,67 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
     /// Resolves avatar URLs and participant info for call history items from Matrix room data
     private func resolveAvatars() {
         let ownUserID = userSession.clientProxy.userID
+        // Take a snapshot to work on off-main-thread
+        let snapshot = state.callHistory
         Task {
-            var updated = false
-            for i in state.callHistory.indices {
-                let roomID = state.callHistory[i].contactId
+            var items = snapshot
+            var changed = false
+
+            for i in items.indices {
+                let roomID = items[i].contactId
                 guard let roomProxyType = await userSession.clientProxy.roomForIdentifier(roomID),
                       case .joined(let roomProxy) = roomProxyType else { continue }
 
                 let info = roomProxy.infoPublisher.value
                 let memberCount = Int(info.activeMembersCount)
 
-                // Обновляем participantCount
-                if memberCount != state.callHistory[i].participantCount {
-                    await MainActor.run {
-                        self.state.callHistory[i].participantCount = memberCount
-                    }
-                    updated = true
+                if memberCount != items[i].participantCount {
+                    items[i].participantCount = memberCount
+                    changed = true
                 }
 
-                // Resolve room name for calls with default name (from room events)
-                // Like web: uses room.name for display
-                let currentName = state.callHistory[i].contactName
+                // Resolve room name for calls with default name
+                let currentName = items[i].contactName
                 if currentName == SL10n.callDefault || currentName == SL10n.callsVideoCall {
-                    let roomName = info.displayName
-                    if let roomName, !roomName.isEmpty, roomName != "Empty Room" {
-                        await MainActor.run {
-                            self.state.callHistory[i].contactName = roomName
-                        }
-                        updated = true
+                    if let roomName = info.displayName, !roomName.isEmpty, roomName != "Empty Room" {
+                        items[i].contactName = roomName
+                        changed = true
                     }
                 }
 
-                // Для групповых комнат (>2 участников) — загружаем аватарки участников
                 if memberCount > 2 {
-                    // Загружаем список участников для аватарок
                     if let members = await roomProxy.members() {
                         let otherMembers = members.filter { $0.userID != ownUserID }
-                        let avatarURLs = otherMembers.compactMap(\.avatarURL)
+                        items[i].participantAvatarURLs = otherMembers.compactMap(\.avatarURL)
                         let memberNames = otherMembers.compactMap(\.displayName)
-
-                        await MainActor.run {
-                            self.state.callHistory[i].participantAvatarURLs = avatarURLs
-                            // Обновляем имя — показываем имена участников
-                            if !memberNames.isEmpty, self.state.callHistory[i].contactName == SL10n.callDefault || self.state.callHistory[i].contactName == SL10n.callsVideoCall {
-                                if memberNames.count <= 2 {
-                                    self.state.callHistory[i].contactName = memberNames.joined(separator: ", ")
-                                } else {
-                                    let firstTwo = memberNames.prefix(2).joined(separator: ", ")
-                                    self.state.callHistory[i].contactName = "\(firstTwo) +\(memberNames.count - 2)"
-                                }
-                            }
+                        if !memberNames.isEmpty, items[i].contactName == SL10n.callDefault || items[i].contactName == SL10n.callsVideoCall {
+                            items[i].contactName = memberNames.count <= 2
+                                ? memberNames.joined(separator: ", ")
+                                : "\(memberNames.prefix(2).joined(separator: ", ")) +\(memberNames.count - 2)"
                         }
-                        updated = true
+                        changed = true
                     }
                 } else {
-                    // DM — один аватар
-                    if case .heroes(let heroes) = info.avatar, heroes.count == 1 {
-                        if let heroURL = heroes[0].avatarURL, self.state.callHistory[i].avatarURL == nil {
-                            await MainActor.run {
-                                self.state.callHistory[i].avatarURL = heroURL
-                            }
-                            updated = true
-                        }
-                    } else if self.state.callHistory[i].avatarURL == nil {
+                    if items[i].avatarURL == nil {
                         let resolvedURL: URL? = switch info.avatar {
+                        case .heroes(let heroes) where heroes.count == 1: heroes[0].avatarURL
                         case .room(_, _, let url): url
                         case .space(_, _, let url): url
                         default: nil
                         }
                         if let resolvedURL {
-                            await MainActor.run {
-                                self.state.callHistory[i].avatarURL = resolvedURL
-                            }
-                            updated = true
+                            items[i].avatarURL = resolvedURL
+                            changed = true
                         }
                     }
                 }
             }
-            if updated {
-                MXLog.info("📞 Resolved avatars and participant counts for call history")
+
+            // Single batch UI update
+            if changed {
+                await MainActor.run {
+                    self.state.callHistory = items
+                }
             }
         }
     }
