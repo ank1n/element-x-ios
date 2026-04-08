@@ -31,6 +31,16 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
 
     /// Set of recording IDs that have been listened to (persisted)
     private var listenedRecordingIDs: Set<String> = []
+    /// Cache of resolved room data (contactId → avatar, name, participants)
+    private var resolvedRoomData: [String: ResolvedRoomInfo] = [:]
+
+    private struct ResolvedRoomInfo {
+        var contactName: String?
+        var avatarURL: URL?
+        var participantCount: Int?
+        var participantAvatarURLs: [URL]?
+    }
+
     private static let listenedCacheKey = "listened-recording-ids"
 
     var actionsPublisher: AnyPublisher<CallsListScreenViewModelAction, Never> {
@@ -55,11 +65,14 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
 
         setupSubscriptions()
         setupAudioPlayerObserver()
-        setupLocalHistorySubscription()
         loadListenedRecordingIDs()
-        loadRecordingsFromServer()
-        loadCallEventsFromRooms()
         setupMeetingsService()
+
+        // Load all data sources once, then build list
+        loadAllCallData()
+
+        // Subscribe to local changes for future updates only (new calls while app is open)
+        setupLocalHistorySubscription()
     }
 
     override func process(viewAction: CallsListScreenViewAction) {
@@ -83,8 +96,8 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         case .seekPlayback(let progress):
             Task { await audioPlayer.seek(to: progress) }
         case .refresh:
-            loadRecordingsFromServer(forceRefresh: true)
-            loadCallEventsFromRooms()
+            initialLoadDone = false
+            loadAllCallData()
             Task { await meetingsService?.fetchMeetings() }
         case .rsvpMeeting(let meetingId, let response):
             handleRSVP(meetingId: meetingId, response: response)
@@ -95,13 +108,50 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         }
     }
 
+    // MARK: - Initial Data Load
+
+    private var initialLoadDone = false
+
+    /// Load all 3 data sources, then build list once
+    private func loadAllCallData() {
+        Task { [weak self] in
+            guard let self else { return }
+
+            // 1. Server recordings
+            let currentUserID = userSession.clientProxy.userID
+            if let service = callHistoryService {
+                do {
+                    let recordings = try await service.fetchRecordings(currentUserID: currentUserID)
+                    await MainActor.run { self.serverRecordings = recordings }
+                    await ServiceLocator.shared.cacheService?.save(recordings, forKey: Self.recordingsCacheKey, ttl: Self.recordingsCacheTTL)
+                } catch {
+                    // Try cache
+                    if let cached = await ServiceLocator.shared.cacheService?.load([CallHistoryItem].self, forKey: Self.recordingsCacheKey) {
+                        await MainActor.run { self.serverRecordings = cached }
+                    }
+                }
+            }
+
+            // 2. Room event calls (parallel would be ideal but sequential is simpler)
+            await self.loadCallEventsFromRoomsSync()
+
+            // 3. Build final list with local + server + room events
+            await MainActor.run {
+                let localCalls = self.localCallHistoryService.getAllCalls()
+                self.initialLoadDone = true
+                self.updateCallHistoryFromLocal(localCalls)
+            }
+        }
+    }
+
     // MARK: - Local History Subscription
 
     private func setupLocalHistorySubscription() {
         localCallHistoryService.callHistoryPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] localCalls in
-                self?.updateCallHistoryFromLocal(localCalls)
+                guard let self, self.initialLoadDone else { return }
+                self.updateCallHistoryFromLocal(localCalls)
             }
             .store(in: &callsCancellables)
     }
@@ -166,12 +216,28 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         // Сортируем по времени (новые сверху)
         calls.sort { $0.timestamp > $1.timestamp }
 
-        state.callHistory = calls
-        applyListenedStatus()
+        // Apply cached room data (names, avatars) to freshly created items
+        for i in calls.indices {
+            if let cached = resolvedRoomData[calls[i].contactId] {
+                if let name = cached.contactName { calls[i].contactName = name }
+                if let url = cached.avatarURL { calls[i].avatarURL = url }
+                if let count = cached.participantCount { calls[i].participantCount = count }
+                if let urls = cached.participantAvatarURLs { calls[i].participantAvatarURLs = urls }
+            }
+        }
+
+        // Only update state if data actually changed (preserves scroll position on navigation back)
+        if state.callHistory.map(\.id) != calls.map(\.id) || state.isLoading {
+            state.callHistory = calls
+            applyListenedStatus()
+        }
         state.isLoading = false
 
-        // Resolve room names, avatars, and participant info
-        resolveAvatars()
+        // Resolve avatars for rooms not yet cached
+        let unresolvedRoomIDs = Set(calls.map(\.contactId)).subtracting(resolvedRoomData.keys)
+        if !unresolvedRoomIDs.isEmpty {
+            resolveAvatars()
+        }
     }
 
     /// Resolves avatar URLs and participant info for call history items from Matrix room data
@@ -233,9 +299,15 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
                 }
             }
 
-            // Single batch UI update
+            // Save to cache + single batch UI update
             if changed {
                 await MainActor.run {
+                    for item in items {
+                        self.resolvedRoomData[item.contactId] = ResolvedRoomInfo(contactName: item.contactName,
+                                                                                 avatarURL: item.avatarURL,
+                                                                                 participantCount: item.participantCount,
+                                                                                 participantAvatarURLs: item.participantAvatarURLs)
+                    }
                     self.state.callHistory = items
                 }
             }
@@ -289,6 +361,41 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
 
     /// Fetch call history from Matrix room events (call.member).
     /// This covers calls WITHOUT recordings that wouldn't appear from the recording API.
+    /// Async version that merges room event calls into serverRecordings without triggering UI update
+    private func loadCallEventsFromRoomsSync() async {
+        let homeserver = userSession.clientProxy.homeserver.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let ownUserID = userSession.clientProxy.userID
+        let concreteProxy = userSession.clientProxy as? ClientProxy
+
+        await concreteProxy?.forceTokenRefresh()
+        guard let token = try? concreteProxy?.matrixAccessToken() else { return }
+
+        let summaries = userSession.clientProxy.roomSummaryProvider.roomListPublisher.value
+        let callRoomIDs = summaries.filter { $0.activeMembersCount <= 10 }.map(\.id)
+
+        var callEvents: [CallHistoryItem] = []
+        let thirtyDaysAgo = Date().addingTimeInterval(-30 * 24 * 3600)
+
+        for roomID in callRoomIDs {
+            guard let events = await fetchCallMemberEvents(roomID: roomID, homeserver: homeserver, accessToken: token) else { continue }
+            guard !events.isEmpty else { continue }
+            let calls = extractCallSessions(events, roomID: roomID, ownUserID: ownUserID, cutoffDate: thirtyDaysAgo, sessionGapMs: 60000)
+            callEvents.append(contentsOf: calls)
+        }
+
+        await MainActor.run {
+            for call in callEvents {
+                let alreadyExists = serverRecordings.contains { existing in
+                    existing.contactId == call.contactId &&
+                        abs(existing.timestamp.timeIntervalSince(call.timestamp)) < 300
+                }
+                if !alreadyExists {
+                    serverRecordings.append(call)
+                }
+            }
+        }
+    }
+
     private func loadCallEventsFromRooms() {
         let homeserver = userSession.clientProxy.homeserver.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let ownUserID = userSession.clientProxy.userID
