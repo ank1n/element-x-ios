@@ -40,7 +40,7 @@ struct ElementCallWidgetMessage: Codable {
     var data: Data = .init()
     
     let widgetId: String
-    var requestId = "widgetapi-\(UUID())"
+    var requestId = UUID().uuidString
     
     enum CodingKeys: String, CodingKey {
         case direction = "api"
