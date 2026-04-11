@@ -104,6 +104,10 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
 
     func setClientProxy(_ clientProxy: any ClientProxyProtocol) {
         self.clientProxy = clientProxy
+        // Register VoIP pusher if token was received before client was ready
+        if let voipDeviceToken {
+            Task { await registerVoIPPusher(with: voipDeviceToken) }
+        }
     }
 
     func markNextCallAsIncoming() {
@@ -178,8 +182,10 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     // MARK: - PKPushRegistryDelegate
     
     func pushRegistry(_ registry: PKPushRegistry, didUpdate pushCredentials: PKPushCredentials, for type: PKPushType) {
-        // Don't register VoIP pusher with Synapse — this causes ALL events to come via VoIP push.
-        // VoIP pushes are sent by Matrix Rust SDK directly via to-device messages (MSC4075).
+        voipDeviceToken = pushCredentials.token
+        MXLog.info("sTalk: VoIP push token received (\(pushCredentials.token.count) bytes)")
+        // Register VoIP pusher with server so Sygnal can send VoIP pushes for incoming calls
+        Task { await registerVoIPPusher(with: pushCredentials.token) }
     }
     
     func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping () -> Void) {

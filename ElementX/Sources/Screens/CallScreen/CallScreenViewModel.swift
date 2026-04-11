@@ -840,7 +840,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         for eventType in eventTypes {
             for stateKey in stateKeys {
                 let json = """
-                {"api":"fromWidget","requestId":"stalk-leave-\(UUID().uuidString)","action":"send_event","widgetId":"\(widgetId)","data":{"type":"\(eventType)","state_key":"\(stateKey)","content":{"memberships":[]}}}
+                {"api":"fromWidget","requestId":"\(UUID().uuidString)","action":"send_event","widgetId":"\(widgetId)","data":{"type":"\(eventType)","state_key":"\(stateKey)","content":{"memberships":[]}}}
                 """
                 stalkLog("send_event: type=\(eventType) state_key=\(stateKey)")
                 let result = await widgetDriver.handleMessage(json)
