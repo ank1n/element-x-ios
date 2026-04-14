@@ -27,7 +27,7 @@ struct CallScreen: View {
             ZStack {
                 content
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .ignoresSafeArea(.all)
+                    .ignoresSafeArea(.container, edges: .bottom)
 
                 if !isMinimized {
                     // sTalk: Native call control buttons at bottom
@@ -143,8 +143,12 @@ struct CallScreen: View {
             // sTalk: Native call mode — no WebView, native LiveKit rendering
             NativeCallGridView(roomManager: roomManager,
                                isDirect: context.viewState.isDirect,
-                               isMinimized: isMinimized)
-                .ignoresSafeArea()
+                               isMinimized: isMinimized,
+                               isLocalVideoEnabled: context.viewState.isVideoEnabled,
+                               isLocalAudioMuted: context.viewState.isMuted,
+                               participants: context.viewState.participants,
+                               mediaProvider: context.viewState.mediaProvider)
+                .ignoresSafeArea(.container, edges: .bottom)
         } else if context.viewState.url == nil {
             ProgressView()
         } else {

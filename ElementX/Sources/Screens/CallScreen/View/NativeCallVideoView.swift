@@ -40,6 +40,10 @@ struct NativeCallGridView: View {
     @ObservedObject var roomManager: LiveKitRoomManager
     let isDirect: Bool
     var isMinimized = false
+    var isLocalVideoEnabled = true
+    var isLocalAudioMuted = false
+    var participants: [CallParticipantInfo] = []
+    var mediaProvider: MediaProviderProtocol?
 
     var body: some View {
         ZStack {
@@ -47,8 +51,17 @@ struct NativeCallGridView: View {
 
             if isDirect {
                 DirectCallLayout(roomManager: roomManager, isMinimized: isMinimized)
+            } else if isMinimized {
+                // Mini mode: show only the active speaker (or first remote participant)
+                ActiveSpeakerMiniView(roomManager: roomManager,
+                                      participants: participants,
+                                      mediaProvider: mediaProvider)
             } else {
-                GroupCallLayout(roomManager: roomManager)
+                GroupCallLayout(roomManager: roomManager,
+                                isLocalVideoEnabled: isLocalVideoEnabled,
+                                isLocalAudioMuted: isLocalAudioMuted,
+                                participants: participants,
+                                mediaProvider: mediaProvider)
             }
         }
     }
@@ -193,73 +206,272 @@ private struct DirectCallLayout: View {
     }
 }
 
+// MARK: - Active Speaker Mini View (PiP for group calls)
+
+/// Shows only the active speaker (or first remote participant) in minimized mode.
+private struct ActiveSpeakerMiniView: View {
+    @ObservedObject var roomManager: LiveKitRoomManager
+    let participants: [CallParticipantInfo]
+    let mediaProvider: MediaProviderProtocol?
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            if let speaker = activeSpeaker {
+                if let track = speaker.videoTrack {
+                    NativeCallVideoView(track: track, contentMode: .fill)
+                } else {
+                    // No video — show avatar
+                    Color(white: 0.1)
+                        .overlay {
+                            LoadableAvatarImage(url: speaker.avatarURL,
+                                                name: speaker.name,
+                                                contentID: speaker.identity,
+                                                avatarSize: .custom(48),
+                                                mediaProvider: mediaProvider)
+                        }
+                }
+
+                // Name label
+                if let name = speaker.name {
+                    Text(name)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.black.opacity(0.4))
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                        .padding(6)
+                }
+            } else {
+                Color(white: 0.1)
+                    .overlay {
+                        Image(systemName: "person.2.fill")
+                            .font(.system(size: 24))
+                            .foregroundColor(.white.opacity(0.3))
+                    }
+            }
+        }
+        .background(Color.black)
+    }
+
+    private struct SpeakerInfo {
+        let identity: String
+        let name: String?
+        let videoTrack: VideoTrack?
+        let avatarURL: URL?
+    }
+
+    private var activeSpeaker: SpeakerInfo? {
+        let remotes = roomManager.remoteParticipants
+
+        // Priority 1: anyone sharing screen
+        for remote in remotes {
+            if let screenPub = remote.videoTracks.first(where: { $0.name == Track.screenShareVideoName }),
+               !screenPub.isMuted,
+               let track = screenPub.track as? VideoTrack {
+                let identity = remote.identity?.stringValue ?? ""
+                return SpeakerInfo(identity: identity,
+                                   name: "\(remote.name ?? "?") — экран",
+                                   videoTrack: track,
+                                   avatarURL: nil)
+            }
+        }
+
+        // Priority 2: speaking remote → first remote
+        let speaker = remotes.first(where: { $0.isSpeaking }) ?? remotes.first
+        guard let speaker else { return nil }
+
+        let identity = speaker.identity?.stringValue ?? ""
+        let avatarURL = findAvatarURL(for: identity)
+        let cameraPub = speaker.videoTracks.first(where: { $0.name != Track.screenShareVideoName })
+        let videoMuted = cameraPub?.isMuted ?? true
+        let track = videoMuted ? nil : speaker.firstCameraVideoTrack
+
+        return SpeakerInfo(identity: identity,
+                           name: speaker.name ?? speaker.identity?.stringValue,
+                           videoTrack: track,
+                           avatarURL: avatarURL)
+    }
+
+    private func findAvatarURL(for identity: String) -> URL? {
+        if let match = participants.first(where: { $0.userID == identity }) {
+            return match.avatarURL
+        }
+        if let match = participants.first(where: { identity.hasPrefix($0.userID) }) {
+            return match.avatarURL
+        }
+        if let match = participants.first(where: { $0.userID.hasPrefix(identity) }) {
+            return match.avatarURL
+        }
+        return nil
+    }
+}
+
 // MARK: - Group Call Grid Layout
 
-/// 2-column grid for group calls with participant name tags, speaking indicators, and mute icons.
+/// Adaptive grid for group calls: column count grows with participant count.
+/// - 1 participant: full screen
+/// - 2: 1 column, 2 rows
+/// - 3–4: 2x2
+/// - 5–6: 2x3
+/// - 7–8: 2x4
+/// - 9+: 3 columns, scrollable
 private struct GroupCallLayout: View {
     @ObservedObject var roomManager: LiveKitRoomManager
+    let isLocalVideoEnabled: Bool
+    let isLocalAudioMuted: Bool
+    let participants: [CallParticipantInfo]
+    let mediaProvider: MediaProviderProtocol?
 
     var body: some View {
         GeometryReader { geometry in
             let items = participantItems
-            let columnCount = items.count <= 1 ? 1 : 2
-            let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: columnCount)
+            let screenShares = items.filter(\.isScreenShare)
+            let regularItems = items.filter { !$0.isScreenShare }
+            let hasScreenShare = !screenShares.isEmpty
+            let layout = gridLayout(for: regularItems.count)
+            let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: layout.columns)
             let spacing: CGFloat = 4
 
             ScrollView {
-                LazyVGrid(columns: columns, spacing: spacing) {
-                    ForEach(items) { item in
-                        ParticipantTile(item: item)
-                            .aspectRatio(tileAspectRatio(for: items.count, geometry: geometry), contentMode: .fill)
-                            .clipped()
+                VStack(spacing: spacing) {
+                    // Screen share — full width, prominent
+                    ForEach(screenShares) { item in
+                        ParticipantTile(item: item, mediaProvider: mediaProvider)
+                            .aspectRatio(16.0 / 9.0, contentMode: .fit)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+
+                    // Regular participants grid
+                    LazyVGrid(columns: columns, spacing: spacing) {
+                        ForEach(regularItems) { item in
+                            ParticipantTile(item: item, mediaProvider: mediaProvider)
+                                .aspectRatio(hasScreenShare
+                                    ? 1.0 // compact squares when screen share is visible
+                                    : tileAspectRatio(for: regularItems.count, columns: layout.columns, geometry: geometry),
+                                    contentMode: .fill)
+                                .clipped()
+                        }
                     }
                 }
                 .padding(spacing)
             }
-            .scrollDisabled(items.count <= 4)
+            .scrollDisabled(!layout.scrollable && !hasScreenShare)
         }
         .background(Color.black)
+    }
+
+    private struct GridConfig {
+        let columns: Int
+        let scrollable: Bool
+    }
+
+    private func gridLayout(for count: Int) -> GridConfig {
+        switch count {
+        case 0, 1:
+            return GridConfig(columns: 1, scrollable: false)
+        case 2:
+            return GridConfig(columns: 1, scrollable: false)
+        case 3, 4:
+            return GridConfig(columns: 2, scrollable: false)
+        case 5, 6:
+            return GridConfig(columns: 2, scrollable: false)
+        case 7, 8:
+            return GridConfig(columns: 2, scrollable: false)
+        default:
+            // 9+ participants: 3 columns, scrollable
+            return GridConfig(columns: 3, scrollable: true)
+        }
     }
 
     private var participantItems: [ParticipantItem] {
         var items: [ParticipantItem] = []
 
-        // Local participant
-        if let local = roomManager.localParticipant {
-            items.append(ParticipantItem(id: local.identity?.stringValue ?? "local",
-                                         videoTrack: roomManager.localVideoTrack,
-                                         displayName: SL10n.callsYou,
-                                         isLocal: true,
-                                         isSpeaking: local.isSpeaking,
-                                         isAudioMuted: local.firstAudioPublication?.isMuted ?? true))
+        // Screen share tracks first (shown prominently)
+        for participant in roomManager.remoteParticipants {
+            if let screenPub = participant.videoTracks.first(where: { $0.name == Track.screenShareVideoName }),
+               !screenPub.isMuted,
+               let track = screenPub.track as? VideoTrack {
+                let identity = participant.identity?.stringValue ?? participant.sid?.stringValue ?? UUID().uuidString
+                let name = participant.name ?? participant.identity?.stringValue ?? "?"
+                items.append(ParticipantItem(id: "\(identity)-screen",
+                                             videoTrack: track,
+                                             displayName: "\(name) — экран",
+                                             avatarURL: nil,
+                                             isLocal: false,
+                                             isSpeaking: false,
+                                             isAudioMuted: false,
+                                             isVideoMuted: false,
+                                             isScreenShare: true))
+            }
         }
 
-        // Remote participants
+        // Local participant
+        if let local = roomManager.localParticipant {
+            let identity = local.identity?.stringValue ?? "local"
+            items.append(ParticipantItem(id: identity,
+                                         videoTrack: roomManager.localVideoTrack,
+                                         displayName: SL10n.callsYou,
+                                         avatarURL: findAvatarURL(for: identity),
+                                         isLocal: true,
+                                         isSpeaking: local.isSpeaking,
+                                         isAudioMuted: isLocalAudioMuted,
+                                         isVideoMuted: !isLocalVideoEnabled,
+                                         isScreenShare: false))
+        }
+
+        // Remote participants (camera tracks)
         for participant in roomManager.remoteParticipants {
-            items.append(ParticipantItem(id: participant.identity?.stringValue ?? participant.sid?.stringValue ?? UUID().uuidString,
+            let cameraPub = participant.videoTracks.first(where: { $0.name != Track.screenShareVideoName })
+            let videoMuted = cameraPub?.isMuted ?? true
+            let identity = participant.identity?.stringValue ?? participant.sid?.stringValue ?? UUID().uuidString
+            items.append(ParticipantItem(id: identity,
                                          videoTrack: participant.firstCameraVideoTrack,
                                          displayName: participant.name ?? participant.identity?.stringValue,
+                                         avatarURL: findAvatarURL(for: identity),
                                          isLocal: false,
                                          isSpeaking: participant.isSpeaking,
-                                         isAudioMuted: participant.firstAudioPublication?.isMuted ?? false))
+                                         isAudioMuted: participant.firstAudioPublication?.isMuted ?? false,
+                                         isVideoMuted: videoMuted,
+                                         isScreenShare: false))
         }
 
         return items
     }
 
-    private func tileAspectRatio(for count: Int, geometry: GeometryProxy) -> CGFloat {
-        switch count {
-        case 1:
-            // Single participant fills the screen
-            return geometry.size.width / max(geometry.size.height, 1)
-        case 2:
-            // Two participants: portrait-ish tiles stacked vertically in 1 column each
-            return 3.0 / 4.0
-        case 3, 4:
-            return 1.0
-        default:
-            return 4.0 / 3.0
+    /// Match LiveKit identity to Matrix participant.
+    /// LiveKit identity may be "@user:server:DEVICEID" while participants use "@user:server".
+    private func findAvatarURL(for identity: String) -> URL? {
+        // Exact match first
+        if let match = participants.first(where: { $0.userID == identity }) {
+            return match.avatarURL
         }
+        // Fuzzy: identity starts with userID (handles :DEVICEID suffix)
+        if let match = participants.first(where: { identity.hasPrefix($0.userID) }) {
+            return match.avatarURL
+        }
+        // Fuzzy: userID starts with identity
+        if let match = participants.first(where: { $0.userID.hasPrefix(identity) }) {
+            return match.avatarURL
+        }
+        return nil
+    }
+
+    private func tileAspectRatio(for count: Int, columns: Int, geometry: GeometryProxy) -> CGFloat {
+        let rows = ceil(Double(count) / Double(columns))
+        // Reserve space: 120pt for bottom call controls overlay
+        let bottomReserved: CGFloat = 120
+        let availableHeight = geometry.size.height - bottomReserved - CGFloat(rows - 1) * 4 - 8
+        let availableWidth = geometry.size.width - CGFloat(columns - 1) * 4 - 8
+        let tileWidth = availableWidth / CGFloat(columns)
+        let tileHeight = availableHeight / CGFloat(rows)
+        // Use calculated ratio so tiles fill the visible area without scrolling
+        if count <= 8 {
+            return tileWidth / max(tileHeight, 1)
+        }
+        // Scrollable: fixed landscape ratio
+        return 4.0 / 3.0
     }
 }
 
@@ -269,9 +481,12 @@ private struct ParticipantItem: Identifiable {
     let id: String
     let videoTrack: VideoTrack?
     let displayName: String?
+    let avatarURL: URL?
     let isLocal: Bool
     let isSpeaking: Bool
     let isAudioMuted: Bool
+    let isVideoMuted: Bool
+    let isScreenShare: Bool
 }
 
 // MARK: - Participant Tile
@@ -279,25 +494,28 @@ private struct ParticipantItem: Identifiable {
 /// A single tile: video (or camera-off placeholder) + name tag + mute/speaking indicators.
 private struct ParticipantTile: View {
     let item: ParticipantItem
+    let mediaProvider: MediaProviderProtocol?
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            // Video or placeholder
-            if let track = item.videoTrack {
+            // Video or avatar placeholder
+            if let track = item.videoTrack, !item.isVideoMuted {
                 NativeCallVideoView(track: track,
-                                    mirror: item.isLocal,
-                                    contentMode: .fill)
+                                    mirror: item.isLocal && !item.isScreenShare,
+                                    contentMode: item.isScreenShare ? .fit : .fill)
             } else {
-                // Camera off — show initials
+                // Camera off — show user's avatar
                 Color(white: 0.1)
                     .overlay {
-                        VStack(spacing: 8) {
-                            Text(initials(from: item.displayName ?? "?"))
-                                .font(.system(size: 36, weight: .semibold, design: .rounded))
-                                .foregroundColor(.white.opacity(0.5))
+                        VStack(spacing: 6) {
+                            LoadableAvatarImage(url: item.avatarURL,
+                                                name: item.displayName,
+                                                contentID: item.id,
+                                                avatarSize: .custom(96),
+                                                mediaProvider: mediaProvider)
                             Image(systemName: "video.slash.fill")
-                                .font(.system(size: 16))
-                                .foregroundColor(.white.opacity(0.3))
+                                .font(.system(size: 12))
+                                .foregroundColor(.white.opacity(0.25))
                         }
                     }
             }
@@ -309,25 +527,35 @@ private struct ParticipantTile: View {
                 .frame(height: 48)
                 .allowsHitTesting(false)
 
-            // Name tag + mute indicator
-            HStack(spacing: 4) {
-                if item.isAudioMuted {
-                    Image(systemName: "mic.slash.fill")
-                        .font(.system(size: 10))
-                        .foregroundColor(.red.opacity(0.9))
-                }
-                if let name = item.displayName {
-                    Text(name)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.white)
-                        .lineLimit(1)
+            // Name tag (bottom-left)
+            if let name = item.displayName {
+                Text(name)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.black.opacity(0.35))
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .padding(8)
+            }
+
+            // Mute indicator (top-right)
+            if item.isAudioMuted {
+                VStack {
+                    HStack {
+                        Spacer()
+                        Image(systemName: "mic.slash.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 28, height: 28)
+                            .background(Color.red.opacity(0.85))
+                            .clipShape(Circle())
+                            .padding(8)
+                    }
+                    Spacer()
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Color.black.opacity(0.35))
-            .clipShape(RoundedRectangle(cornerRadius: 4))
-            .padding(8)
         }
         .background(Color(white: 0.1))
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))

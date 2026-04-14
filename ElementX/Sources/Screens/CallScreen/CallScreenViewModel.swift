@@ -953,6 +953,18 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     }
 
     private func toggleHandRaise() async {
+        // Native LiveKit mode: use participant metadata
+        if state.liveKitRoomManager != nil {
+            let newValue = !state.isHandRaised
+            do {
+                try await liveKitRoomManager.setHandRaise(enabled: newValue)
+                state.isHandRaised = newValue
+            } catch {
+                MXLog.error("sTalk: Failed to toggle hand raise: \(error)")
+            }
+            return
+        }
+        // Fallback: WebView JS
         do {
             _ = try await state.bindings.javaScriptEvaluator?("window.stalkToggleHandRaise()")
         } catch {

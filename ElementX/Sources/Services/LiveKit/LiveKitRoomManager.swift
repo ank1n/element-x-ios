@@ -173,6 +173,17 @@ final class LiveKitRoomManager: ObservableObject {
         #endif
     }
 
+    /// Toggle hand raise via participant metadata
+    @Published private(set) var isHandRaised = false
+
+    func setHandRaise(enabled: Bool) async throws {
+        isHandRaised = enabled
+        // Encode hand raise state in participant metadata as JSON
+        let metadata = enabled ? "{\"hand_raised\": true}" : "{}"
+        try await room.localParticipant.set(metadata: metadata)
+        MXLog.info("sTalk LiveKit: Hand raise \(enabled ? "raised" : "lowered")")
+    }
+
     /// Toggle screen sharing
     @Published private(set) var isScreenSharing = false
 
