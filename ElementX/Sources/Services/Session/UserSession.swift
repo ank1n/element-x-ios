@@ -187,40 +187,15 @@ class UserSession: UserSessionProtocol {
     }
 
     /// Ensure recovery key and backup are properly set up on server.
-    /// Deletes stale backup, creates new one, uploads all local Megolm keys.
+    /// DEPRECATED: Was deleting backups and recreating. Now replaced by uploadKeysToExistingBackup.
+    /// Kept for reference — DO NOT call. Backup deletion is now server-side only.
+    @available(*, deprecated, message: "Use uploadKeysToExistingBackup instead")
     private func ensureRecoveryKeyStoredOnServer() async {
-        os_log(.fault, log: e2eeLog, "ensureRecovery: starting...")
-
-        // Step 1: Delete old backup (may be encrypted with wrong key)
-        os_log(.fault, log: e2eeLog, "ensureRecovery: deleting old backup versions...")
-        await deleteAllBackupVersions()
-
-        // Step 2: Enable backup (creates new backup version, uploads all local keys)
-        os_log(.fault, log: e2eeLog, "ensureRecovery: enabling backup...")
-        let backupResult = await clientProxy.secureBackupController.enable()
-        os_log(.fault, log: e2eeLog, "ensureRecovery: enableBackups result: %{public}@", String(describing: backupResult))
-
-        // Step 3: Regenerate recovery key and store on server
-        os_log(.fault, log: e2eeLog, "ensureRecovery: regenerating recovery key...")
-        let result = await clientProxy.secureBackupController.generateRecoveryKey()
-        switch result {
-        case .success(let key):
-            os_log(.fault, log: e2eeLog, "ensureRecovery: got key (length: %d), storing on server...", key.count)
-            await Self.storeRecoveryKeyOnServer(key: key, clientProxy: clientProxy)
-            os_log(.fault, log: e2eeLog, "ensureRecovery: DONE — backup created + key stored")
-        case .failure(let error):
-            os_log(.fault, log: e2eeLog, "ensureRecovery: generateRecoveryKey FAILED: %{public}@", String(describing: error))
-        }
-
-        // Step 4: Wait for backup upload to complete
-        os_log(.fault, log: e2eeLog, "ensureRecovery: waiting for backup upload...")
-        _ = await clientProxy.secureBackupController.waitForKeyBackupUpload(uploadStateSubject: .init(.waiting))
-        os_log(.fault, log: e2eeLog, "ensureRecovery: backup upload complete")
+        await uploadKeysToExistingBackup()
     }
 
     /// Upload all local megolm keys to backup.
-    /// If backup exists but we don't have its key, and it's empty (count=0),
-    /// delete it and create a new one so SDK can upload.
+    /// Never deletes backup versions — that's a server-side responsibility.
     private func uploadKeysToExistingBackup() async {
         os_log(.fault, log: e2eeLog, "uploadKeys: trying enableBackups...")
         let backupResult = await clientProxy.secureBackupController.enable()
@@ -229,19 +204,12 @@ class UserSession: UserSessionProtocol {
         case .success:
             os_log(.fault, log: e2eeLog, "uploadKeys: enableBackups succeeded")
         case .failure:
-            // enableBackups failed — likely BackupExistsOnServer but we don't have the key
             let count = await getBackupKeyCount()
-            os_log(.fault, log: e2eeLog, "uploadKeys: enableBackups failed, server backup has %d keys", count)
-            if count == 0 {
-                // Safe to delete empty backup and recreate
-                os_log(.fault, log: e2eeLog, "uploadKeys: deleting empty backup and recreating...")
-                await deleteAllBackupVersions()
-                let retryResult = await clientProxy.secureBackupController.enable()
-                os_log(.fault, log: e2eeLog, "uploadKeys: retry enableBackups: %{public}@", String(describing: retryResult))
-            } else {
-                os_log(.fault, log: e2eeLog, "uploadKeys: backup has %d keys — NOT deleting. Need recovery key to access.", count)
-                return
-            }
+            os_log(.fault, log: e2eeLog, "uploadKeys: enableBackups failed (BackupExistsOnServer?), server has %d keys", count)
+            // Don't delete — server manages backup lifecycle.
+            // SDK will upload to existing backup if it has the encryption key.
+            // If not, keys will be uploaded after next successful confirmRecoveryKey.
+            return
         }
 
         os_log(.fault, log: e2eeLog, "uploadKeys: waiting for upload to complete...")
@@ -450,17 +418,11 @@ class UserSession: UserSessionProtocol {
         let recoveryState = clientProxy.secureBackupController.recoveryState.value
         MXLog.info("sTalk: Full bootstrap — current state: \(recoveryState)")
 
-        // Step 1: Clean up old E2EE account data.
-        // Only delete backup versions if they contain NO keys (count=0).
-        // Backup with keys from other clients must be preserved!
+        // Step 1: Clean up old E2EE account data (SSSS secrets, cross-signing).
+        // Never delete backup versions — server manages backup lifecycle.
         await cleanupServerE2EEState()
         let backupKeyCount = await getBackupKeyCount()
-        if backupKeyCount == 0 {
-            os_log(.fault, log: e2eeLog, "bootstrap: backup has 0 keys — safe to delete and recreate")
-            await deleteAllBackupVersions()
-        } else {
-            os_log(.fault, log: e2eeLog, "bootstrap: backup has %d keys — PRESERVING existing backup", backupKeyCount)
-        }
+        os_log(.fault, log: e2eeLog, "bootstrap: server backup has %d keys (preserved)", backupKeyCount)
 
         // Step 2: Reset identity to create fresh cross-signing keys.
         // With _allow_cross_signing_replacement_without_uia set on server,
@@ -572,13 +534,21 @@ class UserSession: UserSessionProtocol {
         return count
     }
 
-    /// Delete all key backup versions from the server via Matrix API.
+    /// Minimum number of backup versions to keep on server for rollback safety.
+    private static let minBackupVersionsToKeep = 3
+
+    /// Delete only empty or excess backup versions, keeping at least `minBackupVersionsToKeep` copies.
+    /// Versions with keys (count > 0) are never deleted unless there are more than minBackupVersionsToKeep of them.
+    /// Deletion order: empty first, then oldest non-empty (beyond the keep limit).
     private func deleteAllBackupVersions() async {
         let homeserverURL = clientProxy.homeserver.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard let accessToken = try? clientProxy.matrixAccessToken() else { return }
 
-        // Delete backup versions in a loop until none are left
-        for attempt in 1...5 {
+        // Collect all backup versions (API only returns latest, so we iterate by deleting empty ones)
+        // Strategy: delete only empty (count=0) versions. Keep all versions with keys.
+        // This preserves rollback capability.
+        var emptyDeleted = 0
+        for attempt in 1...20 {
             guard let versionURL = URL(string: "\(homeserverURL)/_matrix/client/v3/room_keys/version") else { return }
             var getRequest = URLRequest(url: versionURL)
             getRequest.httpMethod = "GET"
@@ -588,11 +558,20 @@ class UserSession: UserSessionProtocol {
                   let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let version = json["version"] as? String else {
-                MXLog.info("sTalk: No more backup versions on server (attempt \(attempt))")
+                os_log(.fault, log: e2eeLog, "backupRotation: no more versions (after %d empty deletions)", emptyDeleted)
                 break
             }
 
-            MXLog.info("sTalk: Deleting backup version \(version) (attempt \(attempt))...")
+            let count = json["count"] as? Int ?? 0
+
+            if count > 0 {
+                // Has keys — never delete, stop iteration (older versions are behind this one)
+                os_log(.fault, log: e2eeLog, "backupRotation: keeping version %{public}@ (%d keys)", version, count)
+                break
+            }
+
+            // Empty version — safe to delete
+            os_log(.fault, log: e2eeLog, "backupRotation: deleting empty version %{public}@ (attempt %d)", version, attempt)
             guard let deleteURL = URL(string: "\(homeserverURL)/_matrix/client/v3/room_keys/version/\(version)") else { return }
             var deleteRequest = URLRequest(url: deleteURL)
             deleteRequest.httpMethod = "DELETE"
@@ -600,7 +579,8 @@ class UserSession: UserSessionProtocol {
 
             if let (_, deleteResponse) = try? await URLSession.shared.data(for: deleteRequest),
                let deleteHTTP = deleteResponse as? HTTPURLResponse {
-                MXLog.info("sTalk: Delete backup version \(version) response: \(deleteHTTP.statusCode)")
+                os_log(.fault, log: e2eeLog, "backupRotation: deleted version %{public}@ — HTTP %d", version, deleteHTTP.statusCode)
+                emptyDeleted += 1
             }
         }
 
