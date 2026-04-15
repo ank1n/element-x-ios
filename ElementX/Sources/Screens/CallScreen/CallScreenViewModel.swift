@@ -631,6 +631,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         state.liveKitRoomManager = liveKitRoomManager
         state.wasConnected = true
 
+        // sTalk: Send ring notification with proper user_ids so web client shows incoming call
+        await sendRingNotification()
+
         // Small delay to let audio session stabilize
         try? await Task.sleep(for: .milliseconds(200))
 
@@ -969,6 +972,52 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             _ = try await state.bindings.javaScriptEvaluator?("window.stalkToggleHandRaise()")
         } catch {
             MXLog.error("Failed to toggle hand raise: \(error)")
+        }
+    }
+
+    /// Send org.matrix.msc4075.rtc.notification with user_ids so other clients show incoming call toast.
+    /// SDK sends this event but with empty user_ids — web client ignores it.
+    private func sendRingNotification() async {
+        guard case .roomCall(let roomProxy, let clientProxy, _, _, _, _) = configuration.kind else { return }
+
+        let homeserver = clientProxy.homeserver.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let accessToken = try? clientProxy.matrixAccessToken() else { return }
+
+        let roomID = roomProxy.id
+        let myUserID = clientProxy.userID
+
+        // Collect other members for m.mentions.user_ids
+        var otherUserIDs: [String] = []
+        if let members = await roomProxy.members() {
+            otherUserIDs = members
+                .filter { $0.isActive && $0.userID != myUserID }
+                .map(\.userID)
+        }
+
+        guard !otherUserIDs.isEmpty else {
+            MXLog.info("sTalk: No other members to ring")
+            return
+        }
+
+        let encodedRoom = roomID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? roomID
+        let txnID = UUID().uuidString
+        guard let url = URL(string: "\(homeserver)/_matrix/client/v3/rooms/\(encodedRoom)/send/org.matrix.msc4075.rtc.notification/\(txnID)") else { return }
+
+        let timestamp = Int(Date().timeIntervalSince1970 * 1000)
+        let userIDsJSON = otherUserIDs.map { "\"\($0)\"" }.joined(separator: ",")
+        let body = """
+        {"application":"m.call","call_id":"","lifetime":90000,"sender_ts":\(timestamp),"notification_type":"ring","m.mentions":{"user_ids":[\(userIDsJSON)]}}
+        """
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = body.data(using: .utf8)
+
+        if let (_, response) = try? await URLSession.shared.data(for: request),
+           let httpResp = response as? HTTPURLResponse {
+            MXLog.info("sTalk: Ring notification sent to \(otherUserIDs.count) users — HTTP \(httpResp.statusCode)")
         }
     }
 
