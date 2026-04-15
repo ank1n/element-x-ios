@@ -349,7 +349,11 @@ class UserSession: UserSessionProtocol {
                 await cleanupOldDevicesByIDFV()
             case .failure(let error):
                 os_log(.fault, log: e2eeLog, "autoVerify: confirmRecoveryKey FAILED: %{public}@", String(describing: error))
-                await bootstrapRecoveryForFirstDevice()
+                // sTalk: Do NOT call bootstrapRecoveryForFirstDevice() here!
+                // It deletes ALL backup versions, destroying keys uploaded by other clients.
+                // Instead, just cross-sign the device to get verified status.
+                os_log(.fault, log: e2eeLog, "autoVerify: skipping destructive bootstrap — preserving existing key backup")
+                await selfVerifyDevice()
                 await cleanupOldDevicesByIDFV()
             }
         } catch {
@@ -400,9 +404,8 @@ class UserSession: UserSessionProtocol {
         }
     }
 
-    /// First device bootstrap: delete existing backup, then use forceEnableRecovery()
-    /// which calls enableRecovery() directly. This does a FULL bootstrap:
-    /// creates SSSS with cross-signing private keys, backup, and recovery key.
+    /// First device bootstrap: create fresh cross-signing keys and recovery.
+    /// WARNING: Only deletes backup if it has 0 keys. Otherwise preserves it.
     private func bootstrapRecoveryForFirstDevice() async {
         os_log(.fault, log: e2eeLog, "bootstrap: STARTING full E2EE bootstrap...")
         // Small delay to let SDK settle after login
@@ -411,11 +414,17 @@ class UserSession: UserSessionProtocol {
         let recoveryState = clientProxy.secureBackupController.recoveryState.value
         MXLog.info("sTalk: Full bootstrap — current state: \(recoveryState)")
 
-        // Step 1: Clean up ALL old E2EE account data and backups from server.
-        // This is needed when the server has stale SSSS keys/secrets from previous sessions
-        // that can't be decrypted with any known recovery key.
+        // Step 1: Clean up old E2EE account data.
+        // Only delete backup versions if they contain NO keys (count=0).
+        // Backup with keys from other clients must be preserved!
         await cleanupServerE2EEState()
-        await deleteAllBackupVersions()
+        let backupKeyCount = await getBackupKeyCount()
+        if backupKeyCount == 0 {
+            os_log(.fault, log: e2eeLog, "bootstrap: backup has 0 keys — safe to delete and recreate")
+            await deleteAllBackupVersions()
+        } else {
+            os_log(.fault, log: e2eeLog, "bootstrap: backup has %d keys — PRESERVING existing backup", backupKeyCount)
+        }
 
         // Step 2: Reset identity to create fresh cross-signing keys.
         // With _allow_cross_signing_replacement_without_uia set on server,
@@ -484,6 +493,25 @@ class UserSession: UserSessionProtocol {
         // We can't enumerate them, but the default_key is cleared above,
         // so enableRecovery will create a new one.
         MXLog.info("sTalk: Server E2EE state cleaned up")
+    }
+
+    /// Check how many keys are in the current backup version.
+    private func getBackupKeyCount() async -> Int {
+        let homeserverURL = clientProxy.homeserver.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let accessToken = try? clientProxy.matrixAccessToken(),
+              let url = URL(string: "\(homeserverURL)/_matrix/client/v3/room_keys/version") else { return 0 }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let count = json["count"] as? Int else {
+            return 0
+        }
+        return count
     }
 
     /// Delete all key backup versions from the server via Matrix API.
