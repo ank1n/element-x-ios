@@ -366,8 +366,9 @@ class UserSession: UserSessionProtocol {
     }
 
     /// Cross-sign this device after successful key recovery.
-    /// Unlike bootstrapRecoveryForFirstDevice(), this preserves existing key backup
-    /// (Megolm keys are already restored). Only resets cross-signing identity and SSSS.
+    /// Called when confirmRecoveryKey succeeded but device is still unverified after 10s.
+    /// ONLY resets cross-signing identity — does NOT touch SSSS or backup.
+    /// Keys are already restored at this point, SDK will auto-upload to backup.
     private func selfVerifyDevice() async {
         os_log(.fault, log: e2eeLog, "selfVerify: resetting identity to cross-sign device...")
 
@@ -392,19 +393,16 @@ class UserSession: UserSessionProtocol {
         let state = clientProxy.verificationStatePublisher.value
         os_log(.fault, log: e2eeLog, "selfVerify: after reset — verification state: %{public}@", String(describing: state))
 
-        // Step 2: Clean up old SSSS (now invalid after identity reset)
-        await cleanupServerE2EEState()
-
-        // Step 3: Create new SSSS with new cross-signing keys + new backup + recovery key
-        // Existing backup is deleted and recreated with current keys (including recovered Megolm keys)
-        let result = await clientProxy.secureBackupController.forceEnableRecovery()
-        switch result {
-        case .success(let key):
-            os_log(.fault, log: e2eeLog, "selfVerify: recovery enabled — key length: %d", key.count)
-            await Self.storeRecoveryKeyOnServer(key: key, clientProxy: clientProxy)
-            os_log(.fault, log: e2eeLog, "selfVerify: DONE — device verified + recovery key stored on server")
-        case .failure(let error):
-            os_log(.fault, log: e2eeLog, "selfVerify: forceEnableRecovery failed: %{public}@", String(describing: error))
+        // Step 2: Try to re-confirm recovery key so SDK links to existing backup.
+        // Keys are already in local store (confirmRecoveryKey was called before selfVerifyDevice).
+        // This just re-establishes the SDK's connection to SSSS + backup after identity reset.
+        let restored = await tryRestoreFromServerKey()
+        if restored {
+            os_log(.fault, log: e2eeLog, "selfVerify: DONE — device verified + recovery re-confirmed")
+        } else {
+            os_log(.fault, log: e2eeLog, "selfVerify: DONE — device verified (recovery re-confirm failed, SDK will auto-upload keys)")
+            // Not fatal: device is cross-signed, megolm keys are in local store.
+            // SDK will upload them to backup once it gets backup access.
         }
     }
 
@@ -458,19 +456,22 @@ class UserSession: UserSessionProtocol {
 
     /// Clean up stale E2EE account data on server (SSSS keys, cross-signing secrets).
     /// This allows enableRecovery() to create everything fresh.
+    /// NOTE: m.megolm_backup.v1 is intentionally NOT cleared — it contains the backup
+    /// encryption key reference in SSSS. Clearing it breaks the chain:
+    /// recovery_key → SSSS → backup_key → decrypt backup. This was the #1 cause of key loss.
     private func cleanupServerE2EEState() async {
         let homeserverURL = clientProxy.homeserver.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard let accessToken = try? clientProxy.matrixAccessToken() else { return }
         let encodedUserID = clientProxy.userID
         let baseURL = "\(homeserverURL)/_matrix/client/v3/user/\(encodedUserID)/account_data"
 
-        // Account data events to clear
+        // Account data events to clear (cross-signing secrets + SSSS default key).
+        // NEVER clear m.megolm_backup.v1 — it links SSSS to backup encryption key.
         let eventTypes = [
             "m.secret_storage.default_key",
             "m.cross_signing.master",
             "m.cross_signing.self_signing",
-            "m.cross_signing.user_signing",
-            "m.megolm_backup.v1"
+            "m.cross_signing.user_signing"
         ]
 
         for eventType in eventTypes {

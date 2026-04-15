@@ -631,8 +631,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         state.liveKitRoomManager = liveKitRoomManager
         state.wasConnected = true
 
-        // sTalk: Send ring notification with proper user_ids so web client shows incoming call
-        await sendRingNotification()
+        // Ring notification is now sent by NativeCallSession.sendCallNotification()
+        // immediately after sendJoinViaREST(), with proper user_ids and m.relates_to.
 
         // Small delay to let audio session stabilize
         try? await Task.sleep(for: .milliseconds(200))
@@ -975,76 +975,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         }
     }
 
-    /// Send org.matrix.msc4075.rtc.notification with m.relates_to referencing call.member event.
-    /// Web client requires m.relates_to.rel_type="m.reference" + event_id of call.member to show toast.
-    private func sendRingNotification() async {
-        guard case .roomCall(let roomProxy, let clientProxy, _, _, _, _) = configuration.kind else { return }
-
-        let homeserver = clientProxy.homeserver.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard let accessToken = try? clientProxy.matrixAccessToken() else { return }
-
-        let roomID = roomProxy.id
-        let myUserID = clientProxy.userID
-        let encodedRoom = roomID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? roomID
-
-        // Step 1: Find our call.member state event to get its event_id
-        guard let stateURL = URL(string: "\(homeserver)/_matrix/client/v3/rooms/\(encodedRoom)/state") else { return }
-        var stateReq = URLRequest(url: stateURL)
-        stateReq.httpMethod = "GET"
-        stateReq.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-
-        var callMemberEventID: String?
-        if let (stateData, stateResp) = try? await URLSession.shared.data(for: stateReq),
-           let httpResp = stateResp as? HTTPURLResponse, httpResp.statusCode == 200,
-           let events = try? JSONSerialization.jsonObject(with: stateData) as? [[String: Any]] {
-            for event in events {
-                guard let type = event["type"] as? String,
-                      type == "org.matrix.msc3401.call.member" || type == "m.call.member",
-                      let stateKey = event["state_key"] as? String,
-                      stateKey.contains(myUserID),
-                      let content = event["content"] as? [String: Any],
-                      let memberships = content["memberships"] as? [[String: Any]],
-                      !memberships.isEmpty,
-                      let eventID = event["event_id"] as? String else { continue }
-                callMemberEventID = eventID
-                break
-            }
-        }
-
-        guard let memberEventID = callMemberEventID else {
-            MXLog.info("sTalk: No active call.member event found — skipping ring notification")
-            return
-        }
-
-        // Step 2: Collect other members for m.mentions
-        var otherUserIDs: [String] = []
-        if let members = await roomProxy.members() {
-            otherUserIDs = members
-                .filter { $0.isActive && $0.userID != myUserID }
-                .map(\.userID)
-        }
-
-        // Step 3: Send notification with m.relates_to referencing call.member
-        let txnID = UUID().uuidString
-        guard let url = URL(string: "\(homeserver)/_matrix/client/v3/rooms/\(encodedRoom)/send/org.matrix.msc4075.rtc.notification/\(txnID)") else { return }
-
-        let timestamp = Int(Date().timeIntervalSince1970 * 1000)
-        let userIDsJSON = otherUserIDs.map { "\"\($0)\"" }.joined(separator: ",")
-        let body = """
-        {"application":"m.call","call_id":"","lifetime":90000,"sender_ts":\(timestamp),"notification_type":"ring","m.mentions":{"user_ids":[\(userIDsJSON)]},"m.relates_to":{"rel_type":"m.reference","event_id":"\(memberEventID)"}}
-        """
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "PUT"
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = body.data(using: .utf8)
-
-        if let (_, response) = try? await URLSession.shared.data(for: request),
-           let httpResp = response as? HTTPURLResponse {
-            MXLog.info("sTalk: Ring notification sent (ref=\(memberEventID)) to \(otherUserIDs.count) users — HTTP \(httpResp.statusCode)")
-        }
-    }
+    // Ring notification is now handled by NativeCallSession.sendCallNotification()
+    // which sends it right after sendJoinViaREST() with the event_id from the response.
 
     private func toggleScreenShare() async {
         let newValue = !state.isScreenSharing

@@ -254,10 +254,10 @@ final class NativeCallSession: ObservableObject {
         MXLog.info("sTalk NativeCall: Generated JWT for room=\(roomName), identity=\(identity)")
 
         // Send MatrixRTC join via REST API so remote participants see us
-        await sendJoinViaREST()
+        let joinEventID = await sendJoinViaREST()
 
         // Send call notification for incoming call ring on remote
-        await sendCallNotification()
+        await sendCallNotification(callMemberEventID: joinEventID)
 
         // Debug: read current state events to compare formats
         await debugReadCallMemberState()
@@ -275,51 +275,59 @@ final class NativeCallSession: ObservableObject {
 
     // MARK: - MatrixRTC Join via REST API
 
-    private func sendJoinViaREST() async {
+    /// Send MatrixRTC join via REST API. Returns the event_id of the call.member state event.
+    @discardableResult
+    private func sendJoinViaREST() async -> String? {
         let encodedRoom = matrixRoomId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? matrixRoomId
         // State key format: _@user:server_deviceId_m.call
         let stateKey = "_\(userId)_\(deviceId)_m.call"
         let encodedStateKey = stateKey.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? stateKey
 
-        for eventType in ["org.matrix.msc3401.call.member"] {
-            let encodedType = eventType.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? eventType
-            let url = "\(homeserverURL)/_matrix/client/v3/rooms/\(encodedRoom)/state/\(encodedType)/\(encodedStateKey)"
+        let eventType = "org.matrix.msc3401.call.member"
+        let encodedType = eventType.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? eventType
+        let url = "\(homeserverURL)/_matrix/client/v3/rooms/\(encodedRoom)/state/\(encodedType)/\(encodedStateKey)"
 
-            // Flat format matching Element Call web client
-            let body: [String: Any] = [
-                "application": "m.call",
-                "call_id": "",
-                "scope": "m.room",
-                "device_id": deviceId,
-                "expires": 7_200_000,
-                "foci_preferred": [[
-                    "type": "livekit",
-                    "livekit_alias": matrixRoomId,
-                    "livekit_service_url": "https://jwt.stalk.implica.ru"
-                ]],
-                "focus_active": [
-                    "type": "livekit",
-                    "focus_selection": "oldest_membership"
-                ]
+        // Flat format matching Element Call web client
+        let body: [String: Any] = [
+            "application": "m.call",
+            "call_id": "",
+            "scope": "m.room",
+            "device_id": deviceId,
+            "expires": 7_200_000,
+            "foci_preferred": [[
+                "type": "livekit",
+                "livekit_alias": matrixRoomId,
+                "livekit_service_url": "https://jwt.stalk.implica.ru"
+            ]],
+            "focus_active": [
+                "type": "livekit",
+                "focus_selection": "oldest_membership"
             ]
+        ]
 
-            guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else { continue }
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else { return nil }
 
-            var request = URLRequest(url: URL(string: url)!)
-            request.httpMethod = "PUT"
-            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = jsonData
+        var request = URLRequest(url: URL(string: url)!)
+        request.httpMethod = "PUT"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
 
-            do {
-                let (data, response) = try await URLSession.shared.data(for: request)
-                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-                let body = String(data: data, encoding: .utf8) ?? ""
-                MXLog.info("sTalk NativeCall: REST join \(eventType) → \(status) url=\(url) body=\(body.prefix(200))")
-            } catch {
-                MXLog.error("sTalk NativeCall: REST join failed: \(error)")
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let respBody = String(data: data, encoding: .utf8) ?? ""
+            MXLog.info("sTalk NativeCall: REST join \(eventType) → \(status) url=\(url) body=\(respBody.prefix(200))")
+
+            // Extract event_id from response: {"event_id": "$xxx"}
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let eventID = json["event_id"] as? String {
+                return eventID
             }
+        } catch {
+            MXLog.error("sTalk NativeCall: REST join failed: \(error)")
         }
+        return nil
     }
 
     // MARK: - Raw Key Provider Access
@@ -549,32 +557,42 @@ final class NativeCallSession: ObservableObject {
 
     // MARK: - Call Notification
 
-    private func sendCallNotification() async {
-        // Send via WidgetDriver (Megolm encrypted in encrypted rooms)
-        // m.mentions with empty user_ids — notifies all room members
+    /// Send ring notification with proper user_ids and m.relates_to referencing our call.member event.
+    /// Web client requires m.relates_to.rel_type="m.reference" + event_id of call.member to show incoming call toast.
+    private func sendCallNotification(callMemberEventID: String?) async {
+        let encodedRoom = matrixRoomId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? matrixRoomId
 
-        let notification = """
-        {"api":"fromWidget","action":"send_event","widgetId":"\(widgetDriver.widgetID)","requestId":"native-notify-\(UUID().uuidString)","data":{"type":"org.matrix.msc4075.rtc.notification","content":{"application":"m.call","call_id":"","m.mentions":{"user_ids":[]},"sender_ts":\(Int(Date().timeIntervalSince1970 * 1000)),"lifetime":90000,"notification_type":"ring"}}}
-        """
-
-        Task.detached { [widgetDriver] in
-            let result = await widgetDriver.handleMessage(notification)
-            MXLog.info("sTalk NativeCall: Call notification via Widget API → \(result)")
+        // Collect other room members for m.mentions.user_ids
+        var otherUserIDs: [String] = []
+        if let members = await roomProxy?.members() {
+            otherUserIDs = members
+                .filter { $0.isActive && $0.userID != userId }
+                .map(\.userID)
         }
 
-        // Fallback: also try REST API (may work in unencrypted rooms)
-        let encodedRoom = matrixRoomId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? matrixRoomId
-        let txnId = UUID().uuidString
-        let url = "\(homeserverURL)/_matrix/client/v3/rooms/\(encodedRoom)/send/org.matrix.msc4075.rtc.notification/\(txnId)"
+        let timestamp = Int(Date().timeIntervalSince1970 * 1000)
 
-        let body: [String: Any] = [
+        // Build notification body
+        var body: [String: Any] = [
             "application": "m.call",
             "call_id": "",
-            "m.mentions": ["user_ids": [] as [String]],
-            "sender_ts": Int(Date().timeIntervalSince1970 * 1000),
+            "m.mentions": ["user_ids": otherUserIDs],
+            "sender_ts": timestamp,
             "lifetime": 90000,
             "notification_type": "ring"
         ]
+
+        // Add m.relates_to if we have the call.member event_id
+        if let eventID = callMemberEventID {
+            body["m.relates_to"] = [
+                "rel_type": "m.reference",
+                "event_id": eventID
+            ]
+        }
+
+        // Send via REST API
+        let txnId = UUID().uuidString
+        let url = "\(homeserverURL)/_matrix/client/v3/rooms/\(encodedRoom)/send/org.matrix.msc4075.rtc.notification/\(txnId)"
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else { return }
 
@@ -587,9 +605,10 @@ final class NativeCallSession: ObservableObject {
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            MXLog.info("sTalk NativeCall: Call notification → \(status)")
+            let respBody = String(data: data, encoding: .utf8) ?? ""
+            MXLog.info("sTalk NativeCall: Ring notification → \(status) users=\(otherUserIDs.count) ref=\(callMemberEventID ?? "none") resp=\(respBody.prefix(100))")
         } catch {
-            MXLog.error("sTalk NativeCall: Call notification failed: \(error)")
+            MXLog.error("sTalk NativeCall: Ring notification failed: \(error)")
         }
     }
 
