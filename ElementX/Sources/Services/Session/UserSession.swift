@@ -116,9 +116,9 @@ class UserSession: UserSessionProtocol {
                 case (.verified, .enabled):
                     autoRecoveryCancellable?.cancel()
                     autoRecoveryCancellable = nil
-                    MXLog.info("sTalk: E2EE fully set up — checking if recovery key is stored on server")
+                    MXLog.info("sTalk: E2EE fully set up — uploading keys to backup")
                     Task {
-                        await self.ensureRecoveryKeyStoredOnServer()
+                        await self.uploadKeysToExistingBackup()
                         await self.cleanupOldDevicesByIDFV()
                     }
 
@@ -218,6 +218,39 @@ class UserSession: UserSessionProtocol {
         os_log(.fault, log: e2eeLog, "ensureRecovery: backup upload complete")
     }
 
+    /// Upload all local megolm keys to backup.
+    /// If backup exists but we don't have its key, and it's empty (count=0),
+    /// delete it and create a new one so SDK can upload.
+    private func uploadKeysToExistingBackup() async {
+        os_log(.fault, log: e2eeLog, "uploadKeys: trying enableBackups...")
+        let backupResult = await clientProxy.secureBackupController.enable()
+
+        switch backupResult {
+        case .success:
+            os_log(.fault, log: e2eeLog, "uploadKeys: enableBackups succeeded")
+        case .failure:
+            // enableBackups failed — likely BackupExistsOnServer but we don't have the key
+            let count = await getBackupKeyCount()
+            os_log(.fault, log: e2eeLog, "uploadKeys: enableBackups failed, server backup has %d keys", count)
+            if count == 0 {
+                // Safe to delete empty backup and recreate
+                os_log(.fault, log: e2eeLog, "uploadKeys: deleting empty backup and recreating...")
+                await deleteAllBackupVersions()
+                let retryResult = await clientProxy.secureBackupController.enable()
+                os_log(.fault, log: e2eeLog, "uploadKeys: retry enableBackups: %{public}@", String(describing: retryResult))
+            } else {
+                os_log(.fault, log: e2eeLog, "uploadKeys: backup has %d keys — NOT deleting. Need recovery key to access.", count)
+                return
+            }
+        }
+
+        os_log(.fault, log: e2eeLog, "uploadKeys: waiting for upload to complete...")
+        _ = await clientProxy.secureBackupController.waitForKeyBackupUpload(uploadStateSubject: .init(.waiting))
+
+        let finalCount = await getBackupKeyCount()
+        os_log(.fault, log: e2eeLog, "uploadKeys: DONE — server backup now has %d keys", finalCount)
+    }
+
     /// Store recovery key on Matrix server via custom account data event
     private static func storeRecoveryKeyOnServer(key: String, clientProxy: ClientProxyProtocol) async {
         let homeserverURL = clientProxy.homeserver.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
@@ -309,15 +342,18 @@ class UserSession: UserSessionProtocol {
             let backupExists = await clientProxy.secureBackupController.keyBackupState.value != .unknown
             os_log(.fault, log: e2eeLog, "autoVerify: backup state: %{public}@", String(describing: clientProxy.secureBackupController.keyBackupState.value))
 
-            os_log(.fault, log: e2eeLog, "autoVerify: calling confirmRecoveryKey (with 15s timeout)...")
+            // Clean up stale SSSS keys before recovery — too many keys slow down the SDK
+            await cleanupStaleSSSKeys()
 
-            // Wrap in timeout to prevent indefinite hang if backup doesn't exist
+            os_log(.fault, log: e2eeLog, "autoVerify: calling confirmRecoveryKey (with 120s timeout)...")
+
+            // Wrap in timeout — large key counts need more time
             let result: Result<Void, SecureBackupControllerError> = await withTaskGroup(of: Result<Void, SecureBackupControllerError>?.self) { group in
                 group.addTask {
                     await self.clientProxy.secureBackupController.confirmRecoveryKey(recoveryKey)
                 }
                 group.addTask {
-                    try? await Task.sleep(for: .seconds(15))
+                    try? await Task.sleep(for: .seconds(120))
                     return nil // timeout sentinel
                 }
                 if let first = await group.next(), let result = first {
@@ -493,6 +529,28 @@ class UserSession: UserSessionProtocol {
         // We can't enumerate them, but the default_key is cleared above,
         // so enableRecovery will create a new one.
         MXLog.info("sTalk: Server E2EE state cleaned up")
+    }
+
+    /// Log current SSSS default key for diagnostics.
+    /// Stale SSSS keys are cleaned up server-side (DB maintenance).
+    private func cleanupStaleSSSKeys() async {
+        let homeserverURL = clientProxy.homeserver.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let accessToken = try? clientProxy.matrixAccessToken() else { return }
+        let encodedUserID = clientProxy.userID
+
+        guard let url = URL(string: "\(homeserverURL)/_matrix/client/v3/user/\(encodedUserID)/account_data/m.secret_storage.default_key") else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        if let (data, response) = try? await URLSession.shared.data(for: request),
+           let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200,
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let keyID = json["key"] as? String {
+            os_log(.fault, log: e2eeLog, "cleanupSSS: default SSSS key: %{public}@", keyID)
+        } else {
+            os_log(.fault, log: e2eeLog, "cleanupSSS: no default SSSS key found")
+        }
     }
 
     /// Check how many keys are in the current backup version.
