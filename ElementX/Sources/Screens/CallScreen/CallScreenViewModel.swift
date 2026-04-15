@@ -975,8 +975,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         }
     }
 
-    /// Send org.matrix.msc4075.rtc.notification with user_ids so other clients show incoming call toast.
-    /// SDK sends this event but with empty user_ids — web client ignores it.
+    /// Send org.matrix.msc4075.rtc.notification with m.relates_to referencing call.member event.
+    /// Web client requires m.relates_to.rel_type="m.reference" + event_id of call.member to show toast.
     private func sendRingNotification() async {
         guard case .roomCall(let roomProxy, let clientProxy, _, _, _, _) = configuration.kind else { return }
 
@@ -985,8 +985,38 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
 
         let roomID = roomProxy.id
         let myUserID = clientProxy.userID
+        let encodedRoom = roomID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? roomID
 
-        // Collect other members for m.mentions.user_ids
+        // Step 1: Find our call.member state event to get its event_id
+        guard let stateURL = URL(string: "\(homeserver)/_matrix/client/v3/rooms/\(encodedRoom)/state") else { return }
+        var stateReq = URLRequest(url: stateURL)
+        stateReq.httpMethod = "GET"
+        stateReq.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        var callMemberEventID: String?
+        if let (stateData, stateResp) = try? await URLSession.shared.data(for: stateReq),
+           let httpResp = stateResp as? HTTPURLResponse, httpResp.statusCode == 200,
+           let events = try? JSONSerialization.jsonObject(with: stateData) as? [[String: Any]] {
+            for event in events {
+                guard let type = event["type"] as? String,
+                      type == "org.matrix.msc3401.call.member" || type == "m.call.member",
+                      let stateKey = event["state_key"] as? String,
+                      stateKey.contains(myUserID),
+                      let content = event["content"] as? [String: Any],
+                      let memberships = content["memberships"] as? [[String: Any]],
+                      !memberships.isEmpty,
+                      let eventID = event["event_id"] as? String else { continue }
+                callMemberEventID = eventID
+                break
+            }
+        }
+
+        guard let memberEventID = callMemberEventID else {
+            MXLog.info("sTalk: No active call.member event found — skipping ring notification")
+            return
+        }
+
+        // Step 2: Collect other members for m.mentions
         var otherUserIDs: [String] = []
         if let members = await roomProxy.members() {
             otherUserIDs = members
@@ -994,19 +1024,14 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 .map(\.userID)
         }
 
-        guard !otherUserIDs.isEmpty else {
-            MXLog.info("sTalk: No other members to ring")
-            return
-        }
-
-        let encodedRoom = roomID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? roomID
+        // Step 3: Send notification with m.relates_to referencing call.member
         let txnID = UUID().uuidString
         guard let url = URL(string: "\(homeserver)/_matrix/client/v3/rooms/\(encodedRoom)/send/org.matrix.msc4075.rtc.notification/\(txnID)") else { return }
 
         let timestamp = Int(Date().timeIntervalSince1970 * 1000)
         let userIDsJSON = otherUserIDs.map { "\"\($0)\"" }.joined(separator: ",")
         let body = """
-        {"application":"m.call","call_id":"","lifetime":90000,"sender_ts":\(timestamp),"notification_type":"ring","m.mentions":{"user_ids":[\(userIDsJSON)]}}
+        {"application":"m.call","call_id":"","lifetime":90000,"sender_ts":\(timestamp),"notification_type":"ring","m.mentions":{"user_ids":[\(userIDsJSON)]},"m.relates_to":{"rel_type":"m.reference","event_id":"\(memberEventID)"}}
         """
 
         var request = URLRequest(url: url)
@@ -1017,7 +1042,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
 
         if let (_, response) = try? await URLSession.shared.data(for: request),
            let httpResp = response as? HTTPURLResponse {
-            MXLog.info("sTalk: Ring notification sent to \(otherUserIDs.count) users — HTTP \(httpResp.statusCode)")
+            MXLog.info("sTalk: Ring notification sent (ref=\(memberEventID)) to \(otherUserIDs.count) users — HTTP \(httpResp.statusCode)")
         }
     }
 
