@@ -8,8 +8,11 @@
 
 import Combine
 import Foundation
+import os.log
 import UIKit
 import UserNotifications
+
+private let pushLog = OSLog(subsystem: "ru.implica.stalk", category: "Push")
 
 final class NotificationManager: NSObject, NotificationManagerProtocol {
     private let notificationCenter: UserNotificationCenterProtocol
@@ -76,26 +79,38 @@ final class NotificationManager: NSObject, NotificationManagerProtocol {
     }
 
     func register(with deviceToken: Data) async -> Bool {
+        let tokenString = deviceToken.base64EncodedString()
+        os_log(.info, log: pushLog, "register(with:) called, token=%{public}@", tokenString)
         guard let userSession else {
+            os_log(.error, log: pushLog, "register(with:) — userSession is nil, cannot set pusher!")
             return false
         }
+        os_log(.info, log: pushLog, "register(with:) — calling setPusher...")
         return await setPusher(with: deviceToken, clientProxy: userSession.clientProxy)
     }
 
     func setUserSession(_ userSession: UserSessionProtocol?) {
         self.userSession = userSession
-        
+        os_log(.info, log: pushLog, "setUserSession called, session is %{public}@", userSession == nil ? "nil" : "present")
+
         // If notification permissions were given previously then attempt re-registering
         // for remote notifications on startup. Otherwise let the onboarding flow handle it
         Task { [weak self] in
             guard let self else { return }
-            
-            if await notificationCenter.authorizationStatus() == .authorized, appSettings.enableNotifications {
+
+            let status = await notificationCenter.authorizationStatus()
+            let enabled = appSettings.enableNotifications
+            os_log(.info, log: pushLog, "authorizationStatus=%{public}@, enableNotifications=%{public}@", "\(status.rawValue)", "\(enabled)")
+
+            if status == .authorized, enabled {
+                os_log(.info, log: pushLog, "Calling registerForRemoteNotifications()")
                 await MainActor.run { [weak self] in
                     self?.delegate?.registerForRemoteNotifications()
                 }
+            } else {
+                os_log(.info, log: pushLog, "NOT registering: status=%{public}@, enabled=%{public}@", "\(status.rawValue)", "\(enabled)")
             }
-            
+
             let settings = await notificationCenter.notificationSettings()
             MXLog.info("Notification sound enabled: \(settings.soundSetting == .enabled)")
         }
@@ -153,15 +168,20 @@ final class NotificationManager: NSObject, NotificationManagerProtocol {
     }
 
     private func setPusher(with deviceToken: Data, clientProxy: ClientProxyProtocol) async -> Bool {
+        let pushkey = deviceToken.base64EncodedString()
+        let appId = appSettings.pusherAppID
+        let gateway = appSettings.pushGatewayNotifyEndpoint.absoluteString
+        os_log(.info, log: pushLog, "setPusher: pushkey=%{public}@, appId=%{public}@, gateway=%{public}@", pushkey, appId, gateway)
+
         do {
             let defaultPayload = APNSPayload(aps: APSInfo(mutableContent: 1,
                                                           alert: APSAlert(locKey: "Notification",
                                                                           locArgs: [])),
                                              pusherNotificationClientIdentifier: clientProxy.pusherNotificationClientIdentifier)
 
-            let configuration = try await PusherConfiguration(identifiers: .init(pushkey: deviceToken.base64EncodedString(),
-                                                                                 appId: appSettings.pusherAppID),
-                                                              kind: .http(data: .init(url: appSettings.pushGatewayNotifyEndpoint.absoluteString,
+            let configuration = try await PusherConfiguration(identifiers: .init(pushkey: pushkey,
+                                                                                 appId: appId),
+                                                              kind: .http(data: .init(url: gateway,
                                                                                       format: .eventIdOnly,
                                                                                       defaultPayload: defaultPayload.toJsonString())),
                                                               appDisplayName: "\(InfoPlistReader.main.bundleDisplayName) (iOS)",
@@ -169,9 +189,11 @@ final class NotificationManager: NSObject, NotificationManagerProtocol {
                                                               profileTag: pusherProfileTag(),
                                                               lang: Bundle.app.preferredLocalizations.first ?? "en")
             try await clientProxy.setPusher(with: configuration)
+            os_log(.info, log: pushLog, "setPusher SUCCEEDED — pusher registered with server")
             MXLog.info("Set pusher succeeded")
             return true
         } catch {
+            os_log(.error, log: pushLog, "setPusher FAILED: %{public}@", "\(error)")
             MXLog.error("Set pusher failed: \(error)")
             return false
         }

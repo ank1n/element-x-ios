@@ -7,7 +7,10 @@
 //
 
 import Combine
+import os.log
 import SwiftUI
+
+private let pushLog = OSLog(subsystem: "ru.implica.stalk", category: "Push")
 
 enum AppDelegateCallback {
     case registeredNotifications(deviceToken: Data)
@@ -31,10 +34,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     }
 
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        let tokenString = deviceToken.base64EncodedString()
+        os_log(.info, log: pushLog, "APNs token received (%d bytes): %{public}@", deviceToken.count, tokenString)
         callbacks.send(.registeredNotifications(deviceToken: deviceToken))
     }
 
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        os_log(.error, log: pushLog, "APNs registration FAILED: %{public}@", "\(error)")
         callbacks.send(.failedToRegisteredNotifications(error: error))
     }
 

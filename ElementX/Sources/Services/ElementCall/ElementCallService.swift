@@ -11,8 +11,11 @@ import CallKit
 import Combine
 import Foundation
 import MatrixRustSDK
+import os.log
 import PushKit
 import UIKit
+
+private let pushLog = OSLog(subsystem: "ru.implica.stalk", category: "VoIPPush")
 
 /// Keep this class testable
 struct TimeProvider {
@@ -183,6 +186,8 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     
     func pushRegistry(_ registry: PKPushRegistry, didUpdate pushCredentials: PKPushCredentials, for type: PKPushType) {
         voipDeviceToken = pushCredentials.token
+        let tokenStr = pushCredentials.token.base64EncodedString()
+        os_log(.info, log: pushLog, "VoIP token received (%d bytes): %{public}@", pushCredentials.token.count, tokenStr)
         MXLog.info("sTalk: VoIP push token received (\(pushCredentials.token.count) bytes)")
         // Register VoIP pusher with server so Sygnal can send VoIP pushes for incoming calls
         Task { await registerVoIPPusher(with: pushCredentials.token) }
@@ -191,6 +196,7 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping () -> Void) {
         // iOS REQUIRES reportNewIncomingCall for every VoIP push, otherwise the app is killed.
         // If payload is missing required fields, report a fake call and immediately cancel it.
+        os_log(.info, log: pushLog, "VoIP push received! payload keys: %{public}@", "\(payload.dictionaryPayload.keys)")
 
         guard let roomID = payload.dictionaryPayload[ElementCallServiceNotificationKey.roomID.rawValue] as? String else {
             MXLog.error("Missing room identifier for incoming voip call, reporting and cancelling: \(payload.dictionaryPayload)")
@@ -360,6 +366,7 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     /// Register VoIP pusher with the Matrix homeserver so Sygnal can send VoIP pushes
     private func registerVoIPPusher(with token: Data) async {
         guard let clientProxy else {
+            os_log(.info, log: pushLog, "VoIP pusher deferred — no clientProxy yet")
             MXLog.info("VoIP pusher registration deferred — no client proxy yet")
             return
         }
@@ -367,6 +374,7 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         let pushGatewayURL = ServiceLocator.shared.settings.pushGatewayNotifyEndpoint.absoluteString
         let appID = InfoPlistReader.main.baseBundleIdentifier + ".voip"
         let pushkey = token.base64EncodedString()
+        os_log(.info, log: pushLog, "registerVoIPPusher: pushkey=%{public}@, appID=%{public}@, gateway=%{public}@", pushkey, appID, pushGatewayURL)
 
         do {
             let configuration = PusherConfiguration(identifiers: .init(pushkey: pushkey, appId: appID),
@@ -378,8 +386,10 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
                                                     profileTag: nil,
                                                     lang: Bundle.app.preferredLocalizations.first ?? "en")
             try await clientProxy.setPusher(with: configuration)
+            os_log(.info, log: pushLog, "VoIP pusher REGISTERED successfully (appID: %{public}@)", appID)
             MXLog.info("VoIP pusher registered successfully (appID: \(appID))")
         } catch {
+            os_log(.error, log: pushLog, "VoIP pusher FAILED: %{public}@", "\(error)")
             MXLog.error("Failed to register VoIP pusher: \(error)")
         }
     }
