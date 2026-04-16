@@ -65,7 +65,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     private var nativeCallSession: NativeCallSession?
     /// sTalk: Feature flag for native calls
     private var useNativeCall: Bool {
-        UserDefaults.standard.bool(forKey: "stalk_native_calls_enabled")
+        true // sTalk: native calls always enabled (LiveKit SDK, no WebView)
     }
 
     private let actionsSubject: PassthroughSubject<CallScreenViewModelAction, Never> = .init()
