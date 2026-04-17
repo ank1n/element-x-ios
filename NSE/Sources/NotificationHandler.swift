@@ -182,8 +182,8 @@ class NotificationHandler {
         // N.B. this flow works properly only when background processing capabilities are enabled
         os_log(.default, log: nseHandlerLog, "handleCallNotification: type=%{public}@ room=%{public}@ expiration=%llu", String(describing: notificationType), roomID, expirationTimestamp)
         guard notificationType == .ring else {
-            os_log(.default, log: nseHandlerLog, "Non-ringing call, showing as notification")
-            return .shouldDisplay
+            os_log(.default, log: nseHandlerLog, "Non-ringing call, suppressing — not a ring")
+            return .processedShouldDiscard
         }
         
         // Check to see if a call is still ongoing
@@ -229,8 +229,9 @@ class NotificationHandler {
             try await CXProvider.reportNewIncomingVoIPPushPayload(payload)
             os_log(.default, log: nseHandlerLog, "Call notification delegated to CallKit OK")
         } catch {
-            os_log(.error, log: nseHandlerLog, "reportNewIncomingVoIPPushPayload FAILED: %{public}@", String(describing: error))
-            return .shouldDisplay
+            os_log(.error, log: nseHandlerLog, "reportNewIncomingVoIPPushPayload FAILED: %{public}@, suppressing notification", String(describing: error))
+            // Не показываем call как обычное уведомление — это путает пользователей
+            return .processedShouldDiscard
         }
         
         return .processedShouldDiscard
