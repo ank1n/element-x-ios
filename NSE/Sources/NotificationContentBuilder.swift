@@ -78,7 +78,11 @@ struct NotificationContentBuilder {
             case .callInvite:
                 notificationContent.body = L10n.commonUnsupportedCall
             case .rtcNotification:
+                // Звонок пришёл через обычный push (не VoIP) — показываем с рингтоном
+                notificationContent.title = "📞 " + (notificationItem.senderDisplayName ?? notificationItem.roomDisplayName)
                 notificationContent.body = L10n.notificationIncomingCall
+                notificationContent.sound = UNNotificationSound.defaultRingtone
+                notificationContent.interruptionLevel = .timeSensitive
             default:
                 processEmpty(&notificationContent)
             }
