@@ -107,6 +107,19 @@ final class NotificationManager: NSObject, NotificationManagerProtocol {
                 await MainActor.run { [weak self] in
                     self?.delegate?.registerForRemoteNotifications()
                 }
+            } else if status == .notDetermined, enabled {
+                os_log(.info, log: pushLog, "Permission not determined — requesting authorization")
+                do {
+                    let granted = try await notificationCenter.requestAuthorization(options: [.alert, .sound, .badge])
+                    os_log(.info, log: pushLog, "Authorization result: %{public}@", "\(granted)")
+                    if granted {
+                        await MainActor.run { [weak self] in
+                            self?.delegate?.registerForRemoteNotifications()
+                        }
+                    }
+                } catch {
+                    os_log(.error, log: pushLog, "requestAuthorization failed: %{public}@", "\(error)")
+                }
             } else {
                 os_log(.info, log: pushLog, "NOT registering: status=%{public}@, enabled=%{public}@", "\(status.rawValue)", "\(enabled)")
             }
