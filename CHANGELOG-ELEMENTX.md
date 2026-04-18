@@ -1988,6 +1988,26 @@ PushKit включён локально (нужен для `CXProvider.reportNew
 
 ---
 
+### 46. ✅ E2EE hotfix: независимые call keys на каждом индексе
+
+**Дата**: 2026-04-18
+**Коммит**: `c4d59475`
+**Plane**: STMOB-77
+
+#### Проблема
+После подключения нового участника (например, Бондарь зашёл к Самусенко) получатель слышал 1-2 секунды зашифрованного шума, потом тишина. Видео — чёрный экран.
+
+#### Root cause
+В `handleEncryptionKeys` при получении call key с `index=N` код записывал этот же ключ на все индексы `0...N` ("in case we missed earlier keys"). Но в Element Call ключи **ротируются** при каждом join/leave — каждый индекс хранит независимый random ключ. Workaround затирал валидные ключи на младших индексах → пакеты с `keyIndex < N` декодировались неправильным ключом → гарбл.
+
+#### Фикс
+Убран цикл `for idx in 0...Int32(keyInfo.index)` — пишем только в точный индекс, как это уже делается в timeline-path (`listenForEncryptionKeysFromTimeline`).
+
+#### Файлы:
+- `ElementX/Sources/Services/NativeCall/NativeCallSession.swift` (строки 781-786)
+
+---
+
 - [ ] Применить коммиты #38: E2EE safe restore (`10d88e12`...`b37aaf5c`)
 - [ ] Применить коммит #39: CallScreen v6 grid (`683059ac`)
 - [ ] Применить коммиты #40: Ring notification (`95600ac8`, `510d11eb`)
