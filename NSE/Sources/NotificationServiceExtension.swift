@@ -88,6 +88,14 @@ class NotificationServiceExtension: UNNotificationServiceExtension {
         os_log(.default, log: nseLog, "NSE payload keys: %{public}@",
                (request.content.userInfo.keys.map { String(describing: $0) }).joined(separator: ", "))
 
+        // Badge update (room:None, event:None) — не показываем уведомление
+        if eventID == nil {
+            os_log(.default, log: nseLog, "NSE: no eventID (badge update), suppressing notification")
+            let content = UNMutableNotificationContent()
+            content.badge = request.content.unreadCount as NSNumber?
+            return contentHandler(content)
+        }
+
         // If we can't fully process, at least show a useful fallback notification
         guard !isDeviceLocked, let roomID, let eventID, let clientID, let credentials else {
             os_log(.error, log: nseLog, "NSE fallback: locked=%{public}d room=%{public}@ event=%{public}@ clientID=%{public}@ credentialsFound=%{public}d",
