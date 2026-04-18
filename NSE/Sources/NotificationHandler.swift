@@ -229,9 +229,9 @@ class NotificationHandler {
             try await CXProvider.reportNewIncomingVoIPPushPayload(payload)
             os_log(.default, log: nseHandlerLog, "Call notification delegated to CallKit OK")
         } catch {
-            os_log(.error, log: nseHandlerLog, "reportNewIncomingVoIPPushPayload FAILED: %{public}@, suppressing notification", String(describing: error))
-            // Не показываем call как обычное уведомление — это путает пользователей
-            return .processedShouldDiscard
+            os_log(.error, log: nseHandlerLog, "reportNewIncomingVoIPPushPayload FAILED: %{public}@, showing as call notification", String(describing: error))
+            // CallKit не сработал — показываем как push-уведомление со звонком
+            return .shouldDisplay
         }
         
         return .processedShouldDiscard

@@ -96,11 +96,10 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         
         super.init()
         
-        // VoIP push отключён: Synapse шлёт ВСЕ события на VoIP пушер (не только звонки),
-        // из-за чего текстовые сообщения приходят как CallKit звонки.
-        // TODO: включить когда Sygnal/Synapse научится фильтровать по event type
-        // pushRegistry.delegate = self
-        // pushRegistry.desiredPushTypes = [.voIP]
+        // PushKit нужен для CXProvider.reportNewIncomingVoIPPushPayload из NSE.
+        // VoIP пушер НЕ регистрируем в Synapse (voip pushkin удалён из Sygnal).
+        pushRegistry.delegate = self
+        pushRegistry.desiredPushTypes = [.voIP]
 
         self.callProvider.setDelegate(self, queue: nil)
     }
@@ -189,8 +188,8 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         let tokenStr = pushCredentials.token.base64EncodedString()
         os_log(.info, log: pushLog, "VoIP token received (%d bytes): %{public}@", pushCredentials.token.count, tokenStr)
         MXLog.info("sTalk: VoIP push token received (\(pushCredentials.token.count) bytes)")
-        // Register VoIP pusher with server so Sygnal can send VoIP pushes for incoming calls
-        Task { await registerVoIPPusher(with: pushCredentials.token) }
+        // НЕ регистрируем VoIP пушер в Synapse — voip pushkin удалён из Sygnal.
+        // Токен нужен только для CXProvider.reportNewIncomingVoIPPushPayload из NSE.
     }
     
     func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping () -> Void) {
