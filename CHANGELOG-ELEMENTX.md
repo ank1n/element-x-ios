@@ -1849,7 +1849,155 @@ git cherry-pick <commit>  # feat(Bookmarks): bookmark/unbookmark messages via co
 - [ ] Виджет статистики показывает персональную карточку пользователя
 - [ ] LiveKit SDK зависимости разрешаются без конфликтов
 
+### 38. ✅ E2EE: безопасное восстановление ключей при reinstall
+
+**Дата**: 2026-04-05 — 2026-04-16
+**Коммиты**: `10d88e12`, `d2f2f3fe`, `779054a1`, `7e63395c`, `b37aaf5c`
+
+#### Описание:
+Исправлена критическая проблема: при переустановке приложения `selfVerifyDevice()` и `cleanupServerE2EEState()` уничтожали ключи бэкапа (m.megolm_backup.v1), делая невозможной расшифровку старых сообщений.
+
+#### Изменения:
+- `selfVerifyDevice` использует `tryRestoreFromServerKey` вместо деструктивного `forceEnableRecovery`
+- `cleanupServerE2EEState` сохраняет `m.megolm_backup.v1` (не удаляет ключ бэкапа)
+- Таймаут восстановления увеличен до 120с
+- Удалено всё клиентское удаление бэкапов — сервер управляет lifecycle
+
+#### Файлы:
+- `ElementX/Sources/Services/Session/UserSession.swift`
+
+---
+
+### 39. ✅ CallScreen v6: адаптивный grid, аватары, screen share, PiP
+
+**Дата**: 2026-04-14
+**Коммит**: `683059ac`
+
+#### Описание:
+Полностью переработан UI экрана звонка: адаптивный grid для участников, аватары, индикатор screen share, mute indicator, PiP с активным спикером.
+
+#### Файлы:
+- `ElementX/Sources/Screens/CallScreen/`
+
+---
+
+### 40. ✅ Ring notification для входящих звонков (mobile → web)
+
+**Дата**: 2026-04-15 — 2026-04-16
+**Коммиты**: `95600ac8`, `510d11eb`, `b37aaf5c`
+
+#### Описание:
+NativeCallSession отправляет ring notification через Matrix API сразу после `sendJoinViaREST`. Уведомление содержит `user_ids` и `m.relates_to` для корректного отображения IncomingCallToast на веб-клиенте.
+
+#### Файлы:
+- `ElementX/Sources/Services/NativeCall/NativeCallSession.swift`
+- `ElementX/Sources/Screens/CallScreen/CallScreenViewModel.swift`
+
+---
+
+### 41. ✅ Нативные звонки по умолчанию (убран toggle)
+
+**Дата**: 2026-04-16
+**Коммит**: `6c9aa40d`
+
+#### Описание:
+Нативные звонки (LiveKit) включены по умолчанию для всех типов звонков. Убран toggle "Нативные звонки" из настроек.
+
+#### Файлы:
+- `ElementX/Sources/Screens/Settings/SettingsScreen/View/SettingsScreen.swift`
+- `ElementX/Sources/Screens/CallScreen/CallScreenViewModel.swift`
+
+---
+
+### 42. ✅ Push notifications: авто-запрос разрешений
+
+**Дата**: 2026-04-17
+**Коммиты**: `8cfd4dbe`, `eec12439`
+
+#### Описание:
+Исправлен баг: при установке на новое устройство (без прохождения onboarding) пушер не регистрировался, т.к. notification permission был `.notDetermined`. Теперь `NotificationManager.setUserSession()` автоматически запрашивает разрешение.
+
+#### Изменения:
+- `setUserSession()`: при `.notDetermined` → `requestAuthorization()` → регистрация пушера
+- `Info.plist`: добавлен `remote-notification` в `UIBackgroundModes`
+- os_log debug для всей цепочки push registration
+
+#### Файлы:
+- `ElementX/Sources/Services/Notification/Manager/NotificationManager.swift`
+- `ElementX/Sources/Application/AppDelegate.swift`
+- `ElementX/SupportingFiles/Info.plist`
+
+---
+
+### 43. ✅ Push: разделение call и text уведомлений
+
+**Дата**: 2026-04-17 — 2026-04-18
+**Коммиты**: `67f2ec82`, `29120b50`, `a5f80303`
+
+#### Описание:
+VoIP пушер в Synapse получал ВСЕ события (не только звонки), из-за чего каждое текстовое сообщение приходило как CallKit звонок.
+
+#### Решение:
+- VoIP pusher registration отключена (voip pushkin удалён из Sygnal)
+- NSE: `rtcNotification` показывается с 📞 в заголовке и `defaultRingtone` (fallback если CallKit не сработал)
+- Звонки идут через обычный APNs push → NSE → `CXProvider.reportNewIncomingVoIPPushPayload` → CallKit
+
+#### Серверные изменения:
+- Удалён `ru.implica.stalk.voip` из Sygnal ConfigMap
+- Удалены VoIP пушеры из БД Synapse
+
+#### Файлы:
+- `ElementX/Sources/Services/ElementCall/ElementCallService.swift`
+- `NSE/Sources/NotificationHandler.swift`
+- `NSE/Sources/NotificationContentBuilder.swift`
+
+---
+
+### 44. ✅ Push: подавление badge-only уведомлений
+
+**Дата**: 2026-04-18
+**Коммиты**: `0d69843e`, `01ab94c1`
+
+#### Описание:
+Badge update пуши (`room:None, event:None`) проходили через NSE и показывали "Новое сообщение" без текста. Теперь при отсутствии `eventID` уведомление подавляется.
+
+#### Файлы:
+- `NSE/Sources/NotificationServiceExtension.swift`
+
+---
+
+### 45. ✅ CallKit из NSE: PushKit без VoIP пушера
+
+**Дата**: 2026-04-18
+**Коммит**: `45f36285`
+
+#### Описание:
+PushKit включён локально (нужен для `CXProvider.reportNewIncomingVoIPPushPayload` из NSE), но VoIP пушер НЕ регистрируется в Synapse. Sygnal без voip pushkin — даже при попытке регистрации, Sygnal отклонит.
+
+#### Архитектура пушей (Build 34):
+```
+Сообщение → Synapse → Sygnal (ios.prod) → APNs → NSE → текстовое уведомление
+Звонок    → Synapse → Sygnal (ios.prod) → APNs → NSE → CXProvider → CallKit
+                                                         ↓ (fallback)
+                                                         📞 push-уведомление
+```
+
+#### Файлы:
+- `ElementX/Sources/Services/ElementCall/ElementCallService.swift`
+- `NSE/Sources/NotificationHandler.swift`
+
+---
+
+- [ ] Применить коммиты #38: E2EE safe restore (`10d88e12`...`b37aaf5c`)
+- [ ] Применить коммит #39: CallScreen v6 grid (`683059ac`)
+- [ ] Применить коммиты #40: Ring notification (`95600ac8`, `510d11eb`)
+- [ ] Применить коммит #41: Native calls default (`6c9aa40d`)
+- [ ] Применить коммиты #42: Push auto-permission (`8cfd4dbe`, `eec12439`)
+- [ ] Применить коммиты #43: Push call/text separation (`67f2ec82`, `29120b50`, `a5f80303`)
+- [ ] Применить коммиты #44: Badge suppression (`0d69843e`, `01ab94c1`)
+- [ ] Применить коммит #45: CallKit from NSE (`45f36285`)
+
 ---
 
 **Дата создания**: 2026-01-28
-**Последнее обновление**: 2026-03-05
+**Последнее обновление**: 2026-04-18
