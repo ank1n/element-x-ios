@@ -778,12 +778,9 @@ final class NativeCallSession: ObservableObject {
 
         MXLog.info("sTalk NativeCall: E2EE key from \(keyInfo.participantId) index=\(keyInfo.index)")
 
-        // Decode base64 → raw bytes
+        // Each index holds a distinct rotated key — don't overwrite earlier indices.
         if let rawKey = Data(base64Encoded: keyInfo.key) {
-            // Set key for the given index AND all previous indexes (in case we missed earlier keys)
-            for idx in 0...Int32(keyInfo.index) {
-                setRawKeyInProvider(keyProvider, key: rawKey, participantId: keyInfo.participantId, index: idx)
-            }
+            setRawKeyInProvider(keyProvider, key: rawKey, participantId: keyInfo.participantId, index: Int32(keyInfo.index))
         } else {
             keyProvider.setKey(key: keyInfo.key, participantId: keyInfo.participantId, index: Int32(keyInfo.index))
         }
