@@ -2008,6 +2008,46 @@ PushKit включён локально (нужен для `CXProvider.reportNew
 
 ---
 
+### 47. ✅ E2EE/WS reliability: retry ключей + auto-reconnect + background task + диагностика
+
+**Дата**: 2026-04-18
+**Коммит**: `17a1864b`
+**Plane**: STMOB-73, STMOB-74, STMOB-75
+
+#### Контекст
+Продолжение расследования звонка 18.04 (Самусенко–Тымбай–Бондарь). Кроме hotfix #46 нужны:
+- Надёжная доставка E2EE ключей (retry + reuse + resend on network change)
+- Стабильность WebSocket на iOS (background task + auto-reconnect + AudioSession)
+- Диагностические логи через os_log (subsystem `ru.implica.stalk`)
+
+#### E2EE (STMOB-73)
+1. **Reuse existing key** — `sendOurEncryptionKey` больше не регенерит ключ на каждый вызов. Периодические resend-ы и resend на новом участнике отправляют ТОТ ЖЕ ключ, а не ротируют.
+2. **setRawKey consistency** — `sendOurEncryptionKey` теперь использует `setRawKeyInProvider` с `ourEncryptionKeyRaw` (как connectToLiveKit и handleEncryptionKeys), а не `keyProvider.setKey(string)`. Это важно для HKDF: UTF-8 байты base64-строки ≠ сырые 16 байт.
+3. **Retry с backoff** — `send_to_device` и `send_event` теперь делают 3 попытки с задержкой 1s/2s/4s, парсят `Result<Bool, Error>` и явно логируют успех/fail.
+4. **NWPathMonitor** — при смене wifi ↔ cellular ↔ none re-send E2EE ключа (покрывает сценарий Бондаря 18.04, когда он сменил сеть через 50 сек и пропустил to_device ключи).
+
+#### WebSocket (STMOB-74)
+1. **Background task** — `UIApplication.beginBackgroundTask` на `didEnterBackground`, держит WS живым при уходе iOS в background (причина cascade-выкида 18.04).
+2. **AudioSession interruption** — наблюдатель `AVAudioSession.interruptionNotification`, re-activate session по окончании interruption (звонок/Siri).
+3. **AudioSession route change** — логируется.
+4. **Auto-reconnect** — на unexpected disconnect (old=`.connected`|`.reconnecting` → new=`.disconnected`): 3 попытки с задержкой 1s/3s/7s. Использует сохранённые `reconnectURL`/`reconnectToken`/`savedKeyProvider`.
+
+#### Diagnostics (STMOB-75)
+1. Новые OSLog категории: `Call` и `LiveKit` (subsystem `ru.implica.stalk`).
+2. WS state transitions, network changes, send_to_device results, AudioSession events — всё через `os_log` для видимости в `log stream --predicate 'subsystem == "ru.implica.stalk"'`.
+
+#### Отложено (не реализовано в этом коммите)
+- **1.1 Key request mechanism** — когда клиент не может декодировать трек, активно послать to_device `io.element.call.encryption_keys.request`. Требует координации протокола с web-клиентом Element Call. Оставлено в STMOB-73 как follow-up.
+- **4.1 Decrypt failure hook** — нужен hook в LiveKit SDK на неудачные decrypt-попытки. Требует исследования API.
+- **2.2 Application keepalive ping** — у LiveKit уже есть свой WS keepalive; пока не добавляем.
+- **3.1 Cascade disconnect в LiveKit SFU** — upstream-issue, не наш код.
+
+#### Файлы:
+- `ElementX/Sources/Services/NativeCall/NativeCallSession.swift` — +NWPathMonitor, refactored sendOurEncryptionKey, sendWidgetMessageWithRetry helper
+- `ElementX/Sources/Services/LiveKit/LiveKitRoomManager.swift` — +lifecycle observers, +attemptAutoReconnect, enhanced delegate logging
+
+---
+
 - [ ] Применить коммиты #38: E2EE safe restore (`10d88e12`...`b37aaf5c`)
 - [ ] Применить коммит #39: CallScreen v6 grid (`683059ac`)
 - [ ] Применить коммиты #40: Ring notification (`95600ac8`, `510d11eb`)
