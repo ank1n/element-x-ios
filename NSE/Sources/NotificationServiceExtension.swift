@@ -92,7 +92,6 @@ class NotificationServiceExtension: UNNotificationServiceExtension {
         if eventID == nil {
             os_log(.default, log: nseLog, "NSE: no eventID (badge update), suppressing notification")
             let content = UNMutableNotificationContent()
-            content.badge = request.content.unreadCount as NSNumber?
             return contentHandler(content)
         }
 
