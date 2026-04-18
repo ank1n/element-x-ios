@@ -96,9 +96,12 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         
         super.init()
         
-        pushRegistry.delegate = self
-        pushRegistry.desiredPushTypes = [.voIP]
-        
+        // VoIP push отключён: Synapse шлёт ВСЕ события на VoIP пушер (не только звонки),
+        // из-за чего текстовые сообщения приходят как CallKit звонки.
+        // TODO: включить когда Sygnal/Synapse научится фильтровать по event type
+        // pushRegistry.delegate = self
+        // pushRegistry.desiredPushTypes = [.voIP]
+
         self.callProvider.setDelegate(self, queue: nil)
     }
     
@@ -107,10 +110,7 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
 
     func setClientProxy(_ clientProxy: any ClientProxyProtocol) {
         self.clientProxy = clientProxy
-        // Register VoIP pusher if token was received before client was ready
-        if let voipDeviceToken {
-            Task { await registerVoIPPusher(with: voipDeviceToken) }
-        }
+        // VoIP pusher registration disabled — see init() comment
     }
 
     func markNextCallAsIncoming() {
