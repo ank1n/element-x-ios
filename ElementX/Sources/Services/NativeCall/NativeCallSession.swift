@@ -64,6 +64,10 @@ final class NativeCallSession: ObservableObject {
     // Network change monitoring — triggers E2EE key resend on wifi/cellular/none transitions.
     private var pathMonitor: NWPathMonitor?
     private var lastNetworkInterface = ""
+    // Debounce: only act on network change once per N seconds. NWPathMonitor often fires
+    // multiple events during a single transition (wifi off → none → cellular).
+    private var lastNetworkChangeAt: Date = .distantPast
+    private let networkChangeDebounceSec: TimeInterval = 15
 
     // MARK: - Init
 
@@ -475,20 +479,22 @@ final class NativeCallSession: ObservableObject {
         // Skip the very first path update (no prior state).
         guard !previous.isEmpty else { return }
 
+        // Debounce — NWPathMonitor often fires multiple times during a single transition.
+        // Without this, we'd cascade multiple forceReconnects and infinite-loop (build 41).
+        let now = Date()
+        guard now.timeIntervalSince(lastNetworkChangeAt) > networkChangeDebounceSec else {
+            os_log(.info, log: callLog, "Network change debounced (last action %.1fs ago)",
+                   now.timeIntervalSince(lastNetworkChangeAt))
+            return
+        }
+        lastNetworkChangeAt = now
+
         // Force LiveKit reconnect to trigger ICE restart on the new network interface.
         // Without this, iOS LiveKit SDK keeps its WS state at .connected but UDP sockets
         // bound to the old interface are dead — video/audio packets stop flowing.
         // (Observed 2026-04-19 Test Г: wifi→cellular, state .connected, video frozen forever.)
         os_log(.info, log: callLog, "Force LiveKit reconnect after network change")
         await liveKitRoomManager.forceReconnect()
-
-        // Also re-send E2EE key: during the long-poll gap some peers may have missed
-        // our key. Regenerating + sending gives them a fresh copy. Reconnect above
-        // re-establishes media path so the new key arrives in time.
-        if isEncrypted, ourEncryptionKey != nil {
-            os_log(.info, log: callLog, "Resending E2EE key after network change")
-            await sendOurEncryptionKey()
-        }
     }
 
     /// Publish our E2EE key to the key-server for recording decryption
