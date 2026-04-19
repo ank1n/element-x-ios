@@ -472,9 +472,20 @@ final class NativeCallSession: ObservableObject {
         os_log(.info, log: callLog, "Network change %{public}@ → %{public}@ (encrypted=%{public}@)",
                previous.isEmpty ? "initial" : previous, iface, "\(isEncrypted)")
 
-        // Resend E2EE key after real transition so peers missing to_device events in the gap
-        // get a fresh copy. Skip on the very first update (no prior state).
-        if !previous.isEmpty, isEncrypted, ourEncryptionKey != nil {
+        // Skip the very first path update (no prior state).
+        guard !previous.isEmpty else { return }
+
+        // Force LiveKit reconnect to trigger ICE restart on the new network interface.
+        // Without this, iOS LiveKit SDK keeps its WS state at .connected but UDP sockets
+        // bound to the old interface are dead — video/audio packets stop flowing.
+        // (Observed 2026-04-19 Test Г: wifi→cellular, state .connected, video frozen forever.)
+        os_log(.info, log: callLog, "Force LiveKit reconnect after network change")
+        await liveKitRoomManager.forceReconnect()
+
+        // Also re-send E2EE key: during the long-poll gap some peers may have missed
+        // our key. Regenerating + sending gives them a fresh copy. Reconnect above
+        // re-establishes media path so the new key arrives in time.
+        if isEncrypted, ourEncryptionKey != nil {
             os_log(.info, log: callLog, "Resending E2EE key after network change")
             await sendOurEncryptionKey()
         }

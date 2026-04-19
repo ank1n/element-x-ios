@@ -247,6 +247,21 @@ final class LiveKitRoomManager: ObservableObject {
         updateState()
     }
 
+    /// Force reconnect — used on network change to trigger ICE restart on new interface.
+    /// Keeps saved credentials + keyProvider, so re-connection is transparent. Media will
+    /// briefly drop (~1-3s) but UDP path will re-establish on the new network.
+    func forceReconnect() async {
+        guard reconnectURL != nil, reconnectToken != nil else {
+            os_log(.error, log: livekitLog, "forceReconnect skipped — no saved credentials")
+            return
+        }
+        os_log(.info, log: livekitLog, "forceReconnect: tearing down current WS for ICE restart")
+        // Tear down current room connection but keep credentials for auto-reconnect.
+        await room.disconnect()
+        // Do NOT clear credentials — just re-trigger the reconnect path.
+        attemptAutoReconnect()
+    }
+
     func disconnect() async {
         reconnectURL = nil
         reconnectToken = nil
