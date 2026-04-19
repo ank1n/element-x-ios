@@ -11,7 +11,6 @@ import CryptoKit
 import Foundation
 import LiveKit
 import MatrixRustSDK
-import Network
 import os.log
 import SwiftUI
 
@@ -61,10 +60,6 @@ final class NativeCallSession: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var heartbeatTask: Task<Void, Never>?
 
-    // Network change monitoring — wifi/cellular/none. Triggers E2EE key resend.
-    private var pathMonitor: NWPathMonitor?
-    private var lastNetworkInterface = ""
-
     // MARK: - Init
 
     init(widgetDriver: ElementCallWidgetDriverProtocol,
@@ -94,7 +89,6 @@ final class NativeCallSession: ObservableObject {
                colorScheme: SwiftUI.ColorScheme) async {
         MXLog.info("sTalk NativeCall: Starting session, encrypted=\(isEncrypted), user=\(userId)")
         sessionState = .starting
-        setupNetworkMonitor()
 
         // Start WidgetDriver in background for E2EE key exchange only
         // WidgetDriver uses different state_key format, won't conflict with our REST join
@@ -358,26 +352,15 @@ final class NativeCallSession: ObservableObject {
     private var ourEncryptionKeyRaw: Data? // raw 16 bytes
 
     private func sendOurEncryptionKey() async {
-        // Reuse existing key — resends (periodic, new participant, network change) must
-        // deliver the SAME key, not rotate on every call.
-        // Use raw bytes consistently with connectToLiveKit and handleEncryptionKeys
-        // (both use setRawKey). Otherwise local setKey(string) bytes ≠ remote decoded bytes.
-        let key: String
-        let rawData: Data
-        if let existing = ourEncryptionKey, let existingRaw = ourEncryptionKeyRaw {
-            key = existing
-            rawData = existingRaw
-        } else {
-            var keyBytes = [UInt8](repeating: 0, count: 16)
-            _ = SecRandomCopyBytes(kSecRandomDefault, keyBytes.count, &keyBytes)
-            rawData = Data(keyBytes)
-            key = rawData.base64EncodedString()
-            ourEncryptionKey = key
-            ourEncryptionKeyRaw = rawData
-        }
+        // Reverted to build-34 behavior: regenerate key per call + setKey(string).
+        // Reuse + setRawKey broke web decryption of iOS video in build 35 — see Plane STMOB-73.
+        var keyBytes = [UInt8](repeating: 0, count: 16)
+        _ = SecRandomCopyBytes(kSecRandomDefault, keyBytes.count, &keyBytes)
+        let key = Data(keyBytes).base64EncodedString()
+        ourEncryptionKey = key
 
         let ourIdentity = "\(userId):\(deviceId)"
-        setRawKeyInProvider(keyProvider, key: rawData, participantId: ourIdentity, index: 0)
+        keyProvider.setKey(key: key, participantId: ourIdentity, index: 0)
         os_log(.info, log: callLog, "E2EE sendOurEncryptionKey identity=%{public}@ keyPrefix=%{public}@", ourIdentity, String(key.prefix(8)))
 
         let widgetId = widgetDriver.widgetID
@@ -386,101 +369,29 @@ final class NativeCallSession: ObservableObject {
         let driver = widgetDriver
         let nowMs = Int(Date().timeIntervalSince1970 * 1000)
 
-        let toDeviceMsg = """
-        {"api":"fromWidget","action":"send_to_device","widgetId":"\(widgetId)","requestId":"native-key-\(UUID().uuidString)","data":{"type":"io.element.call.encryption_keys","encrypted":true,"messages":{"*":{"*":{"keys":{"index":0,"key":"\(key)"},"room_id":"\(roomId)","member":{"claimed_device_id":"\(devId)"},"session":{"call_id":"","application":"m.call","scope":"m.room"},"sent_ts":\(nowMs)}}}}}
-        """
+        // Fire-and-forget send (no retry) — matches build 34. Retry can be reintroduced
+        // after we verify media decryption is stable across clients.
         Task.detached {
-            await Self.sendWidgetMessageWithRetry(label: "send_to_device", message: toDeviceMsg, driver: driver)
+            let msg = """
+            {"api":"fromWidget","action":"send_to_device","widgetId":"\(widgetId)","requestId":"native-key-\(UUID().uuidString)","data":{"type":"io.element.call.encryption_keys","encrypted":true,"messages":{"*":{"*":{"keys":{"index":0,"key":"\(key)"},"room_id":"\(roomId)","member":{"claimed_device_id":"\(devId)"},"session":{"call_id":"","application":"m.call","scope":"m.room"},"sent_ts":\(nowMs)}}}}}
+            """
+            let result = await driver.handleMessage(msg)
+            os_log(.info, log: callLog, "send_to_device result=%{public}@", "\(result)")
         }
 
-        let roomEventMsg = """
-        {"api":"fromWidget","action":"send_event","widgetId":"\(widgetId)","requestId":"native-roomkey-\(UUID().uuidString)","data":{"type":"io.element.call.encryption_keys","content":{"keys":[{"index":0,"key":"\(key)"}],"device_id":"\(devId)","call_id":"","sent_ts":\(nowMs)}}}
-        """
         Task.detached {
-            await Self.sendWidgetMessageWithRetry(label: "send_event", message: roomEventMsg, driver: driver)
+            let msg = """
+            {"api":"fromWidget","action":"send_event","widgetId":"\(widgetId)","requestId":"native-roomkey-\(UUID().uuidString)","data":{"type":"io.element.call.encryption_keys","content":{"keys":[{"index":0,"key":"\(key)"}],"device_id":"\(devId)","call_id":"","sent_ts":\(nowMs)}}}
+            """
+            let result = await driver.handleMessage(msg)
+            os_log(.info, log: callLog, "send_event result=%{public}@", "\(result)")
         }
 
         Task.detached { [weak self] in
             await self?.publishKeyToKeyServer(key: key)
         }
 
-        os_log(.info, log: callLog, "E2EE key send tasks launched (retry+parse)")
-    }
-
-    /// Send widget driver message with exponential backoff retry and explicit result parsing.
-    /// Backoff 1s → 2s → 4s (3 attempts, ~7s total).
-    private static func sendWidgetMessageWithRetry(label: String,
-                                                   message: String,
-                                                   driver: ElementCallWidgetDriverProtocol) async {
-        var delayNs: UInt64 = 1_000_000_000
-        for attempt in 1...3 {
-            let result = await driver.handleMessage(message)
-            switch result {
-            case .success(true):
-                os_log(.info, log: callLog, "%{public}@ OK attempt=%d", label, attempt)
-                return
-            case .success(false):
-                os_log(.error, log: callLog, "%{public}@ returned false attempt=%d — retrying", label, attempt)
-            case .failure(let err):
-                os_log(.error, log: callLog, "%{public}@ FAIL attempt=%d: %{public}@", label, attempt, "\(err)")
-            }
-            if attempt < 3 {
-                try? await Task.sleep(nanoseconds: delayNs)
-                delayNs *= 2
-            }
-        }
-        os_log(.error, log: callLog, "%{public}@ FAILED after 3 attempts — key not delivered", label)
-    }
-
-    // MARK: - Network monitoring (iOS)
-
-    /// Start monitoring wifi/cellular/none transitions. On change we re-send E2EE keys
-    /// because a dropped long-poll can cause peers to miss previously sent to_device events.
-    private func setupNetworkMonitor() {
-        guard pathMonitor == nil else { return }
-        let monitor = NWPathMonitor()
-        pathMonitor = monitor
-        monitor.pathUpdateHandler = { [weak self] path in
-            guard let self else { return }
-            Task { @MainActor in
-                await self.handleNetworkPathChange(path)
-            }
-        }
-        monitor.start(queue: DispatchQueue.global(qos: .utility))
-    }
-
-    private func stopNetworkMonitor() {
-        pathMonitor?.cancel()
-        pathMonitor = nil
-    }
-
-    private func handleNetworkPathChange(_ path: NWPath) async {
-        let iface: String
-        if path.status != .satisfied {
-            iface = "none"
-        } else if path.usesInterfaceType(.wifi) {
-            iface = "wifi"
-        } else if path.usesInterfaceType(.cellular) {
-            iface = "cellular"
-        } else if path.usesInterfaceType(.wiredEthernet) {
-            iface = "ethernet"
-        } else {
-            iface = "other"
-        }
-
-        guard iface != lastNetworkInterface else { return }
-        let previous = lastNetworkInterface
-        lastNetworkInterface = iface
-
-        os_log(.info, log: callLog, "Network change %{public}@ → %{public}@ (encrypted=%{public}@)",
-               previous.isEmpty ? "initial" : previous, iface, "\(isEncrypted)")
-
-        // Resend E2EE key after real transition so peers missing to_device events in the gap
-        // get a fresh copy. Skip on the very first update (no prior state).
-        if !previous.isEmpty, isEncrypted, ourEncryptionKey != nil {
-            os_log(.info, log: callLog, "Resending E2EE key after network change")
-            await sendOurEncryptionKey()
-        }
+        os_log(.info, log: callLog, "E2EE key send tasks launched")
     }
 
     /// Publish our E2EE key to the key-server for recording decryption
@@ -710,7 +621,6 @@ final class NativeCallSession: ObservableObject {
 
         heartbeatTask?.cancel()
         heartbeatTask = nil
-        stopNetworkMonitor()
 
         // Leave MatrixRTC via REST API
         await sendLeaveViaREST()
