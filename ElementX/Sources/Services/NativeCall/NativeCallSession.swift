@@ -11,10 +11,7 @@ import CryptoKit
 import Foundation
 import LiveKit
 import MatrixRustSDK
-import os.log
 import SwiftUI
-
-private let callLog = OSLog(subsystem: "ru.implica.stalk", category: "Call")
 
 @MainActor
 final class NativeCallSession: ObservableObject {
@@ -352,46 +349,48 @@ final class NativeCallSession: ObservableObject {
     private var ourEncryptionKeyRaw: Data? // raw 16 bytes
 
     private func sendOurEncryptionKey() async {
-        // Reverted to build-34 behavior: regenerate key per call + setKey(string).
-        // Reuse + setRawKey broke web decryption of iOS video in build 35 — see Plane STMOB-73.
+        // Generate random 16-byte key (base64)
         var keyBytes = [UInt8](repeating: 0, count: 16)
         _ = SecRandomCopyBytes(kSecRandomDefault, keyBytes.count, &keyBytes)
         let key = Data(keyBytes).base64EncodedString()
         ourEncryptionKey = key
 
+        // Set our own key in keyProvider
         let ourIdentity = "\(userId):\(deviceId)"
         keyProvider.setKey(key: key, participantId: ourIdentity, index: 0)
-        os_log(.info, log: callLog, "E2EE sendOurEncryptionKey identity=%{public}@ keyPrefix=%{public}@", ourIdentity, String(key.prefix(8)))
+        MXLog.info("sTalk NativeCall E2EE: Generated our key, identity=\(ourIdentity)")
 
+        // Fire-and-forget — handleMessage may hang if driver can't process
         let widgetId = widgetDriver.widgetID
         let roomId = matrixRoomId
         let devId = deviceId
         let driver = widgetDriver
         let nowMs = Int(Date().timeIntervalSince1970 * 1000)
 
-        // Fire-and-forget send (no retry) — matches build 34. Retry can be reintroduced
-        // after we verify media decryption is stable across clients.
+        // Send via Widget API send_to_device
         Task.detached {
             let msg = """
             {"api":"fromWidget","action":"send_to_device","widgetId":"\(widgetId)","requestId":"native-key-\(UUID().uuidString)","data":{"type":"io.element.call.encryption_keys","encrypted":true,"messages":{"*":{"*":{"keys":{"index":0,"key":"\(key)"},"room_id":"\(roomId)","member":{"claimed_device_id":"\(devId)"},"session":{"call_id":"","application":"m.call","scope":"m.room"},"sent_ts":\(nowMs)}}}}}
             """
             let result = await driver.handleMessage(msg)
-            os_log(.info, log: callLog, "send_to_device result=%{public}@", "\(result)")
+            MXLog.info("sTalk NativeCall E2EE: send_to_device result=\(result)")
         }
 
+        // Send as room event
         Task.detached {
             let msg = """
             {"api":"fromWidget","action":"send_event","widgetId":"\(widgetId)","requestId":"native-roomkey-\(UUID().uuidString)","data":{"type":"io.element.call.encryption_keys","content":{"keys":[{"index":0,"key":"\(key)"}],"device_id":"\(devId)","call_id":"","sent_ts":\(nowMs)}}}
             """
             let result = await driver.handleMessage(msg)
-            os_log(.info, log: callLog, "send_event result=%{public}@", "\(result)")
+            MXLog.info("sTalk NativeCall E2EE: room event result=\(result)")
         }
 
+        // Publish key to key-server so recording-api can decrypt
         Task.detached { [weak self] in
             await self?.publishKeyToKeyServer(key: key)
         }
 
-        os_log(.info, log: callLog, "E2EE key send tasks launched")
+        MXLog.info("sTalk NativeCall E2EE: Key send tasks launched")
     }
 
     /// Publish our E2EE key to the key-server for recording decryption
@@ -779,9 +778,12 @@ final class NativeCallSession: ObservableObject {
 
         MXLog.info("sTalk NativeCall: E2EE key from \(keyInfo.participantId) index=\(keyInfo.index)")
 
-        // Each index holds a distinct rotated key — don't overwrite earlier indices.
+        // Decode base64 → raw bytes
         if let rawKey = Data(base64Encoded: keyInfo.key) {
-            setRawKeyInProvider(keyProvider, key: rawKey, participantId: keyInfo.participantId, index: Int32(keyInfo.index))
+            // Set key for the given index AND all previous indexes (in case we missed earlier keys)
+            for idx in 0...Int32(keyInfo.index) {
+                setRawKeyInProvider(keyProvider, key: rawKey, participantId: keyInfo.participantId, index: idx)
+            }
         } else {
             keyProvider.setKey(key: keyInfo.key, participantId: keyInfo.participantId, index: Int32(keyInfo.index))
         }
