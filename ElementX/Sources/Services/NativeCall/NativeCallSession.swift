@@ -352,8 +352,10 @@ final class NativeCallSession: ObservableObject {
         // Generate random 16-byte key (base64)
         var keyBytes = [UInt8](repeating: 0, count: 16)
         _ = SecRandomCopyBytes(kSecRandomDefault, keyBytes.count, &keyBytes)
-        let key = Data(keyBytes).base64EncodedString()
+        let rawData = Data(keyBytes)
+        let key = rawData.base64EncodedString()
         ourEncryptionKey = key
+        ourEncryptionKeyRaw = rawData // keep in sync so connectToLiveKit has raw bytes
 
         // Set our own key in keyProvider
         let ourIdentity = "\(userId):\(deviceId)"
@@ -828,8 +830,20 @@ final class NativeCallSession: ObservableObject {
                     ourEncryptionKeyRaw = rawData
                 }
 
+                // Race condition safety: sendOurEncryptionKey (fires 3s after start) can set
+                // ourEncryptionKey without touching ourEncryptionKeyRaw. Derive raw from base64
+                // to keep both in sync before force-unwrapping.
+                if ourEncryptionKeyRaw == nil, let key = ourEncryptionKey {
+                    ourEncryptionKeyRaw = Data(base64Encoded: key)
+                }
+                guard let rawKey = ourEncryptionKeyRaw else {
+                    MXLog.error("sTalk NativeCall: Cannot resolve raw E2EE key — aborting connect")
+                    sessionState = .failed(NativeCallError.noCredentials)
+                    return
+                }
+
                 let ourIdentity = "\(userId):\(deviceId)"
-                setRawKeyInProvider(keyProvider, key: ourEncryptionKeyRaw!, participantId: ourIdentity, index: 0)
+                setRawKeyInProvider(keyProvider, key: rawKey, participantId: ourIdentity, index: 0)
                 MXLog.info("sTalk NativeCall E2EE: Our key set for \(ourIdentity)")
 
                 try await liveKitRoomManager.connectWithE2EE(wsURL: url, token: token, keyProvider: keyProvider, speakerByDefault: false)
