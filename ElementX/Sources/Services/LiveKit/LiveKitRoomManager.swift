@@ -8,7 +8,13 @@
 import AVFoundation
 import Combine
 import LiveKit
+import os.log
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
+
+private let livekitLog = OSLog(subsystem: "ru.implica.stalk", category: "LiveKit")
 
 /// sTalk: Manages a native LiveKit room connection using credentials intercepted from Element Call's WebSocket.
 /// Provides published state for SwiftUI views to render native video tracks.
@@ -32,16 +38,122 @@ final class LiveKitRoomManager: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var reconnectToken: String?
     private var reconnectURL: String?
+    private var reconnectAttempt = 0
+    private let reconnectMaxAttempts = 3
+    private var wasE2EE = false
+    private var savedKeyProvider: BaseKeyProvider?
+    private var savedSpeakerDefault = false
+
+    #if canImport(UIKit)
+    private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
+    #endif
 
     init() {
         room = Room()
         room.add(delegate: self)
+        registerLifecycleObservers()
     }
 
     deinit {
+        NotificationCenter.default.removeObserver(self)
         Task { @MainActor [room] in
             await room.disconnect()
         }
+    }
+
+    // MARK: - Lifecycle observers (iOS background / audio interruptions)
+
+    private func registerLifecycleObservers() {
+        let center = NotificationCenter.default
+        #if canImport(UIKit)
+        center.addObserver(self,
+                           selector: #selector(appDidEnterBackground),
+                           name: UIApplication.didEnterBackgroundNotification,
+                           object: nil)
+        center.addObserver(self,
+                           selector: #selector(appWillEnterForeground),
+                           name: UIApplication.willEnterForegroundNotification,
+                           object: nil)
+        #endif
+        center.addObserver(self,
+                           selector: #selector(handleAudioInterruption(_:)),
+                           name: AVAudioSession.interruptionNotification,
+                           object: nil)
+        center.addObserver(self,
+                           selector: #selector(handleAudioRouteChange(_:)),
+                           name: AVAudioSession.routeChangeNotification,
+                           object: nil)
+    }
+
+    #if canImport(UIKit)
+    @objc private func appDidEnterBackground() {
+        guard connectionState == .connected || connectionState == .reconnecting else { return }
+        // Ask iOS to keep us alive while the WS is active. Without this, iOS freezes
+        // the socket and LiveKit server times us out.
+        if backgroundTaskID != .invalid { return }
+        backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "sTalk.LiveKit.WS") { [weak self] in
+            guard let self else { return }
+            if self.backgroundTaskID != .invalid {
+                UIApplication.shared.endBackgroundTask(self.backgroundTaskID)
+                self.backgroundTaskID = .invalid
+            }
+            os_log(.error, log: livekitLog, "Background task expired — WS may be frozen next")
+        }
+        os_log(.info, log: livekitLog, "App → background, beginBackgroundTask id=%d state=%{public}@",
+               backgroundTaskID.rawValue, "\(connectionState)")
+    }
+
+    @objc private func appWillEnterForeground() {
+        if backgroundTaskID != .invalid {
+            UIApplication.shared.endBackgroundTask(backgroundTaskID)
+            backgroundTaskID = .invalid
+            os_log(.info, log: livekitLog, "App → foreground, endBackgroundTask")
+        }
+    }
+    #endif
+
+    @objc private func handleAudioInterruption(_ note: Notification) {
+        guard let userInfo = note.userInfo,
+              let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
+
+        switch type {
+        case .began:
+            os_log(.info, log: livekitLog, "AudioSession interruption began")
+        case .ended:
+            var shouldResume = false
+            if let optValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt {
+                shouldResume = AVAudioSession.InterruptionOptions(rawValue: optValue).contains(.shouldResume)
+            }
+            os_log(.info, log: livekitLog, "AudioSession interruption ended shouldResume=%{public}@", "\(shouldResume)")
+            if shouldResume {
+                do {
+                    try AVAudioSession.sharedInstance().setActive(true, options: .notifyOthersOnDeactivation)
+                } catch {
+                    os_log(.error, log: livekitLog, "Failed to re-activate AudioSession: %{public}@", "\(error)")
+                }
+            }
+        @unknown default:
+            break
+        }
+    }
+
+    @objc private func handleAudioRouteChange(_ note: Notification) {
+        guard let reasonVal = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
+              let reason = AVAudioSession.RouteChangeReason(rawValue: reasonVal) else { return }
+        let reasonStr: String
+        switch reason {
+        case .newDeviceAvailable: reasonStr = "newDeviceAvailable"
+        case .oldDeviceUnavailable: reasonStr = "oldDeviceUnavailable"
+        case .categoryChange: reasonStr = "categoryChange"
+        case .override: reasonStr = "override"
+        case .wakeFromSleep: reasonStr = "wakeFromSleep"
+        case .noSuitableRouteForCategory: reasonStr = "noSuitableRouteForCategory"
+        case .routeConfigurationChange: reasonStr = "routeConfigurationChange"
+        case .unknown: reasonStr = "unknown"
+        @unknown default: reasonStr = "other"
+        }
+        os_log(.info, log: livekitLog, "AudioSession route change: %{public}@", reasonStr)
     }
 
     // MARK: - Public API
@@ -62,6 +174,9 @@ final class LiveKitRoomManager: ObservableObject {
         // Store for potential reconnection
         reconnectURL = baseURL
         reconnectToken = token
+        wasE2EE = false
+        savedKeyProvider = nil
+        savedSpeakerDefault = speakerByDefault
 
         // Configure iOS audio session for VoIP BEFORE connecting
         configureAudioSession(speakerByDefault: speakerByDefault)
@@ -86,6 +201,9 @@ final class LiveKitRoomManager: ObservableObject {
 
         reconnectURL = baseURL
         reconnectToken = token
+        wasE2EE = true
+        savedKeyProvider = keyProvider
+        savedSpeakerDefault = speakerByDefault
 
         configureAudioSession(speakerByDefault: speakerByDefault)
 
@@ -110,8 +228,17 @@ final class LiveKitRoomManager: ObservableObject {
     func disconnect() async {
         reconnectURL = nil
         reconnectToken = nil
+        savedKeyProvider = nil
+        reconnectAttempt = 0
+        #if canImport(UIKit)
+        if backgroundTaskID != .invalid {
+            UIApplication.shared.endBackgroundTask(backgroundTaskID)
+            backgroundTaskID = .invalid
+        }
+        #endif
         await room.disconnect()
         MXLog.info("sTalk LiveKit: Disconnected")
+        os_log(.info, log: livekitLog, "Disconnected (user-initiated)")
         updateState()
     }
 
@@ -398,18 +525,57 @@ extension LiveKitRoomManager: RoomDelegate {
         Task { @MainActor in
             self.connectionState = connectionState
             MXLog.info("sTalk LiveKit: Connection state: \(oldConnectionState) → \(connectionState)")
+            os_log(.info, log: livekitLog, "WS state: %{public}@ → %{public}@",
+                   "\(oldConnectionState)", "\(connectionState)")
 
-            // Handle reconnection states
             switch connectionState {
             case .connected:
+                self.reconnectAttempt = 0
                 self.updateState()
             case .disconnected:
-                // If we have stored credentials and were previously connected, this is an unexpected disconnect
-                if oldConnectionState == .connected || oldConnectionState == .reconnecting {
-                    MXLog.warning("sTalk LiveKit: Unexpected disconnect from \(oldConnectionState)")
+                // Unexpected drop: try to reconnect silently a few times before giving up.
+                if oldConnectionState == .connected || oldConnectionState == .reconnecting,
+                   self.reconnectURL != nil, self.reconnectToken != nil {
+                    os_log(.error, log: livekitLog, "Unexpected disconnect from %{public}@ — auto-reconnect",
+                           "\(oldConnectionState)")
+                    self.attemptAutoReconnect()
                 }
             default:
                 break
+            }
+        }
+    }
+
+    /// Attempt silent reconnect after WS drop. Max 3 attempts with 1s / 3s / 7s backoff.
+    private func attemptAutoReconnect() {
+        guard reconnectAttempt < reconnectMaxAttempts,
+              let url = reconnectURL,
+              let token = reconnectToken else {
+            os_log(.error, log: livekitLog, "Auto-reconnect skipped attempt=%d", reconnectAttempt)
+            return
+        }
+        reconnectAttempt += 1
+        let attempt = reconnectAttempt
+        let delaySeconds: UInt64 = attempt == 1 ? 1 : (attempt == 2 ? 3 : 7)
+
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: delaySeconds * 1_000_000_000)
+            guard let self else { return }
+            guard self.reconnectURL != nil else { return }
+            os_log(.info, log: livekitLog, "Auto-reconnect attempt %d/%d after %ds",
+                   attempt, self.reconnectMaxAttempts, Int(delaySeconds))
+            do {
+                if self.wasE2EE, let keyProvider = self.savedKeyProvider {
+                    try await self.connectWithE2EE(wsURL: url, token: token, keyProvider: keyProvider,
+                                                   speakerByDefault: self.savedSpeakerDefault)
+                } else {
+                    try await self.connect(wsURL: url, token: token,
+                                           speakerByDefault: self.savedSpeakerDefault)
+                }
+                os_log(.info, log: livekitLog, "Auto-reconnect SUCCESS attempt=%d", attempt)
+            } catch {
+                os_log(.error, log: livekitLog, "Auto-reconnect FAIL attempt=%d: %{public}@", attempt, "\(error)")
+                self.attemptAutoReconnect()
             }
         }
     }
