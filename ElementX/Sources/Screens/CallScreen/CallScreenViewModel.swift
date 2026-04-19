@@ -366,6 +366,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         recordingPollingTask?.cancel()
         recordingPollingTask = nil
         MXLog.info("sTalk: stop() called — safety net cleanup")
+        // Re-allow auto-lock now that call is ending.
+        UIApplication.shared.isIdleTimerDisabled = false
 
         // Safety net: вызывается координатором при удалении.
         Task {
@@ -399,6 +401,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     }
     
     private func setupCall() {
+        // Prevent iOS auto-lock during active call. Resets in stop().
+        UIApplication.shared.isIdleTimerDisabled = true
         switch configuration.kind {
         case .genericCallLink(let url):
             state.url = url

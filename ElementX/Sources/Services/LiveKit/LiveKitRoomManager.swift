@@ -46,7 +46,13 @@ final class LiveKitRoomManager: ObservableObject {
 
     #if canImport(UIKit)
     private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
+    private var wasCameraEnabledBeforeBackground = false
     #endif
+
+    // Watchdog for stuck .reconnecting state — forces our own reconnect attempt if
+    // LiveKit SDK can't recover on its own within the timeout.
+    private var reconnectingWatchdog: Task<Void, Never>?
+    private let reconnectingTimeoutSec: UInt64 = 10
 
     init() {
         room = Room()
@@ -88,6 +94,9 @@ final class LiveKitRoomManager: ObservableObject {
     #if canImport(UIKit)
     @objc private func appDidEnterBackground() {
         guard connectionState == .connected || connectionState == .reconnecting else { return }
+        // Remember if camera was actively publishing — need to re-enable on return.
+        wasCameraEnabledBeforeBackground = room.localParticipant.videoTracks.first?.track != nil
+
         // Ask iOS to keep us alive while the WS is active. Without this, iOS freezes
         // the socket and LiveKit server times us out.
         if backgroundTaskID != .invalid { return }
@@ -99,8 +108,8 @@ final class LiveKitRoomManager: ObservableObject {
             }
             os_log(.error, log: livekitLog, "Background task expired — WS may be frozen next")
         }
-        os_log(.info, log: livekitLog, "App → background, beginBackgroundTask id=%d state=%{public}@",
-               backgroundTaskID.rawValue, "\(connectionState)")
+        os_log(.info, log: livekitLog, "App → background, beginBackgroundTask id=%d state=%{public}@ hadCamera=%{public}@",
+               backgroundTaskID.rawValue, "\(connectionState)", "\(wasCameraEnabledBeforeBackground)")
     }
 
     @objc private func appWillEnterForeground() {
@@ -108,6 +117,19 @@ final class LiveKitRoomManager: ObservableObject {
             UIApplication.shared.endBackgroundTask(backgroundTaskID)
             backgroundTaskID = .invalid
             os_log(.info, log: livekitLog, "App → foreground, endBackgroundTask")
+        }
+        // Proactively re-enable camera — iOS stops AVCaptureSession in background.
+        // Without this, waiting for LiveKit SDK's passive recovery takes 2-5 seconds.
+        if wasCameraEnabledBeforeBackground {
+            Task { [weak self] in
+                guard let self, self.connectionState == .connected else { return }
+                do {
+                    try await self.setCamera(enabled: true)
+                    os_log(.info, log: livekitLog, "Camera re-enabled on foreground")
+                } catch {
+                    os_log(.error, log: livekitLog, "Camera re-enable FAIL: %{public}@", "\(error)")
+                }
+            }
         }
     }
     #endif
@@ -230,6 +252,8 @@ final class LiveKitRoomManager: ObservableObject {
         reconnectToken = nil
         savedKeyProvider = nil
         reconnectAttempt = 0
+        reconnectingWatchdog?.cancel()
+        reconnectingWatchdog = nil
         #if canImport(UIKit)
         if backgroundTaskID != .invalid {
             UIApplication.shared.endBackgroundTask(backgroundTaskID)
@@ -531,8 +555,26 @@ extension LiveKitRoomManager: RoomDelegate {
             switch connectionState {
             case .connected:
                 self.reconnectAttempt = 0
+                self.reconnectingWatchdog?.cancel()
+                self.reconnectingWatchdog = nil
                 self.updateState()
+            case .reconnecting:
+                // If SDK internal reconnect stalls, our watchdog forces a full reconnect
+                // after timeout. Otherwise call can hang indefinitely in .reconnecting.
+                self.reconnectingWatchdog?.cancel()
+                self.reconnectingWatchdog = Task { [weak self] in
+                    let timeout = self?.reconnectingTimeoutSec ?? 10
+                    try? await Task.sleep(nanoseconds: timeout * 1_000_000_000)
+                    guard let self, !Task.isCancelled else { return }
+                    guard self.connectionState == .reconnecting else { return }
+                    os_log(.error, log: livekitLog,
+                           "Stuck in .reconnecting for %ds — forcing full reconnect", Int(timeout))
+                    await self.room.disconnect()
+                    self.attemptAutoReconnect()
+                }
             case .disconnected:
+                self.reconnectingWatchdog?.cancel()
+                self.reconnectingWatchdog = nil
                 // Unexpected drop: try to reconnect silently a few times before giving up.
                 if oldConnectionState == .connected || oldConnectionState == .reconnecting,
                    self.reconnectURL != nil, self.reconnectToken != nil {
