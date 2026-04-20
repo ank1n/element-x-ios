@@ -259,6 +259,26 @@ final class LiveKitRoomManager: ObservableObject {
         updateState()
     }
 
+    /// ICE restart на живых peer connections — без полного teardown как build 41/42.
+    /// Используется при смене сетевого интерфейса (wifi↔cellular). SDK вызывает
+    /// startReconnect(reason: .debug) → quickReconnectSequence с iceRestart на publisher.
+    /// На failure SDK сам fallback на .full через retry logic (Room+Engine.swift:414).
+    func attemptQuickReconnect(trigger: String) async {
+        guard connectionState == .connected else {
+            os_log(.info, log: livekitLog, "Quick reconnect skipped — state=%{public}@ trigger=%{public}@",
+                   "\(connectionState)", trigger)
+            return
+        }
+        os_log(.info, log: livekitLog, "Quick reconnect starting — trigger=%{public}@", trigger)
+        do {
+            try await room.debug_simulate(scenario: .quickReconnect)
+            os_log(.info, log: livekitLog, "Quick reconnect SUCCESS — trigger=%{public}@", trigger)
+        } catch {
+            os_log(.error, log: livekitLog, "Quick reconnect FAIL — trigger=%{public}@ error=%{public}@",
+                   trigger, "\(error)")
+        }
+    }
+
     func setCamera(enabled: Bool) async throws {
         #if targetEnvironment(simulator)
         if enabled {

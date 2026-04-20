@@ -475,15 +475,21 @@ final class NativeCallSession: ObservableObject {
         // Skip the very first path update (no prior state).
         guard !previous.isEmpty else { return }
 
-        // Just re-send E2EE key — to_device events may have been lost during the
-        // long-poll gap. Build 41/42 attempted forceReconnect here but created
-        // cascading reconnect loops that killed the call entirely. Known limitation:
-        // if media path stays stuck on old interface, user needs to hang up + re-call.
+        // Re-send E2EE key — to_device events may have been lost during the
+        // long-poll gap. Build 41/42 did full reconnect here and created cascading loops;
+        // build 44 trials .quickReconnect (ICE restart on live transports, no teardown).
         if isEncrypted, ourEncryptionKey != nil {
             os_log(.info, log: callLog, "Resending E2EE key after network change")
             await sendOurEncryptionKey()
         }
+
+        if Self.kEnableQuickReconnectOnNetworkChange {
+            await liveKitRoomManager.attemptQuickReconnect(trigger: "network:\(previous)→\(iface)")
+        }
     }
+
+    /// Build 44 experiment — toggle to fall back to previous build 43 behaviour.
+    private static let kEnableQuickReconnectOnNetworkChange = true
 
     /// Publish our E2EE key to the key-server for recording decryption
     private func publishKeyToKeyServer(key: String) async {
