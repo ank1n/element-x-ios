@@ -49,15 +49,6 @@ final class LiveKitRoomManager: ObservableObject {
     private var wasCameraEnabledBeforeBackground = false
     #endif
 
-    // Watchdog for stuck .reconnecting state — forces our own reconnect attempt if
-    // LiveKit SDK can't recover on its own within the timeout.
-    private var reconnectingWatchdog: Task<Void, Never>?
-    private let reconnectingTimeoutSec: UInt64 = 10
-
-    /// Flag set during forceReconnect — prevents the delegate's auto-reconnect from
-    /// double-triggering when we tear down the WS intentionally for ICE restart.
-    private var forceReconnectInProgress = false
-
     init() {
         room = Room()
         room.add(delegate: self)
@@ -251,47 +242,11 @@ final class LiveKitRoomManager: ObservableObject {
         updateState()
     }
 
-    /// Force reconnect — used on network change to trigger ICE restart on new interface.
-    /// Keeps saved credentials + keyProvider, so re-connection is transparent. Media will
-    /// briefly drop (~1-3s) but UDP path will re-establish on the new network.
-    /// Uses forceReconnectInProgress flag so the delegate's auto-reconnect path is
-    /// skipped — we drive a single manual attempt here instead of double-triggering.
-    func forceReconnect() async {
-        guard !forceReconnectInProgress else {
-            os_log(.info, log: livekitLog, "forceReconnect skipped — already in progress")
-            return
-        }
-        guard let url = reconnectURL, let token = reconnectToken else {
-            os_log(.error, log: livekitLog, "forceReconnect skipped — no saved credentials")
-            return
-        }
-        forceReconnectInProgress = true
-        defer { forceReconnectInProgress = false }
-
-        os_log(.info, log: livekitLog, "forceReconnect: tearing down current WS for ICE restart")
-        await room.disconnect()
-        // Small delay so iOS has time to release UDP sockets on old interface.
-        try? await Task.sleep(nanoseconds: 500_000_000)
-        do {
-            if wasE2EE, let keyProvider = savedKeyProvider {
-                try await connectWithE2EE(wsURL: url, token: token, keyProvider: keyProvider,
-                                          speakerByDefault: savedSpeakerDefault)
-            } else {
-                try await connect(wsURL: url, token: token, speakerByDefault: savedSpeakerDefault)
-            }
-            os_log(.info, log: livekitLog, "forceReconnect: SUCCESS")
-        } catch {
-            os_log(.error, log: livekitLog, "forceReconnect: FAIL %{public}@", "\(error)")
-        }
-    }
-
     func disconnect() async {
         reconnectURL = nil
         reconnectToken = nil
         savedKeyProvider = nil
         reconnectAttempt = 0
-        reconnectingWatchdog?.cancel()
-        reconnectingWatchdog = nil
         #if canImport(UIKit)
         if backgroundTaskID != .invalid {
             UIApplication.shared.endBackgroundTask(backgroundTaskID)
@@ -593,33 +548,11 @@ extension LiveKitRoomManager: RoomDelegate {
             switch connectionState {
             case .connected:
                 self.reconnectAttempt = 0
-                self.reconnectingWatchdog?.cancel()
-                self.reconnectingWatchdog = nil
                 self.updateState()
-            case .reconnecting:
-                // If SDK internal reconnect stalls, our watchdog forces a full reconnect
-                // after timeout. Otherwise call can hang indefinitely in .reconnecting.
-                self.reconnectingWatchdog?.cancel()
-                self.reconnectingWatchdog = Task { [weak self] in
-                    let timeout = self?.reconnectingTimeoutSec ?? 10
-                    try? await Task.sleep(nanoseconds: timeout * 1_000_000_000)
-                    guard let self, !Task.isCancelled else { return }
-                    guard self.connectionState == .reconnecting else { return }
-                    os_log(.error, log: livekitLog,
-                           "Stuck in .reconnecting for %ds — forcing full reconnect", Int(timeout))
-                    await self.room.disconnect()
-                    self.attemptAutoReconnect()
-                }
             case .disconnected:
-                self.reconnectingWatchdog?.cancel()
-                self.reconnectingWatchdog = nil
-                // Skip auto-reconnect if forceReconnect is currently driving its own reconnect.
-                // Otherwise we'd double-trigger and hit infinite loops (build 41 regression).
-                if self.forceReconnectInProgress {
-                    os_log(.info, log: livekitLog, "Disconnect during forceReconnect — skipping delegate auto-reconnect")
-                } else if oldConnectionState == .connected || oldConnectionState == .reconnecting,
-                          self.reconnectURL != nil, self.reconnectToken != nil {
-                    // Unexpected drop: try to reconnect silently a few times before giving up.
+                // Unexpected drop: try to reconnect silently a few times before giving up.
+                if oldConnectionState == .connected || oldConnectionState == .reconnecting,
+                   self.reconnectURL != nil, self.reconnectToken != nil {
                     os_log(.error, log: livekitLog, "Unexpected disconnect from %{public}@ — auto-reconnect",
                            "\(oldConnectionState)")
                     self.attemptAutoReconnect()
