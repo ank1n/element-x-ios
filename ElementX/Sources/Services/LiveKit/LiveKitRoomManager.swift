@@ -281,7 +281,14 @@ final class LiveKitRoomManager: ObservableObject {
 
     func setCamera(enabled: Bool) async throws {
         #if targetEnvironment(simulator)
-        if enabled {
+        if let publication = room.localParticipant.firstCameraPublication,
+           let track = publication.track as? LocalVideoTrack {
+            if enabled {
+                try await track.unmute()
+            } else {
+                try await track.mute()
+            }
+        } else if enabled {
             try await publishSimulatorVideoTrack()
         }
         #else
@@ -312,7 +319,14 @@ final class LiveKitRoomManager: ObservableObject {
 
     func setMicrophone(enabled: Bool) async throws {
         #if targetEnvironment(simulator)
-        if enabled {
+        if let publication = room.localParticipant.audioTracks.first(where: { $0.source == .microphone }),
+           let track = publication.track as? LocalAudioTrack {
+            if enabled {
+                try await track.unmute()
+            } else {
+                try await track.mute()
+            }
+        } else if enabled {
             try await publishSimulatorAudioTrack()
         }
         #else
