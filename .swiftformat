@@ -1,6 +1,6 @@
 --swiftversion 5.6
 
---exclude **/Sources/**/Generated,vendor,**/Package.swift,Secrets/**,build,build-device
+--exclude **/Sources/**/Generated,vendor,**/Package.swift,Secrets/**,build,build-device,build-simulator,build-archive,**/SourcePackages/**,.build
 
 --disable wrapMultiLineStatementBraces
 --disable hoistPatternLet
