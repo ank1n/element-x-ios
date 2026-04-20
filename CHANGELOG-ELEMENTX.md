@@ -2048,6 +2048,40 @@ PushKit включён локально (нужен для `CXProvider.reportNew
 
 ---
 
+### 48. 🧪 Quick reconnect (ICE restart) на смене сети — эксперимент build 44
+
+**Дата**: 2026-04-20
+**Коммит**: TBD (build 44)
+**Plane**: STMOB-74, STMOB-76 (research)
+**Статус**: эксперимент — фичефлаг `kEnableQuickReconnectOnNetworkChange = true`
+
+#### Контекст
+Build 41/42 пытался `room.disconnect()` + `connect()` на смене сети (WiFi↔cellular) — создавал infinite reconnect loop и убивал звонок. Build 43 откатился к чистому resend E2EE key. Остаётся known issue: mid-call смена сети морозит видео, workaround — повесить трубку и перезвонить.
+
+#### Research (до этого коммита)
+Изучили LiveKit Swift SDK (`build-device/SourcePackages/checkouts/client-sdk-swift`):
+- **Public API**: `Room.debug_simulate(scenario: SimulateScenario)` — `Room+Debug.swift:32`
+- Сценарии: `.quickReconnect` (ICE restart на живых transports), `.fullReconnect` (как build 41/42), `.nodeFailure`, `.migration`, `.serverLeave`
+- **`quickReconnect` != build 41/42**: не делает teardown RTCPeerConnection, только ICE restart через `publisher.createAndSendOffer(iceRestart: true)` + `subscriber.setIsRestartingIce()` (Room+Engine.swift:307-353)
+- SDK сам fallback на `.full` через retry logic если quick не получился (Room+Engine.swift:414)
+
+#### Изменения
+1. **LiveKitRoomManager.attemptQuickReconnect(trigger:)** — новый public метод. Проверяет `connectionState == .connected`, вызывает `room.debug_simulate(scenario: .quickReconnect)` с try/catch и os_log.
+2. **NativeCallSession.handleNetworkPathChange** — после resend E2EE key, если `kEnableQuickReconnectOnNetworkChange == true`, вызывает `liveKitRoomManager.attemptQuickReconnect(trigger: "network:wifi→cellular")`.
+3. **Фичефлаг** — `private static let kEnableQuickReconnectOnNetworkChange = true` в NativeCallSession. Если эксперимент сломает — поменять на `false` для возврата к build 43 поведению.
+
+#### Что тестировать
+- Mid-call WiFi→cellular: видео должно восстановиться без hangup. Логи: `Quick reconnect starting — trigger=network:wifi→cellular` → `Quick reconnect SUCCESS`.
+- Если `.quickReconnect` зависнет — SDK сам должен fall back на `.full` (watch for `Reconnect mode: quick failed` в логах).
+- Регресс: звонок не должен стать менее стабильным в обычных сценариях.
+
+#### Файлы:
+- `ElementX/Sources/Services/LiveKit/LiveKitRoomManager.swift` — +attemptQuickReconnect(trigger:)
+- `ElementX/Sources/Services/NativeCall/NativeCallSession.swift` — hook в handleNetworkPathChange + фичефлаг
+- `sTalk.xcodeproj/project.pbxproj` — CURRENT_PROJECT_VERSION 43→44
+
+---
+
 - [ ] Применить коммиты #38: E2EE safe restore (`10d88e12`...`b37aaf5c`)
 - [ ] Применить коммит #39: CallScreen v6 grid (`683059ac`)
 - [ ] Применить коммиты #40: Ring notification (`95600ac8`, `510d11eb`)
@@ -2060,4 +2094,4 @@ PushKit включён локально (нужен для `CXProvider.reportNew
 ---
 
 **Дата создания**: 2026-01-28
-**Последнее обновление**: 2026-04-18
+**Последнее обновление**: 2026-04-20
