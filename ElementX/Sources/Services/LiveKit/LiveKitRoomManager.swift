@@ -319,15 +319,16 @@ final class LiveKitRoomManager: ObservableObject {
 
     func setMicrophone(enabled: Bool) async throws {
         #if targetEnvironment(simulator)
-        if let publication = room.localParticipant.audioTracks.first(where: { $0.source == .microphone }),
-           let track = publication.track as? LocalAudioTrack {
-            if enabled {
-                try await track.unmute()
-            } else {
-                try await track.mute()
+        // На симуляторе track.mute()/unmute() кидает Audio Engine Error -4010
+        // (WebRTC audio engine на симе не поддерживает re-activation).
+        // Вместо mute делаем полный unpublish, при enable — fresh publish.
+        let existing = room.localParticipant.audioTracks.first(where: { $0.source == .microphone })
+        if enabled {
+            if existing == nil {
+                try await publishSimulatorAudioTrack()
             }
-        } else if enabled {
-            try await publishSimulatorAudioTrack()
+        } else if let publication = existing as? LocalTrackPublication {
+            try await room.localParticipant.unpublish(publication: publication)
         }
         #else
         try await room.localParticipant.setMicrophone(enabled: enabled)
