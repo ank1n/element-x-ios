@@ -259,12 +259,15 @@ final class LiveKitRoomManager: ObservableObject {
         updateState()
     }
 
+    /// Build 45 фичефлаг — camera unpublish/publish после Quick reconnect. Упал на физе:
+    /// и video, и audio встают после reset. Отключено по умолчанию, SDK с iceRestart
+    /// продолжает ICE restart (build 44 behavior): audio обычно выживает, video на вебе — нет.
+    private static let kResetCameraAfterQuickReconnect = false
+
     /// ICE restart на живых peer connections — без полного teardown как build 41/42.
     /// Используется при смене сетевого интерфейса (wifi↔cellular). SDK вызывает
     /// startReconnect(reason: .debug) → quickReconnectSequence с iceRestart на publisher.
     /// На failure SDK сам fallback на .full через retry logic (Room+Engine.swift:414).
-    /// После SUCCESS пересоздаём camera publication — AVCaptureSession на физ устройстве
-    /// теряет связь с publisher track после iceRestart, и веб перестаёт видеть видео.
     func attemptQuickReconnect(trigger: String) async {
         guard connectionState == .connected else {
             os_log(.info, log: livekitLog, "Quick reconnect skipped — state=%{public}@ trigger=%{public}@",
@@ -275,7 +278,9 @@ final class LiveKitRoomManager: ObservableObject {
         do {
             try await room.debug_simulate(scenario: .quickReconnect)
             os_log(.info, log: livekitLog, "Quick reconnect SUCCESS — trigger=%{public}@", trigger)
-            await resetCameraAfterReconnect()
+            if Self.kResetCameraAfterQuickReconnect {
+                await resetCameraAfterReconnect()
+            }
         } catch {
             os_log(.error, log: livekitLog, "Quick reconnect FAIL — trigger=%{public}@ error=%{public}@",
                    trigger, "\(error)")
