@@ -491,6 +491,23 @@ final class NativeCallSession: ObservableObject {
     /// Build 44 experiment — toggle to fall back to previous build 43 behaviour.
     private static let kEnableQuickReconnectOnNetworkChange = true
 
+    #if targetEnvironment(simulator)
+    /// DEBUG: симулирует смену сети (wifi → cellular) без Mac WiFi toggle.
+    /// Вызывается автоматически через 20s после connect в simulator-сборке.
+    func debugSimulateNetworkChange() async {
+        os_log(.info, log: callLog, "DEBUG: simulating network change wifi → cellular (for Quick reconnect test)")
+        let previous = lastNetworkInterface
+        lastNetworkInterface = "cellular"
+        if isEncrypted, ourEncryptionKey != nil {
+            os_log(.info, log: callLog, "Resending E2EE key after network change")
+            await sendOurEncryptionKey()
+        }
+        if Self.kEnableQuickReconnectOnNetworkChange {
+            await liveKitRoomManager.attemptQuickReconnect(trigger: "debug:\(previous)→cellular")
+        }
+    }
+    #endif
+
     /// Publish our E2EE key to the key-server for recording decryption
     private func publishKeyToKeyServer(key: String) async {
         guard let roomName = generateLiveKitRoomName() else { return }
@@ -956,6 +973,15 @@ final class NativeCallSession: ObservableObject {
             try? await liveKitRoomManager.setMicrophone(enabled: true)
             try? await liveKitRoomManager.setCamera(enabled: true)
             MXLog.info("sTalk NativeCall: Camera + microphone enabled")
+
+            #if targetEnvironment(simulator)
+            // DEBUG: через 20s после connect триггерим fake network switch
+            // чтобы тестировать Quick reconnect на симуляторе без Mac WiFi toggle.
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 20_000_000_000)
+                await self?.debugSimulateNetworkChange()
+            }
+            #endif
 
             // Subscribe pending participants
             for (identity, participant) in pendingParticipants where participantKeys[identity] == true || !isEncrypted {

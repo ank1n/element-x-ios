@@ -263,6 +263,8 @@ final class LiveKitRoomManager: ObservableObject {
     /// Используется при смене сетевого интерфейса (wifi↔cellular). SDK вызывает
     /// startReconnect(reason: .debug) → quickReconnectSequence с iceRestart на publisher.
     /// На failure SDK сам fallback на .full через retry logic (Room+Engine.swift:414).
+    /// После SUCCESS пересоздаём camera publication — AVCaptureSession на физ устройстве
+    /// теряет связь с publisher track после iceRestart, и веб перестаёт видеть видео.
     func attemptQuickReconnect(trigger: String) async {
         guard connectionState == .connected else {
             os_log(.info, log: livekitLog, "Quick reconnect skipped — state=%{public}@ trigger=%{public}@",
@@ -273,9 +275,31 @@ final class LiveKitRoomManager: ObservableObject {
         do {
             try await room.debug_simulate(scenario: .quickReconnect)
             os_log(.info, log: livekitLog, "Quick reconnect SUCCESS — trigger=%{public}@", trigger)
+            await resetCameraAfterReconnect()
         } catch {
             os_log(.error, log: livekitLog, "Quick reconnect FAIL — trigger=%{public}@ error=%{public}@",
                    trigger, "\(error)")
+        }
+    }
+
+    /// Пересоздаёт camera publication — на физ устройстве AVCaptureSession после iceRestart
+    /// продолжает получать frames локально, но они не долетают до publisher track.
+    /// Симптом: веб видит только audio, video чёрное. Fix: unpublish+publish camera.
+    /// Выполняется только если камера была активна и не muted до reconnect.
+    private func resetCameraAfterReconnect() async {
+        guard let publication = room.localParticipant.firstCameraPublication,
+              publication.track != nil,
+              !publication.isMuted else {
+            os_log(.info, log: livekitLog, "Camera reset skipped — no active publication")
+            return
+        }
+        os_log(.info, log: livekitLog, "Resetting camera publication after reconnect")
+        do {
+            try await setCamera(enabled: false)
+            try await setCamera(enabled: true)
+            os_log(.info, log: livekitLog, "Camera reset SUCCESS")
+        } catch {
+            os_log(.error, log: livekitLog, "Camera reset FAIL: %{public}@", "\(error)")
         }
     }
 
