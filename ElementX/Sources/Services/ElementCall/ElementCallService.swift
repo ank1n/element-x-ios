@@ -107,9 +107,18 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     /// Флаг для пометки следующего звонка как входящего (когда VoIP push недоступен)
     private var nextCallIsIncoming = false
 
+    /// Флаг регистрации VoIP pusher в Matrix (Sygnal → APNs VoIP push → PushKit → CallKit full-screen UI).
+    /// ВАЖНО: перед включением убедиться что Sygnal на Misty правильно фильтрует события —
+    /// VoIP push ДОЛЖЕН приходить ТОЛЬКО на incoming call events (`m.call.notify` / `m.call.member`).
+    /// Иначе iOS убьёт sTalk + revoke VoIP token при первом же text message, звонки сломаются полностью.
+    /// Зависимости: STALK-185 (Sygnal VoIP pusher + push rules), Apple VoIP Services Certificate.
+    private static let kEnableVoIPPusherRegistration = false
+
     func setClientProxy(_ clientProxy: any ClientProxyProtocol) {
         self.clientProxy = clientProxy
-        // VoIP pusher registration disabled — see init() comment
+        if Self.kEnableVoIPPusherRegistration, let token = voipDeviceToken {
+            Task { await registerVoIPPusher(with: token) }
+        }
     }
 
     func markNextCallAsIncoming() {
@@ -188,8 +197,11 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         let tokenStr = pushCredentials.token.base64EncodedString()
         os_log(.info, log: pushLog, "VoIP token received (%d bytes): %{public}@", pushCredentials.token.count, tokenStr)
         MXLog.info("sTalk: VoIP push token received (\(pushCredentials.token.count) bytes)")
-        // НЕ регистрируем VoIP пушер в Synapse — voip pushkin удалён из Sygnal.
-        // Токен нужен только для CXProvider.reportNewIncomingVoIPPushPayload из NSE.
+        if Self.kEnableVoIPPusherRegistration {
+            Task { [weak self] in
+                await self?.registerVoIPPusher(with: pushCredentials.token)
+            }
+        }
     }
     
     func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping () -> Void) {
