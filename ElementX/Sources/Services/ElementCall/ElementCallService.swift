@@ -209,13 +209,19 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         // If payload is missing required fields, report a fake call and immediately cancel it.
         os_log(.info, log: pushLog, "VoIP push received! payload keys: %{public}@", "\(payload.dictionaryPayload.keys)")
 
-        guard let roomID = payload.dictionaryPayload[ElementCallServiceNotificationKey.roomID.rawValue] as? String else {
-            MXLog.error("Missing room identifier for incoming voip call, reporting and cancelling: \(payload.dictionaryPayload)")
+        // VoIP push может прийти от двух источников с разным форматом payload:
+        // - NSE (reportNewIncomingVoIPPushPayload): ключи camelCase (ElementCallServiceNotificationKey)
+        // - PushKit прямо от Sygnal: Matrix raw ключи (snake_case: room_id, event_id)
+        let dict = payload.dictionaryPayload
+        guard let roomID = (dict[ElementCallServiceNotificationKey.roomID.rawValue] as? String)
+            ?? (dict["room_id"] as? String) else {
+            MXLog.error("Missing room identifier for incoming voip call, reporting and cancelling: \(dict)")
             reportAndCancelFakeCall(completion: completion)
             return
         }
 
-        let rtcNotificationID = payload.dictionaryPayload[ElementCallServiceNotificationKey.rtcNotifyEventID.rawValue] as? String
+        let rtcNotificationID = (dict[ElementCallServiceNotificationKey.rtcNotifyEventID.rawValue] as? String)
+            ?? (dict["event_id"] as? String)
 
         guard ongoingCallID?.roomID != roomID else {
             MXLog.warning("Call already ongoing for room \(roomID), reporting and cancelling")
