@@ -95,14 +95,17 @@ final class LiveKitRoomManager: ObservableObject {
         // Ask iOS to keep us alive while the WS is active. Without this, iOS freezes
         // the socket and LiveKit server times us out.
         if backgroundTaskID != .invalid { return }
-        backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "sTalk.LiveKit.WS") { [weak self] in
-            guard let self else { return }
-            if self.backgroundTaskID != .invalid {
-                UIApplication.shared.endBackgroundTask(self.backgroundTaskID)
-                self.backgroundTaskID = .invalid
-            }
-            os_log(.error, log: livekitLog, "Background task expired — WS may be frozen next")
+        // КРИТИЧНО: expiration handler ДОЛЖЕН вызвать endBackgroundTask независимо от
+        // состояния self. Иначе iOS kill'нёт app через SIGKILL ("Background task still
+        // not ended after expiration handlers"). Capture taskID by value, не через self.
+        var taskID: UIBackgroundTaskIdentifier = .invalid
+        taskID = UIApplication.shared.beginBackgroundTask(withName: "sTalk.LiveKit.WS") { [weak self] in
+            UIApplication.shared.endBackgroundTask(taskID)
+            self?.backgroundTaskID = .invalid
+            os_log(.error, log: livekitLog, "Background task expired (id=%d) — endBackgroundTask called",
+                   taskID.rawValue)
         }
+        backgroundTaskID = taskID
         os_log(.info, log: livekitLog, "App → background, beginBackgroundTask id=%d state=%{public}@ hadCamera=%{public}@",
                backgroundTaskID.rawValue, "\(connectionState)", "\(wasCameraEnabledBeforeBackground)")
     }
