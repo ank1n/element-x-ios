@@ -388,9 +388,12 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         os_log(.info, log: pushLog, "registerVoIPPusher: pushkey=%{public}@, appID=%{public}@, gateway=%{public}@", pushkey, appID, pushGatewayURL)
 
         do {
+            // VoIP pusher использует full format (format: nil) чтобы Sygnal получал
+            // полный event.type для фильтрации в VoipFilterApnsPushkin. С event_id_only
+            // Synapse шлёт только event_id — фильтр не может определить тип события.
             let configuration = PusherConfiguration(identifiers: .init(pushkey: pushkey, appId: appID),
                                                     kind: .http(data: .init(url: pushGatewayURL,
-                                                                            format: .eventIdOnly,
+                                                                            format: nil,
                                                                             defaultPayload: nil)),
                                                     appDisplayName: "\(InfoPlistReader.main.bundleDisplayName) (iOS VoIP)",
                                                     deviceDisplayName: UIDevice.current.name,
