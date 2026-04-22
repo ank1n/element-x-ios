@@ -192,14 +192,16 @@ final class NotificationManager: NSObject, NotificationManagerProtocol {
                                                                           locArgs: [])),
                                              pusherNotificationClientIdentifier: clientProxy.pusherNotificationClientIdentifier)
 
-            // format: nil (full event) вместо .eventIdOnly — чтобы Sygnal VoipFilterApnsPushkin
-            // мог видеть event.type и drop'ать call-related events (ЧТОБЫ регулярный banner
-            // не приходил при incoming call — полный flow идёт через VoIP pusher).
-            // NSE работает на полях room_id/event_id из userInfo, которые есть в обоих форматах.
+            // format: .eventIdOnly — Sygnal шлёт минимальный payload (event_id+room_id),
+            // NSE сам decrypt/populate content через MatrixRustSDK. Build 53 перешёл на
+            // full format чтобы filter в Sygnal видел type, но это сломало NSE banner:
+            // Sygnal в full mode добавляет aps.alert.loc-key=MSG_FROM_USER, iOS показал raw.
+            // Откат: eventIdOnly, price — Sygnal не может фильтровать call events по type
+            // для regular pusher (но это приемлемо, call events всё равно в VoIP).
             let configuration = try await PusherConfiguration(identifiers: .init(pushkey: pushkey,
                                                                                  appId: appId),
                                                               kind: .http(data: .init(url: gateway,
-                                                                                      format: nil,
+                                                                                      format: .eventIdOnly,
                                                                                       defaultPayload: defaultPayload.toJsonString())),
                                                               appDisplayName: "\(InfoPlistReader.main.bundleDisplayName) (iOS)",
                                                               deviceDisplayName: UIDevice.current.name,
