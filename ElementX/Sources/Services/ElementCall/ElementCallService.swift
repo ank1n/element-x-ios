@@ -112,7 +112,7 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     /// VoIP push ДОЛЖЕН приходить ТОЛЬКО на incoming call events (`m.call.notify` / `m.call.member`).
     /// Иначе iOS убьёт sTalk + revoke VoIP token при первом же text message, звонки сломаются полностью.
     /// Зависимости: STALK-185 (Sygnal VoIP pusher + push rules), Apple VoIP Services Certificate.
-    private static let kEnableVoIPPusherRegistration = false
+    private static let kEnableVoIPPusherRegistration = true
 
     func setClientProxy(_ clientProxy: any ClientProxyProtocol) {
         self.clientProxy = clientProxy
