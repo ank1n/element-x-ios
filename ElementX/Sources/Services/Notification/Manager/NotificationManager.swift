@@ -192,10 +192,14 @@ final class NotificationManager: NSObject, NotificationManagerProtocol {
                                                                           locArgs: [])),
                                              pusherNotificationClientIdentifier: clientProxy.pusherNotificationClientIdentifier)
 
+            // format: nil (full event) вместо .eventIdOnly — чтобы Sygnal VoipFilterApnsPushkin
+            // мог видеть event.type и drop'ать call-related events (ЧТОБЫ регулярный banner
+            // не приходил при incoming call — полный flow идёт через VoIP pusher).
+            // NSE работает на полях room_id/event_id из userInfo, которые есть в обоих форматах.
             let configuration = try await PusherConfiguration(identifiers: .init(pushkey: pushkey,
                                                                                  appId: appId),
                                                               kind: .http(data: .init(url: gateway,
-                                                                                      format: .eventIdOnly,
+                                                                                      format: nil,
                                                                                       defaultPayload: defaultPayload.toJsonString())),
                                                               appDisplayName: "\(InfoPlistReader.main.bundleDisplayName) (iOS)",
                                                               deviceDisplayName: UIDevice.current.name,
