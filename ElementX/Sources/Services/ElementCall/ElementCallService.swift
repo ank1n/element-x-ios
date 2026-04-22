@@ -248,11 +248,21 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
             ringDuration = .seconds(30)
         }
 
-        let roomDisplayName = payload.dictionaryPayload[ElementCallServiceNotificationKey.roomDisplayName.rawValue] as? String
+        // Caller name приоритеты:
+        // 1. roomDisplayName — явно от NSE path
+        // 2. sender_display_name — от Sygnal raw VoIP push (e.g. "Rusty")
+        // 3. sender MXID — e.g. "@rusty:stalk.implica.ru"
+        // 4. fallback "Входящий звонок"
+        let roomDisplayName = dict[ElementCallServiceNotificationKey.roomDisplayName.rawValue] as? String
+        let senderDisplayName = dict["sender_display_name"] as? String
+        let senderMXID = dict["sender"] as? String
+        let callerName = roomDisplayName ?? senderDisplayName ?? senderMXID ?? "Входящий звонок"
+        os_log(.info, log: pushLog, "Incoming VoIP call: room=%{public}@ caller=%{public}@ rtcEventID=%{public}@",
+               roomID, callerName, rtcNotificationID ?? "nil")
 
         let update = CXCallUpdate()
         update.hasVideo = true
-        update.localizedCallerName = roomDisplayName ?? "Входящий звонок"
+        update.localizedCallerName = callerName
         // https://stackoverflow.com/a/41230020/730924
         update.remoteHandle = .init(type: .generic, value: roomID)
 
@@ -313,8 +323,11 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     }
     
     func provider(_ provider: CXProvider, perform action: CXAnswerCallAction) {
+        os_log(.info, log: pushLog, "User ACCEPTED incoming call — incomingCallID=%{public}@",
+               incomingCallID.map { "\($0.roomID)" } ?? "nil")
         guard let incomingCallID else {
             MXLog.error("Failed answering incoming call, missing incomingCallID")
+            os_log(.error, log: pushLog, "Accept FAILED: incomingCallID is nil")
             return
         }
         
