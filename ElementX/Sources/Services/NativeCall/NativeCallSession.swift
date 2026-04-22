@@ -154,8 +154,13 @@ final class NativeCallSession: ObservableObject {
 
         // E2EE key exchange
         if isEncrypted {
-            // Listen to room timeline for incoming encryption keys
-            listenForEncryptionKeysFromTimeline()
+            // Listen to room timeline for incoming encryption keys.
+            // IMPORTANT: timeline.subscribeForUpdates must complete before we access
+            // timelineItemProvider (force-unwraps innerTimelineItemProvider otherwise).
+            // At VoIP cold-start the timeline isn't yet subscribed — без await => CRASH.
+            Task { [weak self] in
+                await self?.listenForEncryptionKeysFromTimeline()
+            }
 
             // Send our key + periodic resend (remote may join later)
             Task { [weak self] in
@@ -539,11 +544,15 @@ final class NativeCallSession: ObservableObject {
 
     // MARK: - E2EE Key from Room Timeline
 
-    private func listenForEncryptionKeysFromTimeline() {
+    private func listenForEncryptionKeysFromTimeline() async {
         guard let roomProxy else {
             MXLog.warning("sTalk NativeCall E2EE: No roomProxy — can't listen to timeline")
             return
         }
+
+        // Ensure timelineItemProvider готов — на VoIP cold-start его ещё нет,
+        // и force-unwrap в getter крашит app. subscribeForUpdates идемпотентен.
+        await roomProxy.timeline.subscribeForUpdates()
 
         roomProxy.timeline.timelineItemProvider.updatePublisher
             .receive(on: DispatchQueue.main)
