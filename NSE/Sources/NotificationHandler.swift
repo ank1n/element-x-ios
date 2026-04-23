@@ -108,8 +108,18 @@ class NotificationHandler {
         case .messageLike(let messageContent):
             os_log(.default, log: nseHandlerLog, "MessageLike content: %{public}@", String(describing: messageContent))
             switch messageContent {
+            case .roomEncrypted:
+                // Suppress encrypted event в комнате с активным звонком:
+                // это обычно call E2EE ключи или signalling (io.element.call.*).
+                // На проде push rules на Synapse должны не слать их в regular pusher
+                // (слой 1), это safety net — слой 3 защиты от banner спама.
+                if let room = userSession.roomForIdentifier(itemProxy.roomID),
+                   room.hasActiveRoomCall() {
+                    os_log(.default, log: nseHandlerLog, "Encrypted event in active-call room %{public}@ — suppressing (likely call signalling)", itemProxy.roomID)
+                    return .processedShouldDiscard
+                }
+                return .shouldDisplay
             case .poll,
-                 .roomEncrypted,
                  .sticker:
                 return .shouldDisplay
             case .roomMessage(let messageType, _):
