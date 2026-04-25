@@ -197,6 +197,7 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         let tokenStr = pushCredentials.token.base64EncodedString()
         os_log(.info, log: pushLog, "VoIP token received (%d bytes): %{public}@", pushCredentials.token.count, tokenStr)
         MXLog.info("sTalk: VoIP push token received (\(pushCredentials.token.count) bytes)")
+        DiagLog.write("VoIP", "didUpdate token=\(tokenStr.prefix(16))…(len=\(pushCredentials.token.count)) registrationEnabled=\(Self.kEnableVoIPPusherRegistration)")
         if Self.kEnableVoIPPusherRegistration {
             Task { [weak self] in
                 await self?.registerVoIPPusher(with: pushCredentials.token)
@@ -208,6 +209,7 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         // iOS REQUIRES reportNewIncomingCall for every VoIP push, otherwise the app is killed.
         // If payload is missing required fields, report a fake call and immediately cancel it.
         os_log(.info, log: pushLog, "VoIP push received! payload keys: %{public}@", "\(payload.dictionaryPayload.keys)")
+        DiagLog.write("VoIP", "didReceiveIncomingPush type=\(type.rawValue) keys=\(Array(payload.dictionaryPayload.keys))")
 
         // VoIP push может прийти от двух источников с разным форматом payload:
         // - NSE (reportNewIncomingVoIPPushPayload): ключи camelCase (ElementCallServiceNotificationKey)
@@ -266,9 +268,13 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         // https://stackoverflow.com/a/41230020/730924
         update.remoteHandle = .init(type: .generic, value: roomID)
 
+        DiagLog.write("VoIP", "reportNewIncomingCall room=\(roomID) caller=\(callerName) callKitID=\(callID.callKitID)")
         callProvider.reportNewIncomingCall(with: callID.callKitID, update: update) { [weak self] error in
             if let error {
                 MXLog.error("Failed reporting new incoming call with error: \(error)")
+                DiagLog.write("VoIP", "  reportNewIncomingCall FAILED: \(error.localizedDescription)")
+            } else {
+                DiagLog.write("VoIP", "  reportNewIncomingCall OK → CallKit shown")
             }
 
             self?.actionsSubject.send(.receivedIncomingCallRequest)
@@ -421,9 +427,11 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
             try await clientProxy.setPusher(with: configuration)
             os_log(.info, log: pushLog, "VoIP pusher REGISTERED successfully (appID: %{public}@)", appID)
             MXLog.info("VoIP pusher registered successfully (appID: \(appID))")
+            DiagLog.write("VoIP", "registerVoIPPusher OK appID=\(appID) pushkey=\(pushkey.prefix(16))…")
         } catch {
             os_log(.error, log: pushLog, "VoIP pusher FAILED: %{public}@", "\(error)")
             MXLog.error("Failed to register VoIP pusher: \(error)")
+            DiagLog.write("VoIP", "registerVoIPPusher FAILED: \(error.localizedDescription)")
         }
     }
 

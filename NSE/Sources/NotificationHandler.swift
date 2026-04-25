@@ -13,6 +13,58 @@ import UserNotifications
 
 private let nseHandlerLog = OSLog(subsystem: "ru.implica.stalk.nse", category: "Handler")
 
+/// Удобная обёртка над общим DiagLog — добавляет тег `NSE`.
+/// Реализация enum DiagLog находится в InfoPlistReader.swift (общий файл всех targets).
+private enum NSEDiagLog {
+    static func write(_ message: String) {
+        DiagLog.write("NSE", message)
+    }
+}
+
+/// Кэш event_id обработанных за последние ~60 сек чтобы дропать дубли push.
+/// Sygnal иногда retry'ит push с тем же event — это приводит к двум banner'ам
+/// для одного звонка. Persisted в AppGroup для cross-NSE-instance dedup
+/// (NSE может перезапускаться между push'ами).
+private enum NSEEventDedupCache {
+    private static let queue = DispatchQueue(label: "ru.implica.stalk.nse-dedup", qos: .utility)
+    private static let ttl: TimeInterval = 60
+
+    private static var fileURL: URL? {
+        DiagLog.fileURL?.deletingLastPathComponent().appending(component: "nse-dedup.json")
+    }
+
+    /// Возвращает true если event уже обработан недавно (значит дубль — discard).
+    static func isDuplicateAndMark(eventID: String) -> Bool {
+        queue.sync {
+            var cache = load()
+            let now = Date().timeIntervalSince1970
+            cache = cache.filter { now - $0.value < ttl }
+            if cache[eventID] != nil {
+                save(cache)
+                return true
+            }
+            cache[eventID] = now
+            save(cache)
+            return false
+        }
+    }
+
+    private static func load() -> [String: TimeInterval] {
+        guard let url = fileURL,
+              let data = try? Data(contentsOf: url),
+              let dict = try? JSONDecoder().decode([String: TimeInterval].self, from: data) else {
+            return [:]
+        }
+        return dict
+    }
+
+    private static func save(_ cache: [String: TimeInterval]) {
+        guard let url = fileURL,
+              let data = try? JSONEncoder().encode(cache) else { return }
+        try? data.write(to: url, options: .atomic)
+    }
+}
+
 class NotificationHandler {
     private let userSession: NSEUserSession
     private let settings: CommonSettingsProtocol
@@ -45,25 +97,54 @@ class NotificationHandler {
     
     func processEvent(_ eventID: String, roomID: String) async {
         MXLog.info("\(tag) Processing event: \(eventID) in room: \(roomID)")
-        
-        // Copy over the unread information to the notification badge
-        notificationContent.badge = notificationContent.unreadCount as NSNumber?
-        MXLog.info("\(tag) New badge value: \(notificationContent.badge?.stringValue ?? "nil")")
-        
-        guard let notificationItemProxy = await userSession.notificationItemProxy(roomID: roomID, eventID: eventID) else {
-            MXLog.error("\(tag) Failed retrieving notification item")
+        NSEDiagLog.write("processEvent eventID=\(eventID) roomID=\(roomID) tag=\(tag)")
+
+        // Дедупликация: Sygnal/APNs иногда дублируют push с тем же event_id
+        // (retry или race). Без dedup пользователь видит 2-3 одинаковых banner.
+        if NSEEventDedupCache.isDuplicateAndMark(eventID: eventID) {
+            NSEDiagLog.write("  → DUPLICATE event (seen <60s ago), DISCARD")
             discardNotification()
             return
         }
-        
-        switch await preprocessNotification(notificationItemProxy) {
+
+        // Copy over the unread information to the notification badge
+        notificationContent.badge = notificationContent.unreadCount as NSNumber?
+        MXLog.info("\(tag) New badge value: \(notificationContent.badge?.stringValue ?? "nil")")
+
+        // Fast-fail timeout (3 sec). Если RustSDK не успел fetch+decrypt event за
+        // 3 секунды — discard. Раньше блокировались на 19+ секунд пытаясь decrypt
+        // ratchet keys, к моменту обработки следующего ring event NSE уже мёртв.
+        // Лучше пропустить один потерянный chat event чем зависнуть весь pipeline.
+        let item: NotificationItemProxyProtocol? = await withTaskGroup(of: NotificationItemProxyProtocol?.self) { group in
+            group.addTask { [weak self] in
+                await self?.userSession.notificationItemProxy(roomID: roomID, eventID: eventID)
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+
+        guard let notificationItemProxy = item else {
+            MXLog.error("\(tag) Failed retrieving notification item (or timeout)")
+            NSEDiagLog.write("  → failed/timeout retrieving notification item (>3s), DISCARD")
+            discardNotification()
+            return
+        }
+
+        let result = await preprocessNotification(notificationItemProxy)
+        NSEDiagLog.write("  → result=\(result)")
+        switch result {
         case .processedShouldDiscard, .unsupportedShouldDiscard:
             discardNotification()
         case .shouldDisplay:
             await notificationContentBuilder.process(notificationContent: &notificationContent,
                                                      notificationItem: notificationItemProxy,
                                                      mediaProvider: userSession.mediaProvider)
-            
+
             deliverNotification()
         }
     }
@@ -103,6 +184,7 @@ class NotificationHandler {
         
         let eventContent = try? event.content()
         os_log(.default, log: nseHandlerLog, "Event content type: %{public}@", String(describing: eventContent))
+        NSEDiagLog.write("  preprocess: contentType=\(String(describing: eventContent)) eventID=\(event.eventId())")
 
         switch eventContent {
         case .messageLike(let messageContent):
@@ -113,8 +195,9 @@ class NotificationHandler {
                 // это обычно call E2EE ключи или signalling (io.element.call.*).
                 // На проде push rules на Synapse должны не слать их в regular pusher
                 // (слой 1), это safety net — слой 3 защиты от banner спама.
-                if let room = userSession.roomForIdentifier(itemProxy.roomID),
-                   room.hasActiveRoomCall() {
+                let hasActiveCall = userSession.roomForIdentifier(itemProxy.roomID)?.hasActiveRoomCall() ?? false
+                NSEDiagLog.write("  encrypted event hasActiveRoomCall=\(hasActiveCall) room=\(itemProxy.roomID)")
+                if hasActiveCall {
                     os_log(.default, log: nseHandlerLog, "Encrypted event in active-call room %{public}@ — suppressing (likely call signalling)", itemProxy.roomID)
                     return .processedShouldDiscard
                 }
@@ -191,8 +274,10 @@ class NotificationHandler {
         // `CXProvider.reportNewIncomingCall` to show the system UI and handle actions on it.
         // N.B. this flow works properly only when background processing capabilities are enabled
         os_log(.default, log: nseHandlerLog, "handleCallNotification: type=%{public}@ room=%{public}@ expiration=%llu", String(describing: notificationType), roomID, expirationTimestamp)
+        NSEDiagLog.write("  handleCallNotification type=\(notificationType) room=\(roomID) expiration=\(expirationTimestamp)")
         guard notificationType == .ring else {
             os_log(.default, log: nseHandlerLog, "Non-ringing call, suppressing — not a ring")
+            NSEDiagLog.write("    → not a ring, DISCARD")
             return .processedShouldDiscard
         }
         
@@ -235,15 +320,35 @@ class NotificationHandler {
                        ElementCallServiceNotificationKey.rtcNotifyEventID.rawValue: rtcNotifyEventID] as [String: Any]
         
         os_log(.default, log: nseHandlerLog, "Attempting CXProvider.reportNewIncomingVoIPPushPayload for room=%{public}@ display=%{public}@", roomID, roomDisplayName)
+        NSEDiagLog.write("    attempting reportNewIncomingVoIPPushPayload room=\(roomID)")
         do {
             try await CXProvider.reportNewIncomingVoIPPushPayload(payload)
             os_log(.default, log: nseHandlerLog, "Call notification delegated to CallKit OK")
+            NSEDiagLog.write("    → CallKit OK, DISCARD push (VoIP path)")
         } catch {
+            // Code=2 (callUuidAlreadyExists) — типичный кейс когда предыдущий call
+            // не был чисто tear down. Делаем небольшой sleep и пробуем ещё раз —
+            // iOS может за это время освободить registry. Без retry сразу падаем
+            // в banner fallback, что приводит к visible regression CallKit UI.
+            let nsError = error as NSError
+            if nsError.domain == "com.apple.CallKit.error.notificationserviceextension", nsError.code == 2 {
+                NSEDiagLog.write("    → CallKit Code=2 (UUID exists) — retry after 0.5s")
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                do {
+                    try await CXProvider.reportNewIncomingVoIPPushPayload(payload)
+                    NSEDiagLog.write("    → CallKit RETRY OK, DISCARD push (VoIP path)")
+                    return .processedShouldDiscard
+                } catch {
+                    NSEDiagLog.write("    → CallKit RETRY FAILED: \(error) — fallback to banner")
+                }
+            } else {
+                NSEDiagLog.write("    → CallKit FAILED: \(error) — fallback to banner")
+            }
             os_log(.error, log: nseHandlerLog, "reportNewIncomingVoIPPushPayload FAILED: %{public}@, showing as call notification", String(describing: error))
             // CallKit не сработал — показываем как push-уведомление со звонком
             return .shouldDisplay
         }
-        
+
         return .processedShouldDiscard
     }
     

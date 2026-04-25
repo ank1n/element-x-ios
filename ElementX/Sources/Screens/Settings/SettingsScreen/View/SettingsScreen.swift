@@ -18,6 +18,18 @@ struct SettingsScreen: View {
         settingsDesignTheme == "cosmos"
     }
 
+    /// URL of NSE persistent diagnostic log в AppGroup container, если файл существует.
+    /// NSE пишет туда события push-обработки; user может расшарить через ShareLink.
+    private func nseDiagLogURL() -> URL? {
+        let groupID = InfoPlistReader.main.appGroupIdentifier
+        guard let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupID) else { return nil }
+        let url = container
+            .appending(component: "Library", directoryHint: .isDirectory)
+            .appending(component: "Caches", directoryHint: .isDirectory)
+            .appending(component: "nse-events.log")
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
     private let bgGradientTop = Color(red: 0.90, green: 0.92, blue: 1.0)
     private let bgGradientBottom = Color(red: 0.95, green: 0.96, blue: 1.0)
 
@@ -459,6 +471,24 @@ struct SettingsScreen: View {
                             context.send(viewAction: .reportBug)
                         })
                         .accessibilityIdentifier(A11yIdentifiers.settingsScreen.reportBug)
+            }
+
+            if let nseLogURL = nseDiagLogURL() {
+                ListRow(kind: .custom {
+                    ShareLink(item: nseLogURL) {
+                        HStack(spacing: 16) {
+                            CompoundIcon(\.shareIos)
+                                .foregroundStyle(.compound.iconPrimary)
+                            Text("Share NSE diagnostic log")
+                                .foregroundStyle(.compound.textPrimary)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                })
             }
             
             if context.viewState.showAnalyticsSettings {

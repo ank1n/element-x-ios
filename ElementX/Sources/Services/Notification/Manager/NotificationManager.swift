@@ -81,8 +81,10 @@ final class NotificationManager: NSObject, NotificationManagerProtocol {
     func register(with deviceToken: Data) async -> Bool {
         let tokenString = deviceToken.base64EncodedString()
         os_log(.info, log: pushLog, "register(with:) called, token=%{public}@", tokenString)
+        DiagLog.write("APNS", "didRegisterForRemoteNotifications token=\(tokenString.prefix(16))…(len=\(deviceToken.count))")
         guard let userSession else {
             os_log(.error, log: pushLog, "register(with:) — userSession is nil, cannot set pusher!")
+            DiagLog.write("APNS", "  userSession=nil → setPusher NOT called")
             return false
         }
         os_log(.info, log: pushLog, "register(with:) — calling setPusher...")
@@ -210,10 +212,12 @@ final class NotificationManager: NSObject, NotificationManagerProtocol {
             try await clientProxy.setPusher(with: configuration)
             os_log(.info, log: pushLog, "setPusher SUCCEEDED — pusher registered with server")
             MXLog.info("Set pusher succeeded")
+            DiagLog.write("APNS", "setPusher OK appId=\(appId) format=eventIdOnly")
             return true
         } catch {
             os_log(.error, log: pushLog, "setPusher FAILED: %{public}@", "\(error)")
             MXLog.error("Set pusher failed: \(error)")
+            DiagLog.write("APNS", "setPusher FAILED: \(error.localizedDescription)")
             return false
         }
     }

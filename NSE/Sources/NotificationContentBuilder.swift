@@ -62,11 +62,24 @@ struct NotificationContentBuilder {
                 processEmpty(&notificationContent)
                 return
             }
-            
+
+            // Для звонка (rtc.notification ring) НЕ вызываем processMessageLike —
+            // он добавляет CommunicationContext с senderDisplayName через mention
+            // modifier ("X упомянул или ответил"). Для звонка нужен чистый banner.
+            if case .rtcNotification = messageContent {
+                let caller = notificationItem.senderDisplayName ?? notificationItem.roomDisplayName
+                notificationContent.title = "📞 \(caller)"
+                notificationContent.body = L10n.notificationIncomingCall
+                notificationContent.sound = UNNotificationSound.defaultRingtone
+                notificationContent.interruptionLevel = .timeSensitive
+                notificationContent.categoryIdentifier = NotificationConstants.Category.message
+                return
+            }
+
             await processMessageLike(notificationContent: &notificationContent,
                                      notificationItem: notificationItem,
                                      mediaProvider: mediaProvider)
-            
+
             switch messageContent {
             case .roomMessage(let messageType, _):
                 await processRoomMessage(notificationContent: &notificationContent,
@@ -77,12 +90,6 @@ struct NotificationContentBuilder {
                 notificationContent.body = L10n.commonPollSummary(question)
             case .callInvite:
                 notificationContent.body = L10n.commonUnsupportedCall
-            case .rtcNotification:
-                // Звонок пришёл через обычный push (не VoIP) — показываем с рингтоном
-                notificationContent.title = "📞 " + (notificationItem.senderDisplayName ?? notificationItem.roomDisplayName)
-                notificationContent.body = L10n.notificationIncomingCall
-                notificationContent.sound = UNNotificationSound.defaultRingtone
-                notificationContent.interruptionLevel = .timeSensitive
             default:
                 processEmpty(&notificationContent)
             }

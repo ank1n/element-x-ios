@@ -7,6 +7,54 @@
 //
 
 import Foundation
+import os.log
+
+/// Persistent diagnostic log shared между всеми targets (NSE, ElementX, ShareExt, etc)
+/// через один файл в AppGroup container.
+/// Цель — debug push/CallKit flow без подключения iPhone к Mac.
+/// File: <AppGroup>/Library/Caches/nse-events.log, ring buffer ~500 KB.
+/// User шарит через Settings → Share NSE diagnostic log.
+/// Размещён в InfoPlistReader.swift потому что этот файл уже включён во все targets.
+enum DiagLog {
+    private static let queue = DispatchQueue(label: "ru.implica.stalk.diag", qos: .utility)
+    private static let maxBytes: Int = 500_000
+    private static let logger = OSLog(subsystem: "ru.implica.stalk", category: "DiagLog")
+
+    static var fileURL: URL? {
+        let groupID = InfoPlistReader.main.appGroupIdentifier
+        guard let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupID) else { return nil }
+        let dir = container.appending(component: "Library", directoryHint: .isDirectory)
+            .appending(component: "Caches", directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appending(component: "nse-events.log")
+    }
+
+    static func write(_ tag: String, _ message: String) {
+        guard let url = fileURL else { return }
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        let line = "[\(f.string(from: Date()))] \(tag) \(message)\n"
+        queue.async {
+            do {
+                if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+                   let size = attrs[.size] as? Int, size > maxBytes {
+                    try? FileManager.default.removeItem(at: url)
+                }
+                if FileManager.default.fileExists(atPath: url.path) {
+                    let h = try FileHandle(forWritingTo: url)
+                    try h.seekToEnd()
+                    if let d = line.data(using: .utf8) { try h.write(contentsOf: d) }
+                    try h.close()
+                } else {
+                    try line.write(to: url, atomically: true, encoding: .utf8)
+                }
+            } catch {
+                os_log(.error, log: logger, "DiagLog write failed: %{public}@", error.localizedDescription)
+            }
+        }
+    }
+}
 
 struct InfoPlistReader {
     private enum Keys {
