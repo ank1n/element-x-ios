@@ -189,8 +189,13 @@ final class NotificationManager: NSObject, NotificationManagerProtocol {
         os_log(.info, log: pushLog, "setPusher: pushkey=%{public}@, appId=%{public}@, gateway=%{public}@", pushkey, appId, gateway)
 
         do {
+            // alert.locKey="" — пустая локализация. iOS пытается localize пустой ключ
+            // → не находит → не показывает visible banner. Это снимает раздражающий
+            // «sTalk Уведомление» (раньше locKey="Notification") когда NSE timeout'ится
+            // и iOS падает на default payload. Push при этом остаётся alert-type
+            // (т.е. NSE триггерится корректно), но при NSE failure — silent.
             let defaultPayload = APNSPayload(aps: APSInfo(mutableContent: 1,
-                                                          alert: APSAlert(locKey: "Notification",
+                                                          alert: APSAlert(locKey: "",
                                                                           locArgs: [])),
                                              pusherNotificationClientIdentifier: clientProxy.pusherNotificationClientIdentifier)
 

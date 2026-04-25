@@ -326,26 +326,13 @@ class NotificationHandler {
             os_log(.default, log: nseHandlerLog, "Call notification delegated to CallKit OK")
             NSEDiagLog.write("    → CallKit OK, DISCARD push (VoIP path)")
         } catch {
-            // Code=2 (callUuidAlreadyExists) — типичный кейс когда предыдущий call
-            // не был чисто tear down. Делаем небольшой sleep и пробуем ещё раз —
-            // iOS может за это время освободить registry. Без retry сразу падаем
-            // в banner fallback, что приводит к visible regression CallKit UI.
-            let nsError = error as NSError
-            if nsError.domain == "com.apple.CallKit.error.notificationserviceextension", nsError.code == 2 {
-                NSEDiagLog.write("    → CallKit Code=2 (UUID exists) — retry after 0.5s")
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                do {
-                    try await CXProvider.reportNewIncomingVoIPPushPayload(payload)
-                    NSEDiagLog.write("    → CallKit RETRY OK, DISCARD push (VoIP path)")
-                    return .processedShouldDiscard
-                } catch {
-                    NSEDiagLog.write("    → CallKit RETRY FAILED: \(error) — fallback to banner")
-                }
-            } else {
-                NSEDiagLog.write("    → CallKit FAILED: \(error) — fallback to banner")
-            }
+            // Apple Code=2 для NSE→CallKit shim — semantic error, не retryable.
+            // Эта API работает только когда исходный push был VoIP push (PKPushRegistry),
+            // для regular APNs push'а превратить в CallKit невозможно. Real CallKit
+            // запускается через PKPushRegistry main app, не из NSE shim.
+            // Fallback на banner — единственный путь.
             os_log(.error, log: nseHandlerLog, "reportNewIncomingVoIPPushPayload FAILED: %{public}@, showing as call notification", String(describing: error))
-            // CallKit не сработал — показываем как push-уведомление со звонком
+            NSEDiagLog.write("    → CallKit FAILED: \(error) — fallback to banner (NSE shim не работает для regular APNs)")
             return .shouldDisplay
         }
 
