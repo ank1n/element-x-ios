@@ -21,10 +21,14 @@ private enum NSEDiagLog {
     }
 }
 
-/// Кэш event_id обработанных за последние ~60 сек чтобы дропать дубли push.
-/// Sygnal иногда retry'ит push с тем же event — это приводит к двум banner'ам
-/// для одного звонка. Persisted в AppGroup для cross-NSE-instance dedup
-/// (NSE может перезапускаться между push'ами).
+/// Кэш для дедупликации push'ей за последние ~60 сек.
+/// Persisted в AppGroup для cross-NSE-instance dedup (NSE может перезапускаться).
+///
+/// Два уровня дедупа:
+/// 1. По `eventID` — Sygnal/APNs retry с тем же event_id (build 58)
+/// 2. По `roomID:type` (например `room:ring`) — Element Web в Variant B шлёт
+///    несколько ring events за один звонок с разными eventIDs за 5-10 сек.
+///    Build 61 дедуплицирует по семантическому ключу.
 private enum NSEEventDedupCache {
     private static let queue = DispatchQueue(label: "ru.implica.stalk.nse-dedup", qos: .utility)
     private static let ttl: TimeInterval = 60
@@ -35,15 +39,25 @@ private enum NSEEventDedupCache {
 
     /// Возвращает true если event уже обработан недавно (значит дубль — discard).
     static func isDuplicateAndMark(eventID: String) -> Bool {
+        isDuplicateAndMark(key: "evt:\(eventID)")
+    }
+
+    /// Семантический dedup по комнате и типу события (например `ring`).
+    /// Используется для подавления нескольких ring events за один звонок.
+    static func isDuplicateSemanticAndMark(roomID: String, kind: String) -> Bool {
+        isDuplicateAndMark(key: "sem:\(roomID):\(kind)")
+    }
+
+    private static func isDuplicateAndMark(key: String) -> Bool {
         queue.sync {
             var cache = load()
             let now = Date().timeIntervalSince1970
             cache = cache.filter { now - $0.value < ttl }
-            if cache[eventID] != nil {
+            if cache[key] != nil {
                 save(cache)
                 return true
             }
-            cache[eventID] = now
+            cache[key] = now
             save(cache)
             return false
         }
@@ -278,6 +292,15 @@ class NotificationHandler {
         guard notificationType == .ring else {
             os_log(.default, log: nseHandlerLog, "Non-ringing call, suppressing — not a ring")
             NSEDiagLog.write("    → not a ring, DISCARD")
+            return .processedShouldDiscard
+        }
+
+        // Семантический dedup: Element Web в Variant B иногда шлёт 2-3 ring events
+        // за один звонок с разными eventIDs за 5-10 сек. Per-event dedup не помогает
+        // (eventIDs разные), нужен dedup по комнате+типу. Если ring уже был обработан
+        // в этой комнате за последние 60 сек — discard, не показываем второй banner.
+        if NSEEventDedupCache.isDuplicateSemanticAndMark(roomID: roomID, kind: "ring") {
+            NSEDiagLog.write("    → DUPLICATE ring for room \(roomID) (within 60s), DISCARD")
             return .processedShouldDiscard
         }
         
