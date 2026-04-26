@@ -443,6 +443,18 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                             case .connected:
                                 self.state.liveKitRoomManager = self.liveKitRoomManager
                                 self.state.wasConnected = true
+                                // STMOB-80: header «Вызов...» застревал — нужен явный
+                                // переход в connected + старт таймера. Раньше зависело
+                                // только от MatrixRTC infoPublisher, который опаздывал.
+                                if self.state.callStatus != .connected {
+                                    self.state.callStatus = .connected
+                                    self.startCallTimer()
+                                    MXLog.info("sTalk: callStatus=connected via NativeCallSession")
+                                }
+                                // STMOB-80: subscribe на LiveKit localVideoTrack чтобы
+                                // icon камеры всегда отражал реальность. Раньше observe
+                                // подключалось только в старом connectNativeLiveKit пути.
+                                self.observeLiveKitState()
                                 // NativeCallSession always enables camera on connect.
                                 // Sync UI state and disable if incoming call (startWithVideoEnabled=false)
                                 if self.startWithVideoEnabled {
