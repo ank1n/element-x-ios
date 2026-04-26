@@ -189,18 +189,16 @@ final class NotificationManager: NSObject, NotificationManagerProtocol {
         os_log(.info, log: pushLog, "setPusher: pushkey=%{public}@, appId=%{public}@, gateway=%{public}@", pushkey, appId, gateway)
 
         do {
-            // Default payload alert.locKey = несуществующий ключ "stalk_silent_default".
-            // Apple принимает payload (valid string, не empty), но iOS не находит
-            // localization → не показывает visible banner immediately. NSE триггерится
-            // нормально (mutable-content + alert object присутствуют). NSE контролирует
-            // когда показать banner: если decrypt valid chat → modified content с body
-            // → banner. Если discard / timeout → silent.
+            // ВНИМАНИЕ: alert.locKey должен быть существующим ключом локализации.
+            // Build 66 пробовал несуществующий «stalk_silent_default» — Apple silently
+            // дропает push без valid locKey, и regular chat сообщения тоже потерялись.
+            // Откат на «Notification» — push delivery работает, но возвращаются лишние
+            // «sTalk Уведомление» banner при NSE timeout / discard.
             //
-            // Build 59 пробовал locKey="" — Apple отклонил push entirely (regression).
-            // Несуществующий ключ — valid, но не отображается.
-            // Build 66 — попытка убрать «sTalk Уведомление» артефакт.
+            // Real fix лишних banner — server-side via Sygnal v7+ heuristics
+            // (Molly STALK-202) или iOS rust-sdk migration на to-device (STALK-205).
             let defaultPayload = APNSPayload(aps: APSInfo(mutableContent: 1,
-                                                          alert: APSAlert(locKey: "stalk_silent_default",
+                                                          alert: APSAlert(locKey: "Notification",
                                                                           locArgs: [])),
                                              pusherNotificationClientIdentifier: clientProxy.pusherNotificationClientIdentifier)
 
