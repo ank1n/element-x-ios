@@ -180,8 +180,37 @@ class NotificationHandler {
                                                      notificationItem: notificationItemProxy,
                                                      mediaProvider: userSession.mediaProvider)
 
+            // LAST CHANCE: пока NSE строил content (могло занять несколько секунд),
+            // VoIP push мог прийти и main app запустить CallKit. Перепроверяем
+            // marker перед deliver — если CallKit активен, не показываем banner.
+            if isVoIPHandledRecently(roomID: roomID, withinSeconds: 30) {
+                NSEDiagLog.write("  → VoIP marker появился перед deliver — DISCARD banner")
+                discardNotification()
+                return
+            }
+
             deliverNotification()
         }
+    }
+
+    /// Проверка cross-process marker от main app (используется и в processEvent,
+    /// и в handleCallNotification).
+    private func isVoIPHandledRecently(roomID: String, withinSeconds: TimeInterval) -> Bool {
+        let groupID = InfoPlistReader.main.appGroupIdentifier
+        guard let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupID) else { return false }
+        let allowed = CharacterSet.alphanumerics.union(.init(charactersIn: "._-"))
+        let safeKey = roomID.unicodeScalars.map { allowed.contains($0) ? Character($0) : "_" }
+            .map(String.init).joined()
+        let url = container
+            .appending(component: "Library", directoryHint: .isDirectory)
+            .appending(component: "Caches", directoryHint: .isDirectory)
+            .appending(component: "voip-handled", directoryHint: .isDirectory)
+            .appending(component: safeKey)
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let mtime = attrs[.modificationDate] as? Date else {
+            return false
+        }
+        return -mtime.timeIntervalSinceNow < withinSeconds
     }
     
     func handleTimeExpiration() {
@@ -288,26 +317,6 @@ class NotificationHandler {
         }
     }
     
-    /// Проверка cross-process marker от main app: VoIP push для этой комнаты
-    /// был обработан и CallKit запущен. Marker пишет ElementCallService.
-    private func isVoIPHandledRecently(roomID: String, withinSeconds: TimeInterval) -> Bool {
-        let groupID = InfoPlistReader.main.appGroupIdentifier
-        guard let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupID) else { return false }
-        let allowed = CharacterSet.alphanumerics.union(.init(charactersIn: "._-"))
-        let safeKey = roomID.unicodeScalars.map { allowed.contains($0) ? Character($0) : "_" }
-            .map(String.init).joined()
-        let url = container
-            .appending(component: "Library", directoryHint: .isDirectory)
-            .appending(component: "Caches", directoryHint: .isDirectory)
-            .appending(component: "voip-handled", directoryHint: .isDirectory)
-            .appending(component: safeKey)
-        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-              let mtime = attrs[.modificationDate] as? Date else {
-            return false
-        }
-        return -mtime.timeIntervalSinceNow < withinSeconds
-    }
-
     /// Handle incoming call notifications.
     /// - Returns: A boolean indicating whether the notification was handled and should now be discarded.
     private func handleCallNotification(notificationType: RtcNotificationType,

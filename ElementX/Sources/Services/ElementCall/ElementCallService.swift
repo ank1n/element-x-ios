@@ -215,6 +215,18 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         // - NSE (reportNewIncomingVoIPPushPayload): ключи camelCase (ElementCallServiceNotificationKey)
         // - PushKit прямо от Sygnal: Matrix raw ключи (snake_case: room_id, event_id)
         let dict = payload.dictionaryPayload
+
+        // EARLY marker — пишем сразу при получении VoIP push, до парсинга payload
+        // и reportNewIncomingCall. Это даёт NSE максимально раннее знание что
+        // CallKit pipeline активен — main гард в processEvent сработает на любом
+        // следующем push в этой комнате (encrypted ratchet keys, member updates,
+        // дубль ring и т.д.) и не покажет лишний banner.
+        if let earlyRoomID = (dict[ElementCallServiceNotificationKey.roomID.rawValue] as? String)
+            ?? (dict["room_id"] as? String) {
+            Self.writeVoIPHandledMarker(roomID: earlyRoomID)
+            DiagLog.write("VoIP", "  EARLY marker for room=\(earlyRoomID)")
+        }
+
         guard let roomID = (dict[ElementCallServiceNotificationKey.roomID.rawValue] as? String)
             ?? (dict["room_id"] as? String) else {
             MXLog.error("Missing room identifier for incoming voip call, reporting and cancelling: \(dict)")
