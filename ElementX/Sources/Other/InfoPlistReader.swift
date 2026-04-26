@@ -17,7 +17,7 @@ import os.log
 /// Размещён в InfoPlistReader.swift потому что этот файл уже включён во все targets.
 enum DiagLog {
     private static let queue = DispatchQueue(label: "ru.implica.stalk.diag", qos: .utility)
-    private static let maxBytes: Int = 500_000
+    private static let maxBytes = 500_000
     private static let logger = OSLog(subsystem: "ru.implica.stalk", category: "DiagLog")
 
     static var fileURL: URL? {
