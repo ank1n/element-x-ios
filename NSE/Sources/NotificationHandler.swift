@@ -361,7 +361,16 @@ class NotificationHandler {
                 }
                 
                 try? await expiringTask.run(timeout: .seconds(5)) // Wait 5 seconds or just use whatever is available
-                
+
+                // За эти 5 сек ожидания мог прийти VoIP push в main app и запустить
+                // CallKit. Перепроверяем marker — если CallKit запустился, не показываем
+                // дубль banner. Это закрывает race condition когда NSE начинает
+                // handleCallNotification ДО прихода VoIP push.
+                if isVoIPHandledRecently(roomID: roomID, withinSeconds: 30) {
+                    NSEDiagLog.write("    → VoIP marker появился за время wait (5s) — DISCARD banner")
+                    return .processedShouldDiscard
+                }
+
                 guard room.hasActiveRoomCall() else {
                     MXLog.info("The room no longer has an ongoing call, handling as push notification")
                     return .shouldDisplay
@@ -384,6 +393,13 @@ class NotificationHandler {
         
         os_log(.default, log: nseHandlerLog, "Attempting CXProvider.reportNewIncomingVoIPPushPayload for room=%{public}@ display=%{public}@", roomID, roomDisplayName)
         NSEDiagLog.write("    attempting reportNewIncomingVoIPPushPayload room=\(roomID)")
+        // Last chance check: ещё раз marker перед NSE shim — VoIP мог прийти
+        // прямо в этот момент, отделяет от первого check секунды wait + setup.
+        if isVoIPHandledRecently(roomID: roomID, withinSeconds: 30) {
+            NSEDiagLog.write("    → VoIP marker свежий перед shim — DISCARD banner")
+            return .processedShouldDiscard
+        }
+
         do {
             try await CXProvider.reportNewIncomingVoIPPushPayload(payload)
             os_log(.default, log: nseHandlerLog, "Call notification delegated to CallKit OK")
