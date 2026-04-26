@@ -124,6 +124,16 @@ class NotificationHandler {
         MXLog.info("\(tag) Processing event: \(eventID) in room: \(roomID)")
         NSEDiagLog.write("processEvent eventID=\(eventID) roomID=\(roomID) tag=\(tag)")
 
+        // Главный гард: если в этой комнате CallKit активен (VoIP marker свежий),
+        // НИЧЕГО не показываем. Любой push в активной call room = call signalling
+        // (ratchet keys, member updates, дубль ring) — пользователь видит CallKit
+        // и не должен получать поверх ещё banner-ы.
+        if isVoIPHandledRecently(roomID: roomID, withinSeconds: 30) {
+            NSEDiagLog.write("  → VoIP marker свежий — CallKit активен, DISCARD all")
+            discardNotification()
+            return
+        }
+
         // Дедупликация: Sygnal/APNs иногда дублируют push с тем же event_id
         // (retry или race). Без dedup пользователь видит 2-3 одинаковых banner.
         if NSEEventDedupCache.isDuplicateAndMark(eventID: eventID) {
