@@ -490,7 +490,9 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         // accept). Это уменьшает zombie state events от iOS Element X (legacy v1
         // {"memberships":[]} format) которые Sygnal v9 _room_has_active_call неправильно
         // интерпретирует.
-        if let roomIDForClear = ongoingCallID?.roomID ?? incomingCallID?.roomID {
+        let roomIDForClear = ongoingCallID?.roomID ?? incomingCallID?.roomID
+        DiagLog.write("Call", "tearDownCallSession: ongoing=\(ongoingCallID?.roomID ?? "nil") incoming=\(incomingCallID?.roomID ?? "nil") clearTarget=\(roomIDForClear ?? "nil")")
+        if let roomIDForClear {
             Task { [weak self] in
                 await self?.clearCallMemberStateEvents(roomID: roomIDForClear)
             }
@@ -502,20 +504,26 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     /// Direct HTTP PUT для очистки своих msc3401.call.member state events.
     /// Workaround для отсутствия sendStateEvent в matrix-rust-sdk swift FFI.
     private func clearCallMemberStateEvents(roomID: String) async {
-        guard let clientProxy else { return }
+        DiagLog.write("Call", "clearCallMember START room=\(roomID)")
+        guard let clientProxy else {
+            DiagLog.write("Call", "  clearCallMember: clientProxy=nil — ABORT")
+            return
+        }
         let userID = clientProxy.userID
         let homeserverString = clientProxy.homeserver
+        DiagLog.write("Call", "  clearCallMember: userID=\(userID) homeserver=\(homeserverString)")
         guard let homeserverURL = URL(string: homeserverString) else {
-            DiagLog.write("Call", "clearCallMember: invalid homeserver URL")
+            DiagLog.write("Call", "  clearCallMember: invalid homeserver URL — ABORT")
             return
         }
         let accessToken: String
         do {
             accessToken = try clientProxy.matrixAccessToken()
         } catch {
-            DiagLog.write("Call", "clearCallMember: no access token — \(error.localizedDescription)")
+            DiagLog.write("Call", "  clearCallMember: no access token — \(error.localizedDescription) — ABORT")
             return
         }
+        DiagLog.write("Call", "  clearCallMember: access token len=\(accessToken.count) ok")
 
         // Fetch all state events of this room
         guard let escapedRoomID = roomID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { return }
