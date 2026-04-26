@@ -189,14 +189,18 @@ final class NotificationManager: NSObject, NotificationManagerProtocol {
         os_log(.info, log: pushLog, "setPusher: pushkey=%{public}@, appId=%{public}@, gateway=%{public}@", pushkey, appId, gateway)
 
         do {
-            // ВНИМАНИЕ: APSAlert.locKey должен быть валидной строкой.
-            // Build 59 пробовал locKey="" чтобы убрать «sTalk Уведомление» при NSE
-            // timeout, но Apple APNs отклонил такой payload как malformed —
-            // push'и перестали доходить вообще (regression).
-            // Откат на "Notification" — генерик баннер при NSE failure терпим
-            // (редкий случай), важнее чтобы push pipeline работал.
+            // Default payload alert.locKey = несуществующий ключ "stalk_silent_default".
+            // Apple принимает payload (valid string, не empty), но iOS не находит
+            // localization → не показывает visible banner immediately. NSE триггерится
+            // нормально (mutable-content + alert object присутствуют). NSE контролирует
+            // когда показать banner: если decrypt valid chat → modified content с body
+            // → banner. Если discard / timeout → silent.
+            //
+            // Build 59 пробовал locKey="" — Apple отклонил push entirely (regression).
+            // Несуществующий ключ — valid, но не отображается.
+            // Build 66 — попытка убрать «sTalk Уведомление» артефакт.
             let defaultPayload = APNSPayload(aps: APSInfo(mutableContent: 1,
-                                                          alert: APSAlert(locKey: "Notification",
+                                                          alert: APSAlert(locKey: "stalk_silent_default",
                                                                           locArgs: [])),
                                              pusherNotificationClientIdentifier: clientProxy.pusherNotificationClientIdentifier)
 
