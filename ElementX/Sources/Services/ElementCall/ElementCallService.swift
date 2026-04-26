@@ -501,8 +501,12 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         ongoingCallID = nil
     }
 
-    /// Direct HTTP PUT для очистки своих msc3401.call.member state events.
+    /// Direct HTTP PUT для очистки своего msc3401.call.member state event текущего device.
     /// Workaround для отсутствия sendStateEvent в matrix-rust-sdk swift FFI.
+    /// Build 70 пробовал GET /state потом PUT каждого — Synapse возвращал 403 (OIDC scope?).
+    /// Build 71: один прямой PUT по вычисленному state_key = `_<userID>_<deviceID>_m.call`.
+    /// Покрывает только текущий device, не все zombie. Но для текущей сессии достаточно
+    /// чтобы Sygnal v9 видел leave вместо legacy v1 stuck.
     private func clearCallMemberStateEvents(roomID: String) async {
         DiagLog.write("Call", "clearCallMember START room=\(roomID)")
         guard let clientProxy else {
@@ -510,12 +514,12 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
             return
         }
         let userID = clientProxy.userID
-        let homeserverString = clientProxy.homeserver
-        DiagLog.write("Call", "  clearCallMember: userID=\(userID) homeserver=\(homeserverString)")
-        guard let homeserverURL = URL(string: homeserverString) else {
-            DiagLog.write("Call", "  clearCallMember: invalid homeserver URL — ABORT")
+        guard let deviceID = clientProxy.deviceID else {
+            DiagLog.write("Call", "  clearCallMember: deviceID=nil — ABORT")
             return
         }
+        let homeserverString = clientProxy.homeserver
+        DiagLog.write("Call", "  clearCallMember: userID=\(userID) deviceID=\(deviceID) homeserver=\(homeserverString)")
         let accessToken: String
         do {
             accessToken = try clientProxy.matrixAccessToken()
@@ -523,50 +527,33 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
             DiagLog.write("Call", "  clearCallMember: no access token — \(error.localizedDescription) — ABORT")
             return
         }
-        DiagLog.write("Call", "  clearCallMember: access token len=\(accessToken.count) ok")
 
-        // Fetch all state events of this room
-        guard let escapedRoomID = roomID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { return }
-        let stateURL = homeserverURL.appendingPathComponent("_matrix/client/v3/rooms/\(escapedRoomID)/state")
-        var stateRequest = URLRequest(url: stateURL)
-        stateRequest.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        // State key formula: `_<userID>_<deviceID>_m.call` (Element Call MatrixRTC convention)
+        let stateKey = "_\(userID)_\(deviceID)_m.call"
+        guard let escapedRoomID = roomID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let escapedStateKey = stateKey.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            DiagLog.write("Call", "  clearCallMember: URL encoding failed — ABORT")
+            return
+        }
+        let trimmedHomeserver = homeserverString.hasSuffix("/") ? String(homeserverString.dropLast()) : homeserverString
+        guard let putURL = URL(string: "\(trimmedHomeserver)/_matrix/client/v3/rooms/\(escapedRoomID)/state/org.matrix.msc3401.call.member/\(escapedStateKey)") else {
+            DiagLog.write("Call", "  clearCallMember: invalid PUT URL — ABORT")
+            return
+        }
+
+        var putRequest = URLRequest(url: putURL)
+        putRequest.httpMethod = "PUT"
+        putRequest.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        putRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        putRequest.httpBody = "{}".data(using: .utf8)
 
         do {
-            let (data, response) = try await URLSession.shared.data(for: stateRequest)
-            guard let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 else {
-                DiagLog.write("Call", "clearCallMember: state fetch HTTP \((response as? HTTPURLResponse)?.statusCode ?? -1)")
-                return
-            }
-            guard let stateEvents = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return }
-
-            // Filter our msc3401.call.member events. State key is `_<userID>_<deviceID>_m.call`,
-            // фильтруем по prefix `_<userID>_` (любой device этого user).
-            let myCallMembers = stateEvents.filter { event in
-                guard let type = event["type"] as? String,
-                      let stateKey = event["state_key"] as? String else { return false }
-                return type == "org.matrix.msc3401.call.member" && stateKey.hasPrefix("_\(userID)_")
-            }
-            DiagLog.write("Call", "clearCallMember: found \(myCallMembers.count) own call.member in \(roomID)")
-
-            for event in myCallMembers {
-                guard let stateKey = event["state_key"] as? String,
-                      let escapedStateKey = stateKey.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { continue }
-                let putURL = homeserverURL.appendingPathComponent("_matrix/client/v3/rooms/\(escapedRoomID)/state/org.matrix.msc3401.call.member/\(escapedStateKey)")
-                var putRequest = URLRequest(url: putURL)
-                putRequest.httpMethod = "PUT"
-                putRequest.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-                putRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                putRequest.httpBody = "{}".data(using: .utf8)
-                do {
-                    let (_, putResp) = try await URLSession.shared.data(for: putRequest)
-                    let code = (putResp as? HTTPURLResponse)?.statusCode ?? -1
-                    DiagLog.write("Call", "  clearCallMember PUT \(stateKey) → HTTP \(code)")
-                } catch {
-                    DiagLog.write("Call", "  clearCallMember PUT \(stateKey) FAILED: \(error.localizedDescription)")
-                }
-            }
+            let (responseData, response) = try await URLSession.shared.data(for: putRequest)
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            let bodyPreview = String(data: responseData, encoding: .utf8)?.prefix(200) ?? ""
+            DiagLog.write("Call", "  clearCallMember PUT stateKey=\(stateKey) → HTTP \(code) body=\(bodyPreview)")
         } catch {
-            DiagLog.write("Call", "clearCallMember: state fetch error \(error.localizedDescription)")
+            DiagLog.write("Call", "  clearCallMember PUT FAILED: \(error.localizedDescription)")
         }
     }
     
