@@ -680,6 +680,23 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     }
 
     private func observeLiveKitState() {
+        // STMOB-80: sync icon камеры с реальным состоянием LiveKit local video track.
+        // Раньше state.isVideoEnabled зависел только от startWithVideoEnabled / widget
+        // mediaStateChanged. Для incoming video call iOS получает startWithVideoEnabled=false
+        // (default voice), но widget сам включает камеру → reality video, icon перечёркнут.
+        // localVideoTrack == nil → camera off, != nil → camera on.
+        liveKitRoomManager.$localVideoTrack
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] track in
+                guard let self else { return }
+                let cameraOn = track != nil
+                if self.state.isVideoEnabled != cameraOn {
+                    self.state.isVideoEnabled = cameraOn
+                    MXLog.info("sTalk: LiveKit localVideoTrack changed — isVideoEnabled=\(cameraOn)")
+                }
+            }
+            .store(in: &cancellables)
+
         liveKitRoomManager.$connectionState
             .receive(on: DispatchQueue.main)
             .sink { [weak self] connectionState in
@@ -691,6 +708,17 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                     if self.state.callStatus == .reconnecting {
                         self.state.callStatus = .connected
                         MXLog.info("sTalk LiveKit: Reconnected successfully")
+                    }
+                    // STMOB-80: Fallback initial connected. roomProxy.infoPublisher
+                    // (MatrixRTC participants) может задержаться или не emit'ить
+                    // — header застревает на «Вызов...», timer не запускается.
+                    // Если LiveKit подключился — звонок реально идёт, переключаем
+                    // status даже без MatrixRTC update.
+                    if self.state.callStatus == .connecting {
+                        self.state.callStatus = .connected
+                        self.state.wasConnected = true
+                        self.startCallTimer()
+                        MXLog.info("sTalk: Initial connected via LiveKit (MatrixRTC infoPublisher fallback)")
                     }
                 case .reconnecting:
                     self.state.callStatus = .reconnecting
