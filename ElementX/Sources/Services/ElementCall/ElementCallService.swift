@@ -484,7 +484,82 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
             }
         }
 
+        // STALK-205 quick fix: clear our msc3401.call.member state events для ЛЮБОЙ
+        // комнаты где был tearDown — answered, declined, ended, expired. Используем
+        // ongoingCallID (если был accepted) ИЛИ incomingCallID (если только ring без
+        // accept). Это уменьшает zombie state events от iOS Element X (legacy v1
+        // {"memberships":[]} format) которые Sygnal v9 _room_has_active_call неправильно
+        // интерпретирует.
+        if let roomIDForClear = ongoingCallID?.roomID ?? incomingCallID?.roomID {
+            Task { [weak self] in
+                await self?.clearCallMemberStateEvents(roomID: roomIDForClear)
+            }
+        }
+
         ongoingCallID = nil
+    }
+
+    /// Direct HTTP PUT для очистки своих msc3401.call.member state events.
+    /// Workaround для отсутствия sendStateEvent в matrix-rust-sdk swift FFI.
+    private func clearCallMemberStateEvents(roomID: String) async {
+        guard let clientProxy else { return }
+        let userID = clientProxy.userID
+        let homeserverString = clientProxy.homeserver
+        guard let homeserverURL = URL(string: homeserverString) else {
+            DiagLog.write("Call", "clearCallMember: invalid homeserver URL")
+            return
+        }
+        let accessToken: String
+        do {
+            accessToken = try clientProxy.matrixAccessToken()
+        } catch {
+            DiagLog.write("Call", "clearCallMember: no access token — \(error.localizedDescription)")
+            return
+        }
+
+        // Fetch all state events of this room
+        guard let escapedRoomID = roomID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { return }
+        let stateURL = homeserverURL.appendingPathComponent("_matrix/client/v3/rooms/\(escapedRoomID)/state")
+        var stateRequest = URLRequest(url: stateURL)
+        stateRequest.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: stateRequest)
+            guard let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 else {
+                DiagLog.write("Call", "clearCallMember: state fetch HTTP \((response as? HTTPURLResponse)?.statusCode ?? -1)")
+                return
+            }
+            guard let stateEvents = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return }
+
+            // Filter our msc3401.call.member events. State key is `_<userID>_<deviceID>_m.call`,
+            // фильтруем по prefix `_<userID>_` (любой device этого user).
+            let myCallMembers = stateEvents.filter { event in
+                guard let type = event["type"] as? String,
+                      let stateKey = event["state_key"] as? String else { return false }
+                return type == "org.matrix.msc3401.call.member" && stateKey.hasPrefix("_\(userID)_")
+            }
+            DiagLog.write("Call", "clearCallMember: found \(myCallMembers.count) own call.member in \(roomID)")
+
+            for event in myCallMembers {
+                guard let stateKey = event["state_key"] as? String,
+                      let escapedStateKey = stateKey.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { continue }
+                let putURL = homeserverURL.appendingPathComponent("_matrix/client/v3/rooms/\(escapedRoomID)/state/org.matrix.msc3401.call.member/\(escapedStateKey)")
+                var putRequest = URLRequest(url: putURL)
+                putRequest.httpMethod = "PUT"
+                putRequest.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+                putRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                putRequest.httpBody = "{}".data(using: .utf8)
+                do {
+                    let (_, putResp) = try await URLSession.shared.data(for: putRequest)
+                    let code = (putResp as? HTTPURLResponse)?.statusCode ?? -1
+                    DiagLog.write("Call", "  clearCallMember PUT \(stateKey) → HTTP \(code)")
+                } catch {
+                    DiagLog.write("Call", "  clearCallMember PUT \(stateKey) FAILED: \(error.localizedDescription)")
+                }
+            }
+        } catch {
+            DiagLog.write("Call", "clearCallMember: state fetch error \(error.localizedDescription)")
+        }
     }
     
     private func sendDeclineCallEvent(_ incomingCallID: CallID) async {
