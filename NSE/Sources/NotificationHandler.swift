@@ -21,61 +21,72 @@ private enum NSEDiagLog {
     }
 }
 
-/// Кэш для дедупликации push'ей за последние ~60 сек.
-/// Persisted в AppGroup для cross-NSE-instance dedup (NSE может перезапускаться).
+/// Cross-process атомарный dedup через файловые lock'и.
+///
+/// Build 61 использовал JSON cache с DispatchQueue lock — НЕ работает между
+/// NSE processes. Apple запускает несколько NSE параллельно для каждого push,
+/// все они видели «пустой» cache одновременно и маркировали одну запись —
+/// dedup не срабатывал, пользователь получал 6 banner'ов.
+///
+/// Build 62 использует POSIX `O_CREAT|O_EXCL` — атомарная операция «создать
+/// файл, если не существует». Две parallel попытки гарантированно дадут
+/// результат «один создал, второй увидел EEXIST». TTL через mtime файла.
 ///
 /// Два уровня дедупа:
-/// 1. По `eventID` — Sygnal/APNs retry с тем же event_id (build 58)
-/// 2. По `roomID:type` (например `room:ring`) — Element Web в Variant B шлёт
+/// 1. По `eventID` — Sygnal/APNs retry с тем же event_id
+/// 2. По `roomID:type` (например `room:ring`) — Element Web Variant B шлёт
 ///    несколько ring events за один звонок с разными eventIDs за 5-10 сек.
-///    Build 61 дедуплицирует по семантическому ключу.
 private enum NSEEventDedupCache {
-    private static let queue = DispatchQueue(label: "ru.implica.stalk.nse-dedup", qos: .utility)
     private static let ttl: TimeInterval = 60
 
-    private static var fileURL: URL? {
-        DiagLog.fileURL?.deletingLastPathComponent().appending(component: "nse-dedup.json")
+    private static var dedupDirectory: URL? {
+        guard let baseURL = DiagLog.fileURL?.deletingLastPathComponent() else { return nil }
+        let dir = baseURL.appending(component: "dedup", directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
     }
 
-    /// Возвращает true если event уже обработан недавно (значит дубль — discard).
     static func isDuplicateAndMark(eventID: String) -> Bool {
-        isDuplicateAndMark(key: "evt:\(eventID)")
+        isDuplicateAndMark(key: "evt-\(sanitize(eventID))")
     }
 
-    /// Семантический dedup по комнате и типу события (например `ring`).
-    /// Используется для подавления нескольких ring events за один звонок.
     static func isDuplicateSemanticAndMark(roomID: String, kind: String) -> Bool {
-        isDuplicateAndMark(key: "sem:\(roomID):\(kind)")
+        isDuplicateAndMark(key: "sem-\(sanitize(roomID))-\(kind)")
     }
 
+    /// Атомарная mark-or-fail операция через POSIX `O_CREAT|O_EXCL`.
+    /// - returns: true если уже существует свежий lock (= duplicate, discard)
     private static func isDuplicateAndMark(key: String) -> Bool {
-        queue.sync {
-            var cache = load()
-            let now = Date().timeIntervalSince1970
-            cache = cache.filter { now - $0.value < ttl }
-            if cache[key] != nil {
-                save(cache)
-                return true
+        guard let dir = dedupDirectory else { return false }
+        let lockPath = dir.appending(component: key).path
+
+        // Stale lock: если файл существует но mtime > TTL — удалить и продолжить
+        // как будто его не было (помогает при перезапусках устройства / сбоях).
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: lockPath),
+           let mtime = attrs[.modificationDate] as? Date {
+            let age = -mtime.timeIntervalSinceNow
+            if age < ttl {
+                return true // свежий lock = duplicate
             }
-            cache[key] = now
-            save(cache)
-            return false
+            try? FileManager.default.removeItem(atPath: lockPath)
         }
+
+        // Атомарная попытка создания. Если другой процесс уже создал между
+        // нашей проверкой и open() — open вернёт -1 с EEXIST, считаем duplicate.
+        let fd = open(lockPath, O_WRONLY | O_CREAT | O_EXCL, 0o644)
+        if fd < 0 {
+            // EEXIST или другая ошибка — race lost, считаем duplicate
+            return true
+        }
+        close(fd)
+        return false
     }
 
-    private static func load() -> [String: TimeInterval] {
-        guard let url = fileURL,
-              let data = try? Data(contentsOf: url),
-              let dict = try? JSONDecoder().decode([String: TimeInterval].self, from: data) else {
-            return [:]
-        }
-        return dict
-    }
-
-    private static func save(_ cache: [String: TimeInterval]) {
-        guard let url = fileURL,
-              let data = try? JSONEncoder().encode(cache) else { return }
-        try? data.write(to: url, options: .atomic)
+    /// Sanitize key для безопасного file name (Matrix IDs содержат `:`, `!`, `$`).
+    private static func sanitize(_ raw: String) -> String {
+        let allowed = CharacterSet.alphanumerics.union(.init(charactersIn: "._-"))
+        return raw.unicodeScalars.map { allowed.contains($0) ? Character($0) : "_" }
+            .map(String.init).joined()
     }
 }
 
@@ -267,6 +278,26 @@ class NotificationHandler {
         }
     }
     
+    /// Проверка cross-process marker от main app: VoIP push для этой комнаты
+    /// был обработан и CallKit запущен. Marker пишет ElementCallService.
+    private func isVoIPHandledRecently(roomID: String, withinSeconds: TimeInterval) -> Bool {
+        let groupID = InfoPlistReader.main.appGroupIdentifier
+        guard let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupID) else { return false }
+        let allowed = CharacterSet.alphanumerics.union(.init(charactersIn: "._-"))
+        let safeKey = roomID.unicodeScalars.map { allowed.contains($0) ? Character($0) : "_" }
+            .map(String.init).joined()
+        let url = container
+            .appending(component: "Library", directoryHint: .isDirectory)
+            .appending(component: "Caches", directoryHint: .isDirectory)
+            .appending(component: "voip-handled", directoryHint: .isDirectory)
+            .appending(component: safeKey)
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let mtime = attrs[.modificationDate] as? Date else {
+            return false
+        }
+        return -mtime.timeIntervalSinceNow < withinSeconds
+    }
+
     /// Handle incoming call notifications.
     /// - Returns: A boolean indicating whether the notification was handled and should now be discarded.
     private func handleCallNotification(notificationType: RtcNotificationType,
@@ -292,6 +323,15 @@ class NotificationHandler {
         guard notificationType == .ring else {
             os_log(.default, log: nseHandlerLog, "Non-ringing call, suppressing — not a ring")
             NSEDiagLog.write("    → not a ring, DISCARD")
+            return .processedShouldDiscard
+        }
+
+        // Cross-process check: main app PKPushRegistry мог уже получить VoIP push
+        // и запустить CallKit. В этом случае нет смысла показывать banner —
+        // CallKit full-screen уже видим пользователю. Marker file в AppGroup пишет
+        // ElementCallService после reportNewIncomingCall, NSE проверяет mtime.
+        if isVoIPHandledRecently(roomID: roomID, withinSeconds: 30) {
+            NSEDiagLog.write("    → VoIP marker свежий (<30s) — CallKit уже запущен, DISCARD banner")
             return .processedShouldDiscard
         }
 

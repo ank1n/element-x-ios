@@ -275,6 +275,10 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
                 DiagLog.write("VoIP", "  reportNewIncomingCall FAILED: \(error.localizedDescription)")
             } else {
                 DiagLog.write("VoIP", "  reportNewIncomingCall OK → CallKit shown")
+                // Marker для NSE: VoIP push дошёл и CallKit запущен. NSE проверяет
+                // этот marker для этой комнаты — если свежий (<30 сек), не показывает
+                // дубль banner от regular APNs ring.
+                Self.writeVoIPHandledMarker(roomID: roomID)
             }
 
             self?.actionsSubject.send(.receivedIncomingCallRequest)
@@ -398,6 +402,24 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     }
     
     // MARK: - Private
+
+    /// Cross-process marker для NSE: записать что VoIP push для этой комнаты был
+    /// обработан и CallKit запущен. NSE при ring через regular APNs проверяет
+    /// этот marker — если свежий, не показывает дубль banner.
+    private static func writeVoIPHandledMarker(roomID: String) {
+        let groupID = InfoPlistReader.main.appGroupIdentifier
+        guard let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupID) else { return }
+        let dir = container.appending(component: "Library", directoryHint: .isDirectory)
+            .appending(component: "Caches", directoryHint: .isDirectory)
+            .appending(component: "voip-handled", directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let allowed = CharacterSet.alphanumerics.union(.init(charactersIn: "._-"))
+        let safeKey = roomID.unicodeScalars.map { allowed.contains($0) ? Character($0) : "_" }
+            .map(String.init).joined()
+        let url = dir.appending(component: safeKey)
+        try? Data().write(to: url)
+        DiagLog.write("VoIP", "  marker written for room=\(roomID)")
+    }
 
     /// Register VoIP pusher with the Matrix homeserver so Sygnal can send VoIP pushes
     private func registerVoIPPusher(with token: Data) async {
