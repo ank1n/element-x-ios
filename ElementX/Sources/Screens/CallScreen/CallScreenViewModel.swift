@@ -751,15 +751,19 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     // MARK: - Native Call Controls
 
     private func toggleMute() async {
-        let newMuted = !state.isMuted
+        let oldMuted = state.isMuted
+        let newMuted = !oldMuted
         state.isMuted = newMuted
+        DiagLog.write("CallUI", "toggleMute tap: state.isMuted \(oldMuted) → \(newMuted), callStatus=\(state.callStatus)")
 
         // sTalk: Use native LiveKit SDK for mute control
         if state.liveKitRoomManager != nil {
             do {
                 try await liveKitRoomManager.setMicrophone(enabled: !newMuted)
+                DiagLog.write("CallUI", "  toggleMute: LiveKit setMicrophone(\(!newMuted)) ok")
             } catch {
                 MXLog.error("sTalk LiveKit: Failed to toggle microphone: \(error)")
+                DiagLog.write("CallUI", "  toggleMute: LiveKit setMicrophone FAILED: \(error.localizedDescription)")
             }
         }
 
@@ -768,22 +772,30 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     }
 
     private func toggleSpeaker() {
-        let newSpeakerOn = !state.isSpeakerOn
+        let oldSpeakerOn = state.isSpeakerOn
+        let newSpeakerOn = !oldSpeakerOn
         state.isSpeakerOn = newSpeakerOn
         liveKitRoomManager.setSpeaker(enabled: newSpeakerOn)
         MXLog.info("sTalk: Speaker toggled to \(newSpeakerOn ? "ON (speaker)" : "OFF (earpiece)")")
+        DiagLog.write("CallUI", "toggleSpeaker tap: state.isSpeakerOn \(oldSpeakerOn) → \(newSpeakerOn), callStatus=\(state.callStatus)")
     }
 
     private func toggleVideo() async {
-        let newVideoEnabled = !state.isVideoEnabled
+        let oldVideoEnabled = state.isVideoEnabled
+        let newVideoEnabled = !oldVideoEnabled
         state.isVideoEnabled = newVideoEnabled
+        let liveKitTrack = liveKitRoomManager.localVideoTrack != nil
+        DiagLog.write("CallUI", "toggleVideo tap: state.isVideoEnabled \(oldVideoEnabled) → \(newVideoEnabled), liveKit.localVideoTrack=\(liveKitTrack), callStatus=\(state.callStatus)")
 
         // sTalk: Use native LiveKit SDK for camera control
         if state.liveKitRoomManager != nil {
             do {
                 try await liveKitRoomManager.setCamera(enabled: newVideoEnabled)
+                let trackAfter = liveKitRoomManager.localVideoTrack != nil
+                DiagLog.write("CallUI", "  toggleVideo: LiveKit setCamera(\(newVideoEnabled)) ok, track=\(trackAfter)")
             } catch {
                 MXLog.error("sTalk LiveKit: Failed to toggle camera: \(error)")
+                DiagLog.write("CallUI", "  toggleVideo: LiveKit setCamera FAILED: \(error.localizedDescription)")
             }
         }
 
@@ -796,9 +808,11 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     }
 
     private func endCall() async {
+        DiagLog.write("CallUI", "endCall tap: isEndingCall=\(isEndingCall) callStatus=\(state.callStatus) elapsed=\(state.callElapsedTime)")
         // sTalk: Guard against cascade — infoPublisher fires multiple times
         guard !isEndingCall else {
             stalkLog("endCall — already ending, skipping duplicate")
+            DiagLog.write("CallUI", "  endCall: already ending, skip")
             return
         }
         isEndingCall = true
