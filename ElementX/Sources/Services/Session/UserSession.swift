@@ -167,13 +167,28 @@ class UserSession: UserSessionProtocol {
             let (data, response) = try await URLSession.shared.data(for: request)
             let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
             DiagLog.write("E2EE", "  tryRestore: GET account_data → HTTP \(statusCode), \(data.count) bytes")
-            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            // sTalk: distinguish "really missing" (404) from auth/server errors (401/5xx).
+            // Returning true on non-404 errors so caller doesn't trigger destructive
+            // generateRecoveryKey() that would overwrite a valid key on the server.
+            // See STALK-210 incident 2026-04-29.
+            guard let httpResponse = response as? HTTPURLResponse else {
+                DiagLog.write("E2EE", "  tryRestore: no HTTP response — pretend restored (no destructive action)")
+                return true
+            }
+            if httpResponse.statusCode != 200 {
+                if httpResponse.statusCode == 404 {
+                    DiagLog.write("E2EE", "  tryRestore: no key on server (HTTP 404) — caller may bootstrap")
+                    return false
+                }
+                MXLog.error("sTalk: tryRestore — HTTP \(statusCode), pretend restored (auth/server issue, NOT missing key)")
+                DiagLog.write("E2EE", "  tryRestore: HTTP \(statusCode) (auth/server) — pretend restored, ABORT bootstrap")
+                return true
+            }
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let recoveryKey = json["key"] as? String, !recoveryKey.isEmpty else {
-                os_log(.fault, log: e2eeLog, "tryRestore — no key on server (HTTP %d)", (response as? HTTPURLResponse)?.statusCode ?? -1)
-                MXLog.info("sTalk: tryRestore — no recovery key on server")
-                DiagLog.write("E2EE", "  tryRestore: no key on server — ABORT")
-                return false
+                MXLog.error("sTalk: tryRestore — invalid JSON, pretend restored (don't overwrite key)")
+                DiagLog.write("E2EE", "  tryRestore: invalid JSON — pretend restored, ABORT bootstrap")
+                return true
             }
 
             os_log(.fault, log: e2eeLog, "tryRestore — found key (length: %d), attempting recover...", recoveryKey.count)
@@ -305,10 +320,22 @@ class UserSession: UserSessionProtocol {
             let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
             os_log(.fault, log: e2eeLog, "autoVerify: HTTP %d, %d bytes", statusCode, data.count)
             DiagLog.write("E2EE", "  autoVerify: GET account_data → HTTP \(statusCode), \(data.count) bytes")
-            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                MXLog.info("sTalk: No recovery key on server — bootstrapping recovery directly (first device)")
-                DiagLog.write("E2EE", "  autoVerify: no key on server (HTTP \(statusCode)) — bootstrapRecoveryForFirstDevice")
-                await bootstrapRecoveryForFirstDevice()
+            guard let httpResponse = response as? HTTPURLResponse else {
+                DiagLog.write("E2EE", "  autoVerify: no HTTP response — ABORT (no destructive bootstrap)")
+                return
+            }
+            // sTalk: ONLY HTTP 404 = "no key on server" → safe to bootstrap.
+            // HTTP 401/403 = auth issue, 5xx = server error — DO NOT bootstrap (would
+            // overwrite valid recovery key on server). See STALK-210 incident 2026-04-29.
+            guard httpResponse.statusCode == 200 else {
+                if httpResponse.statusCode == 404 {
+                    MXLog.info("sTalk: No recovery key on server (404) — bootstrapping recovery directly (first device)")
+                    DiagLog.write("E2EE", "  autoVerify: no key on server (HTTP 404) — bootstrapRecoveryForFirstDevice")
+                    await bootstrapRecoveryForFirstDevice()
+                } else {
+                    MXLog.error("sTalk: account_data fetch failed with HTTP \(statusCode) — ABORT (auth/server issue, not missing key)")
+                    DiagLog.write("E2EE", "  autoVerify: HTTP \(statusCode) (auth/server issue) — ABORT, no destructive bootstrap")
+                }
                 return
             }
 
