@@ -88,6 +88,7 @@ class UserSession: UserSessionProtocol {
 
                 os_log(.fault, log: e2eeLog, "E2EE state — verification: %{public}@, recovery: %{public}@", String(describing: verificationState), String(describing: recoveryState))
                 MXLog.info("sTalk: E2EE state — verification: \(verificationState), recovery: \(recoveryState)")
+                DiagLog.write("E2EE", "state — verification=\(verificationState) recovery=\(recoveryState)")
 
                 switch (verificationState, recoveryState) {
                 case (.verified, .disabled), (.verified, .incomplete):
@@ -96,6 +97,7 @@ class UserSession: UserSessionProtocol {
                     autoRecoveryCancellable = nil
                     os_log(.fault, log: e2eeLog, "Verified + %{public}@ — trying server key first", String(describing: recoveryState))
                     MXLog.info("sTalk: Verified + \(recoveryState) — trying server recovery key first")
+                    DiagLog.write("E2EE", "→ Verified+\(recoveryState) → tryRestoreFromServerKey")
                     Task {
                         // First try to recover with existing key from server
                         let restored = await self.tryRestoreFromServerKey()
@@ -128,12 +130,14 @@ class UserSession: UserSessionProtocol {
                     autoRecoveryCancellable = nil
                     os_log(.fault, log: e2eeLog, "Unverified + %{public}@ — attempting auto-verify", String(describing: recoveryState))
                     MXLog.info("sTalk: Unverified device — attempting auto-verify with stored recovery key")
+                    DiagLog.write("E2EE", "→ Unverified+\(recoveryState) → autoVerifyWithStoredRecoveryKey")
                     Task {
                         await self.autoVerifyWithStoredRecoveryKey()
                     }
 
                 default:
-                    break // .unknown — wait for state to settle
+                    DiagLog.write("E2EE", "→ default — no action (verification=\(verificationState) recovery=\(recoveryState))")
+                    // .unknown — wait for state to settle
                 }
             }
         autoRecoveryCancellable?.store(in: &cancellables)
@@ -142,9 +146,11 @@ class UserSession: UserSessionProtocol {
     /// Try to restore E2EE keys using recovery key from server.
     /// Returns true if restoration succeeded.
     private func tryRestoreFromServerKey() async -> Bool {
+        DiagLog.write("E2EE", "tryRestoreFromServerKey START")
         let homeserverURL = clientProxy.homeserver.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard let accessToken = try? clientProxy.matrixAccessToken() else {
             MXLog.error("sTalk: tryRestore — no access token")
+            DiagLog.write("E2EE", "  tryRestore: no access token — ABORT")
             return false
         }
 
@@ -159,29 +165,36 @@ class UserSession: UserSessionProtocol {
 
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+            DiagLog.write("E2EE", "  tryRestore: GET account_data → HTTP \(statusCode), \(data.count) bytes")
             guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let recoveryKey = json["key"] as? String, !recoveryKey.isEmpty else {
                 os_log(.fault, log: e2eeLog, "tryRestore — no key on server (HTTP %d)", (response as? HTTPURLResponse)?.statusCode ?? -1)
                 MXLog.info("sTalk: tryRestore — no recovery key on server")
+                DiagLog.write("E2EE", "  tryRestore: no key on server — ABORT")
                 return false
             }
 
             os_log(.fault, log: e2eeLog, "tryRestore — found key (length: %d), attempting recover...", recoveryKey.count)
             MXLog.info("sTalk: tryRestore — found key (length: \(recoveryKey.count)), attempting recover...")
+            DiagLog.write("E2EE", "  tryRestore: found key (len=\(recoveryKey.count)) — calling confirmRecoveryKey")
             let result = await clientProxy.secureBackupController.confirmRecoveryKey(recoveryKey)
             switch result {
             case .success:
                 os_log(.fault, log: e2eeLog, "tryRestore — SUCCESS! Keys restored")
                 MXLog.info("sTalk: tryRestore — recovery key confirmed, keys restored!")
+                DiagLog.write("E2EE", "  tryRestore: confirmRecoveryKey SUCCESS ✅")
                 return true
             case .failure(let error):
                 os_log(.fault, log: e2eeLog, "tryRestore — FAILED: %{public}@", String(describing: error))
                 MXLog.error("sTalk: tryRestore — confirmRecoveryKey failed: \(error)")
+                DiagLog.write("E2EE", "  tryRestore: confirmRecoveryKey FAILED — \(error)")
                 return false
             }
         } catch {
             MXLog.error("sTalk: tryRestore — fetch error: \(error)")
+            DiagLog.write("E2EE", "  tryRestore: fetch error — \(error.localizedDescription)")
             return false
         }
     }
@@ -259,8 +272,10 @@ class UserSession: UserSessionProtocol {
     /// If no key found, bootstrap recovery directly (first device scenario).
     private func autoVerifyWithStoredRecoveryKey() async {
         os_log(.fault, log: e2eeLog, "autoVerify: starting")
+        DiagLog.write("E2EE", "autoVerify START")
         guard !isAutoRecoveryInProgress else {
             os_log(.fault, log: e2eeLog, "autoVerify: already in progress, skipping")
+            DiagLog.write("E2EE", "  autoVerify: already in progress — SKIP")
             return
         }
         isAutoRecoveryInProgress = true
@@ -268,6 +283,7 @@ class UserSession: UserSessionProtocol {
         let homeserverURL = clientProxy.homeserver.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard let accessToken = try? clientProxy.matrixAccessToken() else {
             os_log(.fault, log: e2eeLog, "autoVerify: no access token!")
+            DiagLog.write("E2EE", "  autoVerify: no access token — ABORT")
             return
         }
         os_log(.fault, log: e2eeLog, "autoVerify: homeserver=%{public}@ token=%{public}@...", homeserverURL, String(accessToken.prefix(10)))
@@ -288,12 +304,10 @@ class UserSession: UserSessionProtocol {
             let (data, response) = try await URLSession.shared.data(for: request)
             let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
             os_log(.fault, log: e2eeLog, "autoVerify: HTTP %d, %d bytes", statusCode, data.count)
+            DiagLog.write("E2EE", "  autoVerify: GET account_data → HTTP \(statusCode), \(data.count) bytes")
             guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                // No recovery key on server — first device scenario.
-                // Instead of waiting for SDK to auto-verify (which may never happen),
-                // directly bootstrap recovery. enableRecovery() creates SSSS + recovery key
-                // and self-signs the device as a side effect.
                 MXLog.info("sTalk: No recovery key on server — bootstrapping recovery directly (first device)")
+                DiagLog.write("E2EE", "  autoVerify: no key on server (HTTP \(statusCode)) — bootstrapRecoveryForFirstDevice")
                 await bootstrapRecoveryForFirstDevice()
                 return
             }
@@ -301,19 +315,21 @@ class UserSession: UserSessionProtocol {
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let recoveryKey = json["key"] as? String else {
                 os_log(.fault, log: e2eeLog, "autoVerify: invalid JSON or missing key. Raw: %{public}@", String(data: data, encoding: .utf8) ?? "binary")
+                DiagLog.write("E2EE", "  autoVerify: invalid JSON — ABORT")
                 return
             }
 
             os_log(.fault, log: e2eeLog, "autoVerify: got key (length: %d), checking if backup exists...", recoveryKey.count)
+            DiagLog.write("E2EE", "  autoVerify: got key (len=\(recoveryKey.count))")
 
-            // Check if key backup exists on server before trying to recover
-            let backupExists = await clientProxy.secureBackupController.keyBackupState.value != .unknown
-            os_log(.fault, log: e2eeLog, "autoVerify: backup state: %{public}@", String(describing: clientProxy.secureBackupController.keyBackupState.value))
+            let backupState = clientProxy.secureBackupController.keyBackupState.value
+            os_log(.fault, log: e2eeLog, "autoVerify: backup state: %{public}@", String(describing: backupState))
+            DiagLog.write("E2EE", "  autoVerify: backup state=\(backupState)")
 
-            // Clean up stale SSSS keys before recovery — too many keys slow down the SDK
             await cleanupStaleSSSKeys()
 
             os_log(.fault, log: e2eeLog, "autoVerify: calling confirmRecoveryKey (with 120s timeout)...")
+            DiagLog.write("E2EE", "  autoVerify: calling confirmRecoveryKey")
 
             // Wrap in timeout — large key counts need more time
             let result: Result<Void, SecureBackupControllerError> = await withTaskGroup(of: Result<Void, SecureBackupControllerError>?.self) { group in
@@ -336,32 +352,34 @@ class UserSession: UserSessionProtocol {
             switch result {
             case .success:
                 os_log(.fault, log: e2eeLog, "autoVerify: confirmRecoveryKey SUCCESS! Keys restored from backup.")
-                // Wait for SDK to process recovery and potentially auto-verify device
+                DiagLog.write("E2EE", "  autoVerify: confirmRecoveryKey SUCCESS — keys restored")
                 for i in 1...5 {
                     try? await Task.sleep(for: .seconds(2))
                     let currentState = clientProxy.verificationStatePublisher.value
                     os_log(.fault, log: e2eeLog, "autoVerify: check %d/5 — state: %{public}@", i, String(describing: currentState))
+                    DiagLog.write("E2EE", "  autoVerify: check \(i)/5 — state=\(currentState)")
                     if currentState == .verified {
                         os_log(.fault, log: e2eeLog, "autoVerify: device auto-verified after recovery!")
+                        DiagLog.write("E2EE", "  autoVerify: device verified ✅")
                         await cleanupOldDevicesByIDFV()
                         return
                     }
                 }
-                // Still unverified after 10s — explicitly cross-sign device
                 os_log(.fault, log: e2eeLog, "autoVerify: still unverified after 10s — cross-signing device via resetIdentity")
+                DiagLog.write("E2EE", "  autoVerify: still unverified after 10s — selfVerifyDevice")
                 await selfVerifyDevice()
                 await cleanupOldDevicesByIDFV()
             case .failure(let error):
                 os_log(.fault, log: e2eeLog, "autoVerify: confirmRecoveryKey FAILED: %{public}@", String(describing: error))
-                // sTalk: Do NOT call bootstrapRecoveryForFirstDevice() here!
-                // It deletes ALL backup versions, destroying keys uploaded by other clients.
-                // Instead, just cross-sign the device to get verified status.
+                DiagLog.write("E2EE", "  autoVerify: confirmRecoveryKey FAILED — \(error)")
                 os_log(.fault, log: e2eeLog, "autoVerify: skipping destructive bootstrap — preserving existing key backup")
+                DiagLog.write("E2EE", "  autoVerify: skip bootstrap, calling selfVerifyDevice")
                 await selfVerifyDevice()
                 await cleanupOldDevicesByIDFV()
             }
         } catch {
             os_log(.fault, log: e2eeLog, "autoVerify: network error: %{public}@", String(describing: error))
+            DiagLog.write("E2EE", "  autoVerify: network error — \(error.localizedDescription)")
         }
     }
 
