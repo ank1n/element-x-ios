@@ -322,9 +322,21 @@ class UserSession: UserSessionProtocol {
             os_log(.fault, log: e2eeLog, "autoVerify: got key (length: %d), checking if backup exists...", recoveryKey.count)
             DiagLog.write("E2EE", "  autoVerify: got key (len=\(recoveryKey.count))")
 
+            // sTalk: Ждём пока SDK не sync'нет backup state с сервера. Если делать
+            // confirmRecoveryKey пока backup state=unknown — recover() пройдёт но
+            // НЕ скачает keys (SDK не знает что backup существует). Race на iPhone:
+            // app start быстрый → state ещё .unknown → 0 sessions imported → user
+            // видит «Ожидание ключа расшифровки». На симуляторе app start медленнее
+            // → backup state успевает sync до confirmRecoveryKey → работает.
+            for i in 1...20 {
+                let state = clientProxy.secureBackupController.keyBackupState.value
+                if state != .unknown { break }
+                if i == 1 { DiagLog.write("E2EE", "  autoVerify: waiting for backup state to settle (currently .unknown)") }
+                try? await Task.sleep(for: .milliseconds(500))
+            }
             let backupState = clientProxy.secureBackupController.keyBackupState.value
             os_log(.fault, log: e2eeLog, "autoVerify: backup state: %{public}@", String(describing: backupState))
-            DiagLog.write("E2EE", "  autoVerify: backup state=\(backupState)")
+            DiagLog.write("E2EE", "  autoVerify: backup state=\(backupState) (after wait)")
 
             await cleanupStaleSSSKeys()
 
