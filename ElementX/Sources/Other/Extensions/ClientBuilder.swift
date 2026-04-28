@@ -40,7 +40,13 @@ extension ClientBuilder {
         if setupEncryption {
             builder = builder
                 .autoEnableCrossSigning(autoEnableCrossSigning: true)
-                .backupDownloadStrategy(backupDownloadStrategy: .afterDecryptionFailure)
+                // sTalk: oneShot — после получения recovery key (через 4S confirmRecoveryKey)
+                // SDK сам скачивает ВСЕ room keys из backup. Это нужно для StalkAutoE2EE
+                // flow когда identity restored через server-stored recovery key —
+                // user не должен ловить «Ожидание ключа расшифровки» при открытии чата.
+                // С .afterDecryptionFailure (default) iPhone show'ит «Ожидание ключа»
+                // потому что backup state остаётся .unknown пока user не откроет message.
+                .backupDownloadStrategy(backupDownloadStrategy: .oneShot)
                 .enableShareHistoryOnInvite(enableShareHistoryOnInvite: enableKeyShareOnInvite)
                 .autoEnableBackups(autoEnableBackups: true)
         }
