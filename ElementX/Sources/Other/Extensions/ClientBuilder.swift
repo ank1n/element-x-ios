@@ -54,15 +54,17 @@ extension ClientBuilder {
         // Set recipient strategy and trust requirement even if `setupEncryption` is false to ensure messages
         // from insecure devices aren't displayed in push notifications.
         // See https://github.com/element-hq/element-x-ios/issues/4702.
-        if enableOnlySignedDeviceIsolationMode {
-            builder = builder
-                .roomKeyRecipientStrategy(strategy: .identityBasedStrategy)
-                .decryptionSettings(decryptionSettings: .init(senderDeviceTrustRequirement: .crossSignedOrLegacy))
-        } else {
-            builder = builder
-                .roomKeyRecipientStrategy(strategy: .errorOnVerifiedUserProblem)
-                .decryptionSettings(decryptionSettings: .init(senderDeviceTrustRequirement: .untrusted))
-        }
+        // sTalk: use AllDevices recipient strategy regardless of isolation mode.
+        // identityBasedStrategy / errorOnVerifiedUserProblem refuse to encrypt
+        // when a verified user has unsigned devices (zombies from DB churn,
+        // stale sessions etc.) — making it impossible to send messages until
+        // the device list is perfectly clean. AllDevices encrypts to whatever
+        // device list /keys/query returns; unsigned zombies just receive the
+        // m.room_key but can't decrypt anything anyway. See STALK-210.
+        builder = builder
+            .roomKeyRecipientStrategy(strategy: .allDevices)
+            .decryptionSettings(decryptionSettings: .init(senderDeviceTrustRequirement:
+                enableOnlySignedDeviceIsolationMode ? .crossSignedOrLegacy : .untrusted))
         
         if let httpProxy {
             builder = builder.proxy(url: httpProxy)
