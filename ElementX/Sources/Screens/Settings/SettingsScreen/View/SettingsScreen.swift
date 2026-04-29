@@ -228,16 +228,12 @@ struct SettingsScreen: View {
                     })
                     .accessibilityIdentifier(A11yIdentifiers.settingsScreen.screenLock)
             
-            switch context.viewState.securitySectionMode {
-            case .secureBackup:
-                ListRow(label: .default(title: L10n.commonEncryption,
-                                        icon: \.key),
-                        details: context.viewState.showSecuritySectionBadge ? .icon(securitySectionBadge) : nil,
-                        kind: .navigationLink { context.send(viewAction: .secureBackup) })
-                    .accessibilityIdentifier(A11yIdentifiers.settingsScreen.secureBackup)
-            default:
-                EmptyView()
-            }
+            // sTalk: hide encryption settings entry — StalkAutoE2EE manages
+            // recovery+backup automatically. Exposing UI lets user reset
+            // recovery key or disable backup, breaking the consistent chain
+            // (see STALK-210 incident 2026-04-29). Keep state machine but
+            // make navigation unreachable.
+            EmptyView()
         }
     }
     

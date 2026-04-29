@@ -118,21 +118,16 @@ class UserSession: UserSessionProtocol {
                 case (.verified, .enabled):
                     autoRecoveryCancellable?.cancel()
                     autoRecoveryCancellable = nil
-                    MXLog.info("sTalk: E2EE fully set up — refreshing SSSS, then uploading")
-                    DiagLog.write("E2EE", "→ Verified+enabled → refresh SSSS + upload")
+                    MXLog.info("sTalk: E2EE fully set up — refreshing SSSS")
+                    DiagLog.write("E2EE", "→ Verified+enabled → refresh SSSS")
                     Task {
-                        // sTalk: re-import secrets from server SSSS so local
-                        // backup_decryption_key stays in sync if other devices
-                        // (or churning) re-keyed SSSS since this app's last launch.
-                        // Without this refresh, a device with stale cached
-                        // backup_decryption_key creates a backup version with
-                        // a public_key that other devices can't match
-                        // (chain mismatch — see STALK-210 / 2026-04-29 incident).
-                        // tryRestoreFromServerKey calls confirmRecoveryKey which
-                        // calls SDK's encryption.recover() → import_secrets
-                        // → fresh local backup_decryption_key from SSSS.
+                        // sTalk: refresh SSSS to keep local backup_decryption_key
+                        // in sync with server. SDK handles the actual upload of
+                        // local Megolm sessions automatically (autoEnableBackups
+                        // in ClientBuilder). Calling our enableBackups() on top
+                        // produced "failedEnablingBackup" errors and surfaced
+                        // them to UI — we no longer do that.
                         _ = await self.tryRestoreFromServerKey()
-                        await self.uploadKeysToExistingBackup()
                         await self.cleanupOldDevicesByIDFV()
                     }
 
