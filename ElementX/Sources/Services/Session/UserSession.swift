@@ -217,6 +217,10 @@ class UserSession: UserSessionProtocol {
                 os_log(.fault, log: e2eeLog, "tryRestore — SUCCESS! Keys restored")
                 MXLog.info("sTalk: tryRestore — recovery key confirmed, keys restored!")
                 DiagLog.write("E2EE", "  tryRestore: confirmRecoveryKey SUCCESS ✅")
+                // sTalk: log post-confirm backup state to diagnose stuck cases
+                let backupState = clientProxy.secureBackupController.keyBackupState.value
+                let recoveryState = clientProxy.secureBackupController.recoveryState.value
+                DiagLog.write("E2EE", "  tryRestore: post-confirm backupState=\(backupState) recoveryState=\(recoveryState)")
                 return true
             case .failure(let error):
                 os_log(.fault, log: e2eeLog, "tryRestore — FAILED: %{public}@", String(describing: error))
@@ -243,25 +247,27 @@ class UserSession: UserSessionProtocol {
     /// Never deletes backup versions — that's a server-side responsibility.
     private func uploadKeysToExistingBackup() async {
         os_log(.fault, log: e2eeLog, "uploadKeys: trying enableBackups...")
+        DiagLog.write("E2EE", "uploadKeys: enableBackups START")
         let backupResult = await clientProxy.secureBackupController.enable()
 
         switch backupResult {
         case .success:
             os_log(.fault, log: e2eeLog, "uploadKeys: enableBackups succeeded")
-        case .failure:
+            DiagLog.write("E2EE", "uploadKeys: enableBackups SUCCESS")
+        case .failure(let error):
             let count = await getBackupKeyCount()
             os_log(.fault, log: e2eeLog, "uploadKeys: enableBackups failed (BackupExistsOnServer?), server has %d keys", count)
-            // Don't delete — server manages backup lifecycle.
-            // SDK will upload to existing backup if it has the encryption key.
-            // If not, keys will be uploaded after next successful confirmRecoveryKey.
+            DiagLog.write("E2EE", "uploadKeys: enableBackups FAILED — \(error). Server backup count=\(count). ABORT")
             return
         }
 
         os_log(.fault, log: e2eeLog, "uploadKeys: waiting for upload to complete...")
+        DiagLog.write("E2EE", "uploadKeys: waiting for upload to complete...")
         _ = await clientProxy.secureBackupController.waitForKeyBackupUpload(uploadStateSubject: .init(.waiting))
 
         let finalCount = await getBackupKeyCount()
         os_log(.fault, log: e2eeLog, "uploadKeys: DONE — server backup now has %d keys", finalCount)
+        DiagLog.write("E2EE", "uploadKeys: DONE — server has \(finalCount) keys")
     }
 
     /// Store recovery key on Matrix server via custom account data event

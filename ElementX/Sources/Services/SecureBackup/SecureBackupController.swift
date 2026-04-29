@@ -57,7 +57,9 @@ class SecureBackupController: SecureBackupControllerProtocol {
             }
             
             MXLog.info("Key backup state changed to: \(state), setting local state to \(keyBackupStateSubject.value)")
-            
+            // sTalk: surface backup state in DiagLog for offline debugging.
+            DiagLog.write("E2EE", "BackupState SDK=\(state) ours=\(keyBackupStateSubject.value)")
+
             if case .unknown = state {
                 updateBackupStateFromRemote()
             }
@@ -78,6 +80,7 @@ class SecureBackupController: SecureBackupControllerProtocol {
             }
             
             MXLog.info("Recovery state changed to: \(state), setting local state to \(recoveryStateSubject.value)")
+            DiagLog.write("E2EE", "RecoveryState SDK=\(state) ours=\(recoveryStateSubject.value)")
         })
         
         updateBackupStateFromRemote()
