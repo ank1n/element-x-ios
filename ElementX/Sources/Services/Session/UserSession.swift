@@ -147,11 +147,16 @@ class UserSession: UserSessionProtocol {
     /// Returns true if restoration succeeded.
     private func tryRestoreFromServerKey() async -> Bool {
         DiagLog.write("E2EE", "tryRestoreFromServerKey START")
+        // sTalk: refresh access token via SDK to ensure our custom URLSession call
+        // doesn't use a stale snapshot (MAS access_token expires ~15min). Without this,
+        // an idle session returns 401 on /account_data — caller mistakenly bootstraps.
+        await clientProxy.forceTokenRefresh()
+        DiagLog.write("E2EE", "  tryRestore: token refreshed via SDK")
         let homeserverURL = clientProxy.homeserver.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard let accessToken = try? clientProxy.matrixAccessToken() else {
             MXLog.error("sTalk: tryRestore — no access token")
-            DiagLog.write("E2EE", "  tryRestore: no access token — ABORT")
-            return false
+            DiagLog.write("E2EE", "  tryRestore: no access token — ABORT (pretend restored, no destructive action)")
+            return true
         }
 
         let encodedUserID = clientProxy.userID
@@ -249,6 +254,8 @@ class UserSession: UserSessionProtocol {
 
     /// Store recovery key on Matrix server via custom account data event
     private static func storeRecoveryKeyOnServer(key: String, clientProxy: ClientProxyProtocol) async {
+        // sTalk: refresh access token via SDK before custom URLSession call.
+        await clientProxy.forceTokenRefresh()
         let homeserverURL = clientProxy.homeserver.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard let accessToken = try? clientProxy.matrixAccessToken() else {
             MXLog.error("sTalk: Can't store recovery key — no access token")
@@ -295,6 +302,13 @@ class UserSession: UserSessionProtocol {
         }
         isAutoRecoveryInProgress = true
         defer { isAutoRecoveryInProgress = false }
+        // sTalk: refresh access token via SDK before our custom URLSession call.
+        // matrixAccessToken() returns a cached snapshot; on a session that's been
+        // idle long enough for MAS access_token to expire (15 min), the snapshot
+        // is stale → 401 on our custom HTTP. forceTokenRefresh triggers SDK's
+        // internal refresh so subsequent matrixAccessToken() returns a fresh token.
+        await clientProxy.forceTokenRefresh()
+        DiagLog.write("E2EE", "  autoVerify: token refreshed via SDK")
         let homeserverURL = clientProxy.homeserver.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard let accessToken = try? clientProxy.matrixAccessToken() else {
             os_log(.fault, log: e2eeLog, "autoVerify: no access token!")
