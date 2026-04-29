@@ -49,7 +49,7 @@ class UserSessionStore: UserSessionStoreProtocol {
     
     func restoreUserSession() async -> Result<UserSessionProtocol, UserSessionStoreError> {
         let availableCredentials = keychainController.restorationTokens()
-        
+
         guard let credentials = availableCredentials.first else {
             return .failure(.missingCredentials)
         }
