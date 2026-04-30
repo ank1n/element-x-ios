@@ -281,53 +281,56 @@ struct SettingsScreen: View {
     @AppStorage("stalk_user_status_preset") private var userStatusPreset = ""
 
     private var statusSection: some View {
-        Section(header: Text(SL10n.statusTitle)) {
-            HStack {
-                Image(systemName: "face.smiling")
-                    .foregroundColor(.orange)
-                TextField(SL10n.statusPlaceholder, text: $userStatusText)
-                    .font(.system(size: 16))
-            }
+        // sTalk: STMOB-XX UI compact — статус через Menu picker (одна строка),
+        // вместо списка из 4 кнопок + текст-поле + clear. Меньше места занимает.
+        let presets: [(icon: String, title: String, key: String, color: Color)] = [
+            ("checkmark.circle", SL10n.statusAvailable, "available", .green),
+            ("clock.fill", SL10n.statusBusy, "busy", .red),
+            ("video.fill", SL10n.statusInMeeting, "meeting", StalkTheme.accent),
+            ("airplane", SL10n.statusOnVacation, "vacation", .orange)
+        ]
+        let current = presets.first(where: { $0.key == userStatusPreset })
 
-            // Preset statuses
-            ForEach([
-                ("checkmark.circle", SL10n.statusAvailable, "available", Color.green),
-                ("clock.fill", SL10n.statusBusy, "busy", Color.red),
-                ("video.fill", SL10n.statusInMeeting, "meeting", StalkTheme.accent),
-                ("airplane", SL10n.statusOnVacation, "vacation", Color.orange)
-            ], id: \.2) { icon, title, preset, color in
-                Button {
-                    userStatusPreset = userStatusPreset == preset ? "" : preset
-                    if userStatusPreset == preset { userStatusText = title }
-                    else { userStatusText = "" }
-                } label: {
-                    HStack {
-                        Image(systemName: icon)
-                            .foregroundColor(color)
-                            .frame(width: 24)
-                        Text(title)
-                            .foregroundColor(.primary)
-                        Spacer()
-                        if userStatusPreset == preset {
-                            Image(systemName: "checkmark")
-                                .foregroundColor(StalkTheme.accent)
-                        }
+        return Section(header: Text(SL10n.statusTitle)) {
+            Menu {
+                ForEach(presets, id: \.key) { preset in
+                    Button {
+                        userStatusPreset = preset.key
+                        userStatusText = preset.title
+                    } label: {
+                        Label(preset.title, systemImage: preset.icon)
                     }
+                }
+                if !userStatusPreset.isEmpty || !userStatusText.isEmpty {
+                    Divider()
+                    Button(role: .destructive) {
+                        userStatusPreset = ""
+                        userStatusText = ""
+                    } label: {
+                        Label(SL10n.statusClear, systemImage: "xmark.circle")
+                    }
+                }
+            } label: {
+                HStack {
+                    if let current {
+                        Image(systemName: current.icon).foregroundColor(current.color).frame(width: 24)
+                        Text(current.title).foregroundColor(.primary)
+                    } else {
+                        Image(systemName: "face.smiling").foregroundColor(.secondary).frame(width: 24)
+                        Text(userStatusText.isEmpty ? SL10n.statusPlaceholder : userStatusText)
+                            .foregroundColor(userStatusText.isEmpty ? .secondary : .primary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.up.chevron.down").foregroundColor(.secondary).font(.system(size: 12))
                 }
             }
 
-            if !userStatusText.isEmpty {
-                Button {
-                    userStatusText = ""
-                    userStatusPreset = ""
-                } label: {
-                    HStack {
-                        Image(systemName: "xmark.circle")
-                            .foregroundColor(.secondary)
-                            .frame(width: 24)
-                        Text(SL10n.statusClear)
-                            .foregroundColor(.secondary)
-                    }
+            // Кастомный текст — одна строка под Menu (не показываем если выбран preset)
+            if userStatusPreset.isEmpty {
+                HStack {
+                    Image(systemName: "pencil").foregroundColor(.secondary).frame(width: 24)
+                    TextField(SL10n.statusPlaceholder, text: $userStatusText)
+                        .font(.system(size: 16))
                 }
             }
         }
