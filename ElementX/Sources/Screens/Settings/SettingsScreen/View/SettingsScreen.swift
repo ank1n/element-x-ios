@@ -447,12 +447,7 @@ struct SettingsScreen: View {
                     })
                     .accessibilityIdentifier(A11yIdentifiers.settingsScreen.advancedSettings)
             
-            ListRow(label: .default(title: L10n.screenAdvancedSettingsLabs,
-                                    icon: \.labs),
-                    kind: .navigationLink {
-                        context.send(viewAction: .labs)
-                    })
-            
+            // sTalk: hidden Labs (опасные эксперимент-флаги для пользователей).
             ListRow(label: .default(title: L10n.commonAbout,
                                     icon: \.info),
                     kind: .navigationLink {
@@ -487,14 +482,8 @@ struct SettingsScreen: View {
                 })
             }
             
-            if context.viewState.showAnalyticsSettings {
-                ListRow(label: .default(title: L10n.commonAnalytics,
-                                        icon: \.chart),
-                        kind: .navigationLink {
-                            context.send(viewAction: .analytics)
-                        })
-                        .accessibilityIdentifier(A11yIdentifiers.settingsScreen.analytics)
-            }
+            // sTalk: hidden Analytics (не показываем тогглы аналитики пользователю —
+            // sTalk не собирает аналитику в production).
         }
     }
     

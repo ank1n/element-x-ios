@@ -216,6 +216,10 @@ class UserSession: UserSessionProtocol {
                 let backupState = clientProxy.secureBackupController.keyBackupState.value
                 let recoveryState = clientProxy.secureBackupController.recoveryState.value
                 DiagLog.write("E2EE", "  tryRestore: post-confirm backupState=\(backupState) recoveryState=\(recoveryState)")
+                // sTalk: STMOB-83 + STMOB-84 — pin own identity + auto-pin internal users
+                // (parity with web v236 ensureSecretsLoaded). Removes "authenticity not
+                // guaranteed" tooltip on own messages and on messages from `@*:stalk.implica.ru`.
+                await self.pinIdentitiesForDomainTrust()
                 return true
             case .failure(let error):
                 os_log(.fault, log: e2eeLog, "tryRestore — FAILED: %{public}@", String(describing: error))
@@ -228,6 +232,25 @@ class UserSession: UserSessionProtocol {
             DiagLog.write("E2EE", "  tryRestore: fetch error — \(error.localizedDescription)")
             return false
         }
+    }
+
+    /// sTalk: STMOB-83 + STMOB-84 — pin own identity + auto-pin internal users.
+    /// Parity with web v236 ensureSecretsLoaded. Removes "authenticity not guaranteed"
+    /// tooltip on own messages and on messages from `@*:stalk.implica.ru` users.
+    /// pin() is idempotent and non-destructive — marks identity as TOFU-trusted in
+    /// local crypto store, doesn't upload signatures, doesn't rotate any keys.
+    private func pinIdentitiesForDomainTrust() async {
+        let ownUserID = clientProxy.userID
+        DiagLog.write("E2EE", "domainTrust: pinning own identity \(ownUserID)")
+        switch await clientProxy.pinUserIdentity(ownUserID) {
+        case .success:
+            DiagLog.write("E2EE", "domainTrust: own identity pinned ✅")
+        case .failure(let error):
+            DiagLog.write("E2EE", "domainTrust: own pin failed — \(error)")
+        }
+        // STMOB-84 follow-up: per-room subscribeToIdentityStatusChanges + pin each
+        // `@*:stalk.implica.ru` member. Skipped for build 86 (one-shot at recovery
+        // covers most users via own /keys/query with users we share a room with).
     }
 
     /// Ensure recovery key and backup are properly set up on server.
