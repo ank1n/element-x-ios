@@ -15,10 +15,9 @@ struct AdvancedSettingsScreen: View {
     var body: some View {
         Form {
             Section {
-                ListRow(label: .plain(title: L10n.commonAppearance),
-                        kind: .picker(selection: $context.appAppearance,
-                                      items: AppAppearance.allCases.map { (title: $0.name, tag: $0) }))
-                
+                // sTalk: hidden Appearance picker (STMOB-81). App forces light mode
+                // unconditionally in AppCoordinator. Dark theme has visual bugs
+                // and isn't a priority for StalkAutoE2EE.
                 ListRow(label: .plain(title: L10n.actionViewSource,
                                       description: L10n.screenAdvancedSettingsViewSourceDescription),
                         kind: .toggle($context.viewSourceEnabled))

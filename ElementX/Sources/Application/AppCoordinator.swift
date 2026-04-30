@@ -205,12 +205,12 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
     func toPresentable() -> AnyView {
         AnyView(navigationRootCoordinator.toPresentable()
             .environment(\.analyticsService, ServiceLocator.shared.analytics)
-            .onReceive(appSettings.$appAppearance) { [weak self] appAppearance in
+            .onReceive(appSettings.$appAppearance) { [weak self] _ in
                 guard let self else { return }
-                    
+                // sTalk: force light mode regardless of saved preference (STMOB-81).
+                // Dark theme has visual bugs and isn't a priority for StalkAutoE2EE.
                 windowManager.windows.forEach { window in
-                    // Unfortunately .preferredColorScheme doesn't propagate properly throughout the app when changed
-                    window.overrideUserInterfaceStyle = appAppearance.interfaceStyle
+                    window.overrideUserInterfaceStyle = .light
                 }
             })
     }
