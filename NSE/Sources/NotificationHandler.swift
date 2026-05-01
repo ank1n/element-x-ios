@@ -229,11 +229,23 @@ class NotificationHandler {
 
     private func discardNotification() {
         MXLog.info("\(tag) Discarding notification")
-        
+
+        // sTalk: STMOB-97 — iOS NSE cannot fully cancel a notification once
+        // APNs has scheduled it (mutable-content=1 reserved a banner slot).
+        // Returning an empty UNMutableNotificationContent still produced the
+        // generic "1 уведомление" banner during active calls. Mark the
+        // content as passive so it joins Notification Center silently
+        // without sound/vibration/banner. Encrypted ratchet events and
+        // call.member updates that NSE intentionally discards stop
+        // distracting the user from a CallKit screen.
         let content = UNMutableNotificationContent()
         content.badge = notificationContent.unreadCount as NSNumber?
+        content.sound = nil
+        if #available(iOS 15.0, *) {
+            content.interruptionLevel = .passive
+        }
         MXLog.info("\(tag) New badge value: \(content.badge?.stringValue ?? "nil")")
-        
+
         contentHandler(content)
     }
     
