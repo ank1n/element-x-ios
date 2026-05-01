@@ -451,13 +451,10 @@ struct SettingsScreen: View {
                     .accessibilityIdentifier(A11yIdentifiers.settingsScreen.advancedSettings)
             
             // sTalk: hidden Labs (опасные эксперимент-флаги для пользователей).
-            ListRow(label: .default(title: L10n.commonAbout,
-                                    icon: \.info),
-                    kind: .navigationLink {
-                        context.send(viewAction: .about)
-                    })
-                    .accessibilityIdentifier(A11yIdentifiers.settingsScreen.about)
-            
+            // sTalk: hidden About (STMOB-94) — Legal Information ссылки сейчас все ведут на
+            // https://stalk.implica.ru (placeholder), пользы пока нет. Вернём когда появятся
+            // реальные Privacy Policy / Terms / Copyright.
+
             if context.viewState.isBugReportServiceEnabled {
                 ListRow(label: .default(title: L10n.commonReportAProblem,
                                         icon: \.chatProblem),
