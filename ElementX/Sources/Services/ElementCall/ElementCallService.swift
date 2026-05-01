@@ -102,6 +102,22 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         pushRegistry.desiredPushTypes = [.voIP]
 
         self.callProvider.setDelegate(self, queue: nil)
+
+        // sTalk: STMOB-90 — when SDK rotates Matrix device_id silently the VoIP
+        // pusher in Synapse still points at the dead old device, so CallKit
+        // full-screen rings regress to banner notifications. Re-register on
+        // every device_id change using the cached PushKit token.
+        NotificationCenter.default.addObserver(forName: .stalkMatrixDeviceIDChanged, object: nil, queue: nil) { [weak self] note in
+            guard let self else { return }
+            let oldID = (note.userInfo?["oldDeviceID"] as? String) ?? "?"
+            let newID = (note.userInfo?["newDeviceID"] as? String) ?? "?"
+            DiagLog.write("VoIP", "deviceID changed (\(oldID) → \(newID)) — re-registering VoIP pusher")
+            guard Self.kEnableVoIPPusherRegistration, let token = self.voipDeviceToken else {
+                DiagLog.write("VoIP", "  re-register skipped (token=\(self.voipDeviceToken == nil ? "nil" : "ok") flag=\(Self.kEnableVoIPPusherRegistration))")
+                return
+            }
+            Task { await self.registerVoIPPusher(with: token) }
+        }
     }
     
     /// Флаг для пометки следующего звонка как входящего (когда VoIP push недоступен)

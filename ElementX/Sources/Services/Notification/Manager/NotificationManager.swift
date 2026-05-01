@@ -53,6 +53,20 @@ final class NotificationManager: NSObject, NotificationManagerProtocol {
         notificationsEnabled = appSettings.enableNotifications
         MXLog.info("App setting 'enableNotifications' is '\(notificationsEnabled)'")
         
+        // sTalk: STMOB-90 — when SDK rotates Matrix device_id silently, the
+        // regular pusher in Synapse still points at the dead old device. Ask
+        // iOS for the APNS token again; UIApplication will fire the delegate
+        // immediately on the cached token, which lands in register(with:) and
+        // re-runs setPusher under the new device_id.
+        NotificationCenter.default.addObserver(forName: .stalkMatrixDeviceIDChanged, object: nil, queue: nil) { [weak self] note in
+            guard let self else { return }
+            let newID = (note.userInfo?["newDeviceID"] as? String) ?? "?"
+            DiagLog.write("APNS", "deviceID changed to \(newID) — re-registering APNS pusher")
+            Task { @MainActor in
+                self.delegate?.registerForRemoteNotifications()
+            }
+        }
+
         // Listen for changes to AppSettings.enableNotifications
         appSettings.$enableNotifications
             .sink { [weak self] newValue in

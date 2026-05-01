@@ -124,6 +124,15 @@ final class KeychainController: KeychainControllerProtocol {
         if oldToken.session.deviceId != session.deviceId {
             DiagLog.write("DEVID", "Keychain.saveSessionInKeychain DEVICE_ID_CHANGED user=\(session.userId) old=\(oldToken.session.deviceId) new=\(session.deviceId)")
             MXLog.error("STMOB-90 device_id mutated by SDK: user=\(session.userId) old=\(oldToken.session.deviceId) new=\(session.deviceId)")
+            // sTalk: notify VoIP / regular pusher subsystems to re-register on
+            // the new device. Without re-registration Synapse keeps the VoIP
+            // pusher attached to the dead old device_id and CallKit full-screen
+            // ringer regresses to a banner notification.
+            NotificationCenter.default.post(name: .stalkMatrixDeviceIDChanged,
+                                            object: nil,
+                                            userInfo: ["oldDeviceID": oldToken.session.deviceId,
+                                                       "newDeviceID": session.deviceId,
+                                                       "userID": session.userId])
         }
         let restorationToken = RestorationToken(session: session,
                                                 sessionDirectories: oldToken.sessionDirectories,
@@ -231,4 +240,12 @@ final class KeychainController: KeychainControllerProtocol {
             MXLog.error("Failed removing saved login: \(error)")
         }
     }
+}
+
+extension Notification.Name {
+    /// sTalk: STMOB-90 — fired when SDK-driven session save changes the Matrix
+    /// device_id of the active user. Subsystems that bind state to the
+    /// device_id (VoIP/regular pushers, MatrixRTC presence) listen and
+    /// re-register on the new device.
+    static let stalkMatrixDeviceIDChanged = Notification.Name("StalkMatrixDeviceIDChanged")
 }
