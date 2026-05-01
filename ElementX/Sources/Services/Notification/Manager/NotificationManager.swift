@@ -67,6 +67,20 @@ final class NotificationManager: NSObject, NotificationManagerProtocol {
             }
         }
 
+        // sTalk: STMOB-90 — additional safety. Matrix setPusher is an upsert
+        // on (pushkey, app_id), so re-issuing it on each foreground entry is
+        // cheap. This catches the case where a device_id was already rotated
+        // before build 94 was installed — no notification ever fires for that
+        // historical change, but Synapse still has a stale pusher under the
+        // dead old device_id.
+        NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: nil) { [weak self] _ in
+            guard let self else { return }
+            DiagLog.write("APNS", "willEnterForeground — refreshing APNS pusher (idempotent)")
+            Task { @MainActor in
+                self.delegate?.registerForRemoteNotifications()
+            }
+        }
+
         // Listen for changes to AppSettings.enableNotifications
         appSettings.$enableNotifications
             .sink { [weak self] newValue in

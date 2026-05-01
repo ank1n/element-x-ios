@@ -118,6 +118,19 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
             }
             Task { await self.registerVoIPPusher(with: token) }
         }
+
+        // sTalk: STMOB-90 — Molly observed that build 94 didn't register a
+        // VoIP pusher for an already-active device because no rotation
+        // happened post-install. setPusher upserts on Synapse side, so a
+        // redundant re-register on every foreground entry is cheap and
+        // ensures the pusher exists for the current (userId, deviceId, token)
+        // tuple even when the rotation hook never fires.
+        NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: nil) { [weak self] _ in
+            guard let self else { return }
+            guard Self.kEnableVoIPPusherRegistration, let token = self.voipDeviceToken else { return }
+            DiagLog.write("VoIP", "willEnterForeground — refreshing VoIP pusher (idempotent)")
+            Task { await self.registerVoIPPusher(with: token) }
+        }
     }
     
     /// Флаг для пометки следующего звонка как входящего (когда VoIP push недоступен)
