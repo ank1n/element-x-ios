@@ -58,7 +58,10 @@ class BugReportService: NSObject, BugReportServiceProtocol {
     // sTalk: STMOB-88 — submit goes to TrackIT (Plane) instead of upstream
     // rageshake. Bug Report → создаёт issue в STMOB project с user text +
     // device/version + tail log как HTML preformatted block.
-    private static let trackitURL = URL(string: "https://trackit.implica.ru/api/v1/workspaces/implica/projects/a0b9904b-b856-422f-9540-3b975e54f42e/issues/")!
+    private static let trackitBaseURL = "https://trackit.implica.ru"
+    private static let trackitProject = "a0b9904b-b856-422f-9540-3b975e54f42e"
+    private static let trackitWorkspace = "implica"
+    private static let trackitIssuesURL = URL(string: "\(trackitBaseURL)/api/v1/workspaces/\(trackitWorkspace)/projects/\(trackitProject)/issues/")!
     private static let trackitAPIKey = "plane_api_c380b83adf714ffa0a4fefa20d7193ae"
     private static let trackitTodoState = "e864041b-1cec-43f2-aee3-6ea5d1c0b2f6"
     private static let logTailLimit = 50000 // bytes
@@ -82,7 +85,7 @@ class BugReportService: NSObject, BugReportServiceProtocol {
             return .failure(.uploadFailure(NSError(domain: "BugReport", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to serialize payload"])))
         }
 
-        var request = URLRequest(url: Self.trackitURL)
+        var request = URLRequest(url: Self.trackitIssuesURL)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(Self.trackitAPIKey, forHTTPHeaderField: "X-Api-Key")
@@ -96,7 +99,7 @@ class BugReportService: NSObject, BugReportServiceProtocol {
 
         do {
             let (data, response) = try await session.data(for: request, delegate: self)
-            progressSubject.send(0.9)
+            progressSubject.send(0.4)
 
             guard let httpResponse = response as? HTTPURLResponse else {
                 let errorDescription = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "Unknown error"
@@ -110,20 +113,161 @@ class BugReportService: NSObject, BugReportServiceProtocol {
                 return .failure(.httpError(httpResponse, errorDescription))
             }
 
-            // Parse Plane response — has `id` + `sequence_id`. Build trackit web URL.
-            var reportURL: String?
-            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let id = json["id"] as? String {
-                reportURL = "https://trackit.implica.ru/implica/projects/a0b9904b-b856-422f-9540-3b975e54f42e/issues/\(id)"
-                if let seq = json["sequence_id"] as? Int {
-                    MXLog.info("Bug report submitted — STMOB-\(seq) \(reportURL ?? "")")
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let issueID = json["id"] as? String else {
+                MXLog.error("Bug report TrackIT: cannot parse issue id from response")
+                return .failure(.uploadFailure(NSError(domain: "BugReport", code: -2, userInfo: [NSLocalizedDescriptionKey: "Cannot parse issue id"])))
+            }
+            let sequence = json["sequence_id"] as? Int
+
+            // Upload attachments (logs + screenshots/files) to Plane and append
+            // links/images to issue description.
+            var attachmentLinks: [String] = []
+            var attachmentImages: [String] = []
+            let allFiles: [(URL, String)] =
+                (bugReport.logFiles ?? []).map { ($0, "text/plain") } +
+                bugReport.files.map { ($0, Self.mimeType(for: $0)) }
+            for (idx, (fileURL, mime)) in allFiles.enumerated() {
+                if let assetURL = await uploadAttachment(fileURL: fileURL, mime: mime, issueID: issueID) {
+                    let absoluteAssetURL = "\(Self.trackitBaseURL)\(assetURL)"
+                    let name = fileURL.lastPathComponent
+                    let escapedName = escape(name)
+                    if mime.hasPrefix("image/") {
+                        attachmentImages.append("<p><img src=\"\(absoluteAssetURL)\" alt=\"\(escapedName)\" style=\"max-width:600px\"/></p>")
+                    } else {
+                        attachmentLinks.append("<li><a href=\"\(absoluteAssetURL)\">\(escapedName)</a></li>")
+                    }
+                } else {
+                    MXLog.warning("Bug report: failed to upload attachment \(fileURL.lastPathComponent)")
                 }
+                progressSubject.send(0.4 + 0.5 * (Double(idx + 1) / Double(max(allFiles.count, 1))))
+            }
+
+            // Patch issue description with attachment HTML if anything uploaded.
+            if !attachmentLinks.isEmpty || !attachmentImages.isEmpty {
+                var attachmentHTML = ""
+                if !attachmentImages.isEmpty {
+                    attachmentHTML += "<h3>Screenshots</h3>" + attachmentImages.joined()
+                }
+                if !attachmentLinks.isEmpty {
+                    attachmentHTML += "<h3>Attached files</h3><ul>" + attachmentLinks.joined() + "</ul>"
+                }
+                let updatedHTML = descriptionHTML + attachmentHTML
+                _ = await patchIssueDescription(issueID: issueID, descriptionHTML: updatedHTML)
+            }
+
+            let reportURL = "\(Self.trackitBaseURL)/\(Self.trackitWorkspace)/projects/\(Self.trackitProject)/issues/\(issueID)"
+            if let sequence {
+                MXLog.info("Bug report submitted — STMOB-\(sequence) \(reportURL)")
             }
             lastCrashEventID = nil
             progressSubject.send(1.0)
             return .success(SubmitBugReportResponse(reportURL: reportURL))
         } catch {
             return .failure(.uploadFailure(error))
+        }
+    }
+
+    /// Upload one file as Plane issue-attachment in 3 stages:
+    ///   1) POST issue-attachments → presigned upload data
+    ///   2) POST upload_data.url multipart → S3-compatible bucket
+    ///   3) PATCH attachment to mark uploaded
+    /// Returns asset URL path (relative, prepend trackitBaseURL for full URL) on success.
+    private func uploadAttachment(fileURL: URL, mime: String, issueID: String) async -> String? {
+        guard let fileData = try? Data(contentsOf: fileURL) else {
+            MXLog.warning("Bug report: cannot read file \(fileURL.lastPathComponent)")
+            return nil
+        }
+        // Stage 1: register attachment, get presigned upload URL.
+        let attachmentsEndpoint = URL(string: "\(Self.trackitBaseURL)/api/v1/workspaces/\(Self.trackitWorkspace)/projects/\(Self.trackitProject)/issues/\(issueID)/issue-attachments/")!
+        let registerPayload: [String: Any] = [
+            "name": fileURL.lastPathComponent,
+            "type": mime,
+            "size": fileData.count
+        ]
+        guard let registerBody = try? JSONSerialization.data(withJSONObject: registerPayload) else { return nil }
+        var registerRequest = URLRequest(url: attachmentsEndpoint)
+        registerRequest.httpMethod = "POST"
+        registerRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        registerRequest.setValue(Self.trackitAPIKey, forHTTPHeaderField: "X-Api-Key")
+        registerRequest.httpBody = registerBody
+        guard let (registerData, registerResponse) = try? await session.data(for: registerRequest),
+              let registerHTTP = registerResponse as? HTTPURLResponse,
+              (200..<300).contains(registerHTTP.statusCode),
+              let registerJSON = try? JSONSerialization.jsonObject(with: registerData) as? [String: Any],
+              let uploadData = registerJSON["upload_data"] as? [String: Any],
+              let uploadURLString = uploadData["url"] as? String,
+              let uploadURL = URL(string: uploadURLString),
+              let fields = uploadData["fields"] as? [String: String],
+              let assetID = registerJSON["asset_id"] as? String,
+              let assetURL = registerJSON["asset_url"] as? String else {
+            return nil
+        }
+
+        // Stage 2: multipart POST to presigned upload URL.
+        let boundary = "BugReportBoundary-\(UUID().uuidString)"
+        var multipartBody = Data()
+        let preferredFieldOrder = ["Content-Type", "key", "x-amz-algorithm", "x-amz-credential", "x-amz-date", "policy", "x-amz-signature"]
+        let orderedKeys = preferredFieldOrder.filter { fields[$0] != nil } + fields.keys.filter { !preferredFieldOrder.contains($0) }
+        for key in orderedKeys {
+            guard let value = fields[key] else { continue }
+            multipartBody.append("--\(boundary)\r\n".data(using: .utf8) ?? Data())
+            multipartBody.append("Content-Disposition: form-data; name=\"\(key)\"\r\n\r\n".data(using: .utf8) ?? Data())
+            multipartBody.append("\(value)\r\n".data(using: .utf8) ?? Data())
+        }
+        multipartBody.append("--\(boundary)\r\n".data(using: .utf8) ?? Data())
+        multipartBody.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileURL.lastPathComponent)\"\r\n".data(using: .utf8) ?? Data())
+        multipartBody.append("Content-Type: \(mime)\r\n\r\n".data(using: .utf8) ?? Data())
+        multipartBody.append(fileData)
+        multipartBody.append("\r\n--\(boundary)--\r\n".data(using: .utf8) ?? Data())
+
+        var uploadRequest = URLRequest(url: uploadURL)
+        uploadRequest.httpMethod = "POST"
+        uploadRequest.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        uploadRequest.httpBody = multipartBody
+        guard let (_, uploadResponse) = try? await session.data(for: uploadRequest),
+              let uploadHTTP = uploadResponse as? HTTPURLResponse,
+              (200..<300).contains(uploadHTTP.statusCode) else {
+            return nil
+        }
+
+        // Stage 3: PATCH to mark uploaded (Plane requires this to make it visible).
+        let finalizeURL = URL(string: "\(Self.trackitBaseURL)/api/v1/workspaces/\(Self.trackitWorkspace)/projects/\(Self.trackitProject)/issues/\(issueID)/issue-attachments/\(assetID)/")!
+        var finalizeRequest = URLRequest(url: finalizeURL)
+        finalizeRequest.httpMethod = "PATCH"
+        finalizeRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        finalizeRequest.setValue(Self.trackitAPIKey, forHTTPHeaderField: "X-Api-Key")
+        finalizeRequest.httpBody = "{}".data(using: .utf8)
+        _ = try? await session.data(for: finalizeRequest)
+
+        return assetURL
+    }
+
+    /// PATCH issue with updated description_html (used to append attachment links/images).
+    private func patchIssueDescription(issueID: String, descriptionHTML: String) async -> Bool {
+        let url = URL(string: "\(Self.trackitBaseURL)/api/v1/workspaces/\(Self.trackitWorkspace)/projects/\(Self.trackitProject)/issues/\(issueID)/")!
+        guard let body = try? JSONSerialization.data(withJSONObject: ["description_html": descriptionHTML]) else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(Self.trackitAPIKey, forHTTPHeaderField: "X-Api-Key")
+        request.httpBody = body
+        guard let (_, response) = try? await session.data(for: request),
+              let httpResponse = response as? HTTPURLResponse,
+              (200..<300).contains(httpResponse.statusCode) else {
+            return false
+        }
+        return true
+    }
+
+    private static func mimeType(for url: URL) -> String {
+        switch url.pathExtension.lowercased() {
+        case "png": return "image/png"
+        case "jpg", "jpeg": return "image/jpeg"
+        case "gif": return "image/gif"
+        case "log", "txt": return "text/plain"
+        case "json": return "application/json"
+        default: return "application/octet-stream"
         }
     }
 
