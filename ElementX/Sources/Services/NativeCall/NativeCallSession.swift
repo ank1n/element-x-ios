@@ -1037,9 +1037,17 @@ final class NativeCallSession: ObservableObject {
     private func generateLiveKitJWT(roomName: String, identity: String) -> String? {
         let header: [String: Any] = ["alg": "HS256", "typ": "JWT"]
         let now = Int(Date().timeIntervalSince1970)
+        // sTalk: STMOB-89 — set explicit `identity` claim alongside `sub`. Earlier
+        // LiveKit servers fell back to `sub`, but newer livekit-server-sdk reads
+        // the top-level `identity` claim for participant identity. If only `sub`
+        // is set the server may assign a fallback identity → mismatch with
+        // `/api/keys/pp/<room>/<userId:deviceId>` upload. Set both to the same
+        // string so JWT identity and key-publish identity are guaranteed equal.
         let payload: [String: Any] = [
             "iss": livekitAPIKey,
             "sub": identity,
+            "identity": identity,
+            "name": userId,
             "nbf": now,
             "exp": now + 3600,
             "video": [

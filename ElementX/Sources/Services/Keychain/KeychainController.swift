@@ -111,10 +111,19 @@ final class KeychainController: KeychainControllerProtocol {
     
     func saveSessionInKeychain(session: Session) {
         MXLog.info("Saving session changes in the keychain.")
-        
+
         guard let oldToken = restorationTokenForUsername(session.userId) else {
             MXLog.error("Failed retrieving the restoration token for \(session.userId)")
             fatalError("Something has gone mega wrong, all bets are off.")
+        }
+        // sTalk: STMOB-90 — instrument deviceId churn. SDK is supposed to
+        // refresh the access/refresh tokens on the existing session and keep
+        // deviceId stable, but production logs show new device_ids appearing
+        // for the same user without explicit login. Capture the change here
+        // so the next bug report tells us which code path renamed deviceId.
+        if oldToken.session.deviceId != session.deviceId {
+            DiagLog.write("DEVID", "Keychain.saveSessionInKeychain DEVICE_ID_CHANGED user=\(session.userId) old=\(oldToken.session.deviceId) new=\(session.deviceId)")
+            MXLog.error("STMOB-90 device_id mutated by SDK: user=\(session.userId) old=\(oldToken.session.deviceId) new=\(session.deviceId)")
         }
         let restorationToken = RestorationToken(session: session,
                                                 sessionDirectories: oldToken.sessionDirectories,
