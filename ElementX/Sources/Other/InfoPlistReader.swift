@@ -143,7 +143,10 @@ struct InfoPlistReader {
     }
     
     var elementCallScheme: String {
-        customSchemeForName("Element Call")
+        // sTalk: URL Type renamed "Element Call" → "sTalk Call" during fork rebranding
+        // (see CFBundleURLTypes in Info.plist). Hardcoded upstream name was crashing
+        // any openURL with fatalError on first tap (Legal Information / chat links).
+        customSchemeForName("sTalk Call")
     }
     
     // MARK: - Mention Pills
