@@ -219,7 +219,7 @@ class UserSession: UserSessionProtocol {
                 // sTalk: STMOB-83 + STMOB-84 — pin own identity + auto-pin internal users
                 // (parity with web v236 ensureSecretsLoaded). Removes "authenticity not
                 // guaranteed" tooltip on own messages and on messages from `@*:stalk.implica.ru`.
-                await self.pinIdentitiesForDomainTrust()
+                await pinIdentitiesForDomainTrust()
                 return true
             case .failure(let error):
                 os_log(.fault, log: e2eeLog, "tryRestore — FAILED: %{public}@", String(describing: error))

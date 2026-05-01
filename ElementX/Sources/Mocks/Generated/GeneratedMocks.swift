@@ -2712,6 +2712,11 @@ class ClientProxyMock: ClientProxyProtocol, @unchecked Sendable {
     func matrixAccessToken() throws -> String {
         matrixAccessTokenReturnValue
     }
+    //MARK: - forceTokenRefresh
+
+    func forceTokenRefresh() async {
+        // sTalk: no-op in mock
+    }
     //MARK: - directRoomForUserID
 
     var directRoomForUserIDUnderlyingCallsCount = 0

@@ -55,117 +55,141 @@ class BugReportService: NSObject, BugReportServiceProtocol {
         SentrySDK.crashedLastRun
     }
     
-    // swiftlint:disable:next cyclomatic_complexity
+    // sTalk: STMOB-88 — submit goes to TrackIT (Plane) instead of upstream
+    // rageshake. Bug Report → создаёт issue в STMOB project с user text +
+    // device/version + tail log как HTML preformatted block.
+    private static let trackitURL = URL(string: "https://trackit.implica.ru/api/v1/workspaces/implica/projects/a0b9904b-b856-422f-9540-3b975e54f42e/issues/")!
+    private static let trackitAPIKey = "plane_api_c380b83adf714ffa0a4fefa20d7193ae"
+    private static let trackitTodoState = "e864041b-1cec-43f2-aee3-6ea5d1c0b2f6"
+    private static let logTailLimit = 50000 // bytes
+
     func submitBugReport(_ bugReport: BugReport,
                          progressListener: CurrentValueSubject<Double, Never>) async -> Result<SubmitBugReportResponse, BugReportServiceError> {
-        guard case let .url(rageshakeURL) = rageshakeURL else {
-            fatalError("No bug report URL set, the screen should not be shown in this case.")
-        }
-        
-        var bugReport = appHooks.bugReportHook.update(bugReport)
-        
-        var params = [
-            MultipartFormData(key: "text", type: .text(value: bugReport.text)),
-            MultipartFormData(key: "can_contact", type: .text(value: "\(bugReport.canContact)"))
+        let bugReport = appHooks.bugReportHook.update(bugReport)
+        let descriptionHTML = buildDescriptionHTML(for: bugReport)
+
+        let issueTitle = "[iOS Bug] " + bugReport.text
+            .components(separatedBy: .newlines).first?
+            .prefix(80).description ?? "(no title)"
+
+        let payload: [String: Any] = [
+            "name": issueTitle,
+            "description_html": descriptionHTML,
+            "state": Self.trackitTodoState,
+            "priority": "medium"
         ]
-        
-        if let userID = bugReport.userID {
-            params.append(.init(key: "user_id", type: .text(value: userID)))
-        } else {
-            bugReport.githubLabels.append("login")
-        }
-        
-        if let deviceID = bugReport.deviceID {
-            params.append(.init(key: "device_id", type: .text(value: deviceID)))
-        }
-        
-        if let ed25519 = bugReport.ed25519, let curve25519 = bugReport.curve25519 {
-            let compactKeys = "curve25519:\(curve25519), ed25519:\(ed25519)"
-            params.append(.init(key: "device_keys", type: .text(value: compactKeys)))
-        }
-        
-        if let crashEventID = lastCrashEventID {
-            params.append(MultipartFormData(key: "crash_report", type: .text(value: "crash_event_id=\(crashEventID)")))
-            bugReport.githubLabels.append("crash")
-        }
-        
-        params.append(contentsOf: defaultParams)
-        
-        if InfoPlistReader.main.baseBundleIdentifier == "ru.implica.stalk.nightly" {
-            bugReport.githubLabels.append("Nightly")
-        }
-        
-        if ProcessInfo.processInfo.isiOSAppOnMac {
-            bugReport.githubLabels.append("macOS")
-        }
-        
-        for label in bugReport.githubLabels {
-            params.append(MultipartFormData(key: "label", type: .text(value: label)))
-        }
-        
-        if let logFiles = bugReport.logFiles {
-            let logAttachments = await zipFiles(logFiles)
-            for url in logAttachments.files {
-                params.append(MultipartFormData(key: "compressed-log", type: .file(url: url)))
-            }
-        }
-        
-        for url in bugReport.files {
-            params.append(MultipartFormData(key: "file", type: .file(url: url)))
+
+        guard let body = try? JSONSerialization.data(withJSONObject: payload) else {
+            return .failure(.uploadFailure(NSError(domain: "BugReport", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to serialize payload"])))
         }
 
-        let boundary = "Boundary-\(UUID().uuidString)"
-        var body = Data()
-        for param in params {
-            do {
-                try body.appendParam(param, boundary: boundary)
-            } catch {
-                MXLog.error("Failed to attach parameter at \(param.key)")
-                // Continue to the next parameter and try to submit something.
-            }
-        }
-        body.appendString(string: "--\(boundary)--\r\n")
-
-        var request = URLRequest(url: rageshakeURL)
-        request.addValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-
+        var request = URLRequest(url: Self.trackitURL)
         request.httpMethod = "POST"
-        request.httpBody = body as Data
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(Self.trackitAPIKey, forHTTPHeaderField: "X-Api-Key")
+        request.httpBody = body
 
         progressSubject
             .receive(on: DispatchQueue.main)
             .weakAssign(to: \.value, on: progressListener)
             .store(in: &cancellables)
-        
+        progressSubject.send(0.1)
+
         do {
-            let (data, response) = try await session.dataWithRetry(for: request, delegate: self)
-            
+            let (data, response) = try await session.data(for: request, delegate: self)
+            progressSubject.send(0.9)
+
             guard let httpResponse = response as? HTTPURLResponse else {
                 let errorDescription = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "Unknown error"
-                MXLog.error("Failed to submit bug report: \(errorDescription)")
-                MXLog.error("Response: \(response)")
+                MXLog.error("Bug report TrackIT: no HTTP response — \(errorDescription)")
                 return .failure(.serverError(response, errorDescription))
             }
-            
-            guard httpResponse.statusCode == 200 else {
+
+            guard (200..<300).contains(httpResponse.statusCode) else {
                 let errorDescription = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "Unknown error"
-                MXLog.error("Failed to submit bug report: \(errorDescription) (\(httpResponse.statusCode))")
-                MXLog.error("Response: \(httpResponse)")
+                MXLog.error("Bug report TrackIT failed: HTTP \(httpResponse.statusCode) — \(errorDescription)")
                 return .failure(.httpError(httpResponse, errorDescription))
             }
-            
-            // Parse the JSON data
-            let decoder = JSONDecoder()
-            let uploadResponse = try decoder.decode(SubmitBugReportResponse.self, from: data)
-            
+
+            // Parse Plane response — has `id` + `sequence_id`. Build trackit web URL.
+            var reportURL: String?
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let id = json["id"] as? String {
+                reportURL = "https://trackit.implica.ru/implica/projects/a0b9904b-b856-422f-9540-3b975e54f42e/issues/\(id)"
+                if let seq = json["sequence_id"] as? Int {
+                    MXLog.info("Bug report submitted — STMOB-\(seq) \(reportURL ?? "")")
+                }
+            }
             lastCrashEventID = nil
-            
-            MXLog.info("Feedback submitted.")
-            
-            return .success(uploadResponse)
+            progressSubject.send(1.0)
+            return .success(SubmitBugReportResponse(reportURL: reportURL))
         } catch {
             return .failure(.uploadFailure(error))
         }
+    }
+
+    /// Build HTML description for TrackIT issue: user text + device/version + log tail.
+    private func buildDescriptionHTML(for bugReport: BugReport) -> String {
+        let escapedText = bugReport.text
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+
+        var html = "<p><b>Описание</b></p><p>\(escapedText.replacingOccurrences(of: "\n", with: "<br>"))</p>"
+        html += "<h3>Diagnostic</h3><ul>"
+        html += "<li>App: sTalk \(InfoPlistReader.main.bundleShortVersionString) (build \(InfoPlistReader.main.bundleVersion))</li>"
+        html += "<li>OS: \(os)</li>"
+        html += "<li>Bundle: \(InfoPlistReader.main.baseBundleIdentifier)</li>"
+        html += "<li>Languages: \(Locale.preferredLanguages.joined(separator: ", "))</li>"
+        if let userID = bugReport.userID { html += "<li>User: \(escape(userID))</li>" }
+        if let deviceID = bugReport.deviceID { html += "<li>Device: \(escape(deviceID))</li>" }
+        if let ed25519 = bugReport.ed25519, let curve25519 = bugReport.curve25519 {
+            html += "<li>ed25519: \(escape(ed25519))</li><li>curve25519: \(escape(curve25519))</li>"
+        }
+        if let crashEventID = lastCrashEventID {
+            html += "<li>Crash: \(escape(crashEventID))</li>"
+        }
+        if !bugReport.githubLabels.isEmpty {
+            html += "<li>Labels: \(bugReport.githubLabels.joined(separator: ", "))</li>"
+        }
+        html += "<li>can_contact: \(bugReport.canContact)</li>"
+        html += "</ul>"
+
+        // Tail of log files
+        if let logFiles = bugReport.logFiles, !logFiles.isEmpty {
+            html += "<h3>Log tail (last \(Self.logTailLimit) bytes)</h3><pre>"
+            html += escape(tailLogs(logFiles, maxBytes: Self.logTailLimit))
+            html += "</pre>"
+        }
+        return html
+    }
+
+    private func escape(_ s: String) -> String {
+        s.replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+    }
+
+    private func tailLogs(_ urls: [URL], maxBytes: Int) -> String {
+        var combined = ""
+        for url in urls.suffix(3) { // последние 3 файла лога
+            guard let handle = try? FileHandle(forReadingFrom: url) else { continue }
+            defer { try? handle.close() }
+            let size = (try? handle.seekToEnd()) ?? 0
+            let from = max(0, Int64(size) - Int64(maxBytes / 3))
+            try? handle.seek(toOffset: UInt64(from))
+            if let data = try? handle.readToEnd(), let s = String(data: data, encoding: .utf8) {
+                combined += "--- \(url.lastPathComponent) ---\n"
+                combined += s
+                combined += "\n\n"
+            }
+        }
+        // hard truncate
+        if combined.utf8.count > maxBytes {
+            let endIdx = combined.index(combined.endIndex, offsetBy: -maxBytes, limitedBy: combined.startIndex) ?? combined.startIndex
+            combined = String(combined[endIdx...])
+        }
+        return combined
     }
 
     // MARK: - Private

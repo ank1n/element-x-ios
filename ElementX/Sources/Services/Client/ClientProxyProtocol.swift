@@ -167,7 +167,10 @@ protocol ClientProxyProtocol: AnyObject {
 
     /// sTalk: Access token for direct Matrix REST API calls
     func matrixAccessToken() throws -> String
-    
+
+    /// sTalk: Force SDK to refresh OIDC token before subsequent matrixAccessToken() calls.
+    func forceTokenRefresh() async
+
     func directRoomForUserID(_ userID: String) -> Result<String?, ClientProxyError>
     
     func createDirectRoom(with userID: String, expectedRoomName: String?) async -> Result<String, ClientProxyError>
