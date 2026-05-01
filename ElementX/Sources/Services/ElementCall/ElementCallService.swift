@@ -272,6 +272,21 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
             return
         }
 
+        // sTalk: STMOB-96 — Synapse fans out the same ring to multiple
+        // call.member events, so iOS receives 3-4 VoIP pushes for the same
+        // logical call within 2 seconds. Without dedupe each push creates a
+        // fresh CallKit entry and the previous incomingCallID is overwritten,
+        // which mangles the answer/reject flow downstream. If a CallKit ring
+        // for this same roomID is already pending we skip the duplicate by
+        // reporting+cancelling a throwaway call (CXProvider rejects the
+        // payload, iOS does not stack a second ringer).
+        if let pending = incomingCallID, pending.roomID == roomID {
+            DiagLog.write("VoIP", "  duplicate ring for room=\(roomID), keeping existing callKitID=\(pending.callKitID)")
+            MXLog.warning("Duplicate VoIP push for already-pending room \(roomID), discarding")
+            reportAndCancelFakeCall(completion: completion)
+            return
+        }
+
         let callID = CallID(callKitID: UUID(), roomID: roomID, rtcNotificationID: rtcNotificationID)
         incomingCallID = callID
 
