@@ -68,9 +68,8 @@ class BugReportService: NSObject, BugReportServiceProtocol {
         let bugReport = appHooks.bugReportHook.update(bugReport)
         let descriptionHTML = buildDescriptionHTML(for: bugReport)
 
-        let issueTitle = "[iOS Bug] " + bugReport.text
-            .components(separatedBy: .newlines).first?
-            .prefix(80).description ?? "(no title)"
+        let firstLine = bugReport.text.components(separatedBy: .newlines).first?.prefix(80).description ?? "(no title)"
+        let issueTitle = "[iOS Bug] " + firstLine
 
         let payload: [String: Any] = [
             "name": issueTitle,
