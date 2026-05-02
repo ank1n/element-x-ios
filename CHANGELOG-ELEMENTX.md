@@ -2274,5 +2274,47 @@ for _ in 0..<12 {
 
 ---
 
+### 53. ✅ Call dedup state cleanup — incomingCallID не обнулялся в teardown (build 100, hotfix)
+
+**Дата**: 2026-05-02
+**Коммит**: `ae77dd31` (build 100 hotfix)
+**Plane**: внутренний hotfix по обнаруженной регрессии в build 99
+
+#### Симптом (build 99 на iPhone Bondar)
+После endCall первого звонка следующий VoIP push в ту же комнату через 4+ минуты не показывал CallKit. Пользователь видел "не пришёл нормально звонок". Лог:
+```
+15:50:16.379  VoIP push (новый звонок)
+15:50:16.381  VoIP duplicate ring for room=!Toy..., keeping callKitID=C3ECD42F
+              ↑ это callKitID от звонка 15:45:26 который уже завершён 4 мин назад!
+```
+
+#### Корень
+Dedup-логика добавленная в STMOB-96 (предотвращение duplicate CallKit при fan-out push'ей):
+```swift
+// ElementCallService.swift:283
+if let pending = incomingCallID, pending.roomID == roomID {
+    reportAndCancelFakeCall(...)
+    return
+}
+```
+Задумана для случая когда iOS получает 3-4 VoIP push'а на один логический звонок в 2 сек. Но `incomingCallID` очищался **только в `setupCallSession()`** (accept-flow). Если accept не прошёл (decline, race на NSE timeout, hang up до setup) — `incomingCallID` оставался stale до перезапуска приложения. На следующий звонок dedup находил stale callKitID → cancel.
+
+#### Изменения
+- **`ElementCallService.tearDownCallSession()`**: добавлено `incomingCallID = nil` — раньше обнулялся только `ongoingCallID`. Теперь любой teardown сбрасывает full state.
+- **`endUnansweredCallTask?.cancel()`** + nil — иначе залипший таймаут от прошлого ring может выстрелить с `reportCall` на старый callKitID и зашорить новый ring.
+
+Безопасно: `setupCallSession()` (accept-flow) уже делает `incomingCallID = nil`, повторное обнуление в teardown не ломает accept-path. Зато покрывает все остальные exit-пути из ring state.
+
+#### Acceptance
+- Decline звонка → новый звонок в ту же комнату через ≥1 сек: CallKit показывается, не cancel'ится как duplicate
+- Accept + endCall → новый звонок в ту же комнату через ≥1 сек: CallKit показывается
+- Реальный duplicate (3-4 push в 2 сек) — по-прежнему dedup'ится корректно (incomingCallID живёт пока ring активен)
+
+#### Файлы:
+- `ios/ElementX/Sources/Services/ElementCall/ElementCallService.swift` — `tearDownCallSession`: +`incomingCallID = nil`, +`endUnansweredCallTask` cancel
+- `ios/sTalk.xcodeproj/project.pbxproj` — CURRENT_PROJECT_VERSION 99→100
+
+---
+
 **Дата создания**: 2026-01-28
 **Последнее обновление**: 2026-05-02
