@@ -2316,5 +2316,69 @@ if let pending = incomingCallID, pending.roomID == roomID {
 
 ---
 
+### 54. ✅ Camera toggle fix + STMOB-96 v2 enhanced rebroadcast (build 101)
+
+**Дата**: 2026-05-02
+**Коммиты**: `ffb511b1` (camera toggle), `36298276` (STMOB-96 v2)
+**Plane**: внутренний QA + STMOB-96
+
+#### A. Camera toggle залипает (commit `ffb511b1`)
+
+**Симптом (build 100):** user тапает toggle камеры — иконка остаётся включённой, self-view продолжает рендерить видео, повторный tap не реагирует, но видео реально перестало идти на web.
+
+**Корень:** `LiveKitRoomManager.updateState()`:
+```swift
+localVideoTrack = room.localParticipant.videoTracks
+    .compactMap { $0.track as? VideoTrack }
+    .first
+```
+`setCamera(enabled: false)` в LiveKit SDK мьютит publication, но НЕ unpublish'ит. Track остаётся в `videoTracks`, `localVideoTrack` остаётся != nil. Observer в `CallScreenViewModel.$localVideoTrack` ставит `state.isVideoEnabled = true` → перетирает toggle обратно в ON.
+
+**Подтверждение в логе 61** (22:52:13-30): 30 тапов за 17 сек, каждый раз `setCamera(false) ok, track=true` — race-loop.
+
+**Фикс:** фильтр `!pub.isMuted` в `updateState()`:
+```swift
+localVideoTrack = room.localParticipant.videoTracks
+    .compactMap { pub -> VideoTrack? in
+        guard !pub.isMuted else { return nil }
+        return pub.track as? VideoTrack
+    }
+    .first
+```
+
+#### B. STMOB-96 v2 enhanced rebroadcast (commit `36298276`)
+
+**Симптом:** v1 fix (build 99/100, commit `57196c1e`) не работал. Molly увидела в Synapse только 3 `m.room.encrypted` в первые 30 сек звонка, потом 8+ минут тишины. Continuous rebroadcast не запустился.
+
+**Гипотезы причин:**
+1. `guard sessionState == .connected` strict guard выходит навсегда при reconnecting
+2. Task cancelled родителем
+3. iOS background throttle async Task.sleep
+4. weak self стал nil при reconnect/recreate
+
+**v2 changes:**
+- **`keyRebroadcastTask: Task<Void, Never>?`** stored в private property — strong reference, не cancel'ится случайно. Cancel вручную в `stop()`.
+- **`foregroundObserver`** на `UIApplication.didBecomeActiveNotification` — force-rebroadcast immediate когда app поднимается из background suspend.
+- **`guard sessionState != .disconnected`** (вместо `== .connected`) — не выходим из цикла при reconnecting / waitingForCredentials, только при finalizing teardown.
+- **DiagLog "E2EE"** в каждой итерации показывает phase/tick/state:
+  - `rebroadcastLoop START` / `regenerate tick=N/12` / `entered continuous phase` / `continuous tick=N` / `EXIT — <reason>`
+  - `rebroadcast START key=AbCd…`
+  - `foreground entry — force rebroadcast`
+- **Fix Swift 5.7+ shorthand:** named binding `let s = self` для повторных unwrap (после первого `guard let self` self становится non-optional, повторный shorthand ломается).
+- **Cleanup в `stop()`:** cancel task + removeObserver.
+
+#### Acceptance
+- В Synapse длинного звонка: gap между `m.room.encrypted` от iPhone не превышает 30-40 секунд (после первых 2 мин regenerate)
+- DiagLog покажет точку где цикл умирает (если ещё умирает) — диагностика для дальнейших итераций
+- При foreground entry — немедленный rebroadcast event
+- Camera toggle: тап → иконка обновляется в OFF, self-view гаснет, повторные тапы тогглят правильно
+
+#### Файлы:
+- `ios/ElementX/Sources/Services/LiveKit/LiveKitRoomManager.swift` — фильтр `!pub.isMuted` в `updateState()`
+- `ios/ElementX/Sources/Services/NativeCall/NativeCallSession.swift` — +`keyRebroadcastTask`, +`foregroundObserver`, less strict guard, DiagLog tracing, named binding fix
+- `ios/sTalk.xcodeproj/project.pbxproj` — CURRENT_PROJECT_VERSION 100→101
+
+---
+
 **Дата создания**: 2026-01-28
 **Последнее обновление**: 2026-05-02
