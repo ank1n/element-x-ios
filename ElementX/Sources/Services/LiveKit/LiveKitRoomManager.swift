@@ -595,9 +595,19 @@ final class LiveKitRoomManager: ObservableObject {
         remoteParticipants = Array(room.remoteParticipants.values)
         localParticipant = room.localParticipant
 
-        // Get local video track
+        // STMOB: get local video track, исключая muted publications.
+        // setCamera(enabled: false) в LiveKit SDK НЕ unpublish'ит track —
+        // только мьютит его (publication.isMuted = true). Без фильтра
+        // localVideoTrack остаётся != nil, и observer в CallScreenViewModel
+        // считает камеру включённой → state.isVideoEnabled возвращается в
+        // true, иконка не обновляется, self-view продолжает рендериться.
+        // didUpdateIsMuted уже дёргает updateState — теперь оно корректно
+        // отразит mute как "track is nil".
         localVideoTrack = room.localParticipant.videoTracks
-            .compactMap { $0.track as? VideoTrack }
+            .compactMap { pub -> VideoTrack? in
+                guard !pub.isMuted else { return nil }
+                return pub.track as? VideoTrack
+            }
             .first
     }
 }
