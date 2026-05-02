@@ -2163,5 +2163,43 @@ Fallback-пути для locked device / no credentials / session-creation failu
 
 ---
 
+### 50. ✅ Pusher cleanup — удаление stale pushers того же app_id перед setPusher (build 99)
+
+**Дата**: 2026-05-02
+**Коммит**: `814ce6c2` (build 99)
+**Plane**: STMOB-95
+
+#### Контекст
+На каждом reinstall iOS app генерится новый APNS device token → Element X iOS делает `POST /pushers/set` с новым `pushkey`. Старые pushers того же юзера остаются в Synapse. У `@dp.bondar` накопилось 11 stale main app pushers + 1 VoIP — Synapse fan-out на ВСЕ → 11x запросов в sygnal на каждый event. Sygnal встроенный auto-cleanup через `BadDeviceToken` от Apple срабатывает не всегда (zombie tokens возвращают success).
+
+#### Архитектурное замечание
+Matrix Rust SDK не отдаёт `GET /pushers` — нет API `listPushers()`. Поэтому полностью повторить процесс из спеки (GET → filter по app_id → DELETE) нельзя без прямого HTTP-запроса. Решение через **локальную историю pushkeys в UserDefaults** — клиент сам помнит все ранее зарегистрированные pushkeys для (userID, app_id) и DELETE'ит их перед новым setPusher.
+
+#### Изменения
+1. **`ClientProxyProtocol.swift` / `ClientProxy.swift`** — добавлен метод `deletePusher(pushkey:appId:)` обёрткой над SDK `client.deletePusher(identifiers:)` (внутри SDK — `POST /pushers/set` с `kind: null`).
+2. **`NotificationManager.swift`** — добавлен `enum PusherHistoryStorage` с UserDefaults storage `stalk_pusher_history` (структура `[userID: [appId: [pushkey, ...]]]`). Методы `recordedPushkeys`, `recordPushkey`, `forgetPushkey`.
+3. **`NotificationManager.setPusher` (APNS)** — перед `setPusher(new pushkey)` итерирует known prior pushkeys того же appId и вызывает `deletePusher` для каждого (best-effort). После успешного setPusher записывает новый pushkey в историю.
+4. **`ElementCallService.registerVoIPPusher` (VoIP)** — тот же паттерн для VoIP app_id.
+5. **`Mocks/Generated/GeneratedMocks.swift`** — добавлен mock `deletePusher` (manually — sourcery нужно перегенерить при следующем регуляр-апдейте).
+
+#### Лимитации
+- До build 99 у пользователей нет UserDefaults history → первый запуск build 99 знает только текущий pushkey, старые stale остаются. Для них нужен одноразовый серверный SQL DELETE (Molly уже сделала) или Apple BadDeviceToken eventually.
+- Начиная с build 99 — на каждый reinstall история сохраняется (UserDefaults живёт через reinstall), cleanup отрабатывает.
+
+#### Acceptance
+- После reinstall в Synapse у юзера ≤1 pusher с каждым `app_id`
+- Cleanup best-effort: если delete упал — регистрация нового всё равно выполняется
+- Работает независимо от `BadDeviceToken` от Apple
+- В DiagLog APNS/VoIP видны строки `cleanup deleted stale pushkey=...`
+
+#### Файлы:
+- `ios/ElementX/Sources/Services/Client/ClientProxyProtocol.swift` — +deletePusher in protocol
+- `ios/ElementX/Sources/Services/Client/ClientProxy.swift` — +deletePusher impl
+- `ios/ElementX/Sources/Services/Notification/Manager/NotificationManager.swift` — +PusherHistoryStorage enum, +cleanup loop в setPusher
+- `ios/ElementX/Sources/Services/ElementCall/ElementCallService.swift` — +cleanup loop в registerVoIPPusher
+- `ios/ElementX/Sources/Mocks/Generated/GeneratedMocks.swift` — +deletePusher mock
+
+---
+
 **Дата создания**: 2026-01-28
 **Последнее обновление**: 2026-05-02
