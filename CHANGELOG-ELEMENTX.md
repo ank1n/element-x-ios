@@ -2380,5 +2380,57 @@ localVideoTrack = room.localParticipant.videoTracks
 
 ---
 
+### 55. ✅ Reuse Matrix device_id через Keychain (build 102 — STMOB-98)
+
+**Дата**: 2026-05-02
+**Коммит**: `6b866e01` (build 102)
+**Plane**: STMOB-98 (high)
+
+#### Симптом
+В Synapse `devices` table у `@dp.bondar:stalk.implica.ru` накопилось **12+ Matrix device_id** на ОДИН физический iPhone (`idfv: 14F6FD77-...`) за 4 дня. Каждый logout/login через MAS создавал новый device_id вместо переиспользования. Эффекты:
+- 11+ stale APNS pushers (Synapse fan-out на все)
+- 12 megolm sessions у каждого собеседника
+- 12 entries в "Sessions" UI у юзера
+
+Web reuse device_id через `localStorage` корректно — iOS-side регрессия.
+
+#### Корень
+`AuthenticationService.urlForOIDCLogin()` передавал `deviceId: nil` в `client.urlForOidc()`. MAS видит nil → Synapse генерирует свежий device_id для каждой OIDC сессии. Element X iOS не сохранял device_id между сессиями.
+
+#### Изменения
+1. **`MatrixDeviceIDKeychain` enum** (file-private в AuthenticationService.swift):
+   - `savedDeviceID()` → читает из Keychain key `device_id_for_idfv_<idfv>`
+   - `save(deviceID:)` → сохраняет после успешного login
+   - `clearStoredDeviceID()` → удаляет на explicit logout
+   - Использует `UIDevice.current.identifierForVendor` (Apple IDFV — стабильный per-app per-physical-device, переживает app reinstall)
+   - Хранит в Keychain (KeychainAccess library) с access group приложения
+
+2. **`urlForOIDCLogin()`** — передаёт `storedDeviceID` в `client.urlForOidc(deviceId:)`. MAS принимает (Matrix-spec позволяет client задавать device_id). Synapse возвращает тот же device_id если та же сессия, иначе создаёт новый.
+
+3. **`loginWithOIDCCallback()`** — после успешного login сохраняет `client.session().deviceId` в keychain. Первый login: nil → fresh → save. Повторный: задан → возвращается тот же → overwrite no-op.
+
+4. **`AppCoordinator.logout(isSoft: false)`** explicit — вызывает `clearStoredDeviceID()` перед `unregisterForRemoteNotifications`. Soft logout (`isSoft=true`) early returns раньше → keychain не трогается → следующий login переиспользует device_id.
+
+5. **DiagLog "STMOB98"** в три точки: `urlForOIDCLogin reuse`, `save`, `clear`.
+
+#### Acceptance
+- Чистая установка → login → device_id A → save в keychain
+- Soft logout (token expired, MAS revoke) → keychain не трогаем
+- Re-login → keychain отдаёт A → передаём в MAS → Synapse возвращает тот же A → **один device_id total**
+- Explicit logout (юзер тапнул "Sign Out") → `clearStoredDeviceID` → next login: новый device_id B
+- 5 logout/login циклов → у юзера в Synapse **1 device_id** (раньше 5)
+- Pushers count = 1 на app_id (раньше 5)
+
+#### Связь с другими задачами
+- **STMOB-90** (high) — корень — теперь зафиксен через STMOB-98 (та же причина — генерация новых device_id)
+- **STMOB-95** (pusher cleanup, build 99) — теперь opportunistic, root cause устранён
+- **STALK-230** (Molly, server-side pusher cleanup) — backstop остаётся живым на случай других путей stale pushers
+
+#### Файлы:
+- `ios/ElementX/Sources/Services/Authentication/AuthenticationService.swift` — +`MatrixDeviceIDKeychain` enum, +`KeychainAccess` import, +`UIKit` import, передача `storedDeviceID` в `urlForOidc`, save после callback
+- `ios/ElementX/Sources/Application/AppCoordinator.swift` — `clearStoredDeviceID()` в explicit logout flow
+
+---
+
 **Дата создания**: 2026-01-28
 **Последнее обновление**: 2026-05-02
