@@ -772,9 +772,15 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
         UNUserNotificationCenter.current().removeAllDeliveredNotifications()
         UNUserNotificationCenter.current().setBadgeCount(0)
-        
+
         unregisterForRemoteNotifications()
-        
+
+        // STMOB-98: explicit logout — clear stored Matrix device_id so next
+        // login начнёт с свежего device_id. Soft logout (isSoft=true) early
+        // returned выше — в этом случае keychain запись остаётся, и
+        // следующий login переиспользует тот же device_id.
+        MatrixDeviceIDKeychain.clearStoredDeviceID()
+
         Task {
             // First log out from the server
             await userSession.clientProxy.logout()

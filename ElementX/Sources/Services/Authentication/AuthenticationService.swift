@@ -8,7 +8,83 @@
 
 import Combine
 import Foundation
+@preconcurrency import KeychainAccess
 import MatrixRustSDK
+import UIKit
+
+/// STMOB-98: persistent storage of Matrix device_id keyed by Apple IDFV
+/// (identifier-for-vendor — стабильный per-app per-physical-device).
+///
+/// Зачем: Element X iOS при каждом login через MAS получал новый
+/// Matrix device_id, потому что в `urlForOidc` мы передавали `deviceId: nil`.
+/// Synapse создавал свежий device для каждой сессии. После logout/login
+/// циклов в `devices` table накапливалось 12+ stale device_id на один
+/// физический iPhone. Каждый device создавал свой APNS pusher → 11+ stale
+/// pushers → fan-out на каждый event.
+///
+/// Решение (Molly STMOB-98 + STALK-230 server-side cleanup как backstop):
+/// при OIDC URL gen передавать сохранённый device_id если он есть для
+/// текущего idfv. Synapse примет (Matrix-spec позволяет client задавать
+/// device_id), и при reuse возвращает тот же device_id → одна сессия.
+///
+/// Семантика persistence:
+/// - При успешном login → сохраняем session.deviceId.
+/// - При **явном** logout (юзер тапнул "Sign out") → clearStoredDeviceID()
+///   чтобы новая сессия начала с свежего device_id.
+/// - При **автоматическом** logout (token expired, soft logout) → keychain
+///   запись остаётся → следующий login переиспользует тот же device_id,
+///   как будто soft logout не было.
+enum MatrixDeviceIDKeychain {
+    private static let keyPrefix = "device_id_for_idfv_"
+
+    private static var keychain: Keychain {
+        Keychain(service: InfoPlistReader.main.baseBundleIdentifier + ".keychain.matrix_device_id",
+                 accessGroup: InfoPlistReader.main.keychainAccessGroupIdentifier)
+    }
+
+    /// Apple IDFV — UUID, стабильный для всех приложений одного vendor на
+    /// одном физическом устройстве. Сбрасывается только когда юзер удаляет
+    /// все приложения этого vendor с устройства.
+    static var currentIDFV: String? {
+        UIDevice.current.identifierForVendor?.uuidString
+    }
+
+    /// Returns saved Matrix device_id for current IDFV, or nil if not yet stored.
+    static func savedDeviceID() -> String? {
+        guard let idfv = currentIDFV else { return nil }
+        do {
+            return try keychain.get(keyPrefix + idfv)
+        } catch {
+            MXLog.error("STMOB-98: failed reading device_id from keychain: \(error)")
+            return nil
+        }
+    }
+
+    /// Persists Matrix device_id for current IDFV. Call after successful login.
+    static func save(deviceID: String) {
+        guard let idfv = currentIDFV else { return }
+        do {
+            try keychain.set(deviceID, key: keyPrefix + idfv)
+            MXLog.info("STMOB-98: saved device_id=\(deviceID) for idfv=\(idfv.prefix(8))…")
+            DiagLog.write("STMOB98", "save deviceID=\(deviceID) idfv=\(idfv.prefix(8))…")
+        } catch {
+            MXLog.error("STMOB-98: failed saving device_id to keychain: \(error)")
+        }
+    }
+
+    /// Removes saved device_id. Call ONLY on explicit user logout — soft
+    /// logout (token revoked) should keep the entry so next login reuses.
+    static func clearStoredDeviceID() {
+        guard let idfv = currentIDFV else { return }
+        do {
+            try keychain.remove(keyPrefix + idfv)
+            MXLog.info("STMOB-98: cleared device_id for idfv=\(idfv.prefix(8))…")
+            DiagLog.write("STMOB98", "clear deviceID idfv=\(idfv.prefix(8))…")
+        } catch {
+            MXLog.error("STMOB-98: failed clearing device_id from keychain: \(error)")
+        }
+    }
+}
 
 class AuthenticationService: AuthenticationServiceProtocol {
     private var client: ClientProtocol?
@@ -93,10 +169,18 @@ class AuthenticationService: AuthenticationServiceProtocol {
             // let prompt: OidcPrompt = flow == .register ? .create : .consent
             // Use .login prompt to force re-authentication when forceLogin is true
             let prompt: OidcPrompt = forceLogin ? .login : .consent
+            // STMOB-98: переиспользуем Matrix device_id если он сохранён для
+            // текущего IDFV. MAS примет parameter и Synapse вернёт тот же
+            // device_id, не создавая новый. Это убирает накопление stale
+            // devices при logout/login циклах. Если в keychain пусто
+            // (первый login на этом IDFV) — передаём nil как раньше, MAS
+            // сгенерирует свежий device_id который мы сохраним после callback.
+            let storedDeviceID = MatrixDeviceIDKeychain.savedDeviceID()
+            DiagLog.write("STMOB98", "urlForOIDCLogin reuse deviceID=\(storedDeviceID ?? "nil")")
             let oidcData = try await client.urlForOidc(oidcConfiguration: appSettings.oidcConfiguration.rustValue,
                                                        prompt: prompt,
                                                        loginHint: loginHint,
-                                                       deviceId: nil,
+                                                       deviceId: storedDeviceID,
                                                        additionalScopes: nil)
             return .success(OIDCAuthorizationDataProxy(underlyingData: oidcData))
         } catch {
@@ -115,6 +199,14 @@ class AuthenticationService: AuthenticationServiceProtocol {
         guard let client else { return .failure(.failedLoggingIn) }
         do {
             try await client.loginWithOidcCallback(callbackUrl: callbackURL.absoluteString)
+            // STMOB-98: persist actual device_id from session. На первом login
+            // (когда передавали deviceId=nil) Synapse вернул свежий, нужно
+            // сохранить чтобы следующий login переиспользовал. На повторном
+            // login (deviceId был передан) MAS вернул тот же — overwrite
+            // тем же значением, no-op.
+            if let session = try? client.session() {
+                MatrixDeviceIDKeychain.save(deviceID: session.deviceId)
+            }
             return await userSession(for: client)
         } catch OidcError.Cancelled {
             return .failure(.oidcError(.userCancellation))
