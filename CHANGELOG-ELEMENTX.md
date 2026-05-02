@@ -2048,6 +2048,37 @@ PushKit включён локально (нужен для `CXProvider.reportNew
 
 ---
 
+### 49. ✅ Camera reset после Quick reconnect — фикс чёрного видео на вебе (build 45)
+
+**Дата**: 2026-04-21
+**Коммит**: TBD (build 45)
+**Plane**: STMOB-76
+
+#### Контекст
+Build 44 в TestFlight показал — при WiFi→cellular звонок не умирает (Quick reconnect работает), звук переключается, НО **веб перестаёт видеть видео с iOS** (чёрный экран). iOS при этом продолжает видеть веб нормально.
+
+#### Диагноз
+На симуляторе воспроизвести не удалось — BufferCapturer (генерирует frames в памяти) работает через iceRestart без проблем. На физ устройстве **`AVCaptureSession`** (реальная камера) продолжает получать frames локально, но они **не долетают до publisher track** после iceRestart. Симптом: `camera.localVideoTrack` существует, frames пишутся, но SFU не видит media. Специфика WebRTC iOS SDK.
+
+#### Фикс
+В `LiveKitRoomManager.attemptQuickReconnect(trigger:)` после `Quick reconnect SUCCESS` вызываем `resetCameraAfterReconnect()`:
+1. Проверяем что camera publication была активна и не muted
+2. `setCamera(false)` → unpublish track
+3. `setCamera(true)` → publish fresh track с новой AVCaptureSession
+
+Занимает ~1 сек на физ устройстве (чёрный экран на вебе в это время), но видео восстанавливается автоматически без hangup+redial.
+
+#### Тестирование
+- **Симулятор + debug timer**: через 20 сек после connect код сам триггерит fake `wifi → cellular`. Логи показывают чистую цепочку `Quick reconnect starting → SUCCESS → Resetting camera → Camera reset SUCCESS` за 340+1 мс. Веб видит видео с BufferCapturer continuously (мини-пробел).
+- **Физ устройство**: собирается для TestFlight (build 45).
+
+#### Файлы
+- `ElementX/Sources/Services/LiveKit/LiveKitRoomManager.swift` — `attemptQuickReconnect` вызывает `resetCameraAfterReconnect` на SUCCESS
+- `ElementX/Sources/Services/NativeCall/NativeCallSession.swift` — debug timer 20s в `#if targetEnvironment(simulator)` для reproducibility на симе
+- `sTalk.xcodeproj/project.pbxproj` — CURRENT_PROJECT_VERSION 44→45
+
+---
+
 ### 48. 🧪 Quick reconnect (ICE restart) на смене сети — эксперимент build 44
 
 **Дата**: 2026-04-20
@@ -2093,5 +2124,44 @@ Build 41/42 пытался `room.disconnect()` + `connect()` на смене с�
 
 ---
 
+### 49. ✅ NSE passive content — полное подавление baseline-баннеров от encryption_keys (build 98)
+
+**Дата**: 2026-05-02
+**Коммит**: TBD (build 98)
+**Plane**: STMOB-94
+
+#### Симптом
+На входящий MatrixRTC звонок iPhone показывал 3 baseline-баннера ("1 уведомление" / "sTalk: Новое сообщение") за 1-2 сек до основного CallKit fullscreen UI. По логу build 97 (2026-05-02 11:26 MSK):
+```
+11:26:16.985  NSE event $z2UKNLt...  contentType=nil → unsupportedShouldDiscard
+11:26:17.445  NSE event $pcboDSSX... contentType=nil → unsupportedShouldDiscard
+11:26:17.744  NSE event $-iTrUWn...  contentType=nil → unsupportedShouldDiscard
+11:26:18.954  VoIP push → CallKit shown за 66 ms
+```
+
+#### Корень
+3 события — `m.room.encrypted` от инициатора звонка, после расшифровки — `io.element.call.encryption_keys` (Per-Participant E2EE keys для нового звонка). Серверный фикс невозможен без слома `.m.rule.encrypted` для обычных DM.
+
+Build 97 уже ставил `interruptionLevel = .passive` в `discardNotification()`, но iOS 26.3 всё равно показывал baseline-баннер: при `mutable-content=1` + `alert` payload iOS использует `alert` из исходного APNS payload как fallback, если NSE-content не обнулил title/body/subtitle/sound/attachments/userInfo явно.
+
+#### Изменения
+1. **`NSE/Sources/NotificationHandler.swift`** — добавлен `static func makePassiveContent()`, который явно ставит `title=""`, `subtitle=""`, `body=""`, `sound=nil`, `attachments=[]`, `userInfo=[:]`, `interruptionLevel=.passive`, `relevanceScore=0`. `discardNotification()` теперь делегирует в этот helper.
+2. **`NSE/Sources/NotificationServiceExtension.swift`** — badge-update path (eventID==nil) использует `NotificationHandler.makePassiveContent()` вместо просто `UNMutableNotificationContent()`.
+
+#### Что НЕ трогается
+Fallback-пути для locked device / no credentials / session-creation failure (`NotificationServiceExtension.swift:99-115, 155`) оставлены с "sTalk Новое сообщение" — для реальных недешифруемых сообщений это полезно. Encryption_keys на эти пути не попадают при нормальной работе (Molly уже почистила stale pushers, остались 2 валидных: 1 main + 1 VoIP).
+
+#### Acceptance
+- На заблокированном экране при входящем звонке: только CallKit fullscreen, никаких других баннеров до или после.
+- Reinstall build 98 + первый звонок с новой пары устройств — лишних баннеров нет.
+- NSE по-прежнему расшифровывает обычные сообщения и показывает message preview.
+
+#### Файлы:
+- `ios/NSE/Sources/NotificationHandler.swift` — +makePassiveContent (строки ~230-258)
+- `ios/NSE/Sources/NotificationServiceExtension.swift` — badge-update path (~94)
+- `ios/sTalk.xcodeproj/project.pbxproj` — CURRENT_PROJECT_VERSION 97→98
+
+---
+
 **Дата создания**: 2026-01-28
-**Последнее обновление**: 2026-04-20
+**Последнее обновление**: 2026-05-02
