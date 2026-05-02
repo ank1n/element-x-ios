@@ -502,7 +502,23 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
                                                     deviceDisplayName: UIDevice.current.name,
                                                     profileTag: nil,
                                                     lang: Bundle.app.preferredLocalizations.first ?? "en")
+            // STMOB-95: cleanup stale VoIP pushers того же app_id у юзера до
+            // регистрации нового. Best-effort — fail на delete не блокирует setPusher.
+            let userID = clientProxy.userID
+            let historicalKeys = PusherHistoryStorage.recordedPushkeys(userID: userID, appId: appID)
+            let stalePushkeys = historicalKeys.filter { $0 != pushkey }
+            for stalePushkey in stalePushkeys {
+                do {
+                    try await clientProxy.deletePusher(pushkey: stalePushkey, appId: appID)
+                    PusherHistoryStorage.forgetPushkey(stalePushkey, userID: userID, appId: appID)
+                    DiagLog.write("VoIP", "  cleanup deleted stale pushkey=\(stalePushkey.prefix(16))…")
+                } catch {
+                    DiagLog.write("VoIP", "  cleanup deletePusher FAILED for \(stalePushkey.prefix(16))…: \(error.localizedDescription)")
+                }
+            }
+
             try await clientProxy.setPusher(with: configuration)
+            PusherHistoryStorage.recordPushkey(pushkey, userID: userID, appId: appID)
             os_log(.info, log: pushLog, "VoIP pusher REGISTERED successfully (appID: %{public}@)", appID)
             MXLog.info("VoIP pusher registered successfully (appID: \(appID))")
             DiagLog.write("VoIP", "registerVoIPPusher OK appID=\(appID) pushkey=\(pushkey.prefix(16))…")

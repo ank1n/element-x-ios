@@ -4245,6 +4245,28 @@ class ClientProxyMock: ClientProxyProtocol, @unchecked Sendable {
         }
         try await setPusherWithClosure?(configuration)
     }
+    //MARK: - deletePusher
+
+    var deletePusherPushkeyAppIdThrowableError: Error?
+    var deletePusherPushkeyAppIdCallsCount = 0
+    var deletePusherPushkeyAppIdCalled: Bool {
+        return deletePusherPushkeyAppIdCallsCount > 0
+    }
+    var deletePusherPushkeyAppIdReceivedArguments: (pushkey: String, appId: String)?
+    var deletePusherPushkeyAppIdReceivedInvocations: [(pushkey: String, appId: String)] = []
+    var deletePusherPushkeyAppIdClosure: ((String, String) async throws -> Void)?
+
+    func deletePusher(pushkey: String, appId: String) async throws {
+        if let error = deletePusherPushkeyAppIdThrowableError {
+            throw error
+        }
+        deletePusherPushkeyAppIdCallsCount += 1
+        deletePusherPushkeyAppIdReceivedArguments = (pushkey: pushkey, appId: appId)
+        DispatchQueue.main.async {
+            self.deletePusherPushkeyAppIdReceivedInvocations.append((pushkey: pushkey, appId: appId))
+        }
+        try await deletePusherPushkeyAppIdClosure?(pushkey, appId)
+    }
     //MARK: - searchUsers
 
     var searchUsersSearchTermLimitUnderlyingCallsCount = 0

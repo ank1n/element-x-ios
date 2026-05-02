@@ -14,6 +14,41 @@ import UserNotifications
 
 private let pushLog = OSLog(subsystem: "ru.implica.stalk", category: "Push")
 
+/// sTalk: STMOB-95 — локальная история pushkeys для (userID, app_id) в
+/// UserDefaults. На каждом setPusher с новым pushkey мы вызываем deletePusher
+/// для всех известных предыдущих pushkeys того же app_id, чтобы Synapse не
+/// держал stale pushers (они дают fan-out push на каждый event и засоряют
+/// sygnal). Sygnal встроенный auto-cleanup через BadDeviceToken срабатывает
+/// не всегда — Apple часто возвращает success для zombie tokens.
+enum PusherHistoryStorage {
+    private static let userDefaultsKey = "stalk_pusher_history"
+
+    static func recordedPushkeys(userID: String, appId: String) -> [String] {
+        let dict = UserDefaults.standard.dictionary(forKey: userDefaultsKey) as? [String: [String: [String]]] ?? [:]
+        return dict[userID]?[appId] ?? []
+    }
+
+    static func recordPushkey(_ pushkey: String, userID: String, appId: String) {
+        var dict = UserDefaults.standard.dictionary(forKey: userDefaultsKey) as? [String: [String: [String]]] ?? [:]
+        var perUser = dict[userID] ?? [:]
+        var keys = perUser[appId] ?? []
+        if !keys.contains(pushkey) { keys.append(pushkey) }
+        perUser[appId] = keys
+        dict[userID] = perUser
+        UserDefaults.standard.set(dict, forKey: userDefaultsKey)
+    }
+
+    static func forgetPushkey(_ pushkey: String, userID: String, appId: String) {
+        var dict = UserDefaults.standard.dictionary(forKey: userDefaultsKey) as? [String: [String: [String]]] ?? [:]
+        guard var perUser = dict[userID] else { return }
+        var keys = perUser[appId] ?? []
+        keys.removeAll(where: { $0 == pushkey })
+        perUser[appId] = keys
+        dict[userID] = perUser
+        UserDefaults.standard.set(dict, forKey: userDefaultsKey)
+    }
+}
+
 final class NotificationManager: NSObject, NotificationManagerProtocol {
     private let notificationCenter: UserNotificationCenterProtocol
     private let appSettings: AppSettings
@@ -245,7 +280,24 @@ final class NotificationManager: NSObject, NotificationManagerProtocol {
                                                               deviceDisplayName: UIDevice.current.name,
                                                               profileTag: pusherProfileTag(),
                                                               lang: Bundle.app.preferredLocalizations.first ?? "en")
+            // STMOB-95: cleanup stale pushers того же app_id у юзера до
+            // регистрации нового. Best-effort — если delete упал, всё равно
+            // регистрируем новый. История хранится в UserDefaults per (userID, appId).
+            let userID = clientProxy.userID
+            let historicalKeys = PusherHistoryStorage.recordedPushkeys(userID: userID, appId: appId)
+            let stalePushkeys = historicalKeys.filter { $0 != pushkey }
+            for stalePushkey in stalePushkeys {
+                do {
+                    try await clientProxy.deletePusher(pushkey: stalePushkey, appId: appId)
+                    PusherHistoryStorage.forgetPushkey(stalePushkey, userID: userID, appId: appId)
+                    DiagLog.write("APNS", "  cleanup deleted stale pushkey=\(stalePushkey.prefix(16))…")
+                } catch {
+                    DiagLog.write("APNS", "  cleanup deletePusher FAILED for \(stalePushkey.prefix(16))…: \(error.localizedDescription)")
+                }
+            }
+
             try await clientProxy.setPusher(with: configuration)
+            PusherHistoryStorage.recordPushkey(pushkey, userID: userID, appId: appId)
             os_log(.info, log: pushLog, "setPusher SUCCEEDED — pusher registered with server")
             MXLog.info("Set pusher succeeded")
             DiagLog.write("APNS", "setPusher OK appId=\(appId) format=eventIdOnly")

@@ -223,7 +223,12 @@ protocol ClientProxyProtocol: AnyObject {
     func logout() async
 
     func setPusher(with configuration: PusherConfiguration) async throws
-    
+
+    /// sTalk: STMOB-95 — удаление pusher по (pushkey, app_id). Используется
+    /// для очистки stale pushers того же app_id у юзера при регистрации
+    /// нового APNS device token (после reinstall / device_id rotation).
+    func deletePusher(pushkey: String, appId: String) async throws
+
     func searchUsers(searchTerm: String, limit: UInt) async -> Result<SearchUsersResultsProxy, ClientProxyError>
     
     func profile(for userID: String) async -> Result<UserProfileProxy, ClientProxyError>

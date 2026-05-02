@@ -802,6 +802,10 @@ class ClientProxy: ClientProxyProtocol {
                                    profileTag: configuration.profileTag,
                                    lang: configuration.lang)
     }
+
+    func deletePusher(pushkey: String, appId: String) async throws {
+        try await client.deletePusher(identifiers: .init(pushkey: pushkey, appId: appId))
+    }
     
     func searchUsers(searchTerm: String, limit: UInt) async -> Result<SearchUsersResultsProxy, ClientProxyError> {
         do {
