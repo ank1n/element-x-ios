@@ -54,6 +54,11 @@ final class NativeCallSession: ObservableObject {
     private var pendingParticipants: [String: RemoteParticipant] = [:]
     private var credentialsReceived = false
     private var hasSeenRemoteParticipant = false
+    /// STMOB-96: tracks remote participant identities seen so far. When a new
+    /// identity appears (reconnect → новый pID, или newcomer), мы триггерим
+    /// rebroadcast текущего encryption key — иначе он не сможет расшифровать
+    /// audio после того как ratchet ушёл вперёд изначально розданного ключа.
+    private var knownRemoteIdentities: Set<String> = []
     private var livekitBaseURL: String?
 
     // MARK: - Internal
@@ -162,16 +167,35 @@ final class NativeCallSession: ObservableObject {
                 await self?.listenForEncryptionKeysFromTimeline()
             }
 
-            // Send our key + periodic resend (remote may join later)
+            // STMOB-96: Send our key + continuous re-broadcast.
+            // Раньше loop был зажат на 12 итераций × 10s = 2 мин и завершался
+            // полностью — после этого ratchet продолжал идти у получателей,
+            // но iOS никогда больше не транслировал свой ключ. При reconnect
+            // web-участника (новый pID, peer connection с нуля) он не мог
+            // расшифровать audio bondar.
+            //
+            // Новая логика:
+            //   - Первые 2 минуты: sendOurEncryptionKey() каждые 10s
+            //     (regenerate + setKey + broadcast — covers late joiners при
+            //     активной сессии, как было).
+            //   - После 2 минут: rebroadcastCurrentEncryptionKey() каждые 30s
+            //     БЕЗ перегенерации — просто рассылка текущего ключа, чтобы
+            //     reconnect'нувшийся участник или newcomer мог его получить.
+            //   - Цикл живёт пока sessionState == .connected.
             Task { [weak self] in
                 try? await Task.sleep(for: .seconds(3))
                 await self?.sendOurEncryptionKey()
 
-                // Resend every 10s for 2 minutes (covers late joiners)
                 for _ in 0..<12 {
                     try? await Task.sleep(for: .seconds(10))
                     guard let self, self.sessionState == .connected else { return }
                     await self.sendOurEncryptionKey()
+                }
+
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(30))
+                    guard let self, self.sessionState == .connected else { return }
+                    await self.rebroadcastCurrentEncryptionKey()
                 }
             }
         }
@@ -188,13 +212,28 @@ final class NativeCallSession: ObservableObject {
             }
             .store(in: &cancellables)
 
-        // Observe remote participants leaving (auto-end when last one leaves)
+        // Observe remote participants leaving (auto-end when last one leaves).
+        // STMOB-96: also rebroadcast current key when a NEW remote participant
+        // appears (reconnect with новым pID или late newcomer) — иначе они не
+        // смогут расшифровать audio после того как ratchet ушёл вперёд.
         liveKitRoomManager.$remoteParticipants
             .receive(on: DispatchQueue.main)
             .sink { [weak self] participants in
                 guard let self, self.sessionState == .connected else { return }
                 if !participants.isEmpty {
                     self.hasSeenRemoteParticipant = true
+
+                    let currentIdentities = Set(participants.map { $0.identity?.stringValue ?? "" })
+                    let newIdentities = currentIdentities.subtracting(self.knownRemoteIdentities)
+                    if !newIdentities.isEmpty {
+                        MXLog.info("sTalk NativeCall E2EE: new remote participant(s) detected — \(newIdentities) — rebroadcasting current key")
+                        self.knownRemoteIdentities = currentIdentities
+                        Task { [weak self] in
+                            await self?.rebroadcastCurrentEncryptionKey()
+                        }
+                    } else {
+                        self.knownRemoteIdentities = currentIdentities
+                    }
                 } else if self.hasSeenRemoteParticipant {
                     MXLog.info("sTalk NativeCall: All remote participants left after being connected — ending session")
                     Task { await self.stop() }
@@ -407,6 +446,41 @@ final class NativeCallSession: ObservableObject {
         }
 
         MXLog.info("sTalk NativeCall E2EE: Key send tasks launched (with retry)")
+    }
+
+    /// STMOB-96: Re-broadcast current encryption key WITHOUT regenerating it.
+    /// Используется в continuous loop после первых 2 минут жизни звонка чтобы
+    /// reconnect'нувшийся web-участник (новый pID) или late newcomer мог
+    /// получить актуальный ключ. Не трогает keyProvider (ключ уже выставлен)
+    /// и не публикует на key-server заново — только три рассылочных канала.
+    private func rebroadcastCurrentEncryptionKey() async {
+        guard let key = ourEncryptionKey, !key.isEmpty else {
+            MXLog.warning("sTalk NativeCall E2EE: rebroadcast skipped — no current key")
+            return
+        }
+
+        let widgetId = widgetDriver.widgetID
+        let roomId = matrixRoomId
+        let devId = deviceId
+        let driver = widgetDriver
+        let nowMs = Int(Date().timeIntervalSince1970 * 1000)
+
+        MXLog.info("sTalk NativeCall E2EE: rebroadcast current key (no rotation)")
+        os_log(.info, log: callLog, "E2EE rebroadcast current key")
+
+        let toDeviceMsg = """
+        {"api":"fromWidget","action":"send_to_device","widgetId":"\(widgetId)","requestId":"native-key-rb-\(UUID().uuidString)","data":{"type":"io.element.call.encryption_keys","encrypted":true,"messages":{"*":{"*":{"keys":{"index":0,"key":"\(key)"},"room_id":"\(roomId)","member":{"claimed_device_id":"\(devId)"},"session":{"call_id":"","application":"m.call","scope":"m.room"},"sent_ts":\(nowMs)}}}}}
+        """
+        Task.detached {
+            await Self.sendWidgetMessageWithRetry(label: "send_to_device(rb)", message: toDeviceMsg, driver: driver)
+        }
+
+        let roomEventMsg = """
+        {"api":"fromWidget","action":"send_event","widgetId":"\(widgetId)","requestId":"native-roomkey-rb-\(UUID().uuidString)","data":{"type":"io.element.call.encryption_keys","content":{"keys":[{"index":0,"key":"\(key)"}],"device_id":"\(devId)","call_id":"","sent_ts":\(nowMs)}}}
+        """
+        Task.detached {
+            await Self.sendWidgetMessageWithRetry(label: "send_event(rb)", message: roomEventMsg, driver: driver)
+        }
     }
 
     /// Send widget driver message with exponential backoff retry and explicit result parsing.
