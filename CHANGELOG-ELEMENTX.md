@@ -2241,5 +2241,38 @@ for _ in 0..<12 {
 
 ---
 
+### 52. ✅ CallScreen UI fixes — counter / speaking indicator / names / mini-window active speaker (build 99)
+
+**Дата**: 2026-05-02
+**Коммит**: `28259ff9` (build 99)
+**Plane**: внутренние QA-фиксы из тестового звонка Bondar (build 98)
+
+#### Симптомы (из скриншота тестового звонка)
+1. **Counter "1 из 5 участников"** при 3 реальных подключённых.
+2. **Зелёная рамка "говорит"** у себя постоянно (даже при mic muted/тишине).
+3. **Имена не показываются** под remote-тайлами (отображалась пустота).
+4. **Mini-window (minimized call)** всегда показывает первого по JOIN participant'а независимо от того кто говорит ("Самусенко всегда").
+
+#### Изменения
+
+**`CallScreenViewModel.swift`** — counter `1 из 5`:
+- `callParticipantsCount = max(matrixRTC.activeRoomCallParticipants.count, liveKitRoomManager.remoteParticipants.count + 1)` — берём максимум из двух источников. Matrix sync может отставать (особенно если участник не опубликовал `m.call.member` через виджет), а LiveKit реально знает кто в медиа-сессии.
+- Добавлена вторая sink на `liveKitRoomManager.$remoteParticipants` — counter обновляется и при LiveKit-изменениях, не только при Matrix sync.
+
+**`NativeCallVideoView.swift` (GroupCallLayout)** — speaking + names:
+- Local participant: `isSpeaking = false` всегда (LiveKit voice activity срабатывал на echo/шум, рамка отвлекала; пользователь видит mic state по кнопке).
+- Remote participant: `isSpeaking = participant.isSpeaking && !audioMuted` (рамка не зажигается у muted даже при false-positive).
+- Новый helper `resolveDisplayName(for:identity:)`: priority — `participant.name` → fuzzy lookup в Matrix participants (по userID) → суффикс identity после `:` → полный identity. Гарантирует имя под каждым тайлом.
+
+**`NativeCallVideoView.swift` (ActiveSpeakerMiniView)** — mini-window:
+- Раньше: `remotes.first(where: { $0.isSpeaking }) ?? remotes.first` — при false-positive выбирался первый по JOIN. Теперь: filter по `isSpeaking && !muted`, sort по `audioLevel` (max). Loudest actually-speaking remote выбирается; fallback на `remotes.first` только если никто не активен.
+- Новый helper `resolveSpeakerName(for:identity:)` — тот же fuzzy lookup для красивого имени.
+
+#### Файлы:
+- `ios/ElementX/Sources/Screens/CallScreen/CallScreenViewModel.swift` — dual-source counter + LiveKit subscription
+- `ios/ElementX/Sources/Screens/CallScreen/View/NativeCallVideoView.swift` — speaking suppress for local, mute-gated for remote, +resolveDisplayName/resolveSpeakerName helpers, audioLevel-based active speaker
+
+---
+
 **Дата создания**: 2026-01-28
 **Последнее обновление**: 2026-05-02
