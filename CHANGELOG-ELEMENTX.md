@@ -2201,5 +2201,45 @@ Matrix Rust SDK не отдаёт `GET /pushers` — нет API `listPushers()`.
 
 ---
 
+### 51. ✅ Continuous E2EE key rebroadcast — iOS прекращал слать keys через 2 мин (build 99)
+
+**Дата**: 2026-05-02
+**Коммит**: `57196c1e` (build 99)
+**Plane**: STMOB-96
+
+#### Симптом
+В активном MatrixRTC звонке web-участники переставали слышать iPhone после reconnect (новый pID = peer connection с нуля). Bondar audio track продолжал публиковаться в LiveKit, но key rotation в room timeline останавливалась через ~2 минуты после JOIN.
+
+Synapse timeline показал gap 7+ минут без `m.room.encrypted` от bondar (с 11:35:21 до 11:42:24 на боевом инциденте).
+
+#### Корень
+`ElementX/Sources/Services/NativeCall/NativeCallSession.swift:170-176` (build 98):
+```swift
+for _ in 0..<12 {
+    try? await Task.sleep(for: .seconds(10))
+    guard let self, self.sessionState == .connected else { return }
+    await self.sendOurEncryptionKey()
+}
+```
+12 × 10s = **ровно 2 минуты**. После цикл завершался, и iOS никогда больше не транслировал PP E2EE key до завершения сессии (только при membership change).
+
+`sendOurEncryptionKey()` каждый вызов **регенерирует random key** и заменяет в LiveKit keyProvider — поэтому просто продолжать loop без изменений нельзя (создаст постоянную ротацию ключей).
+
+#### Изменения
+1. **`NativeCallSession setUp` loop**: первые 2 минуты остаются как было (`sendOurEncryptionKey()` каждые 10s — covers late joiners). Далее continuous `while !Task.isCancelled` с `rebroadcastCurrentEncryptionKey()` каждые 30s до конца сессии.
+2. **Новый метод `rebroadcastCurrentEncryptionKey()`** — шлёт **текущий** `ourEncryptionKey` через те же два канала (send_to_device + send_event) **без перегенерации**. Не трогает keyProvider, не публикует на key-server повторно.
+3. **Hook на `$remoteParticipants`**: при появлении нового LiveKit identity (reconnect = новый pID или newcomer) — сразу триггерим `rebroadcastCurrentEncryptionKey()`, не ждём 30-секундного тика.
+4. **`knownRemoteIdentities: Set<String>`** — отслеживает виденные identity для diff-detection.
+
+#### Acceptance
+- В звонке >5 минут iPhone продолжает слать `m.room.encrypted` каждые 30s до конца сессии
+- Reconnect web участника → его новый pID получает текущий ключ за <1 сек (через rebroadcast trigger)
+- В Synapse: gap между `m.room.encrypted` от iPhone не превышает 30-40 секунд
+
+#### Файлы:
+- `ios/ElementX/Sources/Services/NativeCall/NativeCallSession.swift` — replaced fixed 12-iter loop with continuous loop, +rebroadcastCurrentEncryptionKey method, +knownRemoteIdentities tracking, +rebroadcast trigger в $remoteParticipants observer
+
+---
+
 **Дата создания**: 2026-01-28
 **Последнее обновление**: 2026-05-02
