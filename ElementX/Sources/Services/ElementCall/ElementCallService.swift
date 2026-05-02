@@ -558,7 +558,22 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
             }
         }
 
+        // STMOB: incomingCallID должен быть nil после teardown — иначе следующий
+        // VoIP push в ту же комнату через 4+ минут попадёт в STMOB-96 dedup
+        // ветку (`if let pending = incomingCallID, pending.roomID == roomID`)
+        // и CallKit не покажется. Раньше incomingCallID обнулялся ТОЛЬКО в
+        // setupCallSession (line 178) — но setupCallSession не вызывается
+        // если accept-flow не прошёл (decline сразу / NSE timeout / race).
+        // Теперь любой teardown сбрасывает state — следующий звонок начнёт
+        // с чистого листа.
         ongoingCallID = nil
+        incomingCallID = nil
+
+        // STMOB: cancel pending unanswered timeout — иначе при rapid hangup и
+        // последующем звонке в ту же комнату он может выстрелить с reportCall
+        // на старый callKitID и зашорить новый ring.
+        endUnansweredCallTask?.cancel()
+        endUnansweredCallTask = nil
     }
 
     /// Direct HTTP PUT для очистки своего msc3401.call.member state event текущего device.
