@@ -88,11 +88,12 @@ class NotificationServiceExtension: UNNotificationServiceExtension {
         os_log(.default, log: nseLog, "NSE payload keys: %{public}@",
                (request.content.userInfo.keys.map { String(describing: $0) }).joined(separator: ", "))
 
-        // Badge update (room:None, event:None) — не показываем уведомление
+        // Badge update (room:None, event:None) — не показываем уведомление.
+        // STMOB-94: используем passive helper, иначе iOS 26+ берёт alert
+        // из оригинального APNS payload и показывает baseline-баннер.
         if eventID == nil {
             os_log(.default, log: nseLog, "NSE: no eventID (badge update), suppressing notification")
-            let content = UNMutableNotificationContent()
-            return contentHandler(content)
+            return contentHandler(NotificationHandler.makePassiveContent())
         }
 
         // If we can't fully process, at least show a useful fallback notification

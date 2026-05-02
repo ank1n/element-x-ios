@@ -229,24 +229,30 @@ class NotificationHandler {
 
     private func discardNotification() {
         MXLog.info("\(tag) Discarding notification")
+        contentHandler(Self.makePassiveContent())
+    }
 
-        // sTalk: STMOB-97 — iOS NSE cannot fully cancel a notification once
-        // APNs has scheduled it (mutable-content=1 reserved a banner slot).
-        // Returning an empty UNMutableNotificationContent still produced the
-        // generic "1 уведомление" banner during active calls. Mark the
-        // content as passive so it joins Notification Center silently
-        // without sound/vibration/banner. Encrypted ratchet events and
-        // call.member updates that NSE intentionally discards stop
-        // distracting the user from a CallKit screen.
+    // sTalk: STMOB-94 — iOS NSE не может полностью отменить уведомление,
+    // если APNs уже выделил слот баннера (mutable-content=1 + alert payload).
+    // Build 97 ставил interruptionLevel=.passive, но iOS 26.3 всё равно
+    // подхватывал alert из оригинального APNS payload как fallback и
+    // показывал baseline-баннер ("1 уведомление" / "sTalk: Новое сообщение")
+    // при первом MatrixRTC звонке (3× encryption_keys ratchet за 1-2 сек до
+    // VoIP push). Для надёжного suppress нужно ВСЕ alert-поля принудительно
+    // обнулить ДО выставления .passive, иначе iOS использует исходный alert.
+    static func makePassiveContent() -> UNMutableNotificationContent {
         let content = UNMutableNotificationContent()
-        content.badge = notificationContent.unreadCount as NSNumber?
+        content.title = ""
+        content.subtitle = ""
+        content.body = ""
         content.sound = nil
+        content.attachments = []
+        content.userInfo = [:]
         if #available(iOS 15.0, *) {
             content.interruptionLevel = .passive
+            content.relevanceScore = 0
         }
-        MXLog.info("\(tag) New badge value: \(content.badge?.stringValue ?? "nil")")
-
-        contentHandler(content)
+        return content
     }
     
     private func preprocessNotification(_ itemProxy: NotificationItemProxyProtocol) async -> NotificationProcessingResult {
