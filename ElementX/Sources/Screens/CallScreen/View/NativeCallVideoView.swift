@@ -278,8 +278,17 @@ private struct ActiveSpeakerMiniView: View {
             }
         }
 
-        // Priority 2: speaking remote → first remote
-        let speaker = remotes.first(where: { $0.isSpeaking }) ?? remotes.first
+        // STMOB: Priority 2: pick the loudest UNMUTED speaking remote.
+        // Раньше использовалось `remotes.first(where: { $0.isSpeaking }) ??
+        // remotes.first` — при echo/false-positive в LiveKit voice activity
+        // (когда несколько участников одновременно isSpeaking=true) это
+        // всегда выбирало первого по порядку JOIN. Если никто не говорит —
+        // тоже фиксированно показывал первого. Теперь sort по audioLevel и
+        // отфильтровать muted, fallback на первого remote только если
+        // никто не активен.
+        let activeSpeakers = remotes
+            .filter { $0.isSpeaking && !($0.firstAudioPublication?.isMuted ?? false) }
+        let speaker = activeSpeakers.max(by: { $0.audioLevel < $1.audioLevel }) ?? remotes.first
         guard let speaker else { return nil }
 
         let identity = speaker.identity?.stringValue ?? ""
@@ -289,9 +298,27 @@ private struct ActiveSpeakerMiniView: View {
         let track = videoMuted ? nil : speaker.firstCameraVideoTrack
 
         return SpeakerInfo(identity: identity,
-                           name: speaker.name ?? speaker.identity?.stringValue,
+                           name: resolveSpeakerName(for: speaker, identity: identity),
                            videoTrack: track,
                            avatarURL: avatarURL)
+    }
+
+    /// STMOB: same fuzzy lookup as resolveDisplayName в GroupCallLayout.
+    /// Доступ к Matrix participants array → красивое отображаемое имя
+    /// вместо сырого identity вида `@user:server:DEVICEID`.
+    private func resolveSpeakerName(for participant: RemoteParticipant, identity: String) -> String {
+        if let name = participant.name, !name.isEmpty { return name }
+        if let match = participants.first(where: { $0.userID == identity }),
+           let name = match.displayName, !name.isEmpty { return name }
+        if let match = participants.first(where: { identity.hasPrefix($0.userID) }),
+           let name = match.displayName, !name.isEmpty { return name }
+        if let match = participants.first(where: { $0.userID.hasPrefix(identity) }),
+           let name = match.displayName, !name.isEmpty { return name }
+        if let lastColon = identity.lastIndex(of: ":") {
+            let after = identity[identity.index(after: lastColon)...]
+            if !after.isEmpty { return String(after) }
+        }
+        return identity
     }
 
     private func findAvatarURL(for identity: String) -> URL? {
@@ -410,12 +437,16 @@ private struct GroupCallLayout: View {
         // Local participant
         if let local = roomManager.localParticipant {
             let identity = local.identity?.stringValue ?? "local"
+            // STMOB: для local участника НЕ показываем зелёную speaking
+            // рамку — LiveKit voice activity срабатывает на любой шум/echo
+            // даже когда mic muted/idle и отвлекает пользователя. Local
+            // sees their own state без подсказки.
             items.append(ParticipantItem(id: identity,
                                          videoTrack: roomManager.localVideoTrack,
                                          displayName: SL10n.callsYou,
                                          avatarURL: findAvatarURL(for: identity),
                                          isLocal: true,
-                                         isSpeaking: local.isSpeaking,
+                                         isSpeaking: false,
                                          isAudioMuted: isLocalAudioMuted,
                                          isVideoMuted: !isLocalVideoEnabled,
                                          isScreenShare: false))
@@ -426,18 +457,52 @@ private struct GroupCallLayout: View {
             let cameraPub = participant.videoTracks.first(where: { $0.name != Track.screenShareVideoName })
             let videoMuted = cameraPub?.isMuted ?? true
             let identity = participant.identity?.stringValue ?? participant.sid?.stringValue ?? UUID().uuidString
+            let audioMuted = participant.firstAudioPublication?.isMuted ?? false
+            // STMOB: speaking рамку показываем только если micrоphone unmuted —
+            // иначе LiveKit может считать speaking при echo на чужой стороне.
+            let speaking = participant.isSpeaking && !audioMuted
             items.append(ParticipantItem(id: identity,
                                          videoTrack: participant.firstCameraVideoTrack,
-                                         displayName: participant.name ?? participant.identity?.stringValue,
+                                         displayName: resolveDisplayName(for: participant, identity: identity),
                                          avatarURL: findAvatarURL(for: identity),
                                          isLocal: false,
-                                         isSpeaking: participant.isSpeaking,
-                                         isAudioMuted: participant.firstAudioPublication?.isMuted ?? false,
+                                         isSpeaking: speaking,
+                                         isAudioMuted: audioMuted,
                                          isVideoMuted: videoMuted,
                                          isScreenShare: false))
         }
 
         return items
+    }
+
+    /// STMOB: resolve nice display name for a remote LiveKit participant.
+    /// Приоритет: 1) participant.name (если выставлен через JWT) →
+    /// 2) lookup в Matrix participants array по identity (фuzzy как в
+    /// findAvatarURL) → 3) короткий суффикс identity (после последнего ":") →
+    /// 4) полный identity. Гарантирует что под тайлом всегда есть имя,
+    /// даже если LiveKit ещё не получил metadata от широгателя.
+    private func resolveDisplayName(for participant: RemoteParticipant, identity: String) -> String {
+        if let name = participant.name, !name.isEmpty {
+            return name
+        }
+        if let match = participants.first(where: { $0.userID == identity }),
+           let name = match.displayName, !name.isEmpty {
+            return name
+        }
+        if let match = participants.first(where: { identity.hasPrefix($0.userID) }),
+           let name = match.displayName, !name.isEmpty {
+            return name
+        }
+        if let match = participants.first(where: { $0.userID.hasPrefix(identity) }),
+           let name = match.displayName, !name.isEmpty {
+            return name
+        }
+        // Fallback: identity суффикс (после последнего ":") или полный identity.
+        if let lastColon = identity.lastIndex(of: ":") {
+            let after = identity[identity.index(after: lastColon)...]
+            if !after.isEmpty { return String(after) }
+        }
+        return identity
     }
 
     /// Match LiveKit identity to Matrix participant.

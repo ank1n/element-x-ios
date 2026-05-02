@@ -246,7 +246,12 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                     self.state.totalMembersCount = roomInfo.activeMembersCount
                     let callParticipants = roomInfo.activeRoomCallParticipants
                     let prevCount = self.state.callParticipantsCount
-                    self.state.callParticipantsCount = callParticipants.count
+                    // STMOB: показываем максимум из двух источников. activeRoomCallParticipants
+                    // — это m.call.member state events в Synapse, может отставать или не
+                    // содержать участников чьи события застряли в sync. liveKit.remoteParticipants
+                    // — реальное состояние медиа-сессии (видишь ли ты людей на экране). +1 за себя.
+                    let liveKitTotal = self.liveKitRoomManager.remoteParticipants.count + 1
+                    self.state.callParticipantsCount = max(callParticipants.count, liveKitTotal)
                     self.state.activeCallParticipantIDs = callParticipants.map { $0 }
                     if callParticipants.count != prevCount {
                         MXLog.info("sTalk: MatrixRTC participants changed: \(prevCount) → \(callParticipants.count), users=\(callParticipants), liveKit remote=\(self.liveKitRoomManager.remoteParticipants.count)")
@@ -288,6 +293,21 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 }
                 .store(in: &cancellables)
         }
+
+        // STMOB: дублируем апдейт callParticipantsCount при изменении LiveKit
+        // remote participants — иначе counter застывает на значениях из последнего
+        // Matrix roomInfo sync, а LiveKit может опережать sync (новый участник
+        // появился медиа-сессии до того как m.call.member дошёл).
+        liveKitRoomManager.$remoteParticipants
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] participants in
+                guard let self else { return }
+                let liveKitTotal = participants.count + 1
+                if liveKitTotal > self.state.callParticipantsCount {
+                    self.state.callParticipantsCount = liveKitTotal
+                }
+            }
+            .store(in: &cancellables)
 
         setupRecordingObserver()
         setupCall()
