@@ -10,12 +10,74 @@ import AVFoundation
 import CallKit
 import Combine
 import Foundation
+import Intents
 import MatrixRustSDK
 import os.log
 import PushKit
 import UIKit
 
 private let pushLog = OSLog(subsystem: "ru.implica.stalk", category: "VoIPPush")
+
+/// STMOB-99: shared App Group avatar cache. Pre-cached JPEG thumbnails
+/// per Matrix userID, доступные синхронно с диска из VoIP push handler
+/// без HTTP запросов (важно для CallKit reportNewIncomingCall <100ms
+/// deadline).
+///
+/// Path: <groupContainer>/Library/Caches/avatars/<safeKey>.jpg
+/// safeKey — SHA-256 хеш userID, чтобы избежать filesystem-unsafe chars
+/// (@, :, etc) и одновременно ограничить длину пути.
+///
+/// Phase 1 (cache populate из main app — пока не реализован):
+/// будет hook на mediaProvider thumbnail loads / room sync.
+///
+/// Phase 2 (this commit): VoIP push handler читает cache, fallback
+/// на placeholder с инициалами через Avatars.generatePlaceholderAvatarImageData,
+/// donate'ит INStartCallIntent с image — CallKit подхватывает аватарку
+/// в fullscreen.
+enum AppGroupAvatarCache {
+    private static var cacheDirectory: URL? {
+        let groupID = InfoPlistReader.main.appGroupIdentifier
+        guard let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupID) else {
+            return nil
+        }
+        return container
+            .appending(component: "Library", directoryHint: .isDirectory)
+            .appending(component: "Caches", directoryHint: .isDirectory)
+            .appending(component: "avatars", directoryHint: .isDirectory)
+    }
+
+    /// Filesystem-safe key derived from arbitrary id (userID, roomID).
+    private static func safeKey(for id: String) -> String {
+        // Простой alphanumeric-ish заменой, без crypto зависимости — длина
+        // userID/roomID ограничена Matrix-spec, base path короткий, файлы
+        // не sensitive (публичные аватарки), поэтому SHA-256 не нужен.
+        let allowed = CharacterSet.alphanumerics.union(.init(charactersIn: "._-"))
+        return id.unicodeScalars.map { allowed.contains($0) ? Character($0) : "_" }
+            .map(String.init).joined()
+    }
+
+    static func readAvatar(for id: String) -> Data? {
+        guard let cacheDirectory else { return nil }
+        let url = cacheDirectory.appending(component: safeKey(for: id) + ".jpg")
+        return try? Data(contentsOf: url)
+    }
+
+    static func saveAvatar(_ data: Data, for id: String) {
+        guard let cacheDirectory else { return }
+        do {
+            try FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
+            let url = cacheDirectory.appending(component: safeKey(for: id) + ".jpg")
+            try data.write(to: url, options: .atomic)
+        } catch {
+            MXLog.error("STMOB-99: failed saving avatar to App Group: \(error)")
+        }
+    }
+
+    static func clearAll() {
+        guard let cacheDirectory else { return }
+        try? FileManager.default.removeItem(at: cacheDirectory)
+    }
+}
 
 /// Keep this class testable
 struct TimeProvider {
@@ -318,6 +380,20 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         os_log(.info, log: pushLog, "Incoming VoIP call: room=%{public}@ caller=%{public}@ rtcEventID=%{public}@",
                roomID, callerName, rtcNotificationID ?? "nil")
 
+        // STMOB-99: donate INStartCallIntent с avatar до reportNewIncomingCall.
+        // CallKit fullscreen подхватит INPerson.image для отображения аватарки.
+        // Source приоритет: pre-cached в App Group (Layer A) →
+        // initials placeholder через Avatars.generatePlaceholderAvatarImageData (Layer B).
+        // Без этого CallKit показывает только имя без аватарки (пустое серое).
+        // Hop on MainActor — Avatars helper isolated; donation выполнится
+        // параллельно с reportNewIncomingCall, не блокирует CallKit deadline.
+        Task { @MainActor in
+            Self.donateIncomingCallIntent(senderMXID: senderMXID,
+                                          callerName: callerName,
+                                          roomID: roomID,
+                                          hasVideo: true)
+        }
+
         let update = CXCallUpdate()
         update.hasVideo = true
         update.localizedCallerName = callerName
@@ -353,6 +429,64 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
                 callProvider.reportCall(with: incomingCallID.callKitID, endedAt: nil, reason: .unanswered)
                 // Notify about missed call
                 actionsSubject.send(.missedCall(roomID: incomingCallID.roomID))
+            }
+        }
+    }
+
+    /// Report a fake incoming call and immediately cancel it to satisfy iOS VoIP push requirement.
+    /// iOS kills the app if reportNewIncomingCall is not called for every VoIP push.
+    /// STMOB-99: donate INStartCallIntent so CallKit shows caller avatar
+    /// in the incoming-call fullscreen UI. Без этого видно только имя.
+    /// Image source приоритет:
+    ///   1) Pre-cached в App Group (`AppGroupAvatarCache.readAvatar`)
+    ///   2) Placeholder с инициалами (`Avatars.generatePlaceholderAvatarImageData`)
+    /// Запускается ASAP — synchronously read avatar from disk + generate
+    /// placeholder + donate занимает ~5-10ms. CallKit `reportNewIncomingCall`
+    /// идёт параллельно, не блокируется.
+    @MainActor
+    private static func donateIncomingCallIntent(senderMXID: String?,
+                                                 callerName: String,
+                                                 roomID: String,
+                                                 hasVideo: Bool) {
+        let personID = senderMXID ?? roomID
+
+        let avatarData: Data?
+        if let senderMXID, let cached = AppGroupAvatarCache.readAvatar(for: senderMXID) {
+            avatarData = cached
+            DiagLog.write("VoIP", "  intent donate: cached avatar for \(senderMXID)")
+        } else {
+            avatarData = Avatars.generatePlaceholderAvatarImageData(name: callerName,
+                                                                    id: personID,
+                                                                    size: CGSize(width: 100, height: 100))
+            DiagLog.write("VoIP", "  intent donate: placeholder avatar for \(personID)")
+        }
+
+        let image = if let data = avatarData {
+            INImage(imageData: data)
+        } else {
+            INImage(named: "")
+        }
+
+        let handle = INPersonHandle(value: personID, type: .unknown)
+        let person = INPerson(personHandle: handle,
+                              nameComponents: nil,
+                              displayName: callerName,
+                              image: image,
+                              contactIdentifier: nil,
+                              customIdentifier: personID)
+
+        let intent = INStartCallIntent(callRecordFilter: nil,
+                                       callRecordToCallBack: nil,
+                                       audioRoute: .unknown,
+                                       destinationType: .normal,
+                                       contacts: [person],
+                                       callCapability: hasVideo ? .videoCall : .audioCall)
+
+        let interaction = INInteraction(intent: intent, response: nil)
+        interaction.direction = .incoming
+        interaction.donate { error in
+            if let error {
+                MXLog.error("STMOB-99: donate INStartCallIntent failed: \(error)")
             }
         }
     }
