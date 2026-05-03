@@ -2432,5 +2432,52 @@ Web reuse device_id через `localStorage` корректно — iOS-side р
 
 ---
 
+### 56. ✅ VoIP CallKit avatar — placeholder fallback + Intent donation (build 102 — STMOB-99 Phase 2)
+
+**Дата**: 2026-05-03
+**Коммит**: `c9a4839e` (build 102+)
+**Plane**: STMOB-99 (medium)
+
+#### Симптом
+При входящем VoIP звонке на iPhone CallKit fullscreen показывал **имя** звонящего, но **аватарка отсутствовала** — пустое серое поле. Обычные push-уведомления (m.room.message) показывают аватарку через `NSE.NotificationContentBuilder.addCommunicationContext()` с `INSendMessageIntent + INPerson.image + interaction.donate()`. VoIP path в `ElementCallService` этого не делал.
+
+#### Корень — разные code paths
+- **Обычные push:** NSE имеет ~30 сек, грузит avatar через `mediaProvider.loadThumbnailForSource()`, donate'ит INSendMessageIntent
+- **VoIP push:** PushKit completion лимит ~5 сек, при device-locked токен может быть протухший. Только CXCallUpdate с именем + roomID, никакого Intent donation
+
+#### Phase 2 (этот коммит) — placeholder fallback + Intent donation
+1. **`AppGroupAvatarCache` enum** (file-private в `ElementCallService.swift`):
+   - `readAvatar(for: id) -> Data?` — читает .jpg из App Group `Library/Caches/avatars/<safeKey>.jpg`
+   - `saveAvatar(_:for:)` — пишет туда
+   - `clearAll()`
+   - `safeKey` — alphanumeric-safe замена для userID/roomID
+   - App Group shared между main app и all extensions → доступно из VoIP push handler **синхронно с диска**
+
+2. **`donateIncomingCallIntent(senderMXID:callerName:roomID:hasVideo:)`** — `@MainActor`:
+   - Layer A: `AppGroupAvatarCache.readAvatar(senderMXID)` — pre-cache hit (для known контактов после Phase 1)
+   - Layer B fallback: `Avatars.generatePlaceholderAvatarImageData(name: callerName, id: personID, size: 100x100)` — initials кружочек, цвет deterministic от ID
+   - `INPerson(handle, displayName, image)` → `INStartCallIntent(contacts: [person], callCapability: video/audio)` → `interaction.donate()`
+   - iOS подхватывает для CallKit fullscreen
+
+3. **Hook в `pushRegistry didReceiveIncomingPushWith`** — `Task @MainActor` с donate, **параллельно** с `reportNewIncomingCall`. Не блокирует CallKit deadline.
+
+#### Phase 1 (cache populate из main app — ОТЛОЖЕНО)
+- Hook на `mediaProvider` thumbnail loads / room sync для записи реальных аватарок known контактов
+- Будет отдельной итерацией. Phase 2 даёт immediate visible improvement (initials placeholder) — Phase 1 потом улучшит до реальных фото
+
+#### Phase 3 (group call room avatar — ОТЛОЖЕНО)
+- Для group calls показывать room avatar (Element Web так делает). Пока initials по callerName.
+
+#### Acceptance
+- 1:1 от unknown контакта → color-initials placeholder в CallKit ("ИЖ" для Ивана Жилина) — **сейчас работает**
+- 1:1 от known контакта (после Phase 1 cache populate) → реальная аватарка из cache — Phase 1
+- Group call → room avatar — Phase 3
+- CallKit shown time не увеличилось (donate на отдельном Task, не блокирует)
+
+#### Файлы:
+- `ios/ElementX/Sources/Services/ElementCall/ElementCallService.swift` — +`Intents` import, +`AppGroupAvatarCache` enum, +`donateIncomingCallIntent` helper @MainActor, hook в pushRegistry handler
+
+---
+
 **Дата создания**: 2026-01-28
-**Последнее обновление**: 2026-05-02
+**Последнее обновление**: 2026-05-03
