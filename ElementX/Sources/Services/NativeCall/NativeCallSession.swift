@@ -59,12 +59,9 @@ final class NativeCallSession: ObservableObject {
     /// rebroadcast текущего encryption key — иначе он не сможет расшифровать
     /// audio после того как ratchet ушёл вперёд изначально розданного ключа.
     private var knownRemoteIdentities: Set<String> = []
-    /// STMOB-96 v2: strong reference to the rebroadcast loop Task so it
-    /// doesn't get cancelled by parent scope ending. Cancelled explicitly in stop().
-    private var keyRebroadcastTask: Task<Void, Never>?
-    /// STMOB-96 v2: foreground observer to force-rebroadcast ключ когда app
-    /// возвращается в foreground — даже если background throttle остановил
-    /// async Task.sleep, при foreground будет немедленный rebroadcast.
+    /// STMOB-96 v2 / STMOB-101 v3: foreground observer to rebroadcast same key
+    /// when app возвращается в foreground (на случай если новые participant'ы
+    /// подключились пока iOS suspended app).
     private var foregroundObserver: NSObjectProtocol?
     private var livekitBaseURL: String?
 
@@ -174,68 +171,56 @@ final class NativeCallSession: ObservableObject {
                 await self?.listenForEncryptionKeysFromTimeline()
             }
 
-            // STMOB-96 v2: Send our key + continuous re-broadcast.
+            // STMOB-101 v3: упростили rebroadcast стратегию.
             //
-            // v1 (build 99/100) не работал: Molly увидела в Synapse только
-            // 3 m.room.encrypted в первые 30 секунд, потом 8+ минут тишины.
-            // Гипотезы причин: (a) `sessionState == .connected` strict guard
-            // выходит из цикла навсегда при reconnecting state, (b) Task
-            // cancelled родителем, (c) iOS background throttle async sleep,
-            // (d) weak self стал nil.
+            // v1 (build 99/100): for-loop 12×10s regenerate + while-loop 30s
+            //   rebroadcast. Каждый sendOurEncryptionKey() RE-GENERATES random
+            //   key → rotate KID в SFrame у Element Call widget.
+            // v2 (build 101): same loop + DiagLog + foreground observer.
             //
-            // v2 changes:
-            //   - keyRebroadcastTask = Task { ... } — strong reference в свойстве
-            //     класса. Не cancel'ится случайно через scope.
-            //   - guard sessionState != .disconnected — не выходим при reconnecting
-            //     или waitingForCredentials, только при finalizing teardown.
-            //   - DiagLog "E2EE" в каждую итерацию — видно где обрывается.
-            //   - Foreground observer (UIApplication.didBecomeActiveNotification)
-            //     дёргает rebroadcast немедленно когда iOS поднимает app из
-            //     background suspend (где async sleep мог застрять).
-            keyRebroadcastTask?.cancel()
-            keyRebroadcastTask = Task { [weak self] in
-                DiagLog.write("E2EE", "rebroadcastLoop START")
+            // Регрессия: ВСЕ участники ratchet'ат KID на каждом нашем
+            // m.room.encrypted event. Egress / Key Server / KS-Bridge
+            // не успевают синхронизироваться, cipher auth fail на 99%
+            // последующих frames (Molly STMOB-101: tymbay 99.7% fail в
+            // recording, ms.implica decrypted OK case-by-case).
+            //
+            // v3 — близко к Element Call upstream + минимально необходимый
+            // расход на iOS-specific scenarios:
+            //
+            //   - Initial: sendOurEncryptionKey ОДИН РАЗ (3s после start).
+            //     Generate + setKey + broadcast — это база.
+            //   - НЕ ratchet'ить KID каждые N секунд. Никакого таймера.
+            //   - On member JOIN (новый remote identity в $remoteParticipants):
+            //     rebroadcastCurrentEncryptionKey — ТОТ ЖЕ key, no rotation,
+            //     чтобы newcomer/reconnect мог расшифровать. Это hook ниже.
+            //   - On member LEAVE (identity исчезла из $remoteParticipants):
+            //     sendOurEncryptionKey — RE-generate (security — leaving peer
+            //     не должен decrypt'ить future frames). Hook ниже.
+            //   - On foreground entry: rebroadcastCurrentEncryptionKey — same
+            //     key. Покрывает случай когда iOS-side стейт мог отстать от
+            //     room state пока app был в background.
+            //
+            // С таким набором rotations происходят только при реальных
+            // membership events — egress / KS-Bridge успевают догнать.
+            Task { [weak self] in
                 try? await Task.sleep(for: .seconds(3))
-                guard let s0 = self, s0.sessionState != .disconnected else {
-                    DiagLog.write("E2EE", "rebroadcastLoop EXIT (early) — self=nil or disconnected")
+                guard let s = self, s.sessionState != .disconnected else {
+                    DiagLog.write("E2EE", "initial sendOurEncryptionKey EXIT — self=nil or disconnected")
                     return
                 }
-                await s0.sendOurEncryptionKey()
-
-                for tick in 0..<12 {
-                    try? await Task.sleep(for: .seconds(10))
-                    guard let s = self, s.sessionState != .disconnected else {
-                        DiagLog.write("E2EE", "rebroadcastLoop EXIT (regenerate phase tick=\(tick)) — disconnected/nil")
-                        return
-                    }
-                    DiagLog.write("E2EE", "rebroadcastLoop regenerate tick=\(tick + 1)/12 (state=\(s.sessionState))")
-                    await s.sendOurEncryptionKey()
-                }
-
-                DiagLog.write("E2EE", "rebroadcastLoop entered continuous phase (every 30s)")
-                var continuousTick = 0
-                while !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(30))
-                    guard let s = self, s.sessionState != .disconnected else {
-                        DiagLog.write("E2EE", "rebroadcastLoop EXIT (continuous tick=\(continuousTick)) — disconnected/nil")
-                        return
-                    }
-                    continuousTick += 1
-                    DiagLog.write("E2EE", "rebroadcastLoop continuous tick=\(continuousTick) (state=\(s.sessionState))")
-                    await s.rebroadcastCurrentEncryptionKey()
-                }
-                DiagLog.write("E2EE", "rebroadcastLoop EXIT — Task.isCancelled")
+                DiagLog.write("E2EE", "initial sendOurEncryptionKey")
+                await s.sendOurEncryptionKey()
             }
 
-            // STMOB-96 v2: foreground entry — force rebroadcast immediately.
-            // Если iOS background throttle заморозил async Task.sleep, при
-            // переходе обратно в foreground sleep всё равно проснётся, но
-            // время простоя могло быть >30 сек — лучше сразу триггернуть.
+            // STMOB-101 v3: foreground entry — rebroadcast same key (no rotation).
+            // Iff stay long in background и iOS suspended app — на возврат
+            // дёргаем rebroadcast чтобы новые participant'ы которые подключились
+            // пока we were sleeping получили текущий ключ (тот же KID).
             foregroundObserver = NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification,
                                                                         object: nil,
                                                                         queue: .main) { [weak self] _ in
                 guard let self, self.sessionState != .disconnected else { return }
-                DiagLog.write("E2EE", "foreground entry — force rebroadcast")
+                DiagLog.write("E2EE", "foreground entry — rebroadcast same key")
                 Task { [weak self] in
                     await self?.rebroadcastCurrentEncryptionKey()
                 }
@@ -255,9 +240,14 @@ final class NativeCallSession: ObservableObject {
             .store(in: &cancellables)
 
         // Observe remote participants leaving (auto-end when last one leaves).
-        // STMOB-96: also rebroadcast current key when a NEW remote participant
-        // appears (reconnect with новым pID или late newcomer) — иначе они не
-        // смогут расшифровать audio после того как ratchet ушёл вперёд.
+        // STMOB-101 v3: detect JOIN (newcomer/reconnect) и LEAVE (security
+        // rotation). Реакция:
+        //   - JOIN: rebroadcastCurrentEncryptionKey — same KID, иначе newcomer
+        //     не сможет decrypt'ить audio.
+        //   - LEAVE: sendOurEncryptionKey — regenerate KID (security: leaving
+        //     peer не должен decrypt'ить future frames). Это standard E2EE
+        //     behavior для media rotation.
+        // Никакого периодического timer — только on-event triggers.
         liveKitRoomManager.$remoteParticipants
             .receive(on: DispatchQueue.main)
             .sink { [weak self] participants in
@@ -267,15 +257,26 @@ final class NativeCallSession: ObservableObject {
 
                     let currentIdentities = Set(participants.map { $0.identity?.stringValue ?? "" })
                     let newIdentities = currentIdentities.subtracting(self.knownRemoteIdentities)
-                    if !newIdentities.isEmpty {
-                        MXLog.info("sTalk NativeCall E2EE: new remote participant(s) detected — \(newIdentities) — rebroadcasting current key")
-                        self.knownRemoteIdentities = currentIdentities
+                    let leftIdentities = self.knownRemoteIdentities.subtracting(currentIdentities)
+
+                    if !leftIdentities.isEmpty {
+                        // STMOB-101: security rotation на leave. Не должны
+                        // оставлять прошлого peer'а с возможностью decrypt'ить
+                        // future audio (он уже не в room, но может прослушивать
+                        // SFU stream если cached его old subscription).
+                        MXLog.info("sTalk NativeCall E2EE: remote left \(leftIdentities) — regenerating key")
+                        DiagLog.write("E2EE", "remote LEAVE \(leftIdentities) → regenerate key")
+                        Task { [weak self] in
+                            await self?.sendOurEncryptionKey()
+                        }
+                    } else if !newIdentities.isEmpty {
+                        MXLog.info("sTalk NativeCall E2EE: new remote participant(s) — \(newIdentities) — rebroadcasting same key")
+                        DiagLog.write("E2EE", "remote JOIN \(newIdentities) → rebroadcast same key")
                         Task { [weak self] in
                             await self?.rebroadcastCurrentEncryptionKey()
                         }
-                    } else {
-                        self.knownRemoteIdentities = currentIdentities
                     }
+                    self.knownRemoteIdentities = currentIdentities
                 } else if self.hasSeenRemoteParticipant {
                     MXLog.info("sTalk NativeCall: All remote participants left after being connected — ending session")
                     Task { await self.stop() }
@@ -864,9 +865,7 @@ final class NativeCallSession: ObservableObject {
         heartbeatTask = nil
         stopNetworkMonitor()
 
-        // STMOB-96 v2: cancel rebroadcast loop + remove foreground observer
-        keyRebroadcastTask?.cancel()
-        keyRebroadcastTask = nil
+        // STMOB-101 v3: remove foreground observer (rebroadcast loop удалён)
         if let observer = foregroundObserver {
             NotificationCenter.default.removeObserver(observer)
             foregroundObserver = nil
