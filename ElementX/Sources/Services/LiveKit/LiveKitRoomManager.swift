@@ -26,6 +26,13 @@ final class LiveKitRoomManager: ObservableObject {
     @Published private(set) var remoteParticipants: [RemoteParticipant] = []
     @Published private(set) var localVideoTrack: VideoTrack?
     @Published private(set) var localParticipant: LocalParticipant?
+    /// STMOB-100: actively speaking participants, sorted by audioLevel desc.
+    /// Maintained by LiveKit SDK via `room(_:didUpdateSpeakingParticipants:)`
+    /// delegate. SwiftUI views (ActiveSpeakerMiniView) подписываются на это
+    /// чтобы PiP мини-окно переключалось на текущего active speaker — без
+    /// этого audioLevel changes не триггерят SwiftUI re-render и PiP залипает
+    /// на первом по JOIN order участнике.
+    @Published private(set) var activeSpeakers: [Participant] = []
 
     /// LiveKit room name (used for recording-api)
     var roomName: String? {
@@ -704,6 +711,15 @@ extension LiveKitRoomManager: RoomDelegate {
     nonisolated func room(_ room: Room, participant: Participant, trackPublication: TrackPublication, didUpdateIsMuted isMuted: Bool) {
         Task { @MainActor in
             self.updateState()
+        }
+    }
+
+    /// STMOB-100: SDK reports speaking participants list (sorted by audio level
+    /// descending). Publish to ActiveSpeakerMiniView via @Published activeSpeakers
+    /// so PiP мини-окно переключается на того кто реально говорит.
+    nonisolated func room(_ room: Room, didUpdateSpeakingParticipants participants: [Participant]) {
+        Task { @MainActor in
+            self.activeSpeakers = participants
         }
     }
 

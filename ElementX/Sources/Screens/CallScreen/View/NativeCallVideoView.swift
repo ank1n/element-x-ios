@@ -278,17 +278,21 @@ private struct ActiveSpeakerMiniView: View {
             }
         }
 
-        // STMOB: Priority 2: pick the loudest UNMUTED speaking remote.
-        // Раньше использовалось `remotes.first(where: { $0.isSpeaking }) ??
-        // remotes.first` — при echo/false-positive в LiveKit voice activity
-        // (когда несколько участников одновременно isSpeaking=true) это
-        // всегда выбирало первого по порядку JOIN. Если никто не говорит —
-        // тоже фиксированно показывал первого. Теперь sort по audioLevel и
-        // отфильтровать muted, fallback на первого remote только если
-        // никто не активен.
-        let activeSpeakers = remotes
-            .filter { $0.isSpeaking && !($0.firstAudioPublication?.isMuted ?? false) }
-        let speaker = activeSpeakers.max(by: { $0.audioLevel < $1.audioLevel }) ?? remotes.first
+        // STMOB-100 v2: использовать `roomManager.activeSpeakers` (auto-maintained
+        // LiveKit SDK через RoomDelegate `didUpdateSpeakingParticipants`,
+        // sorted by audioLevel desc). Раньше пытались sort по audioLevel
+        // локально, но `audioLevel` не @Published — SwiftUI не пересчитывал
+        // computed property. Теперь @Published activeSpeakers триггерит
+        // re-render когда SDK сообщает об изменении speakers.
+        //
+        // Filter remote-only (исключаем local participant — себя в PiP не показываем),
+        // exclude muted (echo/false-positive defense), fallback на первого remote.
+        let speakingRemoteIDs = Set(roomManager.activeSpeakers
+            .compactMap { ($0 as? RemoteParticipant)?.identity?.stringValue })
+        let speakingRemotes = remotes
+            .filter { speakingRemoteIDs.contains($0.identity?.stringValue ?? "") }
+            .filter { !($0.firstAudioPublication?.isMuted ?? false) }
+        let speaker = speakingRemotes.first ?? remotes.first
         guard let speaker else { return nil }
 
         let identity = speaker.identity?.stringValue ?? ""
