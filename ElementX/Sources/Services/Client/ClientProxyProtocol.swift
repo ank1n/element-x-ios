@@ -29,6 +29,21 @@ enum ClientProxyLoadingState {
     case notLoading
 }
 
+// sTalk: STMOB-87 — DTO для /_matrix/client/v3/devices response item.
+struct MatrixActiveDevice: Decodable, Hashable {
+    let deviceID: String
+    let displayName: String?
+    let lastSeenIP: String?
+    let lastSeenTs: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case deviceID = "device_id"
+        case displayName = "display_name"
+        case lastSeenIP = "last_seen_ip"
+        case lastSeenTs = "last_seen_ts"
+    }
+}
+
 enum ClientProxyError: Error {
     case sdkError(Error)
     case forbiddenAccess
@@ -228,6 +243,19 @@ protocol ClientProxyProtocol: AnyObject {
     /// для очистки stale pushers того же app_id у юзера при регистрации
     /// нового APNS device token (после reinstall / device_id rotation).
     func deletePusher(pushkey: String, appId: String) async throws
+
+    // sTalk: STMOB-87 — Active sessions screen
+    /// Returns the user's active devices via REST GET /_matrix/client/v3/devices.
+    /// SDK FFI does not expose this list directly; we fetch via Bearer token.
+    func fetchActiveDevices() async -> Result<[MatrixActiveDevice], ClientProxyError>
+
+    /// Sign out a remote device via DELETE /_matrix/client/v3/devices/{id}.
+    /// Synapse may require interactive auth (UIA) — for OIDC sessions Synapse
+    /// allows direct DELETE if the access token has the appropriate scope. If
+    /// UIA challenge is returned, we surface it as an error and the user
+    /// must use account management URL (web fallback). Phase 1 covers
+    /// the simple case; if 401 with `flows` — return failure with hint.
+    func signOutDevice(deviceID: String) async -> Result<Void, ClientProxyError>
 
     func searchUsers(searchTerm: String, limit: UInt) async -> Result<SearchUsersResultsProxy, ClientProxyError>
     

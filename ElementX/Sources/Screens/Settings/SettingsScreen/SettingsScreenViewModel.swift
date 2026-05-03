@@ -128,6 +128,8 @@ class SettingsScreenViewModel: SettingsScreenViewModelType, SettingsScreenViewMo
             actionsSubject.send(.developerOptions)
         case .cacheAndStorage:
             actionsSubject.send(.cacheAndStorage)
+        case .activeSessions:
+            actionsSubject.send(.activeSessions)
         case .deactivateAccount:
             actionsSubject.send(.deactivateAccount)
         }

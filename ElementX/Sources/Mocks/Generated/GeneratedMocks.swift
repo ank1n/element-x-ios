@@ -4267,6 +4267,42 @@ class ClientProxyMock: ClientProxyProtocol, @unchecked Sendable {
         }
         try await deletePusherPushkeyAppIdClosure?(pushkey, appId)
     }
+    //MARK: - fetchActiveDevices
+
+    var fetchActiveDevicesUnderlyingCallsCount = 0
+    var fetchActiveDevicesCallsCount: Int {
+        get { fetchActiveDevicesUnderlyingCallsCount }
+        set { fetchActiveDevicesUnderlyingCallsCount = newValue }
+    }
+    var fetchActiveDevicesCalled: Bool { fetchActiveDevicesCallsCount > 0 }
+    var fetchActiveDevicesReturnValue: Result<[MatrixActiveDevice], ClientProxyError> = .success([])
+    var fetchActiveDevicesClosure: (() async -> Result<[MatrixActiveDevice], ClientProxyError>)?
+
+    func fetchActiveDevices() async -> Result<[MatrixActiveDevice], ClientProxyError> {
+        fetchActiveDevicesCallsCount += 1
+        if let fetchActiveDevicesClosure {
+            return await fetchActiveDevicesClosure()
+        }
+        return fetchActiveDevicesReturnValue
+    }
+    //MARK: - signOutDevice
+
+    var signOutDeviceDeviceIDUnderlyingCallsCount = 0
+    var signOutDeviceDeviceIDCallsCount: Int {
+        get { signOutDeviceDeviceIDUnderlyingCallsCount }
+        set { signOutDeviceDeviceIDUnderlyingCallsCount = newValue }
+    }
+    var signOutDeviceDeviceIDCalled: Bool { signOutDeviceDeviceIDCallsCount > 0 }
+    var signOutDeviceDeviceIDReturnValue: Result<Void, ClientProxyError> = .success(())
+    var signOutDeviceDeviceIDClosure: ((String) async -> Result<Void, ClientProxyError>)?
+
+    func signOutDevice(deviceID: String) async -> Result<Void, ClientProxyError> {
+        signOutDeviceDeviceIDCallsCount += 1
+        if let signOutDeviceDeviceIDClosure {
+            return await signOutDeviceDeviceIDClosure(deviceID)
+        }
+        return signOutDeviceDeviceIDReturnValue
+    }
     //MARK: - searchUsers
 
     var searchUsersSearchTermLimitUnderlyingCallsCount = 0

@@ -806,6 +806,84 @@ class ClientProxy: ClientProxyProtocol {
     func deletePusher(pushkey: String, appId: String) async throws {
         try await client.deletePusher(identifiers: .init(pushkey: pushkey, appId: appId))
     }
+
+    // sTalk: STMOB-87 — Active sessions screen helpers.
+    func fetchActiveDevices() async -> Result<[MatrixActiveDevice], ClientProxyError> {
+        let homeserverString = homeserver
+        let urlString = (homeserverString.hasSuffix("/") ? String(homeserverString.dropLast()) : homeserverString) + "/_matrix/client/v3/devices"
+        guard let url = URL(string: urlString) else {
+            return .failure(.invalidResponse)
+        }
+        let token: String
+        do {
+            token = try matrixAccessToken()
+        } catch {
+            return .failure(.sdkError(error))
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            guard status == 200 else {
+                MXLog.error("STMOB-87: GET /devices status=\(status)")
+                return .failure(.invalidResponse)
+            }
+            struct Wrapper: Decodable { let devices: [MatrixActiveDevice] }
+            let wrapper = try JSONDecoder().decode(Wrapper.self, from: data)
+            return .success(wrapper.devices)
+        } catch {
+            MXLog.error("STMOB-87: fetchActiveDevices failed: \(error)")
+            return .failure(.sdkError(error))
+        }
+    }
+
+    func signOutDevice(deviceID: String) async -> Result<Void, ClientProxyError> {
+        // Phase 1: попытка прямого DELETE без UIA. Если Synapse требует UIA —
+        // вернётся 401 с challenge JSON, обрабатываем как failure (Phase 2).
+        // Для OIDC (MAS) сессий Synapse часто принимает DELETE напрямую если
+        // у access token есть нужный scope.
+        let encodedID = deviceID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? deviceID
+        let homeserverString = homeserver
+        let base = homeserverString.hasSuffix("/") ? String(homeserverString.dropLast()) : homeserverString
+        let urlString = "\(base)/_matrix/client/v3/devices/\(encodedID)"
+        guard let url = URL(string: urlString) else { return .failure(.invalidResponse) }
+        let token: String
+        do {
+            token = try matrixAccessToken()
+        } catch {
+            return .failure(.sdkError(error))
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = "{}".data(using: .utf8)
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            switch status {
+            case 200, 204:
+                return .success(())
+            case 401:
+                // UIA challenge — Phase 1 не поддерживает interactive auth flow
+                MXLog.warning("STMOB-87: signOutDevice requires UIA flow (401)")
+                return .failure(.invalidResponse)
+            default:
+                MXLog.error("STMOB-87: DELETE /devices/\(deviceID) status=\(status)")
+                return .failure(.invalidResponse)
+            }
+        } catch {
+            MXLog.error("STMOB-87: signOutDevice failed: \(error)")
+            return .failure(.sdkError(error))
+        }
+    }
     
     func searchUsers(searchTerm: String, limit: UInt) async -> Result<SearchUsersResultsProxy, ClientProxyError> {
         do {

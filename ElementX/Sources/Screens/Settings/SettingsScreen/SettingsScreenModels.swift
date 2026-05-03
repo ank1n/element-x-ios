@@ -25,6 +25,7 @@ enum SettingsScreenViewModelAction: Equatable {
     case labs
     case developerOptions
     case cacheAndStorage
+    case activeSessions // sTalk: STMOB-87
     case logout
     case deactivateAccount
 }
@@ -77,6 +78,7 @@ enum SettingsScreenViewAction {
     case advancedSettings
     case labs
     case cacheAndStorage
+    case activeSessions // sTalk: STMOB-87
     case logout
     case deactivateAccount
 }

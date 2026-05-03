@@ -263,7 +263,14 @@ struct SettingsScreen: View {
                             context.send(viewAction: .manageAccount(url: url))
                         })
             }
-            
+
+            // sTalk: STMOB-87 — нативный экран активных сессий (parity с web)
+            ListRow(label: .default(title: "Активные сессии",
+                                    icon: \.devices),
+                    kind: .navigationLink {
+                        context.send(viewAction: .activeSessions)
+                    })
+
             if context.viewState.showBlockedUsers {
                 ListRow(label: .default(title: L10n.commonBlockedUsers,
                                         icon: \.block),

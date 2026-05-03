@@ -113,6 +113,8 @@ class SettingsFlowCoordinator: FlowCoordinatorProtocol {
                     presentDeveloperOptions()
                 case .cacheAndStorage:
                     presentCacheAndStorageScreen()
+                case .activeSessions:
+                    presentActiveSessionsScreen()
                 case .deactivateAccount:
                     presentDeactivateAccount()
                 }
@@ -284,6 +286,14 @@ class SettingsFlowCoordinator: FlowCoordinatorProtocol {
             }
             .store(in: &cancellables)
 
+        navigationStackCoordinator.push(coordinator)
+    }
+
+    // sTalk: STMOB-87 — Active sessions native screen
+    private func presentActiveSessionsScreen() {
+        let parameters = ActiveSessionsScreenCoordinatorParameters(clientProxy: flowParameters.userSession.clientProxy,
+                                                                   userIndicatorController: flowParameters.userIndicatorController)
+        let coordinator = ActiveSessionsScreenCoordinator(parameters: parameters)
         navigationStackCoordinator.push(coordinator)
     }
 

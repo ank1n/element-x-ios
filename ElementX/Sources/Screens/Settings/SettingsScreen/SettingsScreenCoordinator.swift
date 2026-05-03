@@ -32,6 +32,7 @@ enum SettingsScreenCoordinatorAction {
     case labs
     case developerOptions
     case cacheAndStorage
+    case activeSessions // sTalk: STMOB-87
     case deactivateAccount
 }
 
@@ -87,6 +88,8 @@ final class SettingsScreenCoordinator: CoordinatorProtocol {
                     actionsSubject.send(.developerOptions)
                 case .cacheAndStorage:
                     actionsSubject.send(.cacheAndStorage)
+                case .activeSessions:
+                    actionsSubject.send(.activeSessions)
                 case .logout:
                     actionsSubject.send(.logout)
                 case .deactivateAccount:
