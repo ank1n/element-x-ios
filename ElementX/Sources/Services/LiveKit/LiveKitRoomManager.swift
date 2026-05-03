@@ -249,6 +249,16 @@ final class LiveKitRoomManager: ObservableObject {
 
         try await room.connect(url: baseURL, token: token, connectOptions: connectOptions, roomOptions: roomOptions)
         MXLog.info("sTalk LiveKit: Connected with E2EE to room \(room.name ?? "unknown")")
+
+        // STMOB-101: diagnose — Molly reports egress sees bondar's tracks без SFrame
+        // header (e2eeDecryptOK=Fail=Passthrough=SIF=0 = plaintext Opus). По SDK
+        // wiring должно быть encryption=GCM на publishTrack. Логируем фактическое
+        // состояние e2eeManager сразу после connect, до setMicrophone/setCamera.
+        // Если frameEncryptionType=.none → setup() не сработал.
+        let mgr = room.e2eeManager
+        let frameType = mgr?.frameEncryptionType
+        DiagLog.write("E2EE_DEBUG", "post-connect: e2eeManager=\(mgr == nil ? "nil" : "present"), frameEncryptionType=\(String(describing: frameType))")
+
         updateState()
     }
 
@@ -726,7 +736,15 @@ extension LiveKitRoomManager: RoomDelegate {
     nonisolated func room(_ room: Room, participant: LocalParticipant, didPublishTrack publication: LocalTrackPublication) {
         Task { @MainActor in
             self.updateState()
-            MXLog.info("sTalk LiveKit: Published local track: \(publication.kind)")
+            // STMOB-101: critical diagnostic — log encryptionType ОТ SERVER на наш
+            // publishTrack request. Если encryptionType=.none значит SDK отправил
+            // encryption=NONE флаг в SignalRequest (или server stripped его).
+            // Frame cryptor НЕ создаётся для .none — track уходит plaintext.
+            let pubKind = "\(publication.kind)"
+            let pubSid = publication.sid.stringValue
+            let encType = "\(publication.encryptionType)"
+            DiagLog.write("E2EE_DEBUG", "didPublishTrack kind=\(pubKind) sid=\(pubSid) encryptionType=\(encType)")
+            MXLog.info("sTalk LiveKit: Published local track: \(publication.kind) encryption=\(publication.encryptionType)")
         }
     }
 }
