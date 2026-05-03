@@ -2479,5 +2479,56 @@ Web reuse device_id через `localStorage` корректно — iOS-side р
 
 ---
 
+### 57. ✅ STMOB-100 PiP active speaker через @Published activeSpeakers + STMOB-101 v3 event-driven rotation (build 102)
+
+**Дата**: 2026-05-03
+**Коммиты**: `a8c9dfc0` (STMOB-100), `fe45cba9` (STMOB-101 v3)
+**Plane**: STMOB-100 (medium), STMOB-101 (urgent)
+
+#### A. STMOB-100 — PiP мини-окно не переключалось на active speaker (`a8c9dfc0`)
+
+Build 99 / CHANGELOG #52 попытка фикса (`28259ff9`) не работала: заменил `remotes.first(where: isSpeaking)` на `max(by: audioLevel)` — логика правильная, но `audioLevel` не `@Published`. SwiftUI computed property `activeSpeaker` пересчитывается только при `@ObservedObject` change → audioLevel changes не триггерят re-render → PiP залипает на первом по JOIN.
+
+**v2 правильный путь:**
+- `LiveKitRoomManager`: новый `@Published var activeSpeakers: [Participant] = []`
+- `RoomDelegate room(_:didUpdateSpeakingParticipants:)` — обновляется SDK автоматически (sorted by audioLevel desc)
+- `ActiveSpeakerMiniView`: использует `roomManager.activeSpeakers` вместо локального sort
+- Filter remote-only (исключая local participant — себя в PiP не показываем), `!muted` фильтр, fallback `remotes.first`
+
+SwiftUI re-render теперь триггерится `@Published activeSpeakers` — PiP переключается на active speaker через 1-2 сек.
+
+#### B. STMOB-101 v3 — Event-driven E2EE key rotation, убрали timer cascade (`fe45cba9`)
+
+**Регрессия build 100/101.** Molly STMOB-101 цифры: tymbay 99.7% e2eeDecryptFail в recording, ms.implica случайно OK. Bondar шлёт `m.room.encrypted` каждые 30 сек → каждый Element Call widget делает SFrame KID ratchet → у egress / Key Server / KS-Bridge cached только initial KID, последующие frames с новым KID → cipher auth fail.
+
+**v1 (build 99/100):** for-loop 12×10s regenerate + while 30s rebroadcast — 13+ ratchets за первые 2 мин.
+**v2 (build 101):** то же + DiagLog + foreground observer.
+**v3 (этот коммит):** event-driven, close to Element Call upstream:
+
+- ❌ Удалили for-loop 12×10s regenerate
+- ❌ Удалили while-loop 30s rebroadcast
+- ❌ Удалили `keyRebroadcastTask` property
+- ✅ Initial `sendOurEncryptionKey` — один раз 3s после start
+- ✅ Foreground entry → `rebroadcastCurrentEncryptionKey` (same key, no rotation)
+- ✅ JOIN newcomer/reconnect (`$remoteParticipants` new identity) → `rebroadcastCurrentEncryptionKey` (same KID — newcomer должен расшифровать)
+- ✅ LEAVE (identity исчезла) → `sendOurEncryptionKey` (regenerate KID — security E2EE rotation, leaving peer не decrypt'ит future)
+
+Rotations теперь только при реальных membership events. Между ними KID стабилен → egress / KS-Bridge успевают догнать.
+
+**NB:** STMOB-101 цифра "bondar plaintext publish" (e2eeDecryptOK=0 Fail=0) — НЕ plaintext. Real-time live calls работают (web слышит iPhone и наоборот) — если бы bondar публиковал plaintext, web/iOS decrypt fail и silence. **Это вероятно STMOB-89 identity mismatch:** egress lookup'ит ключ по identity LiveKit RTP, а KS-Bridge хранит под другой identity → egress не находит ключ → не пытается decrypt → counters OK=0 Fail=0. Отдельная задача STMOB-89.
+
+#### Acceptance
+- Long groupcall >5 мин, 3+ participants — recording должен decrypt большинство участников
+- Web force-refresh после 3 мин — должен сразу слышать bondar (JOIN trigger покроет)
+- В Synapse от bondar `m.room.encrypted` events — теперь только при JOIN/LEAVE events, не каждые 30 сек
+- PiP мини-окно (group call) — переключается на active speaker через 1-2 сек
+
+#### Файлы:
+- `ios/ElementX/Sources/Services/LiveKit/LiveKitRoomManager.swift` — +`@Published activeSpeakers`, +`room(_:didUpdateSpeakingParticipants:)` delegate
+- `ios/ElementX/Sources/Screens/CallScreen/View/NativeCallVideoView.swift` — `ActiveSpeakerMiniView.activeSpeaker` использует `roomManager.activeSpeakers`
+- `ios/ElementX/Sources/Services/NativeCall/NativeCallSession.swift` — удалили timer loops, расширили `$remoteParticipants` observer для JOIN/LEAVE events, оставили foregroundObserver
+
+---
+
 **Дата создания**: 2026-01-28
 **Последнее обновление**: 2026-05-03
