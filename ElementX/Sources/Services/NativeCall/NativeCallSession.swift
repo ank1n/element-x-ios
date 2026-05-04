@@ -526,6 +526,12 @@ final class NativeCallSession: ObservableObject {
         Task.detached {
             await Self.sendWidgetMessageWithRetry(label: "send_event(rb)", message: roomEventMsg, driver: driver)
         }
+
+        // STMOB-101 v2: re-publish в KS на каждом rebroadcast — резерв против
+        // KS pod restart / cache eviction. Идемпотентно (тот же ключ).
+        Task.detached { [weak self] in
+            await self?.publishKeyToKeyServer(key: key, label: "rebroadcast")
+        }
     }
 
     /// Send widget driver message with exponential backoff retry and explicit result parsing.
@@ -632,31 +638,58 @@ final class NativeCallSession: ObservableObject {
     }
     #endif
 
-    /// Publish our E2EE key to the key-server for recording decryption
-    private func publishKeyToKeyServer(key: String) async {
-        guard let roomName = generateLiveKitRoomName() else { return }
+    /// STMOB-101 v2: Publish our E2EE key to key-server so recording-api egress
+    /// может расшифровывать наши audio/video frames. Молли подтвердила (2026-05-04)
+    /// что её server-side KS-Bridge подход не работает — encryption_keys идут
+    /// через olm-encrypted to_device (msc3819), Synapse не может прочитать
+    /// содержимое. Решение возможно ТОЛЬКО на iOS.
+    ///
+    /// Format (per Molly):
+    /// POST https://stalk.implica.ru/api/keys/pp/{lkRoom}/{userId:deviceId}
+    ///   X-Service-Key: key-server-service-secret-2026   (fallback, всегда работает)
+    ///   Authorization: Bearer <Matrix access token>     (предпочтительно)
+    /// Body: {"key": "<base64url-no-padding>", "keyIndex": <int>}
+    private func publishKeyToKeyServer(key: String, label: String = "init") async {
+        guard let roomName = generateLiveKitRoomName() else {
+            DiagLog.write("E2EE", "KS publish[\(label)] SKIP — no lkRoomName")
+            return
+        }
         let identity = "\(userId):\(deviceId)"
         let encodedRoom = roomName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? roomName
         let encodedIdentity = identity.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? identity
 
-        // Key-server — existing ingress at /api/keys
         let keyServerURL = "https://stalk.implica.ru/api/keys/pp/\(encodedRoom)/\(encodedIdentity)"
-
         guard let url = URL(string: keyServerURL) else { return }
-        let body: [String: Any] = ["key": key, "keyIndex": 0]
+
+        // base64 → base64url-no-padding (per Molly's spec)
+        let keyBase64URL = key
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+
+        let body: [String: Any] = ["key": keyBase64URL, "keyIndex": 0]
         guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else { return }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("key-server-service-secret-2026", forHTTPHeaderField: "X-Service-Key")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
 
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.shared.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            MXLog.info("sTalk NativeCall E2EE: Key published to key-server → \(status)")
+            if status >= 200, status < 300 {
+                DiagLog.write("E2EE", "KS publish[\(label)] OK \(status) room=\(roomName) identity=\(identity)")
+                MXLog.info("sTalk NativeCall E2EE: KS publish[\(label)] → \(status)")
+            } else {
+                let bodyStr = String(data: data, encoding: .utf8) ?? "?"
+                DiagLog.write("E2EE", "KS publish[\(label)] FAIL \(status) body=\(bodyStr.prefix(200))")
+                MXLog.error("sTalk NativeCall E2EE: KS publish[\(label)] HTTP \(status) body=\(bodyStr)")
+            }
         } catch {
+            DiagLog.write("E2EE", "KS publish[\(label)] ERR \(error)")
             MXLog.error("sTalk NativeCall E2EE: Key publish to key-server failed: \(error)")
         }
     }
