@@ -62,20 +62,18 @@ struct CallBannerWindowContent<Tag: Hashable>: View {
     }
 
     var body: some View {
-        GeometryReader { geo in
-            VStack(spacing: 0) {
-                if isVisible, let name = coordinator.minimizedCallDisplayName {
-                    CallBannerButton(displayName: name,
-                                     elapsedTime: coordinator.minimizedCallElapsedTime,
-                                     statusBarInset: geo.safeAreaInsets.top,
-                                     onTap: { coordinator.restoreCallHandler?() })
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                }
-                Spacer(minLength: 0)
+        VStack(spacing: 0) {
+            if isVisible, let name = coordinator.minimizedCallDisplayName {
+                CallBannerButton(displayName: name,
+                                 elapsedTime: coordinator.minimizedCallElapsedTime,
+                                 onTap: { coordinator.restoreCallHandler?() })
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Spacer(minLength: 0)
         }
-        .ignoresSafeArea(.all, edges: .all)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Не игнорим safe area здесь — баннер должен быть НИЖЕ status bar.
+        // Зелёный фон CallBannerButton отдельно расширен в status bar zone.
         .animation(.easeInOut(duration: 0.25), value: isVisible)
         .onAppear { onVisibilityChange(isVisible) }
         .onChange(of: isVisible) { _, new in onVisibilityChange(new) }
@@ -85,7 +83,6 @@ struct CallBannerWindowContent<Tag: Hashable>: View {
 private struct CallBannerButton: View {
     let displayName: String
     let elapsedTime: TimeInterval
-    let statusBarInset: CGFloat
     let onTap: () -> Void
 
     private var timeString: String {
@@ -103,36 +100,38 @@ private struct CallBannerButton: View {
                     .modifier(CallBannerPulse())
 
                 Image(systemName: "phone.fill")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.white)
 
                 Text(displayName)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(.white)
                     .lineLimit(1)
 
                 Text(timeString)
-                    .font(.system(size: 13, weight: .medium).monospacedDigit())
-                    .foregroundColor(.white.opacity(0.85))
+                    .font(.system(size: 14, weight: .medium).monospacedDigit())
+                    .foregroundColor(.white.opacity(0.9))
 
                 Spacer()
 
                 Text(SL10n.actionBack)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.white)
 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(.white.opacity(0.7))
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.white.opacity(0.8))
             }
             .padding(.horizontal, 16)
-            .padding(.top, statusBarInset + 2)
-            .padding(.bottom, 6)
+            .padding(.vertical, 10)
             .frame(maxWidth: .infinity)
             .background(LinearGradient(colors: [Color(red: 0.18, green: 0.8, blue: 0.44),
                                                 Color(red: 0.13, green: 0.68, blue: 0.38)],
                                        startPoint: .leading,
-                                       endPoint: .trailing))
+                                       endPoint: .trailing)
+                    // Зелёный фон уезжает ВВЕРХ в зону status bar — iOS рисует
+                    // время/батарею белым ПОВЕРХ.
+                    .ignoresSafeArea(.all, edges: .top))
         }
         .buttonStyle(.plain)
     }
@@ -148,8 +147,9 @@ private struct CallBannerPulse: ViewModifier {
     }
 }
 
-/// Высота банера ниже status bar (без учёта самого status bar zone).
-/// Используется как `additionalSafeAreaInsets.top` на mainWindow.
+/// Высота банера ниже status bar (только видимая часть, без status bar zone).
+/// Используется как `additionalSafeAreaInsets.top` на mainWindow для сжатия контента.
+/// Соответствует CallBannerButton.padding(.vertical, 10) * 2 + content_height (~18) ≈ 38pt.
 enum CallBannerMetrics {
-    static let inlineHeight: CGFloat = 26
+    static let inlineHeight: CGFloat = 38
 }
