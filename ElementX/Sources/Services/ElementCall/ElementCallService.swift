@@ -429,6 +429,15 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
                 callProvider.reportCall(with: incomingCallID.callKitID, endedAt: nil, reason: .unanswered)
                 // Notify about missed call
                 actionsSubject.send(.missedCall(roomID: incomingCallID.roomID))
+                // STMOB-87 follow-up: build 100 hotfix очищал incomingCallID
+                // только в tearDownCallSession. Если user не accept'ит звонок
+                // и сработает unanswered timeout (90s) — incomingCallID не
+                // очищается → следующий VoIP push в ту же комнату попадёт
+                // в dedup ветку и будет cancel'нут как duplicate (silent push).
+                // Подтверждено в логе 68: callKitID=02C762CA от unanswered call
+                // 09:46 был использован как "duplicate" для нового call в 09:54.
+                self.incomingCallID = nil
+                self.endUnansweredCallTask = nil
             }
         }
     }
