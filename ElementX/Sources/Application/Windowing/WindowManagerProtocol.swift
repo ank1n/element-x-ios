@@ -39,12 +39,21 @@ protocol WindowManagerProtocol: AnyObject, OrientationManagerProtocol {
     var globalSearchWindow: UIWindow! { get }
     /// A secondary window that can be presented instead of the main/overlay window combo.
     var alternateWindow: UIWindow! { get }
-    
+
     /// All the windows being managed
     var windows: [UIWindow] { get }
-    
+
     /// Makes the global search window key. Used to get automatic text field focus.
     func showGlobalSearch()
-    
+
     func hideGlobalSearch()
+
+    /// STMOB-102 Phase 3: Подключает CallBannerWindow к жизненному циклу
+    /// активного звонка. SwiftUI хост наблюдает coordinator.isCallMinimized /
+    /// minimizedCallDisplayName и автоматически показывает/скрывает зелёную
+    /// полосу поверх status bar.
+    func installCallBanner<Tag: Hashable>(coordinator: NavigationTabCoordinator<Tag>)
+
+    /// Снимает CallBannerWindow (например при logout).
+    func uninstallCallBanner()
 }

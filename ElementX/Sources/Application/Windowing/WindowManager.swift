@@ -18,9 +18,12 @@ class WindowManager: SecureWindowManagerProtocol {
     private(set) var overlayWindow: UIWindow!
     private(set) var globalSearchWindow: UIWindow!
     private(set) var alternateWindow: UIWindow!
-        
+    /// STMOB-102 Phase 3: window для зелёной полосы активного звонка
+    /// (Telegram/WhatsApp-style native pattern).
+    private(set) var callBannerWindow: CallBannerWindow!
+
     var windows: [UIWindow] {
-        [mainWindow, overlayWindow, globalSearchWindow, alternateWindow]
+        [mainWindow, overlayWindow, globalSearchWindow, alternateWindow, callBannerWindow]
     }
     
     // periphery:ignore - auto cancels when reassigned
@@ -50,8 +53,41 @@ class WindowManager: SecureWindowManagerProtocol {
         
         alternateWindow = UIWindow(windowScene: windowScene)
         alternateWindow.tintColor = .compound.textActionPrimary
-        
+
+        callBannerWindow = CallBannerWindow(windowScene: windowScene)
+
         delegate?.windowManagerDidConfigureWindows(self)
+    }
+
+    // MARK: - STMOB-102 Phase 3: Call banner window
+
+    private var bannerHostingController: UIViewController?
+
+    func installCallBanner<Tag: Hashable>(coordinator: NavigationTabCoordinator<Tag>) {
+        // Re-install: tear down предыдущий host если был
+        uninstallCallBanner()
+
+        let content = CallBannerWindowContent(coordinator: coordinator) { [weak self] visible in
+            guard let self else { return }
+            // Анимированно сжимаем mainWindow контент вниз на высоту полосы.
+            UIView.animate(withDuration: 0.25) {
+                self.mainWindow.rootViewController?.additionalSafeAreaInsets.top = visible ? CallBannerMetrics.inlineHeight : 0
+                self.mainWindow.rootViewController?.view.setNeedsLayout()
+            }
+        }
+        let host = CallBannerHostingController(rootView: content)
+        host.view.backgroundColor = .clear
+        callBannerWindow.rootViewController = host
+        callBannerWindow.isHidden = false
+        bannerHostingController = host
+    }
+
+    func uninstallCallBanner() {
+        callBannerWindow?.isHidden = true
+        callBannerWindow?.rootViewController = nil
+        bannerHostingController = nil
+        // Reset additional inset на mainWindow
+        mainWindow?.rootViewController?.additionalSafeAreaInsets.top = 0
     }
     
     func switchToMain() {

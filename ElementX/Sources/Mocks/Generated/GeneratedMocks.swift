@@ -21270,6 +21270,26 @@ class WindowManagerMock: WindowManagerProtocol, @unchecked Sendable {
         hideGlobalSearchCallsCount += 1
         hideGlobalSearchClosure?()
     }
+    //MARK: - installCallBanner
+
+    var installCallBannerCallsCount = 0
+    var installCallBannerCalled: Bool { installCallBannerCallsCount > 0 }
+    var installCallBannerClosure: (() -> Void)?
+
+    func installCallBanner<Tag: Hashable>(coordinator: NavigationTabCoordinator<Tag>) {
+        installCallBannerCallsCount += 1
+        installCallBannerClosure?()
+    }
+    //MARK: - uninstallCallBanner
+
+    var uninstallCallBannerCallsCount = 0
+    var uninstallCallBannerCalled: Bool { uninstallCallBannerCallsCount > 0 }
+    var uninstallCallBannerClosure: (() -> Void)?
+
+    func uninstallCallBanner() {
+        uninstallCallBannerCallsCount += 1
+        uninstallCallBannerClosure?()
+    }
     //MARK: - setOrientation
 
     var setOrientationUnderlyingCallsCount = 0

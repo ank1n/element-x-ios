@@ -1425,6 +1425,7 @@
 		EAA345FC7F1A608416635009 /* AppAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BC0DE75DBE2616BDCA45175 /* AppAppearance.swift */; };
 		EAA79C614B77615CD838D77A /* RoomSummaryProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1316D0D6E421AFC8D732DFD3 /* RoomSummaryProviderTests.swift */; };
 		EAC310A77EC0D5226E58F2E8 /* NotificationHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 675983E80AA56FCD55719D13 /* NotificationHandler.swift */; };
+		EAC6DDF2E79F612AE5E2238D /* CallBannerWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD4AC95BDDBE41569B1E04E9 /* CallBannerWindow.swift */; };
 		EAF25319452114DB90CD189E /* Duration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F0A9478261D9E641C680B0F /* Duration.swift */; };
 		EB036F2CB9553CBB0143498E /* MeetingDetailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A959C4C820E626DDC322E0C9 /* MeetingDetailViewModel.swift */; };
 		EB0A314E9A5F4B55852A0F3A /* RestorationToken.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C700220CEF352BB89A97F98 /* RestorationToken.swift */; };
@@ -2912,6 +2913,7 @@
 		DCB5531615F32CA79B7EF01B /* EffectsScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EffectsScene.swift; sourceTree = "<group>"; };
 		DCF34721BDF3586E20D2AB97 /* ActiveSessionsScreenViewModelProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveSessionsScreenViewModelProtocol.swift; sourceTree = "<group>"; };
 		DD44CB0A03AA3E7BB96894F9 /* UserProfileScreenViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserProfileScreenViewModel.swift; sourceTree = "<group>"; };
+		DD4AC95BDDBE41569B1E04E9 /* CallBannerWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallBannerWindow.swift; sourceTree = "<group>"; };
 		DD6B4CC80A94CA47C8F45ADB /* LoginHomeserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginHomeserver.swift; sourceTree = "<group>"; };
 		DD85A1B58844C0CD79318788 /* cs */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = cs; path = cs.lproj/Localizable.strings; sourceTree = "<group>"; };
 		DDDEDA05D2A7B5ABA337464A /* AppLockSetupSettingsScreenViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLockSetupSettingsScreenViewModel.swift; sourceTree = "<group>"; };
@@ -3889,6 +3891,7 @@
 		29B0EABAD15D9E545D00DAF6 /* Windowing */ = {
 			isa = PBXGroup;
 			children = (
+				DD4AC95BDDBE41569B1E04E9 /* CallBannerWindow.swift */,
 				08D63E9CFE5CAE1AC767E377 /* OrientationManagerProtocol.swift */,
 				566009EC9E145DBA0BDA42CF /* SceneDelegate.swift */,
 				A87AAD9FE4633AA3172B4DD2 /* WindowManager.swift */,
@@ -8301,6 +8304,7 @@
 				2B6D8743BA50C604BF13A264 /* CacheAndStorageScreen.swift in Sources */,
 				D6609B596C899B9BAC9EA4B8 /* CacheAndStorageScreenCoordinator.swift in Sources */,
 				5008743FB70A5A87FE0ECAC0 /* CalendarGridView.swift in Sources */,
+				EAC6DDF2E79F612AE5E2238D /* CallBannerWindow.swift in Sources */,
 				9E560349126BA3B8709ABB92 /* CallDetailScreen.swift in Sources */,
 				37E3336FC8A1569C43ECCF11 /* CallDetailScreenCoordinator.swift in Sources */,
 				23046D1BAF2150E1E04E4FA3 /* CallDetailScreenModels.swift in Sources */,
@@ -9835,7 +9839,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 104;
+				CURRENT_PROJECT_VERSION = 105;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = Z44H678J3R;
 				ENABLE_BITCODE = NO;
@@ -10070,7 +10074,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 104;
+				CURRENT_PROJECT_VERSION = 105;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = Z44H678J3R;
 				ENABLE_BITCODE = NO;

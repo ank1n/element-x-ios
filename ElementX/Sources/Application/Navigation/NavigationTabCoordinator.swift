@@ -400,12 +400,11 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
                 .id(module.id)
         }
         .accessibilityHidden(navigationTabCoordinator.overlayModule?.coordinator != nil && navigationTabCoordinator.overlayPresentationMode == .fullScreen)
-        .safeAreaInset(edge: .top, spacing: 0) {
-            activeCallBannerInset
-        }
         .overlay {
             // sTalk: Single coordinator.toPresentable() call to prevent WKWebView recreation.
             // When minimized, shrink to mini window; when fullscreen, fill the screen.
+            // STMOB-102 Phase 3: зелёная полоса звонка теперь в CallBannerWindow (over status bar),
+            // здесь — только mini floating video окно.
             if let coordinator = navigationTabCoordinator.overlayModule?.coordinator {
                 callOverlay(coordinator: coordinator)
             }
@@ -444,11 +443,9 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
                 .id(module.id)
         }
         .accessibilityHidden(navigationTabCoordinator.overlayModule?.coordinator != nil && navigationTabCoordinator.overlayPresentationMode == .fullScreen)
-        .safeAreaInset(edge: .top, spacing: 0) {
-            activeCallBannerInset
-        }
         .overlay {
             // sTalk: Single coordinator.toPresentable() call to prevent WKWebView recreation
+            // STMOB-102 Phase 3: banner moved to CallBannerWindow.
             if let coordinator = navigationTabCoordinator.overlayModule?.coordinator {
                 callOverlay(coordinator: coordinator)
             }
@@ -461,14 +458,14 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
 
     /// Single-instance call overlay that switches between fullscreen and mini-window
     /// without recreating the WKWebView (structural identity preserved).
-    /// STMOB-102: green call banner moved OUT of overlay to safeAreaInset
-    /// so content tabs (chat list, calls list) корректно поджимаются под него,
-    /// иначе banner перекрывает первую строку списка (overlay рисуется поверх).
+    /// STMOB-102 Phase 3: зелёная полоса звонка живёт в CallBannerWindow (отдельный
+    /// UIWindow поверх status bar) — здесь только mini floating видео-окно
+    /// в свободно перетаскиваемой позиции.
     @ViewBuilder
     private func callOverlay(coordinator: any CoordinatorProtocol) -> some View {
         let minimized = navigationTabCoordinator.isCallMinimized
         if minimized {
-            // Mini floating video window only — banner теперь в safeAreaInset
+            // Mini floating video окно — banner отдельно в CallBannerWindow.
             GeometryReader { geometry in
                 coordinator.toPresentable()
                     .frame(width: 140, height: 200)
@@ -496,23 +493,6 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
         }
     }
 
-    /// STMOB-102: banner для активного звонка через safeAreaInset.
-    /// Это сжимает scroll content контента табов сверху, чтобы не перекрывать
-    /// первую строку списка. Только когда CallScreen minimized.
-    @ViewBuilder
-    private var activeCallBannerInset: some View {
-        if navigationTabCoordinator.overlayModule?.coordinator != nil,
-           navigationTabCoordinator.isCallMinimized,
-           let callName = navigationTabCoordinator.minimizedCallDisplayName {
-            ActiveCallBanner(displayName: callName,
-                             elapsedTime: navigationTabCoordinator.minimizedCallElapsedTime,
-                             onTap: {
-                                 navigationTabCoordinator.restoreCallHandler?()
-                             })
-                             .transition(.move(edge: .top).combined(with: .opacity))
-        }
-    }
-
     @State private var miniCallOffset: CGSize = .zero
     @State private var miniCallDragOffset: CGSize = .zero
 
@@ -525,71 +505,5 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
     }
 }
 
-// MARK: - sTalk Active Call Banner
-
-/// Green banner showing active call — like Telegram/WhatsApp.
-/// Displayed at top of screen on all tabs when call is minimized.
-private struct ActiveCallBanner: View {
-    let displayName: String
-    let elapsedTime: TimeInterval
-    let onTap: () -> Void
-
-    private var timeString: String {
-        let m = Int(elapsedTime) / 60
-        let s = Int(elapsedTime) % 60
-        return String(format: "%d:%02d", m, s)
-    }
-
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 8) {
-                // Pulsing red dot
-                Circle()
-                    .fill(Color.white)
-                    .frame(width: 8, height: 8)
-                    .modifier(PulseAnimation())
-
-                Image(systemName: "phone.fill")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.white)
-
-                Text(displayName)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white)
-                    .lineLimit(1)
-
-                Text(timeString)
-                    .font(.system(size: 13, weight: .medium).monospacedDigit())
-                    .foregroundColor(.white.opacity(0.85))
-
-                Spacer()
-
-                Text(SL10n.actionBack)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.white)
-
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(.white.opacity(0.7))
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(LinearGradient(colors: [Color(red: 0.18, green: 0.8, blue: 0.44), Color(red: 0.13, green: 0.68, blue: 0.38)],
-                                       startPoint: .leading,
-                                       endPoint: .trailing))
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-/// Pulsing animation modifier for the call indicator dot
-private struct PulseAnimation: ViewModifier {
-    @State private var isPulsing = false
-
-    func body(content: Content) -> some View {
-        content
-            .opacity(isPulsing ? 0.3 : 1.0)
-            .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: isPulsing)
-            .onAppear { isPulsing = true }
-    }
-}
+// STMOB-102 Phase 3: ActiveCallBanner перенесён в CallBannerWindow.swift —
+// теперь рисуется в отдельном UIWindow поверх status bar (Telegram/WhatsApp pattern).

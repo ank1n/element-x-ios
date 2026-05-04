@@ -80,6 +80,12 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         navigationTabCoordinator = NavigationTabCoordinator()
         navigationRootCoordinator.setRootCoordinator(navigationTabCoordinator)
 
+        // STMOB-102 Phase 3 (Option C): зелёная полоса активного звонка через
+        // отдельный UIWindow поверх status bar — Telegram/WhatsApp pattern.
+        // Сжимает основной контент через additionalSafeAreaInsets и не блокирует
+        // navigation bar / back button (передаёт touches через PassthroughWindow).
+        flowParameters.windowManager.installCallBanner(coordinator: navigationTabCoordinator)
+
         // 1. Contacts tab
         let contactsStackCoordinator = NavigationStackCoordinator()
         contactsTabFlowCoordinator = ContactsTabFlowCoordinator(navigationStackCoordinator: contactsStackCoordinator,
