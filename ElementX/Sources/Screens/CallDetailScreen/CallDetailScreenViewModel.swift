@@ -282,8 +282,12 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
     // MARK: - Helpers
 
     private var egressId: String? {
+        // Build 112: было `id.hasPrefix("EG_")` — устаревшее предположение.
+        // Реальный формат egress_id в recording-api PG: `session_<timestamp_ms>`
+        // (см. transcriptions.egress_id). Старая проверка всегда давала nil →
+        // loadTranscription делал early return → пустой UI на CallDetailScreen.
+        // Web работает потому что не имеет такого filter'а.
         let id = state.call.id
-        // egressId is the call id for server recordings (starts with "EG_")
-        return id.hasPrefix("EG_") ? id : nil
+        return id.isEmpty ? nil : id
     }
 }

@@ -50,11 +50,6 @@ struct Transcription: Codable, Equatable {
     let language: String
     let segments: [TranscriptionSegment]
     let fullText: String
-
-    enum CodingKeys: String, CodingKey {
-        case language, segments
-        case fullText = "full_text"
-    }
 }
 
 struct SummaryTopic: Codable, Identifiable, Equatable {
@@ -73,12 +68,6 @@ struct TranscriptionSummary: Codable, Equatable {
     let keyPoints: [String]
     let actionItems: [String]
     let topics: [SummaryTopic]?
-
-    enum CodingKeys: String, CodingKey {
-        case text, topics
-        case keyPoints = "key_points"
-        case actionItems = "action_items"
-    }
 }
 
 struct TranscriptionError: Codable, Equatable {
