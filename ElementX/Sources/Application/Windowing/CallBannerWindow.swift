@@ -18,6 +18,11 @@ import SwiftUI
 /// доступны. `additionalSafeAreaInsets.top` на mainWindow.rootViewController сжимает
 /// контент основного приложения вниз на высоту полосы.
 final class CallBannerWindow: UIWindow {
+    /// STMOB-102 build 108 fix: Высота тапабельной зоны banner-а в координатах окна
+    /// (status bar + banner content). Обновляется WindowManager-ом из колбека
+    /// CallBannerWindowContent.onVisibilityChange. 0 когда banner скрыт.
+    var tappableTopHeight: CGFloat = 0
+
     override init(windowScene: UIWindowScene) {
         super.init(windowScene: windowScene)
         windowLevel = UIWindow.Level.statusBar - 1
@@ -31,12 +36,14 @@ final class CallBannerWindow: UIWindow {
         fatalError("init(coder:) has not been implemented")
     }
 
-    /// Pass через окно везде кроме самой полосы — чтобы touch на nav bar / списки
-    /// долетал до mainWindow.
+    /// Hit-test: внутри banner zone (y < tappableTopHeight) — обрабатываем здесь
+    /// (Button → onTap → restoreCallHandler). Снаружи — passthrough к mainWindow,
+    /// чтобы nav bar / списки оставались интерактивными.
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        guard let hit = super.hitTest(point, with: event), hit !== self else { return nil }
-        if hit === rootViewController?.view { return nil }
-        return hit
+        guard tappableTopHeight > 0, point.y < tappableTopHeight else {
+            return nil
+        }
+        return super.hitTest(point, with: event)
     }
 }
 
@@ -52,7 +59,8 @@ final class CallBannerHostingController<Content: View>: UIHostingController<Cont
 struct CallBannerWindowContent<Tag: Hashable>: View {
     let coordinator: NavigationTabCoordinator<Tag>
     /// Колбек: банер показан/скрыт — WindowManager использует это для
-    /// `additionalSafeAreaInsets.top` на mainWindow.
+    /// `additionalSafeAreaInsets.top` на mainWindow и обновления
+    /// `CallBannerWindow.tappableTopHeight` (для hitTest).
     let onVisibilityChange: (Bool) -> Void
 
     private var isVisible: Bool {
@@ -71,9 +79,10 @@ struct CallBannerWindowContent<Tag: Hashable>: View {
             }
             Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // Не игнорим safe area здесь — баннер должен быть НИЖЕ status bar.
-        // Зелёный фон CallBannerButton отдельно расширен в status bar zone.
+        // Только banner row занимает горизонтальную полосу; ниже — пустое место,
+        // которое НЕ интерактивно (window.hitTest passthrough'ит y > tappableHeight).
+        // Не игнорим safe area здесь — banner естественно НИЖЕ status bar.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(.easeInOut(duration: 0.25), value: isVisible)
         .onAppear { onVisibilityChange(isVisible) }
         .onChange(of: isVisible) { _, new in onVisibilityChange(new) }
@@ -122,9 +131,12 @@ private struct CallBannerButton: View {
                     .font(.system(size: 12, weight: .bold))
                     .foregroundColor(.white.opacity(0.8))
             }
-            .padding(.horizontal, 16)
+            // Build 108: trailing 24pt — отступ от правого края (под зону компоуз-иконки).
+            .padding(.leading, 16)
+            .padding(.trailing, 24)
             .padding(.vertical, 10)
             .frame(maxWidth: .infinity)
+            .contentShape(Rectangle()) // explicit hit shape для всей green зоны
             .background(LinearGradient(colors: [Color(red: 0.18, green: 0.8, blue: 0.44),
                                                 Color(red: 0.13, green: 0.68, blue: 0.38)],
                                        startPoint: .leading,
