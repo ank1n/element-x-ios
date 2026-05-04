@@ -655,8 +655,15 @@ final class NativeCallSession: ObservableObject {
             return
         }
         let identity = "\(userId):\(deviceId)"
-        let encodedRoom = roomName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? roomName
-        let encodedIdentity = identity.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? identity
+
+        // Build 110: STRICT RFC 3986 unreserved encoding (per Molly).
+        // urlPathAllowed разрешает `/` `@` `:` — это ломает routing когда lkRoom
+        // содержит `/` или identity содержит `@dp.bondar:stalk:device_id`.
+        // Encode всё кроме alphanumerics и `-._~`.
+        var pathSegmentAllowed = CharacterSet.alphanumerics
+        pathSegmentAllowed.insert(charactersIn: "-._~")
+        let encodedRoom = roomName.addingPercentEncoding(withAllowedCharacters: pathSegmentAllowed) ?? roomName
+        let encodedIdentity = identity.addingPercentEncoding(withAllowedCharacters: pathSegmentAllowed) ?? identity
 
         let keyServerURL = "https://stalk.implica.ru/api/keys/pp/\(encodedRoom)/\(encodedIdentity)"
         guard let url = URL(string: keyServerURL) else { return }
@@ -673,7 +680,8 @@ final class NativeCallSession: ObservableObject {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("key-server-service-secret-2026", forHTTPHeaderField: "X-Service-Key")
+        // Build 110: правильный SERVICE_SECRET — `svc` (build 108 был `service`, который default но не prod env).
+        request.setValue("key-server-svc-secret-2026", forHTTPHeaderField: "X-Service-Key")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
 
