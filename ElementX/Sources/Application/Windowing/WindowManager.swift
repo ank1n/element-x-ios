@@ -74,10 +74,11 @@ class WindowManager: SecureWindowManagerProtocol {
                 self.mainWindow.rootViewController?.additionalSafeAreaInsets.top = visible ? CallBannerMetrics.inlineHeight : 0
                 self.mainWindow.rootViewController?.view.setNeedsLayout()
             }
-            // Build 108: hit-test gating. tappableHeight = status bar + banner content,
-            // чтобы вся зелёная зона (включая под status bar где время/батарея) кликалась.
+            // Build 108: hit-test gating. tappableHeight = status bar + banner content (БЕЗ gap),
+            // чтобы вся зелёная зона (включая под status bar где время/батарея) кликалась,
+            // а пробел ниже banner — passthrough к nav bar.
             let safeTop = self.callBannerWindow.safeAreaInsets.top
-            self.callBannerWindow.tappableTopHeight = visible ? (safeTop + CallBannerMetrics.inlineHeight) : 0
+            self.callBannerWindow.tappableTopHeight = visible ? (safeTop + CallBannerMetrics.bannerContentHeight) : 0
         }
         let host = CallBannerHostingController(rootView: content)
         host.view.backgroundColor = .clear

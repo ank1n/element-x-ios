@@ -159,9 +159,16 @@ private struct CallBannerPulse: ViewModifier {
     }
 }
 
-/// Высота банера ниже status bar (только видимая часть, без status bar zone).
-/// Используется как `additionalSafeAreaInsets.top` на mainWindow для сжатия контента.
-/// Соответствует CallBannerButton.padding(.vertical, 10) * 2 + content_height (~18) ≈ 38pt.
+/// Метрики banner-а ниже status bar.
+/// - bannerContentHeight: видимая зелёная зона (только banner, без status bar). Используется
+///   как `tappableTopHeight` для hit-test (тап только в green).
+/// - bottomGap: пробел между banner и nav bar / списком (build 109 — иначе кнопки nav bar
+///   налипают на зелёный).
+/// - inlineHeight: общий `additionalSafeAreaInsets.top` на mainWindow (banner + gap).
 enum CallBannerMetrics {
-    static let inlineHeight: CGFloat = 38
+    static let bannerContentHeight: CGFloat = 38
+    static let bottomGap: CGFloat = 6
+    static var inlineHeight: CGFloat {
+        bannerContentHeight + bottomGap
+    }
 }
