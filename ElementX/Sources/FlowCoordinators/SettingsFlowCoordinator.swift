@@ -289,11 +289,24 @@ class SettingsFlowCoordinator: FlowCoordinatorProtocol {
         navigationStackCoordinator.push(coordinator)
     }
 
-    // sTalk: STMOB-87 — Active sessions native screen
+    // sTalk: STMOB-87 — Active sessions native screen.
+    // На MAS deployment device deletion идёт через MAS web UI
+    // (ASWebAuthenticationSession в in-app overlay).
     private func presentActiveSessionsScreen() {
         let parameters = ActiveSessionsScreenCoordinatorParameters(clientProxy: flowParameters.userSession.clientProxy,
                                                                    userIndicatorController: flowParameters.userIndicatorController)
         let coordinator = ActiveSessionsScreenCoordinator(parameters: parameters)
+        coordinator.actions
+            .sink { [weak self] action in
+                guard let self else { return }
+                switch action {
+                case .dismiss:
+                    break
+                case .openMASURL(let url):
+                    presentAccountManagementURL(url)
+                }
+            }
+            .store(in: &cancellables)
         navigationStackCoordinator.push(coordinator)
     }
 

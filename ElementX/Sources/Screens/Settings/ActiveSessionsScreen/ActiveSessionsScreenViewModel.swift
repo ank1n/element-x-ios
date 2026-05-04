@@ -50,7 +50,85 @@ class ActiveSessionsScreenViewModel: ActiveSessionsScreenViewModelType, ActiveSe
                                                  secondaryButton: .init(title: L10n.actionCancel, role: .cancel, action: nil))
         case .confirmSignOut(let deviceID):
             Task { await signOut(deviceID: deviceID) }
+        case .endAllOthersTap:
+            // STMOB-87: bulk delete native — confirmation alert.
+            let count = state.otherDevices.count
+            state.bindings.alertInfo = AlertInfo(id: .confirmEndAllOthers(count: count),
+                                                 title: "Завершить все другие сессии?",
+                                                 message: "Будет завершено \(count) сессий. Это может занять несколько минут.",
+                                                 primaryButton: .init(title: "Завершить все", role: .destructive) { [weak self] in
+                                                     self?.process(viewAction: .confirmEndAllOthers)
+                                                 },
+                                                 secondaryButton: .init(title: L10n.actionCancel, role: .cancel, action: nil))
+        case .confirmEndAllOthers:
+            Task { await endAllOthers() }
         }
+    }
+
+    /// Bulk delete всех "других" сессий через native DELETE loop с прогрессом.
+    /// Synapse rate limit ~10 req/sec — делаем concurrent batch по 5 одновременно.
+    private func endAllOthers() async {
+        let devices = state.otherDevices
+        let total = devices.count
+        guard total > 0 else { return }
+
+        var done = 0
+        var failed = 0
+        var firstErrorDetail: String?
+        userIndicatorController.submitIndicator(.init(id: "bulkDelete", type: .modal, title: "Завершение 0/\(total)…", persistent: true))
+
+        // Concurrent batches по 5 — баланс между скоростью и rate limit Synapse
+        let batchSize = 5
+        struct DeleteOutcome {
+            let deviceID: String
+            let success: Bool
+            let errorDetail: String?
+        }
+        for chunkStart in stride(from: 0, to: devices.count, by: batchSize) {
+            let chunkEnd = min(chunkStart + batchSize, devices.count)
+            let batch = Array(devices[chunkStart..<chunkEnd])
+            await withTaskGroup(of: DeleteOutcome.self) { group in
+                for device in batch {
+                    group.addTask { [clientProxy] in
+                        let result = await clientProxy.signOutDevice(deviceID: device.id)
+                        switch result {
+                        case .success:
+                            return DeleteOutcome(deviceID: device.id, success: true, errorDetail: nil)
+                        case .failure(let err):
+                            let detail: String
+                            if case let .httpError(status, body) = err {
+                                detail = "HTTP \(status): \(body.prefix(200))"
+                            } else {
+                                detail = "\(err)"
+                            }
+                            return DeleteOutcome(deviceID: device.id, success: false, errorDetail: detail)
+                        }
+                    }
+                }
+                for await outcome in group {
+                    if outcome.success {
+                        done += 1
+                    } else {
+                        failed += 1
+                        if firstErrorDetail == nil { firstErrorDetail = "\(outcome.deviceID): \(outcome.errorDetail ?? "?")" }
+                    }
+                }
+            }
+            // Update progress between batches
+            userIndicatorController.submitIndicator(.init(id: "bulkDelete", type: .modal, title: "Завершено \(done)/\(total) (ошибок \(failed))", persistent: true))
+        }
+
+        userIndicatorController.retractIndicatorWithId("bulkDelete")
+
+        var msg = "Завершено успешно: \(done)\nС ошибками: \(failed)"
+        if let firstErrorDetail {
+            msg += "\n\nПервая ошибка:\n\(firstErrorDetail)"
+        }
+        state.bindings.alertInfo = AlertInfo(id: .bulkResult(succeeded: done, failed: failed),
+                                             title: "Готово",
+                                             message: msg)
+
+        await reload()
     }
 
     // MARK: - Private
@@ -71,6 +149,7 @@ class ActiveSessionsScreenViewModel: ActiveSessionsScreenViewModelType, ActiveSe
                 let item = ActiveSessionItem(id: d.deviceID,
                                              displayName: d.displayName ?? d.deviceID,
                                              lastSeenRelative: Self.relative(from: d.lastSeenTs, now: now),
+                                             lastSeenTs: d.lastSeenTs,
                                              lastSeenIP: d.lastSeenIP,
                                              isCurrent: d.deviceID == myID,
                                              trustStatus: d.deviceID == myID ? .current : .unknown)
@@ -91,12 +170,35 @@ class ActiveSessionsScreenViewModel: ActiveSessionsScreenViewModelType, ActiveSe
             state.isLoading = false
 
         case .failure(let error):
-            state.loadError = "\(error)"
+            // Detailed error for diagnosis (HTTP status + body if available)
+            switch error {
+            case let .httpError(status, body):
+                state.loadError = "HTTP \(status): \(body)"
+            default:
+                state.loadError = "\(error)"
+            }
             state.isLoading = false
         }
     }
 
     private func signOut(deviceID: String) async {
+        // STMOB-87 Phase 2.1: на MAS deployment большинство сессий — это
+        // MAS-managed compat sessions (STALK_xxx, web sessions). Прямой
+        // DELETE /_matrix/client/v3/devices/{id} для них возвращает 404
+        // M_UNRECOGNIZED (Synapse считает что это не его devices).
+        //
+        // Поэтому первый шаг — открыть MAS sessionEnd URL для конкретного
+        // device во встроенном ASWebAuthenticationSession (in-app browser).
+        // MAS UI показывает confirmation страницу, юзер подтверждает,
+        // session завершается через MAS.
+        //
+        // Если MAS URL не доступен (deployment не на MAS) — fallback на
+        // прямой DELETE с {"auth":{}}.
+        if let masURL = await clientProxy.accountURL(action: .sessionEnd(deviceId: deviceID)) {
+            actionsSubject.send(.openMASURL(masURL))
+            return
+        }
+
         userIndicatorController.submitIndicator(.init(type: .modal, title: "Завершение сессии…", persistent: true))
         defer { userIndicatorController.retractAllIndicators() }
 
@@ -105,9 +207,16 @@ class ActiveSessionsScreenViewModel: ActiveSessionsScreenViewModelType, ActiveSe
         case .success:
             await reload()
         case .failure(let error):
-            state.bindings.alertInfo = AlertInfo(id: .signOutError(message: "\(error)"),
+            let detail: String
+            switch error {
+            case let .httpError(status, body):
+                detail = "HTTP \(status)\n\(body)"
+            default:
+                detail = "\(error)"
+            }
+            state.bindings.alertInfo = AlertInfo(id: .signOutError(message: detail),
                                                  title: "Не удалось завершить сессию",
-                                                 message: "\(error)")
+                                                 message: detail)
         }
     }
 

@@ -467,13 +467,24 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
             INImage(named: "")
         }
 
-        let handle = INPersonHandle(value: personID, type: .unknown)
+        // STMOB-99 v2: improve INPerson construction для better CallKit avatar surface.
+        // Изменения:
+        //   - personHandle.type = .emailAddress (Matrix MXID @user:server email-like;
+        //     раньше .unknown — iOS не surface'ит intent в Siri/Communication notifications)
+        //   - nameComponents — Apple использует givenName для primary display
+        //   - aliases с дополнительным handle = customIdentifier для Siri matching
+        var nameComponents = PersonNameComponents()
+        nameComponents.givenName = callerName
+        let handle = INPersonHandle(value: personID, type: .emailAddress)
+        let aliases = senderMXID.map { [INPersonHandle(value: $0, type: .emailAddress)] } ?? []
         let person = INPerson(personHandle: handle,
-                              nameComponents: nil,
+                              nameComponents: nameComponents,
                               displayName: callerName,
                               image: image,
                               contactIdentifier: nil,
-                              customIdentifier: personID)
+                              customIdentifier: personID,
+                              aliases: aliases,
+                              suggestionType: .none)
 
         let intent = INStartCallIntent(callRecordFilter: nil,
                                        callRecordToCallBack: nil,
@@ -481,6 +492,7 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
                                        destinationType: .normal,
                                        contacts: [person],
                                        callCapability: hasVideo ? .videoCall : .audioCall)
+        intent.setImage(image, forParameterNamed: \.contacts)
 
         let interaction = INInteraction(intent: intent, response: nil)
         interaction.direction = .incoming

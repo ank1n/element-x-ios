@@ -57,6 +57,8 @@ enum ClientProxyError: Error {
     case failedResolvingRoomAlias
     case roomNotInLocalStore
     case invalidInvite
+    // sTalk: STMOB-87 — detailed REST error with status + body for diagnosis
+    case httpError(status: Int, body: String)
 }
 
 enum SlidingSyncConstants {

@@ -400,6 +400,9 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
                 .id(module.id)
         }
         .accessibilityHidden(navigationTabCoordinator.overlayModule?.coordinator != nil && navigationTabCoordinator.overlayPresentationMode == .fullScreen)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            activeCallBannerInset
+        }
         .overlay {
             // sTalk: Single coordinator.toPresentable() call to prevent WKWebView recreation.
             // When minimized, shrink to mini window; when fullscreen, fill the screen.
@@ -441,6 +444,9 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
                 .id(module.id)
         }
         .accessibilityHidden(navigationTabCoordinator.overlayModule?.coordinator != nil && navigationTabCoordinator.overlayPresentationMode == .fullScreen)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            activeCallBannerInset
+        }
         .overlay {
             // sTalk: Single coordinator.toPresentable() call to prevent WKWebView recreation
             if let coordinator = navigationTabCoordinator.overlayModule?.coordinator {
@@ -455,48 +461,55 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
 
     /// Single-instance call overlay that switches between fullscreen and mini-window
     /// without recreating the WKWebView (structural identity preserved).
-    /// When minimized, also shows a green "call in progress" banner at the top.
+    /// STMOB-102: green call banner moved OUT of overlay to safeAreaInset
+    /// so content tabs (chat list, calls list) корректно поджимаются под него,
+    /// иначе banner перекрывает первую строку списка (overlay рисуется поверх).
     @ViewBuilder
     private func callOverlay(coordinator: any CoordinatorProtocol) -> some View {
         let minimized = navigationTabCoordinator.isCallMinimized
         if minimized {
-            ZStack(alignment: .top) {
-                // Mini floating video window
-                GeometryReader { geometry in
-                    coordinator.toPresentable()
-                        .frame(width: 140, height: 200)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                        .shadow(color: .black.opacity(0.4), radius: 10, x: 0, y: 4)
-                        .overlay(RoundedRectangle(cornerRadius: 14)
-                            .stroke(Color.white.opacity(0.15), lineWidth: 0.5))
-                        .position(x: geometry.size.width - 82 + miniCallOffset.width,
-                                  y: geometry.size.height - 190 + miniCallOffset.height)
-                        .gesture(DragGesture()
-                            .onChanged { value in
-                                miniCallDragOffset = value.translation
-                            }
-                            .onEnded { value in
-                                miniCallOffset.width += value.translation.width
-                                miniCallOffset.height += value.translation.height
-                                miniCallDragOffset = .zero
-                            })
-                        .offset(miniCallDragOffset)
-                }
-
-                // sTalk: Green "call in progress" banner at top
-                if let callName = navigationTabCoordinator.minimizedCallDisplayName {
-                    ActiveCallBanner(displayName: callName,
-                                     elapsedTime: navigationTabCoordinator.minimizedCallElapsedTime,
-                                     onTap: {
-                                         navigationTabCoordinator.restoreCallHandler?()
-                                     })
-                                     .transition(.move(edge: .top).combined(with: .opacity))
-                }
+            // Mini floating video window only — banner теперь в safeAreaInset
+            GeometryReader { geometry in
+                coordinator.toPresentable()
+                    .frame(width: 140, height: 200)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .shadow(color: .black.opacity(0.4), radius: 10, x: 0, y: 4)
+                    .overlay(RoundedRectangle(cornerRadius: 14)
+                        .stroke(Color.white.opacity(0.15), lineWidth: 0.5))
+                    .position(x: geometry.size.width - 82 + miniCallOffset.width,
+                              y: geometry.size.height - 190 + miniCallOffset.height)
+                    .gesture(DragGesture()
+                        .onChanged { value in
+                            miniCallDragOffset = value.translation
+                        }
+                        .onEnded { value in
+                            miniCallOffset.width += value.translation.width
+                            miniCallOffset.height += value.translation.height
+                            miniCallDragOffset = .zero
+                        })
+                    .offset(miniCallDragOffset)
             }
         } else {
             // Fullscreen — no GeometryReader/position, just fill entire screen
             coordinator.toPresentable()
                 .ignoresSafeArea()
+        }
+    }
+
+    /// STMOB-102: banner для активного звонка через safeAreaInset.
+    /// Это сжимает scroll content контента табов сверху, чтобы не перекрывать
+    /// первую строку списка. Только когда CallScreen minimized.
+    @ViewBuilder
+    private var activeCallBannerInset: some View {
+        if navigationTabCoordinator.overlayModule?.coordinator != nil,
+           navigationTabCoordinator.isCallMinimized,
+           let callName = navigationTabCoordinator.minimizedCallDisplayName {
+            ActiveCallBanner(displayName: callName,
+                             elapsedTime: navigationTabCoordinator.minimizedCallElapsedTime,
+                             onTap: {
+                                 navigationTabCoordinator.restoreCallHandler?()
+                             })
+                             .transition(.move(edge: .top).combined(with: .opacity))
         }
     }
 

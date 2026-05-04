@@ -11,6 +11,11 @@ import Foundation
 
 enum ActiveSessionsScreenCoordinatorAction {
     case dismiss
+    /// STMOB-87 Phase 2.1: на MAS deployment device deletion работает только
+    /// через MAS веб UI (Synapse возвращает 404 M_UNRECOGNIZED для прямого
+    /// DELETE /_matrix/client/v3/devices/{id}). Coordinator должен открыть
+    /// URL во встроенном ASWebAuthenticationSession (in-app browser).
+    case openMASURL(URL)
 }
 
 // MARK: - View state
@@ -26,11 +31,16 @@ struct ActiveSessionsScreenViewState: BindableState {
 
 struct ActiveSessionsScreenBindings {
     var alertInfo: AlertInfo<ActiveSessionsScreenAlertType>?
+    /// Filter: показывать только сессии активные за последнюю неделю.
+    /// По умолчанию выключен (показываем все). Включается toggle в UI.
+    var filterActiveLastWeekOnly = false
 }
 
 enum ActiveSessionsScreenAlertType: Hashable {
     case confirmSignOut(deviceID: String, displayName: String)
     case signOutError(message: String)
+    case confirmEndAllOthers(count: Int)
+    case bulkResult(succeeded: Int, failed: Int)
 }
 
 // MARK: - View actions
@@ -40,6 +50,20 @@ enum ActiveSessionsScreenViewAction {
     case selectDevice(deviceID: String)
     case requestSignOut(deviceID: String)
     case confirmSignOut(deviceID: String)
+    /// "Завершить все другие" → confirmation alert
+    case endAllOthersTap
+    /// Подтверждено — иду в bulk DELETE loop по всем "другим" сессиям.
+    case confirmEndAllOthers
+}
+
+extension ActiveSessionItem {
+    /// Считаем сессию активной если last_seen_ts < 7 дней назад.
+    /// Если last_seen unknown — считаем неактивной (стейл).
+    func isActiveLastWeek(now: Date) -> Bool {
+        guard let lastSeenTs else { return false }
+        let date = Date(timeIntervalSince1970: TimeInterval(lastSeenTs) / 1000.0)
+        return now.timeIntervalSince(date) < 7 * 24 * 3600
+    }
 }
 
 // MARK: - Device row item
@@ -48,6 +72,7 @@ struct ActiveSessionItem: Identifiable, Hashable {
     let id: String // device_id
     let displayName: String
     let lastSeenRelative: String? // "2 часа назад" / nil if never
+    let lastSeenTs: Int? // raw ms timestamp for filtering
     let lastSeenIP: String?
     let isCurrent: Bool
     let trustStatus: ActiveSessionTrustStatus

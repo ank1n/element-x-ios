@@ -810,14 +810,17 @@ class ClientProxy: ClientProxyProtocol {
     // sTalk: STMOB-87 — Active sessions screen helpers.
     func fetchActiveDevices() async -> Result<[MatrixActiveDevice], ClientProxyError> {
         let homeserverString = homeserver
-        let urlString = (homeserverString.hasSuffix("/") ? String(homeserverString.dropLast()) : homeserverString) + "/_matrix/client/v3/devices"
+        let base = homeserverString.hasSuffix("/") ? String(homeserverString.dropLast()) : homeserverString
+        let urlString = base + "/_matrix/client/v3/devices"
+        MXLog.info("STMOB-87: fetchActiveDevices URL=\(urlString) (base=\(base))")
         guard let url = URL(string: urlString) else {
-            return .failure(.invalidResponse)
+            return .failure(.httpError(status: 0, body: "invalid URL: \(urlString)"))
         }
         let token: String
         do {
             token = try matrixAccessToken()
         } catch {
+            MXLog.error("STMOB-87: matrixAccessToken failed: \(error)")
             return .failure(.sdkError(error))
         }
 
@@ -829,9 +832,10 @@ class ClientProxy: ClientProxyProtocol {
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let bodyStr = String(data: data, encoding: .utf8) ?? ""
             guard status == 200 else {
-                MXLog.error("STMOB-87: GET /devices status=\(status)")
-                return .failure(.invalidResponse)
+                MXLog.error("STMOB-87: GET /devices status=\(status) body=\(bodyStr.prefix(500))")
+                return .failure(.httpError(status: status, body: String(bodyStr.prefix(500))))
             }
             struct Wrapper: Decodable { let devices: [MatrixActiveDevice] }
             let wrapper = try JSONDecoder().decode(Wrapper.self, from: data)
@@ -843,10 +847,14 @@ class ClientProxy: ClientProxyProtocol {
     }
 
     func signOutDevice(deviceID: String) async -> Result<Void, ClientProxyError> {
-        // Phase 1: попытка прямого DELETE без UIA. Если Synapse требует UIA —
-        // вернётся 401 с challenge JSON, обрабатываем как failure (Phase 2).
-        // Для OIDC (MAS) сессий Synapse часто принимает DELETE напрямую если
-        // у access token есть нужный scope.
+        // STMOB-87: native sign out flow (без Safari fallback).
+        // Phase 1 attempt: DELETE с auth dict содержащим access_token (msc3861/MAS).
+        // Если Synapse возвращает UIA challenge — для MAS deployment первая
+        // попытка может вернуть 401 с session+flows. Тогда повторяем DELETE
+        // включая `auth: {session: ..., type: "m.login.token", token: <access_token>}`
+        // или `m.login.application_service`. Простейшее: для msc3861 deployments
+        // Synapse делегирует auth МАСу — DELETE с Bearer token должен работать.
+        // Если 401 без UIA — токен не имеет прав / scope.
         let encodedID = deviceID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? deviceID
         let homeserverString = homeserver
         let base = homeserverString.hasSuffix("/") ? String(homeserverString.dropLast()) : homeserverString
@@ -863,21 +871,24 @@ class ClientProxy: ClientProxyProtocol {
         request.httpMethod = "DELETE"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = "{}".data(using: .utf8)
+        // STMOB-87: empty auth dict body — Matrix spec для UIA, Synapse с msc3861/MAS
+        // принимает {"auth": {}} вместо требования полного UIA challenge.
+        // Существующий cleanupOldDevicesByIDFV в UserSession.swift использует тот же
+        // паттерн и успешно удаляет devices.
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["auth": [:]])
 
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.shared.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let bodyStr = String(data: data, encoding: .utf8) ?? ""
+            MXLog.info("STMOB-87: DELETE /devices/\(deviceID) status=\(status) body=\(bodyStr.prefix(500))")
+
             switch status {
             case 200, 204:
                 return .success(())
-            case 401:
-                // UIA challenge — Phase 1 не поддерживает interactive auth flow
-                MXLog.warning("STMOB-87: signOutDevice requires UIA flow (401)")
-                return .failure(.invalidResponse)
             default:
-                MXLog.error("STMOB-87: DELETE /devices/\(deviceID) status=\(status)")
-                return .failure(.invalidResponse)
+                MXLog.error("STMOB-87: DELETE /devices/\(deviceID) status=\(status) body=\(bodyStr.prefix(500))")
+                return .failure(.httpError(status: status, body: String(bodyStr.prefix(800))))
             }
         } catch {
             MXLog.error("STMOB-87: signOutDevice failed: \(error)")

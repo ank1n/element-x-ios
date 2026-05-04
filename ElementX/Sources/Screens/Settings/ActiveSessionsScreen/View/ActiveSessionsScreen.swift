@@ -31,8 +31,23 @@ struct ActiveSessionsScreen: View {
             }
 
             if !context.viewState.otherDevices.isEmpty {
+                let filtered = filteredOtherDevices()
                 Section {
-                    ForEach(context.viewState.otherDevices) { device in
+                    Toggle(isOn: $context.filterActiveLastWeekOnly) {
+                        Text("Только активные за неделю")
+                            .font(.compound.bodyMD)
+                    }
+                    // STMOB-87: "Завершить все другие" скрыта — Matrix DELETE
+                    // endpoint не работает для большинства сессий (MAS compat
+                    // sessions возвращают 404 M_UNRECOGNIZED). Bulk cleanup
+                    // делается серверным SQL — обратиться к admin.
+                } header: {
+                    Text("Фильтр")
+                        .compoundListSectionHeader()
+                }
+
+                Section {
+                    ForEach(filtered) { device in
                         deviceRow(item: device)
                             .swipeActions {
                                 Button(role: .destructive) {
@@ -43,7 +58,7 @@ struct ActiveSessionsScreen: View {
                             }
                     }
                 } header: {
-                    Text("Другие сессии (\(context.viewState.otherDevices.count))")
+                    Text("Другие сессии (\(filtered.count) из \(context.viewState.otherDevices.count))")
                         .compoundListSectionHeader()
                 }
             }
@@ -63,6 +78,14 @@ struct ActiveSessionsScreen: View {
             context.send(viewAction: .reload)
         }
         .alert(item: $context.alertInfo)
+    }
+
+    private func filteredOtherDevices() -> [ActiveSessionItem] {
+        guard context.filterActiveLastWeekOnly else {
+            return context.viewState.otherDevices
+        }
+        let now = Date()
+        return context.viewState.otherDevices.filter { $0.isActiveLastWeek(now: now) }
     }
 
     private func deviceRow(item: ActiveSessionItem) -> some View {
