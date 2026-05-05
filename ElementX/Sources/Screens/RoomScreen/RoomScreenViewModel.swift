@@ -271,8 +271,13 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
     }
     
     private func updateVerificationBadge() async {
+        // Build 124 fix: исключаем системных ботов (meet-cleanup и подобных) из
+        // dmRecipient resolve. У комнаты с Жилиным первым non-self был
+        // @meet-cleanup, а не @rusty → presence резолвилась для бота.
         guard roomProxy.isDirectOneToOneRoom,
-              let dmRecipient = roomProxy.membersPublisher.value.first(where: { $0.userID != roomProxy.ownUserID }) else {
+              let dmRecipient = roomProxy.membersPublisher.value.first(where: { member in
+                  member.userID != roomProxy.ownUserID && !Self.isSystemBot(userID: member.userID)
+              }) else {
             state.dmRecipientVerificationState = .notVerified
             return
         }
@@ -294,6 +299,12 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
     // MARK: - DM Presence (STMOB-103 build 122)
 
     private var dmPresenceService: PresenceService?
+
+    /// STMOB-103 build 124: системные боты которые могут быть участниками DM-комнаты
+    /// (для очистки meet rooms) — их нужно игнорировать при resolve dmRecipient.
+    private static func isSystemBot(userID: String) -> Bool {
+        userID.hasPrefix("@meet-cleanup:") || userID.hasPrefix("@meet-bot:") || userID.hasPrefix("@stalk-system:")
+    }
 
     private func setupDMPresence(userID: String) {
         DiagLog.write("RoomDMPresence", "setup userID=\(userID) room=\(roomProxy.id) hasService=\(dmPresenceService != nil)")
