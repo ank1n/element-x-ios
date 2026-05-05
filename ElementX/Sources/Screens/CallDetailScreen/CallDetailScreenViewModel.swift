@@ -230,31 +230,14 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
             return localURL
         }
 
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 120
-        config.timeoutIntervalForResource = 300
-        let session = URLSession(configuration: config)
-
-        for attempt in 1...3 {
-            do {
-                var request = URLRequest(url: url)
-                request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
-                request.setValue("close", forHTTPHeaderField: "Connection")
-
-                let (data, response) = try await session.data(for: request)
-                guard (response as? HTTPURLResponse)?.statusCode == 200, data.count > 1024 else {
-                    if attempt < 3 { try? await Task.sleep(for: .seconds(2)); continue }
-                    throw CallHistoryError.invalidResponse
-                }
-
-                try data.write(to: localURL)
-                return localURL
-            } catch {
-                if attempt == 3 { throw error }
-                try? await Task.sleep(for: .seconds(2))
-            }
-        }
-        throw CallHistoryError.invalidResponse
+        // Build 115 fix: используем callHistoryService.downloadRecording — он
+        // добавляет Authorization: Bearer header. Без него recording-api отдаёт
+        // 401 → AVAudioPlayer не открывает файл → длительность 0:00 / 0:00.
+        DiagLog.write("CallDetail", "  download START url=\(url.absoluteString)")
+        let data = try await callHistoryService.downloadRecording(from: url)
+        DiagLog.write("CallDetail", "  download OK \(data.count) bytes")
+        try data.write(to: localURL)
+        return localURL
     }
 
     private func handleSeekToTimestamp(_ seconds: TimeInterval) {

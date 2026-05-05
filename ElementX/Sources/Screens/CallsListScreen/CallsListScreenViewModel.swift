@@ -1074,6 +1074,9 @@ protocol CallHistoryServiceProtocol: AnyObject {
     func fetchRecordings(currentUserID: String?) async throws -> [CallHistoryItem]
     func fetchTranscription(egressId: String) async throws -> TranscriptionData
     func retryTranscription(egressId: String) async throws -> TranscriptionData
+    /// Build 115 fix: download recording m4a с Authorization Bearer header.
+    /// Без авторизации recording-api отдаёт 401 → AVAudioPlayer не открывает файл → 0:00/0:00.
+    func downloadRecording(from url: URL) async throws -> Data
 }
 
 class CallHistoryService: NSObject, CallHistoryServiceProtocol, URLSessionDelegate {
@@ -1196,6 +1199,38 @@ class CallHistoryService: NSObject, CallHistoryServiceProtocol, URLSessionDelega
     func retryTranscription(egressId: String) async throws -> TranscriptionData {
         let url = baseURL.appendingPathComponent("api/recording/transcription/\(egressId)/retry")
         return try await performAuthenticatedRequest(url: url, method: "POST")
+    }
+
+    func downloadRecording(from url: URL) async throws -> Data {
+        var lastError: Error?
+        for attempt in 1...3 {
+            let token = (try? accessTokenProvider?()) ?? accessToken
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            if let token {
+                request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            }
+            request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+            request.setValue("close", forHTTPHeaderField: "Connection")
+            request.timeoutInterval = 120
+
+            do {
+                let (data, response) = try await urlSession.data(for: request)
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+                if statusCode == 401, attempt < 3 {
+                    await forceTokenRefresh?()
+                    continue
+                }
+                guard statusCode == 200, data.count > 1024 else {
+                    throw CallHistoryError.serverError("HTTP \(statusCode), bytes=\(data.count)")
+                }
+                return data
+            } catch {
+                lastError = error
+                if attempt < 3 { try? await Task.sleep(for: .seconds(2)) }
+            }
+        }
+        throw lastError ?? CallHistoryError.invalidResponse
     }
 
     private func performAuthenticatedRequest<T: Decodable>(url: URL, method: String) async throws -> T {
