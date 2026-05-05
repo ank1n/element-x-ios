@@ -24,17 +24,22 @@ import Foundation
 @MainActor
 final class OwnPresenceManager {
     private let homeserver: String
-    private let accessToken: String
     private let userID: String
+    /// Build 121: token не кэшируем — берём свежий из clientProxy перед каждым
+    /// запросом. Иначе после Matrix token rotation все запросы возвращают 401.
+    private let tokenProvider: () -> String?
     private var pingTask: Task<Void, Never>?
-    private let pingInterval: TimeInterval = 30
+    /// Build 121: 60s вместо 30s — снижаем частоту чтобы не упираться в Synapse
+    /// rate-limit на /presence endpoint (раньше регулярно прилетало HTTP 429).
+    private let pingInterval: TimeInterval = 60
 
     init?(clientProxy: ClientProxyProtocol) {
-        guard let token = try? clientProxy.matrixAccessToken() else { return nil }
+        // sanity check: token должен быть доступен сейчас (иначе session не set)
+        guard (try? clientProxy.matrixAccessToken()) != nil else { return nil }
         let raw = clientProxy.homeserver
         homeserver = raw.hasSuffix("/") ? String(raw.dropLast()) : raw
-        accessToken = token
         userID = clientProxy.userID
+        tokenProvider = { [weak clientProxy] in try? clientProxy?.matrixAccessToken() }
     }
 
     deinit {
@@ -72,10 +77,14 @@ final class OwnPresenceManager {
         allowed.remove(charactersIn: "@:")
         let encodedUserID = userID.addingPercentEncoding(withAllowedCharacters: allowed) ?? userID
         guard let url = URL(string: "\(homeserver)/_matrix/client/v3/presence/\(encodedUserID)/status") else { return }
+        guard let token = tokenProvider() else {
+            DiagLog.write("Presence", "setStatus(\(status)) SKIP — no token")
+            return
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: ["presence": status])
 
@@ -83,6 +92,10 @@ final class OwnPresenceManager {
             let (_, response) = try await URLSession.shared.data(for: request)
             let code = (response as? HTTPURLResponse)?.statusCode ?? -1
             DiagLog.write("Presence", "setStatus(\(status)) → HTTP \(code)")
+            // Build 121: при 429 (rate limit) — backoff 2 мин на следующий ping.
+            if code == 429 {
+                try? await Task.sleep(nanoseconds: 120 * 1_000_000_000)
+            }
         } catch {
             DiagLog.write("Presence", "setStatus(\(status)) ERR \(error)")
         }

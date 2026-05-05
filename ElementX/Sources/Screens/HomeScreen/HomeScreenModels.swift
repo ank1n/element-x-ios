@@ -228,10 +228,14 @@ struct HomeScreenRoom: Identifiable, Equatable {
     let lastMessageState: LastMessageState?
     
     let avatar: RoomAvatar
-        
+
     let canonicalAlias: String?
-    
+
     let isTombstoned: Bool
+
+    /// STMOB-103 build 121: stored DM user id (заполнено в init из summary.heroes
+    /// когда isDirect). Для group chats — nil. Используется для presence dot lookup.
+    let dmUserIDStored: String?
     
     var displayedLastMessage: AttributedString? {
         if isTombstoned {
@@ -246,6 +250,9 @@ struct HomeScreenRoom: Identifiable, Equatable {
     /// STMOB-103 build 120: DM room → userID собеседника (для presence dot).
     /// Для group chats возвращает nil — индикатор не показываем.
     var dmUserID: String? {
+        // Build 121 fix: prefer stored field (always available для DM из summary.heroes),
+        // fallback на avatar.heroes case (только когда avatarURL nil).
+        if let stored = dmUserIDStored { return stored }
         guard isDirect, case .heroes(let heroes) = avatar, let first = heroes.first else { return nil }
         return first.userID
     }
@@ -264,7 +271,8 @@ struct HomeScreenRoom: Identifiable, Equatable {
                        lastMessageState: nil,
                        avatar: .room(id: "", name: "", avatarURL: nil),
                        canonicalAlias: nil,
-                       isTombstoned: false)
+                       isTombstoned: false,
+                       dmUserIDStored: nil)
     }
 }
 
@@ -304,7 +312,11 @@ extension HomeScreenRoom {
                   lastMessageState: summary.homeScreenLastMessageState,
                   avatar: summary.avatar,
                   canonicalAlias: summary.canonicalAlias,
-                  isTombstoned: summary.isTombstoned)
+                  isTombstoned: summary.isTombstoned,
+                  // STMOB-103 build 121: explicit DM userID из heroes (избегаем
+                  // зависимости от RoomAvatar.heroes case — у DM с custom avatar
+                  // он будет .room(...), не .heroes).
+                  dmUserIDStored: summary.isDirect ? summary.heroes.first?.userID : nil)
     }
 }
 
