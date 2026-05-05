@@ -40,9 +40,12 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
 
         setupAudioPlayerSubscription()
 
+        // Build 115 diag: понять почему транскрипция не показывается на устройстве.
+        DiagLog.write("CallDetail", "init: callId=\(call.id) hasRecording=\(call.hasRecording) recordingURL=\(call.recordingURL?.absoluteString ?? "nil")")
         if call.hasRecording {
             Task { await loadTranscription() }
         } else {
+            DiagLog.write("CallDetail", "  hasRecording=false → loadTranscription SKIP")
             state.isTranscriptionLoading = false
         }
     }
@@ -76,12 +79,15 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
 
     private func loadTranscription() async {
         guard let egressId = egressId else {
+            DiagLog.write("CallDetail", "  loadTranscription SKIP — egressId nil (call.id empty)")
             await MainActor.run { state.isTranscriptionLoading = false }
             return
         }
+        DiagLog.write("CallDetail", "  loadTranscription START egressId=\(egressId)")
 
         do {
             let data = try await callHistoryService.fetchTranscription(egressId: egressId)
+            DiagLog.write("CallDetail", "  fetchTranscription OK available=\(data.available) status=\(data.status?.rawValue ?? "nil") hasTranscription=\(data.transcription != nil) hasSummary=\(data.summary != nil) segments=\(data.transcription?.segments.count ?? 0) topics=\(data.summary?.topics?.count ?? 0)")
             await MainActor.run {
                 state.transcriptionData = data
                 state.isTranscriptionLoading = false
@@ -90,12 +96,15 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
                 if let firstTab = state.availableTabs.first {
                     state.selectedTab = firstTab
                 }
+                let tabs = state.availableTabs.map(\.rawValue).joined(separator: ",")
+                DiagLog.write("CallDetail", "  availableTabs=\(tabs) selected=\(state.selectedTab.rawValue)")
 
                 if data.status?.isInProgress == true {
                     startPolling()
                 }
             }
         } catch {
+            DiagLog.write("CallDetail", "  fetchTranscription FAIL \(error)")
             MXLog.error("CallDetail: Failed to fetch transcription: \(error)")
             await MainActor.run { state.isTranscriptionLoading = false }
         }
