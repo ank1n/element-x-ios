@@ -79,15 +79,16 @@ struct MediaEventsTimelineScreen: View {
             ForEach(context.viewState.groups) { group in
                 Section {
                     ForEach(group.items) { item in
-                        Button {
-                            tappedItem(item)
-                        } label: {
-                            viewForTimelineItem(item)
-                                .scaleEffect(CGSize(width: -1, height: -1))
-                        }
-                        .accessibleLongPress(named: L10n.actionOpenContextMenu) {
-                            context.send(viewAction: .longPressedItem(item: item))
-                        }
+                        // Build 130: Button wrapper съедал long press. Замена на gestures.
+                        viewForTimelineItem(item)
+                            .scaleEffect(CGSize(width: -1, height: -1))
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                tappedItem(item)
+                            }
+                            .accessibleLongPress(named: L10n.actionOpenContextMenu) {
+                                context.send(viewAction: .longPressedItem(item: item))
+                            }
                     }
                 } footer: {
                     // Use a footer as the header because the scrollView is flipped
@@ -107,19 +108,18 @@ struct MediaEventsTimelineScreen: View {
                         VStack(spacing: 20) {
                             Divider()
                                 .accessibilityHidden(true)
-                            
-                            Button {
-                                tappedItem(item)
-                            } label: {
-                                viewForTimelineItem(item)
-                                    .scaleEffect(CGSize(width: 1, height: -1))
-                            }
-                            .accessibilityRepresentation {
-                                viewForTimelineItem(item)
-                            }
-                            .accessibleLongPress(named: L10n.actionOpenContextMenu) {
-                                context.send(viewAction: .longPressedItem(item: item))
-                            }
+
+                            // Build 130: Button wrapper съедал long press. Заменено
+                            // на onTapGesture + custom long press — оба жеста работают.
+                            viewForTimelineItem(item)
+                                .scaleEffect(CGSize(width: 1, height: -1))
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    tappedItem(item)
+                                }
+                                .accessibleLongPress(named: L10n.actionOpenContextMenu) {
+                                    context.send(viewAction: .longPressedItem(item: item))
+                                }
                         }
                         .accessibilityElement(children: .combine)
                         .padding(.horizontal, 16)
