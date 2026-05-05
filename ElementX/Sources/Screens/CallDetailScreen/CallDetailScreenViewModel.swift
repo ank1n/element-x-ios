@@ -83,24 +83,33 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
             case .tombstoned: return nil
             }
         }()
-
-        // Speaker avatars — map by displayName.
-        let members = roomProxy.membersPublisher.value
-        var map: [String: URL] = [:]
-        for member in members {
-            guard let url = member.avatarURL,
-                  let display = member.displayName,
-                  !display.isEmpty else { continue }
-            map[display] = url
-        }
-
-        DiagLog.write("CallDetail", "  loadRoomMetadata OK headerAvatar=\(headerAvatarURL?.absoluteString ?? "nil") speakers=\(map.count)")
+        DiagLog.write("CallDetail", "  loadRoomMetadata header=\(headerAvatarURL?.absoluteString ?? "nil")")
         await MainActor.run {
             if let headerAvatarURL {
                 state.call.avatarURL = headerAvatarURL
             }
-            state.speakerAvatars = map
         }
+
+        // Build 126b: members могут быть не загружены при init — подписываемся на
+        // publisher и обновляем speakerAvatars при каждом emit.
+        await roomProxy.updateMembers()
+        roomProxy.membersPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] members in
+                guard let self else { return }
+                var map: [String: URL] = [:]
+                for member in members {
+                    guard let url = member.avatarURL,
+                          let display = member.displayName,
+                          !display.isEmpty else { continue }
+                    map[display] = url
+                }
+                if !map.isEmpty {
+                    DiagLog.write("CallDetail", "  members publisher → speakers=\(map.count)")
+                    self.state.speakerAvatars = map
+                }
+            }
+            .store(in: &detailCancellables)
     }
 
     private func preloadRecording() {
