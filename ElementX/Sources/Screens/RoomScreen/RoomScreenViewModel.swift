@@ -296,6 +296,7 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
     private var dmPresenceService: PresenceService?
 
     private func setupDMPresence(userID: String) {
+        DiagLog.write("RoomDMPresence", "setup userID=\(userID) room=\(roomProxy.id) hasService=\(dmPresenceService != nil)")
         guard dmPresenceService == nil,
               let token = try? clientProxy.matrixAccessToken() else { return }
         let service = PresenceService(homeserver: clientProxy.homeserver,
@@ -305,7 +306,9 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
         service.presenceSubject
             .receive(on: DispatchQueue.main)
             .sink { [weak self] map in
-                self?.state.dmRecipientPresence = map[userID]
+                let presence = map[userID]
+                DiagLog.write("RoomDMPresence", "  update userID=\(userID) found=\(presence != nil) isOnline=\(presence?.isOnline ?? false)")
+                self?.state.dmRecipientPresence = presence
             }
             .store(in: &cancellables)
         service.startPolling(userIDs: [userID])
