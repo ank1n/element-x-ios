@@ -64,9 +64,13 @@ struct SummaryTopic: Codable, Identifiable, Equatable {
 }
 
 struct TranscriptionSummary: Codable, Equatable {
-    let text: String
-    let keyPoints: [String]
-    let actionItems: [String]
+    // Build 113: все поля optional. Server (recording-api) возвращает text:null
+    // когда summary_text пуст в DB — non-optional String ломал DecodingError →
+    // transcriptionData = nil → пустой UI. Aibolit может не генерировать
+    // text/action_items для коротких звонков, оставляя только topics.
+    let text: String?
+    let keyPoints: [String]?
+    let actionItems: [String]?
     let topics: [SummaryTopic]?
 }
 
@@ -140,7 +144,10 @@ struct CallDetailScreenViewState: BindableState {
 
     var hasSummary: Bool {
         guard let summary = transcriptionData?.summary else { return false }
-        return !(summary.topics?.isEmpty ?? true) || !summary.text.isEmpty || !summary.keyPoints.isEmpty
+        let hasTopics = !(summary.topics?.isEmpty ?? true)
+        let hasText = !(summary.text?.isEmpty ?? true)
+        let hasKeyPoints = !(summary.keyPoints?.isEmpty ?? true)
+        return hasTopics || hasText || hasKeyPoints
     }
 
     var hasSegments: Bool {
