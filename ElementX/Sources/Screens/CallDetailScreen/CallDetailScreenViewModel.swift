@@ -205,7 +205,10 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
                     self.state.isDownloading = false
-                    self.audioPlayer.load(sourceURL: localURL, playbackURL: recordingURL, autoplay: true)
+                    // Build 115 fix: args были перепутаны. AudioPlayer.load использует
+                    // playbackURL для AVPlayerItem; передавать local (downloaded) файл,
+                    // не remote — иначе AVPlayer стримит без Bearer auth → 401 → 0:00/0:00.
+                    self.audioPlayer.load(sourceURL: recordingURL, playbackURL: localURL, autoplay: true)
                 }
             } catch {
                 MXLog.error("CallDetail: Download failed: \(error)")
