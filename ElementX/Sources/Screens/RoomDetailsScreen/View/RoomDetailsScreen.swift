@@ -26,16 +26,7 @@ struct RoomDetailsScreen: View {
                 peopleSection
             }
 
-            // Widgets as separate section
-            Section {
-                ListRow(label: .default(title: "Widgets", icon: \.chat),
-                        details: context.viewState.widgetsCount > 0 ? .title(String(context.viewState.widgetsCount)) : .none,
-                        kind: .navigationLink {
-                            context.send(viewAction: .processTapWidgets)
-                        })
-                        .accessibilityIdentifier(A11yIdentifiers.roomDetailsScreen.widgets)
-            }
-
+            // Build 128: убрана секция Widgets из информации о чате (юзер не использует)
             aboutSection
 
             securitySection
@@ -196,12 +187,7 @@ struct RoomDetailsScreen: View {
                     })
                     .disabled(context.viewState.pinnedEventsActionState.isLoading)
 
-            ListRow(label: .default(title: L10n.screenPollsHistoryTitle, icon: \.polls),
-                    kind: .navigationLink {
-                        context.send(viewAction: .processTapPolls)
-                    })
-                    .accessibilityIdentifier(A11yIdentifiers.roomDetailsScreen.pollsHistory)
-
+            // Build 128: убрана секция Опросы (polls history) из информации о чате
             ListRow(label: .default(title: L10n.screenMediaBrowserTitle, icon: \.image),
                     kind: .navigationLink {
                         context.send(viewAction: .processTapMediaEvents)
