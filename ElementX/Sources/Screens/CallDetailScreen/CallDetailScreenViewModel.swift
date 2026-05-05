@@ -301,11 +301,17 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
     // MARK: - Helpers
 
     private var egressId: String? {
-        // Build 112: было `id.hasPrefix("EG_")` — устаревшее предположение.
-        // Реальный формат egress_id в recording-api PG: `session_<timestamp_ms>`
-        // (см. transcriptions.egress_id). Старая проверка всегда давала nil →
-        // loadTranscription делал early return → пустой UI на CallDetailScreen.
-        // Web работает потому что не имеет такого filter'а.
+        // Build 118: на iPhone state.call.id — UUID из LocalCallHistoryService
+        // (не session_xxx). Recording API знает только session_<timestamp_ms>.
+        // Извлекаем правильный id из последнего path component recordingURL:
+        // `.../play/session_1777960175326` → "session_1777960175326".
+        if let url = state.call.recordingURL,
+           let last = url.pathComponents.last,
+           !last.isEmpty,
+           last != "play" {
+            return last
+        }
+        // Fallback: на симуляторе или при отсутствии recordingURL — call.id.
         let id = state.call.id
         return id.isEmpty ? nil : id
     }
