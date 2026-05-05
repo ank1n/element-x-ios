@@ -34,15 +34,23 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
     private var userSession: UserSessionProtocol? {
         didSet {
             userSessionObserver?.cancel()
+            ownPresenceManager = nil
             if let userSession {
                 configureElementCallService()
                 configureNotificationManager()
                 observeUserSessionChanges()
                 startSync()
                 Task { await appHooks.configure(with: userSession) }
+                // STMOB-103: глобальная presence ping (online/unavailable/offline)
+                // на уровне сессии — раньше работало только на ContactsListScreen.
+                ownPresenceManager = OwnPresenceManager(clientProxy: userSession.clientProxy)
+                ownPresenceManager?.startOnline()
             }
         }
     }
+
+    /// STMOB-103: см. OwnPresenceManager — periodic setOwnPresence ping в Synapse.
+    private var ownPresenceManager: OwnPresenceManager?
     
     private var authenticationFlowCoordinator: AuthenticationFlowCoordinator?
     private let appLockFlowCoordinator: AppLockFlowCoordinator
@@ -1149,6 +1157,8 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
     @objc
     private func applicationWillTerminate() {
         stopSync(isBackgroundTask: false)
+        // STMOB-103: явно мечаем offline на завершении app (web покажет серый dot)
+        ownPresenceManager?.setOffline()
     }
 
     @objc
@@ -1157,6 +1167,8 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
 
         scheduleDelayedSyncStop()
         scheduleBackgroundAppRefresh()
+        // STMOB-103: idle на background (жёлтый dot + "был X назад" на web)
+        ownPresenceManager?.setBackground()
     }
     
     private func scheduleDelayedSyncStop() {
@@ -1181,6 +1193,8 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         MXLog.info("Application did become active")
         endActiveBackgroundTask()
         startSync()
+        // STMOB-103: возобновить online ping при возврате из background
+        ownPresenceManager?.startOnline()
     }
     
     private func endActiveBackgroundTask() {

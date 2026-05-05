@@ -518,6 +518,7 @@
 		530B64CEE9A4B9FD7D4F9E4F /* KZFileWatchers in Frameworks */ = {isa = PBXBuildFile; productRef = 6CB37449A91AA171258DBBDA /* KZFileWatchers */; };
 		53976686F51D9764A8417280 /* Dictionary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F60833D6D2BE7EC44B340EE /* Dictionary.swift */; };
 		53ACC1A35969AA72C631BE0C /* StaticLocationScreenViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF74CD1678EB132F36421FCF /* StaticLocationScreenViewModel.swift */; };
+		5490B8B0B78278971CCD244C /* OwnPresenceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0A4F388E834690C6DC1812A /* OwnPresenceManager.swift */; };
 		549C8916CBB2E8BADEDBE7EF /* PollRoomTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 754C99514A78646666476DF7 /* PollRoomTimelineView.swift */; };
 		54D69BBCDA8E72526F83CE97 /* ContactsListScreenTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0797C300370126D2DCC97BED /* ContactsListScreenTests.swift */; };
 		54ED3DCD35BB1259FDB31AB1 /* AudioPlayerStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAA8D686D8E9AE0586A071CA /* AudioPlayerStateTests.swift */; };
@@ -2933,6 +2934,7 @@
 		DF9A86E80B846F288E040598 /* SecurityAndPrivacyScreenCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurityAndPrivacyScreenCoordinator.swift; sourceTree = "<group>"; };
 		DFC479BB1F8633AE2AE7973A /* RoomDirectorySearchScreenCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomDirectorySearchScreenCoordinator.swift; sourceTree = "<group>"; };
 		E00BCE3E2FFA7143EF67A0C2 /* ActiveSessionsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveSessionsScreen.swift; sourceTree = "<group>"; };
+		E0A4F388E834690C6DC1812A /* OwnPresenceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OwnPresenceManager.swift; sourceTree = "<group>"; };
 		E0FBCFD1BAC3E660642D380A /* UserPropertiesExt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserPropertiesExt.swift; sourceTree = "<group>"; };
 		E125432155AB68E0C7C17DFE /* NavigationRootCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationRootCoordinatorTests.swift; sourceTree = "<group>"; };
 		E147CD90F17BE43F55A1ACE3 /* StateMachineFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateMachineFactory.swift; sourceTree = "<group>"; };
@@ -5184,6 +5186,7 @@
 				89EF7216EED7D1051D2F71A8 /* AppMediatorProtocol.swift */,
 				3A6319979F8C04EF48D92634 /* CoordinatorProtocol.swift */,
 				15366456153FC340A4054E04 /* FlowCoordinatorProtocol.swift */,
+				E0A4F388E834690C6DC1812A /* OwnPresenceManager.swift */,
 				15134AF0D26D58170F818F2A /* ServiceLocator.swift */,
 				C1FA408DECD64AA6BB24A736 /* TargetConfiguration.swift */,
 				1E872C019786C1494FBED181 /* Navigation */,
@@ -8724,6 +8727,7 @@
 				77D6CF1955E8E42AC373F616 /* OrgProfileService.swift in Sources */,
 				FE2A5A9A0DF547AF84655314 /* OrientationManagerProtocol.swift in Sources */,
 				35CE72B0CAEE7CDE1DC4F160 /* OverridableAvatarImage.swift in Sources */,
+				5490B8B0B78278971CCD244C /* OwnPresenceManager.swift in Sources */,
 				4A4FB5080F4CE5C89B7A51FA /* PHGPostHogConfiguration.swift in Sources */,
 				CD54E4367B5C0877BC35A39D /* PHGPostHogMock.swift in Sources */,
 				89CF46F21102063BA163AE0E /* PHGPostHogProtocol.swift in Sources */,
@@ -9839,7 +9843,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 118;
+				CURRENT_PROJECT_VERSION = 119;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = Z44H678J3R;
 				ENABLE_BITCODE = NO;
@@ -10074,7 +10078,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 118;
+				CURRENT_PROJECT_VERSION = 119;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = Z44H678J3R;
 				ENABLE_BITCODE = NO;

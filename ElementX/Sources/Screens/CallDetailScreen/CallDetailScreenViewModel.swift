@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
+import AVFoundation
 import Combine
 import Foundation
 
@@ -61,10 +62,20 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
         Task { [weak self] in
             guard let self else { return }
             do {
+                // Build 119: только download + чтение duration через AVURLAsset.
+                // НЕ вызываем audioPlayer.load — иначе player ставит .loading,
+                // UI показывает спиннер до тапа Play. Player загружается только
+                // в handlePlayPause / handleSeekToTimestamp.
                 let localURL = try await downloadRecording(from: recordingURL)
+                let asset = AVURLAsset(url: localURL)
+                let duration = try await asset.load(.duration)
+                let seconds = CMTimeGetSeconds(duration)
                 await MainActor.run {
-                    self.audioPlayer.load(sourceURL: recordingURL, playbackURL: localURL, autoplay: false)
+                    if seconds.isFinite, seconds > 0 {
+                        self.state.playbackDuration = seconds
+                    }
                 }
+                DiagLog.write("CallDetail", "  preload duration=\(seconds)s")
             } catch {
                 DiagLog.write("CallDetail", "  preloadRecording FAIL \(error)")
             }
