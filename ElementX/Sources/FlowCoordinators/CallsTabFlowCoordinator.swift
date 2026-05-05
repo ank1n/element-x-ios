@@ -115,7 +115,8 @@ class CallsTabFlowCoordinator: FlowCoordinatorProtocol {
 
         let parameters = CallDetailScreenCoordinatorParameters(call: call,
                                                                callHistoryService: callHistoryService,
-                                                               mediaProvider: userSession.mediaProvider)
+                                                               mediaProvider: userSession.mediaProvider,
+                                                               clientProxy: userSession.clientProxy)
         let coordinator = CallDetailScreenCoordinator(parameters: parameters)
 
         coordinator.actionsPublisher.sink { [weak self] action in

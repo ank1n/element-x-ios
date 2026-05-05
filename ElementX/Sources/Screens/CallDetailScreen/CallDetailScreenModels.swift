@@ -120,7 +120,8 @@ enum CallDetailScreenViewModelAction {
 }
 
 struct CallDetailScreenViewState: BindableState {
-    let call: CallHistoryItem
+    /// Build 126: var вместо let — нужно обновить avatarURL после resolve room metadata.
+    var call: CallHistoryItem
     var selectedTab: CallDetailTab = .summary
     var transcriptionData: TranscriptionData?
     var isTranscriptionLoading = true
@@ -133,6 +134,10 @@ struct CallDetailScreenViewState: BindableState {
     var isDownloading = false
 
     var bindings = CallDetailScreenViewStateBindings()
+
+    /// Build 126: avatars резолвленные из room members по displayName.
+    /// Используется в transcript view для каждого segment speaker.
+    var speakerAvatars: [String: URL] = [:]
 
     var isPolling: Bool {
         transcriptionData?.status?.isInProgress == true

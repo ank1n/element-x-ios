@@ -11,6 +11,8 @@ struct CallDetailScreenCoordinatorParameters {
     let call: CallHistoryItem
     let callHistoryService: CallHistoryServiceProtocol
     let mediaProvider: MediaProviderProtocol?
+    /// Build 126: для resolve room avatar и members (transcript speakers).
+    var clientProxy: ClientProxyProtocol?
 }
 
 enum CallDetailScreenCoordinatorAction {
@@ -30,7 +32,8 @@ final class CallDetailScreenCoordinator: CoordinatorProtocol {
     init(parameters: CallDetailScreenCoordinatorParameters) {
         viewModel = CallDetailScreenViewModel(call: parameters.call,
                                               callHistoryService: parameters.callHistoryService,
-                                              mediaProvider: parameters.mediaProvider)
+                                              mediaProvider: parameters.mediaProvider,
+                                              clientProxy: parameters.clientProxy)
     }
 
     func start() {

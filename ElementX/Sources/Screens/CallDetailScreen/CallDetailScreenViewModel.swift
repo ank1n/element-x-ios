@@ -27,11 +27,15 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
         actionsSubject.eraseToAnyPublisher()
     }
 
+    private let clientProxy: ClientProxyProtocol?
+
     init(call: CallHistoryItem,
          callHistoryService: CallHistoryServiceProtocol,
          mediaProvider: MediaProviderProtocol?,
+         clientProxy: ClientProxyProtocol? = nil,
          audioPlayer: AudioPlayerProtocol = AudioPlayer()) {
         self.callHistoryService = callHistoryService
+        self.clientProxy = clientProxy
         self.audioPlayer = audioPlayer
 
         let initialState = CallDetailScreenViewState(call: call)
@@ -53,6 +57,49 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
         } else {
             DiagLog.write("CallDetail", "  hasRecording=false → loadTranscription SKIP")
             state.isTranscriptionLoading = false
+        }
+
+        // Build 126: подтянуть room avatar (для шапки) + members (для transcript
+        // speaker avatars). Только если у call есть matrix room ID.
+        if call.contactId.hasPrefix("!"), clientProxy != nil {
+            Task { await loadRoomMetadata(roomID: call.contactId) }
+        }
+    }
+
+    private func loadRoomMetadata(roomID: String) async {
+        guard let clientProxy else { return }
+        guard case let .joined(roomProxy) = await clientProxy.roomForIdentifier(roomID) else {
+            DiagLog.write("CallDetail", "  loadRoomMetadata FAIL — room not joined: \(roomID)")
+            return
+        }
+
+        // Header avatar — group room avatar URL (extract из RoomAvatar enum).
+        let info = roomProxy.infoPublisher.value
+        let headerAvatarURL: URL? = {
+            switch info.avatar {
+            case .room(_, _, let url): return url
+            case .space(_, _, let url): return url
+            case .heroes(let users): return users.first?.avatarURL
+            case .tombstoned: return nil
+            }
+        }()
+
+        // Speaker avatars — map by displayName.
+        let members = roomProxy.membersPublisher.value
+        var map: [String: URL] = [:]
+        for member in members {
+            guard let url = member.avatarURL,
+                  let display = member.displayName,
+                  !display.isEmpty else { continue }
+            map[display] = url
+        }
+
+        DiagLog.write("CallDetail", "  loadRoomMetadata OK headerAvatar=\(headerAvatarURL?.absoluteString ?? "nil") speakers=\(map.count)")
+        await MainActor.run {
+            if let headerAvatarURL {
+                state.call.avatarURL = headerAvatarURL
+            }
+            state.speakerAvatars = map
         }
     }
 

@@ -345,15 +345,14 @@ struct CallDetailScreen: View {
                 // Переход на offset-based id для гарантированной уникальности.
                 ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
                     HStack(alignment: .top, spacing: 10) {
-                        // Speaker avatar placeholder
-                        ZStack {
-                            Circle()
-                                .fill(speakerColor(for: segment.speaker))
-                                .frame(width: 32, height: 32)
-                            Text(speakerInitials(segment.speakerLabel ?? segment.speaker))
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(.white)
-                        }
+                        // Build 126: реальный avatar если найден в speakerAvatars,
+                        // fallback — colored circle с инициалами.
+                        let speakerName = segment.speakerLabel ?? segment.speaker
+                        LoadableAvatarImage(url: context.viewState.speakerAvatars[speakerName],
+                                            name: speakerName,
+                                            contentID: speakerName,
+                                            avatarSize: .custom(32),
+                                            mediaProvider: context.mediaProvider)
 
                         VStack(alignment: .leading, spacing: 2) {
                             HStack {
