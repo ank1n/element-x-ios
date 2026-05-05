@@ -340,7 +340,10 @@ struct CallDetailScreen: View {
     private var transcriptTabView: some View {
         LazyVStack(alignment: .leading, spacing: 16) {
             if let segments = context.viewState.transcriptionData?.transcription?.segments {
-                ForEach(segments) { segment in
+                // Build 114: id-based ForEach падал на симуляторе (вероятно
+                // ID-коллизия при одинаковом speaker+start в floating-point).
+                // Переход на offset-based id для гарантированной уникальности.
+                ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
                     HStack(alignment: .top, spacing: 10) {
                         // Speaker avatar placeholder
                         ZStack {

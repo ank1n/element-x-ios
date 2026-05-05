@@ -28,12 +28,15 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
 
     init(call: CallHistoryItem,
          callHistoryService: CallHistoryServiceProtocol,
+         mediaProvider: MediaProviderProtocol?,
          audioPlayer: AudioPlayerProtocol = AudioPlayer()) {
         self.callHistoryService = callHistoryService
         self.audioPlayer = audioPlayer
 
         let initialState = CallDetailScreenViewState(call: call)
-        super.init(initialViewState: initialState)
+        // Build 114: mediaProvider обязателен — LoadableAvatarImage падает с
+        // assertionFailure в DEBUG если context.mediaProvider == nil.
+        super.init(initialViewState: initialState, mediaProvider: mediaProvider)
 
         setupAudioPlayerSubscription()
 

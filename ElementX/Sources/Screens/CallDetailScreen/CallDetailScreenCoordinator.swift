@@ -29,7 +29,8 @@ final class CallDetailScreenCoordinator: CoordinatorProtocol {
 
     init(parameters: CallDetailScreenCoordinatorParameters) {
         viewModel = CallDetailScreenViewModel(call: parameters.call,
-                                              callHistoryService: parameters.callHistoryService)
+                                              callHistoryService: parameters.callHistoryService,
+                                              mediaProvider: parameters.mediaProvider)
     }
 
     func start() {
