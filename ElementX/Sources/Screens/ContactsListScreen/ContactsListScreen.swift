@@ -335,6 +335,12 @@ struct ContactsListScreen: View {
                                 contentID: contact.id,
                                 avatarSize: .custom(44),
                                 mediaProvider: context.mediaProvider)
+                .overlay(alignment: .bottomTrailing) {
+                    Circle()
+                        .fill(Self.contactPresenceColor(contact))
+                        .frame(width: 12, height: 12)
+                        .overlay(Circle().stroke(Color(uiColor: .systemBackground), lineWidth: 2))
+                }
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -367,11 +373,7 @@ struct ContactsListScreen: View {
                         .font(.system(size: 12))
                         .foregroundColor(.orange)
                 }
-                // Build 125: 3-цветная точка (как в HomeScreen + RoomScreen).
-                // Зелёный online / жёлтый <1ч / серый offline.
-                Circle()
-                    .fill(Self.contactPresenceColor(contact))
-                    .frame(width: 10, height: 10)
+                // Build 125: presence dot перенесён на avatar (overlay) — единый стиль с HomeScreen + RoomScreen header.
             }
         }
         .padding(.horizontal, 16)
@@ -585,6 +587,12 @@ struct ContactsListScreen: View {
                                 contentID: contact.id,
                                 avatarSize: .custom(44),
                                 mediaProvider: context.mediaProvider)
+                .overlay(alignment: .bottomTrailing) {
+                    Circle()
+                        .fill(Self.contactPresenceColor(contact))
+                        .frame(width: 12, height: 12)
+                        .overlay(Circle().stroke(Color(uiColor: .systemBackground), lineWidth: 2))
+                }
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -617,11 +625,7 @@ struct ContactsListScreen: View {
                         .font(.system(size: 12))
                         .foregroundColor(.orange)
                 }
-                // Build 125: 3-цветная точка (как в HomeScreen + RoomScreen).
-                // Зелёный online / жёлтый <1ч / серый offline.
-                Circle()
-                    .fill(Self.contactPresenceColor(contact))
-                    .frame(width: 10, height: 10)
+                // Build 125: presence dot перенесён на avatar (overlay) — единый стиль с HomeScreen + RoomScreen header.
             }
         }
         .padding(12)
