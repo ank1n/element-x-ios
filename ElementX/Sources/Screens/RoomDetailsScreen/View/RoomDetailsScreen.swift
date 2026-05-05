@@ -63,7 +63,7 @@ struct RoomDetailsScreen: View {
                 }
             }
         }
-        .navigationTitle(L10n.screenRoomDetailsTitle)
+        .navigationTitle(context.viewState.isDirect ? "Информация о чате" : L10n.screenRoomDetailsTitle)
         .navigationBarTitleDisplayMode(.inline)
         .track(screen: .RoomDetails)
         .interactiveQuickLook(item: $context.mediaPreviewItem, allowEditing: false)
@@ -72,16 +72,47 @@ struct RoomDetailsScreen: View {
     // MARK: - Private
     
     private var roomHeaderSection: some View {
-        AvatarHeaderView(room: context.viewState.details,
-                         avatarSize: .room(on: .details),
-                         mediaProvider: context.mediaProvider) { url in
-            context.send(viewAction: .displayAvatar(url))
-        } footer: {
-            if !context.viewState.shortcuts.isEmpty {
-                headerSectionShortcuts
+        VStack(spacing: 8) {
+            AvatarHeaderView(room: context.viewState.details,
+                             avatarSize: .room(on: .details),
+                             mediaProvider: context.mediaProvider) { url in
+                context.send(viewAction: .displayAvatar(url))
+            } footer: {
+                if !context.viewState.shortcuts.isEmpty {
+                    headerSectionShortcuts
+                }
+            }
+            .accessibilityIdentifier(A11yIdentifiers.roomDetailsScreen.avatar)
+
+            // STMOB-103 build 120: presence indicator + last seen для DM rooms.
+            if context.viewState.isDirect, let presence = context.viewState.dmPresence {
+                presenceLabel(for: presence)
             }
         }
-        .accessibilityIdentifier(A11yIdentifiers.roomDetailsScreen.avatar)
+    }
+
+    @ViewBuilder
+    private func presenceLabel(for presence: UserPresence) -> some View {
+        if presence.isOnline {
+            Text("В сети")
+                .font(.subheadline)
+                .foregroundColor(Color(red: 0.18, green: 0.8, blue: 0.44))
+        } else if let last = presence.lastSeenDate {
+            Text("Был в сети \(Self.relativeLastSeen(last))")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+        } else {
+            Text("Не в сети")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+        }
+    }
+
+    private static func relativeLastSeen(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        formatter.locale = Locale(identifier: "ru_RU")
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
     
     private var headerSectionShortcuts: some View {

@@ -42,10 +42,14 @@ struct DMRecipientInfo {
 
 struct RoomDetailsScreenViewState: BindableState {
     var details: RoomDetails
-    
+
     var isEncrypted: Bool
     var isDirect: Bool
     var permalink: URL?
+
+    /// STMOB-103 build 120: presence собеседника DM-комнаты — отображается под аватаром
+    /// (online / был в сети X назад). Nil для group chats.
+    var dmPresence: UserPresence?
 
     var topic: AttributedString?
     var topicSummary: AttributedString?
