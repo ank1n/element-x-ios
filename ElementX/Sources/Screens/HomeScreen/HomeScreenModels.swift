@@ -126,6 +126,11 @@ struct HomeScreenViewState: BindableState {
     var archiveRoomCount = 0
     var archivePreviewText = ""
 
+    /// STMOB-103 build 120: presence для DM-собеседников.
+    /// Ключ — userID собеседника DM-комнаты (room.dmUserID).
+    /// Используется в HomeScreenRoomCell для рендера зелёной/жёлтой/серой точки на avatar.
+    var dmPresence: [String: UserPresence] = [:]
+
     var visibleRooms: [HomeScreenRoom] {
         if roomListMode == .skeletons {
             return placeholderRooms
@@ -238,6 +243,13 @@ struct HomeScreenRoom: Identifiable, Equatable {
         }
     }
     
+    /// STMOB-103 build 120: DM room → userID собеседника (для presence dot).
+    /// Для group chats возвращает nil — индикатор не показываем.
+    var dmUserID: String? {
+        guard isDirect, case .heroes(let heroes) = avatar, let first = heroes.first else { return nil }
+        return first.userID
+    }
+
     static func placeholder() -> HomeScreenRoom {
         HomeScreenRoom(id: UUID().uuidString,
                        roomID: nil,

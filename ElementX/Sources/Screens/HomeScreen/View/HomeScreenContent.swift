@@ -92,7 +92,7 @@ struct HomeScreenContent: View {
                     } else {
                         LazyVStack(spacing: 0) {
                             ForEach(context.viewState.visibleRooms) { room in
-                                HomeScreenRoomCell(room: room, isSelected: false, mediaProvider: context.mediaProvider, action: context.send)
+                                HomeScreenRoomCell(room: room, isSelected: false, mediaProvider: context.mediaProvider, action: context.send, presence: nil)
                                     .redacted(reason: .placeholder)
                                     .shimmer()
                             }

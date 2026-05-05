@@ -19,6 +19,9 @@ struct HomeScreenRoomCell: View {
     let isSelected: Bool
     let mediaProvider: MediaProviderProtocol!
     let action: (HomeScreenViewAction) -> Void
+    /// STMOB-103 build 120: presence собеседника DM-комнаты для рендера индикатора.
+    /// nil для group chats — индикатор не показывается.
+    var presence: UserPresence?
 
     private var isCosmos: Bool {
         designTheme == "cosmos"
@@ -63,7 +66,31 @@ struct HomeScreenRoomCell: View {
                             mediaProvider: mediaProvider)
                 .dynamicTypeSize(dynamicTypeSize < .accessibility1 ? dynamicTypeSize : .accessibility1)
                 .accessibilityHidden(true)
+                .overlay(alignment: .bottomTrailing) {
+                    presenceDot
+                }
         }
+    }
+
+    /// STMOB-103 build 120: presence dot — зелёный online / жёлтый unavailable / серый offline.
+    /// Скрыт для group chats (room.dmUserID == nil) и когда presence неизвестен.
+    @ViewBuilder
+    private var presenceDot: some View {
+        if room.dmUserID != nil, let presence {
+            Circle()
+                .fill(presenceColor(presence))
+                .frame(width: 12, height: 12)
+                .overlay(Circle().stroke(Color(uiColor: .systemBackground), lineWidth: 2))
+        }
+    }
+
+    private func presenceColor(_ presence: UserPresence) -> Color {
+        if presence.isOnline { return Color(red: 0.18, green: 0.8, blue: 0.44) } // green online
+        // Если есть lastSeen в пределах 5 мин — жёлтый (idle/unavailable)
+        if let last = presence.lastSeenDate, Date().timeIntervalSince(last) < 5 * 60 {
+            return Color(red: 0.95, green: 0.7, blue: 0.18) // yellow
+        }
+        return Color(red: 0.55, green: 0.6, blue: 0.65) // gray offline
     }
     
     private var content: some View {

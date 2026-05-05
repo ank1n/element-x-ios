@@ -439,8 +439,47 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
             return false // preserve server order within group
         }
         state.rooms = sorted
+
+        // STMOB-103 build 120: обновляем polling presence для DM-собеседников.
+        updatePresencePolling()
     }
-    
+
+    // MARK: - DM Presence (STMOB-103 build 120)
+
+    private var dmPresenceService: PresenceService?
+
+    private func setupDMPresenceService() {
+        guard dmPresenceService == nil,
+              let token = try? userSession.clientProxy.matrixAccessToken() else { return }
+        let service = PresenceService(homeserver: userSession.clientProxy.homeserver,
+                                      accessToken: token,
+                                      ownUserID: userSession.clientProxy.userID)
+        dmPresenceService = service
+        service.presenceSubject
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] map in
+                self?.state.dmPresence = map
+            }
+            .store(in: &cancellables)
+    }
+
+    private func updatePresencePolling() {
+        setupDMPresenceService()
+        guard let service = dmPresenceService else { return }
+        let dmUserIDs = Array(Set(state.rooms.compactMap(\.dmUserID)))
+        guard !dmUserIDs.isEmpty else {
+            service.stopPolling()
+            return
+        }
+        if service.currentUserIDs.isEmpty {
+            service.startPolling(userIDs: dmUserIDs)
+        } else {
+            service.updatePollingUserIDs(dmUserIDs)
+            // Trigger immediate fetch when set changes
+            Task { await service.fetchPresence(for: dmUserIDs) }
+        }
+    }
+
     private func markRoomAsFavourite(_ roomID: String, isFavourite: Bool) async {
         guard case let .joined(roomProxy) = await userSession.clientProxy.roomForIdentifier(roomID) else {
             MXLog.error("Failed retrieving room for identifier: \(roomID)")

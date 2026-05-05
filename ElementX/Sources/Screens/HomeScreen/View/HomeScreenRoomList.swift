@@ -216,7 +216,7 @@ struct HomeScreenRoomList: View {
             VStack(spacing: 0) {
                 switch room.type {
                 case .placeholder:
-                    HomeScreenRoomCell(room: room, isSelected: false, mediaProvider: context.mediaProvider, action: context.send)
+                    HomeScreenRoomCell(room: room, isSelected: false, mediaProvider: context.mediaProvider, action: context.send, presence: nil)
                         .redacted(reason: .placeholder)
                 case .invite:
                     HomeScreenInviteCell(room: room, context: context, hideInviteAvatars: context.viewState.hideInviteAvatars)
@@ -227,7 +227,7 @@ struct HomeScreenRoomList: View {
                     SwipeActionView(leadingActions: leadingSwipeActions(for: room),
                                     trailingActions: trailingSwipeActions(for: room),
                                     cornerRadius: isCosmos ? 14 : 0) {
-                        HomeScreenRoomCell(room: room, isSelected: isSelected, mediaProvider: context.mediaProvider, action: context.send)
+                        HomeScreenRoomCell(room: room, isSelected: isSelected, mediaProvider: context.mediaProvider, action: context.send, presence: room.dmUserID.flatMap { context.viewState.dmPresence[$0] })
                     }
                     .contextMenu {
                         roomContextMenu(for: room)
