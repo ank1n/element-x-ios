@@ -245,7 +245,11 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
         let cacheDir = FileManager.default.temporaryDirectory.appendingPathComponent("recordings")
         try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
 
-        let localURL = cacheDir.appendingPathComponent("\(state.call.id).mp4")
+        // Build 118: ключ кеша — egressId (session_xxx из recordingURL), а не call.id.
+        // На iPhone call.id это нестабильный UUID локальной истории — менялся бы между
+        // launch'ами и каждый раз заставлял бы качать m4a заново. egressId стабилен.
+        let cacheKey = egressId ?? state.call.id
+        let localURL = cacheDir.appendingPathComponent("\(cacheKey).mp4")
 
         // Use cached file if exists and not too small
         if FileManager.default.fileExists(atPath: localURL.path),
