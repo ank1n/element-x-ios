@@ -272,23 +272,23 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
     
     private func updateVerificationBadge() async {
         guard roomProxy.isDirectOneToOneRoom,
-              let dmRecipient = roomProxy.membersPublisher.value.first(where: { $0.userID != roomProxy.ownUserID }),
-              case let .success(userIdentity) = await clientProxy.userIdentity(for: dmRecipient.userID, fallBackToServer: true) else {
+              let dmRecipient = roomProxy.membersPublisher.value.first(where: { $0.userID != roomProxy.ownUserID }) else {
             state.dmRecipientVerificationState = .notVerified
             return
         }
 
-        guard let userIdentity else {
-            // sTalk: Don't crash — identity may be nil without cross-signing bootstrap
-            MXLog.error("User identity is nil for DM recipient, skipping verification badge")
+        // STMOB-103 build 123: setup presence ДО userIdentity check.
+        // Иначе если userIdentity lookup fails (для бота / неверифицированного user)
+        // guard return → presence subtitle не появляется.
+        setupDMPresence(userID: dmRecipient.userID)
+
+        guard case let .success(userIdentity) = await clientProxy.userIdentity(for: dmRecipient.userID, fallBackToServer: true),
+              let userIdentity else {
             state.dmRecipientVerificationState = .notVerified
             return
         }
 
         state.dmRecipientVerificationState = userIdentity.verificationState
-
-        // STMOB-103 build 122: presence polling для DM-собеседника
-        setupDMPresence(userID: dmRecipient.userID)
     }
 
     // MARK: - DM Presence (STMOB-103 build 122)
