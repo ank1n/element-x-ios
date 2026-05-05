@@ -155,21 +155,62 @@ struct MediaEventsTimelineScreen: View {
     
     @ViewBuilder
     private func viewForTimelineItem(_ item: RoomTimelineItemViewState) -> some View {
-        switch item.type {
-        case .image(let timelineItem):
-            ImageMediaEventsTimelineView(timelineItem: timelineItem)
-        case .video(let timelineItem):
-            VideoMediaEventsTimelineView(timelineItem: timelineItem)
-        case .file(let timelineItem):
-            FileMediaEventsTimelineView(timelineItem: timelineItem)
-        case .audio(let timelineItem):
-            AudioMediaEventsTimelineView(timelineItem: timelineItem)
-        case .voice(let timelineItem):
-            let defaultPlayerState = AudioPlayerState(id: .timelineItemIdentifier(timelineItem.id), title: L10n.commonVoiceMessage, duration: 0)
-            let playerState = context.viewState.activeTimelineContext.viewState.audioPlayerStateProvider?(timelineItem.id) ?? defaultPlayerState
-            VoiceMessageMediaEventsTimelineView(timelineItem: timelineItem, playerState: playerState)
-        default:
+        // Build 128: в Files tab — все типы компактным списком (filename + size).
+        // В Media tab — preview thumbnails как раньше.
+        if context.viewState.bindings.screenMode == .files {
+            unifiedFileRowContent(for: item)
+        } else {
+            switch item.type {
+            case .image(let timelineItem):
+                ImageMediaEventsTimelineView(timelineItem: timelineItem)
+            case .video(let timelineItem):
+                VideoMediaEventsTimelineView(timelineItem: timelineItem)
+            case .file(let timelineItem):
+                FileMediaEventsTimelineView(timelineItem: timelineItem)
+            case .audio(let timelineItem):
+                AudioMediaEventsTimelineView(timelineItem: timelineItem)
+            case .voice(let timelineItem):
+                let defaultPlayerState = AudioPlayerState(id: .timelineItemIdentifier(timelineItem.id), title: L10n.commonVoiceMessage, duration: 0)
+                let playerState = context.viewState.activeTimelineContext.viewState.audioPlayerStateProvider?(timelineItem.id) ?? defaultPlayerState
+                VoiceMessageMediaEventsTimelineView(timelineItem: timelineItem, playerState: playerState)
+            default:
+                EmptyView()
+            }
+        }
+    }
+
+    /// Build 128: единый compact row для Files tab — все типы (file/audio/voice/image/video)
+    /// отображаются одинаково: иконка + filename + size + caption.
+    @ViewBuilder
+    private func unifiedFileRowContent(for item: RoomTimelineItemViewState) -> some View {
+        let info = Self.fileRowInfo(for: item)
+        if let info {
+            MediaFileRoomTimelineContent(filename: info.filename,
+                                         fileSize: info.fileSize,
+                                         caption: info.caption,
+                                         formattedCaption: nil,
+                                         additionalWhitespaces: 0)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .bubbleBackground(isOutgoing: false)
+        } else {
             EmptyView()
+        }
+    }
+
+    private static func fileRowInfo(for item: RoomTimelineItemViewState) -> (filename: String, fileSize: UInt?, caption: String?)? {
+        switch item.type {
+        case .file(let it):
+            return (it.content.filename, it.content.fileSize, it.content.caption)
+        case .image(let it):
+            return (it.content.filename, nil, it.content.caption)
+        case .video(let it):
+            return (it.content.filename, nil, it.content.caption)
+        case .audio(let it):
+            return (it.content.filename, it.content.fileSize, it.content.caption)
+        case .voice(let it):
+            return (it.content.filename, it.content.fileSize, nil)
+        default:
+            return nil
         }
     }
     
