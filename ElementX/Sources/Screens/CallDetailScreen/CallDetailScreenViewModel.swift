@@ -44,9 +44,30 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
         DiagLog.write("CallDetail", "init: callId=\(call.id) hasRecording=\(call.hasRecording) recordingURL=\(call.recordingURL?.absoluteString ?? "nil")")
         if call.hasRecording {
             Task { await loadTranscription() }
+            // Build 116 fix: предзагрузить аудиофайл (без autoplay) сразу при открытии
+            // экрана — иначе AudioPlayer не знает duration → UI показывает 0:00 / 0:00
+            // пока пользователь не тапнет Play. Длительность подтянется как только
+            // AVPlayerItem распарсит m4a метаданные.
+            preloadRecording()
         } else {
             DiagLog.write("CallDetail", "  hasRecording=false → loadTranscription SKIP")
             state.isTranscriptionLoading = false
+        }
+    }
+
+    private func preloadRecording() {
+        guard let recordingURL = state.call.recordingURL else { return }
+        DiagLog.write("CallDetail", "  preloadRecording START")
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let localURL = try await downloadRecording(from: recordingURL)
+                await MainActor.run {
+                    self.audioPlayer.load(sourceURL: recordingURL, playbackURL: localURL, autoplay: false)
+                }
+            } catch {
+                DiagLog.write("CallDetail", "  preloadRecording FAIL \(error)")
+            }
         }
     }
 
