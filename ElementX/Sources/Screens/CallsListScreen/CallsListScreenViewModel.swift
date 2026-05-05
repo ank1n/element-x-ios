@@ -327,9 +327,13 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         let roomMatches = recording.contactId == localCall.roomID ||
             recording.contactId.contains(localCall.roomID)
 
-        // Проверяем близость по времени (в пределах 5 минут)
-        let timeDiff = abs(recording.timestamp.timeIntervalSince(localCall.startedAt))
-        let timeMatches = timeDiff < 300 // 5 минут
+        // Build 129 (Молли STMOB-104 spec): асимметричное окно match.
+        // Recording.startedAt всегда >= callStart (egress lag 1-3 мин обычно):
+        //   -30s buffer для jitter timestamp (Synapse vs egress)
+        //   +5min для egress lag
+        let delta = recording.timestamp.timeIntervalSince(localCall.startedAt)
+        let callEndTs = (localCall.duration ?? 0) > 0 ? (localCall.duration ?? 0) : 0
+        let timeMatches = delta >= -30 && delta <= callEndTs + 300
 
         // Вариант 1: roomID совпадает + время близко
         if roomMatches, timeMatches {
@@ -349,7 +353,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
                 }
             }
             // Или если время начала совпадает с точностью до 30 секунд — скорее всего один звонок
-            if timeDiff < 30 {
+            if abs(delta) < 30 {
                 return true
             }
         }
