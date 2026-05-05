@@ -103,43 +103,24 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
     // MARK: - Private
 
     private func setupPresenceService() {
-        guard let concreteProxy = userSession.clientProxy as? ClientProxy,
-              let accessToken = try? concreteProxy.matrixAccessToken() else {
+        // Build 125: shared PresenceService из AppCoordinator (sync с HomeScreen + RoomScreen).
+        // Fallback на локальный instance если shared отсутствует (тест scenarios).
+        if let shared = AppCoordinator.sharedPresenceService {
+            presenceService = shared
+        } else if let concreteProxy = userSession.clientProxy as? ClientProxy,
+                  let accessToken = try? concreteProxy.matrixAccessToken() {
+            presenceService = PresenceService(homeserver: userSession.clientProxy.homeserver,
+                                              accessToken: accessToken,
+                                              ownUserID: userSession.clientProxy.userID)
+        } else {
             return
         }
-
-        let homeserver = userSession.clientProxy.homeserver
-        let ownUserID = userSession.clientProxy.userID
-
-        presenceService = PresenceService(homeserver: homeserver,
-                                          accessToken: accessToken,
-                                          ownUserID: ownUserID)
 
         // Subscribe to presence updates
         presenceService?.presenceSubject
             .receive(on: DispatchQueue.main)
             .sink { [weak self] presenceMap in
                 self?.applyPresence(presenceMap)
-            }
-            .store(in: &contactsCancellables)
-
-        // App lifecycle: foreground → online, background → offline
-        NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)
-            .sink { [weak self] _ in
-                guard let self, let presenceService = self.presenceService else { return }
-                let userIDs = self.state.contacts.compactMap(\.matrixUserID)
-                if !userIDs.isEmpty {
-                    presenceService.startPolling(userIDs: userIDs)
-                } else {
-                    Task { await presenceService.setOwnPresence("online") }
-                }
-            }
-            .store(in: &contactsCancellables)
-
-        NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)
-            .sink { [weak self] _ in
-                Task { await self?.presenceService?.setOwnPresence("offline") }
-                self?.presenceService?.stopPolling()
             }
             .store(in: &contactsCancellables)
     }
@@ -338,10 +319,16 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
 
         // Start or update polling with current user IDs
         if !userIDs.isEmpty {
-            if presenceService?.presenceSubject.value.isEmpty == true {
-                presenceService?.startPolling(userIDs: userIDs)
-            } else {
-                presenceService?.updatePollingUserIDs(userIDs)
+            // Build 125: merge с existing polling — НЕ перезаписываем (другие screens
+            // могли добавить свои userIDs).
+            if let presenceService {
+                let merged = Array(Set(presenceService.currentUserIDs).union(userIDs))
+                if presenceService.currentUserIDs.isEmpty {
+                    presenceService.startPolling(userIDs: merged)
+                } else {
+                    presenceService.updatePollingUserIDs(merged)
+                    Task { await presenceService.fetchPresence(for: userIDs) }
+                }
             }
 
             if let orgProfileService {

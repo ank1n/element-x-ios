@@ -86,8 +86,8 @@ struct HomeScreenRoomCell: View {
 
     private func presenceColor(_ presence: UserPresence) -> Color {
         if presence.isOnline { return Color(red: 0.18, green: 0.8, blue: 0.44) } // green online
-        // Если есть lastSeen в пределах 5 мин — жёлтый (idle/unavailable)
-        if let last = presence.lastSeenDate, Date().timeIntervalSince(last) < 5 * 60 {
+        // Build 125: lastSeen < 1 час — жёлтый (idle/unavailable)
+        if let last = presence.lastSeenDate, Date().timeIntervalSince(last) < 3600 {
             return Color(red: 0.95, green: 0.7, blue: 0.18) // yellow
         }
         return Color(red: 0.55, green: 0.6, blue: 0.65) // gray offline

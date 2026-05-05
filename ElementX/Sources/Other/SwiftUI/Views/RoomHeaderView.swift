@@ -111,7 +111,8 @@ struct RoomHeaderView: View {
 
     static func presenceColor(_ presence: UserPresence) -> Color {
         if presence.isOnline { return Color(red: 0.18, green: 0.8, blue: 0.44) }
-        if let last = presence.lastSeenDate, Date().timeIntervalSince(last) < 5 * 60 {
+        // Build 125: lastSeen < 1 час → жёлтый (idle), иначе серый
+        if let last = presence.lastSeenDate, Date().timeIntervalSince(last) < 3600 {
             return Color(red: 0.95, green: 0.7, blue: 0.18)
         }
         return Color(red: 0.55, green: 0.6, blue: 0.65)

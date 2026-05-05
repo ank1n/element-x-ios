@@ -45,12 +45,30 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
                 // на уровне сессии — раньше работало только на ContactsListScreen.
                 ownPresenceManager = OwnPresenceManager(clientProxy: userSession.clientProxy)
                 ownPresenceManager?.startOnline()
+                // STMOB-103 build 125: shared PresenceService для DM presence
+                // (HomeScreen list dots + RoomScreen header subtitle). Раньше были
+                // 2 независимых instance → расхождение статуса.
+                if let token = try? userSession.clientProxy.matrixAccessToken() {
+                    sharedPresenceService = PresenceService(homeserver: userSession.clientProxy.homeserver,
+                                                            accessToken: token,
+                                                            ownUserID: userSession.clientProxy.userID)
+                    AppCoordinator.sharedPresenceService = sharedPresenceService
+                }
+            } else {
+                sharedPresenceService = nil
+                AppCoordinator.sharedPresenceService = nil
             }
         }
     }
 
     /// STMOB-103: см. OwnPresenceManager — periodic setOwnPresence ping в Synapse.
     private var ownPresenceManager: OwnPresenceManager?
+
+    /// STMOB-103 build 125: shared PresenceService для DM presence dots + subtitle.
+    /// Регистрирует unique userIDs из всех видимых DM rooms. Single source of truth.
+    private var sharedPresenceService: PresenceService?
+    /// Static accessor для view models (избегаем большого refactor через flowParameters).
+    static var sharedPresenceService: PresenceService?
     
     private var authenticationFlowCoordinator: AuthenticationFlowCoordinator?
     private let appLockFlowCoordinator: AppLockFlowCoordinator

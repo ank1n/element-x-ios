@@ -298,31 +298,43 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
 
     // MARK: - DM Presence (STMOB-103 build 122)
 
-    private var dmPresenceService: PresenceService?
+    private var dmPresenceSubscribed = false
 
-    /// STMOB-103 build 124: системные боты которые могут быть участниками DM-комнаты
-    /// (для очистки meet rooms) — их нужно игнорировать при resolve dmRecipient.
+    /// STMOB-103 build 124+: системные боты + guest meet users (динамические ID
+    /// типа @meet-8913e350:..., @meet-cleanup:...) — игнорируем при resolve
+    /// dmRecipient. Любой `@meet-*` user — это session guest или cleanup bot.
     private static func isSystemBot(userID: String) -> Bool {
-        userID.hasPrefix("@meet-cleanup:") || userID.hasPrefix("@meet-bot:") || userID.hasPrefix("@stalk-system:")
+        userID.hasPrefix("@meet-") || userID.hasPrefix("@stalk-system:")
     }
 
     private func setupDMPresence(userID: String) {
-        DiagLog.write("RoomDMPresence", "setup userID=\(userID) room=\(roomProxy.id) hasService=\(dmPresenceService != nil)")
-        guard dmPresenceService == nil,
-              let token = try? clientProxy.matrixAccessToken() else { return }
-        let service = PresenceService(homeserver: clientProxy.homeserver,
-                                      accessToken: token,
-                                      ownUserID: clientProxy.userID)
-        dmPresenceService = service
-        service.presenceSubject
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] map in
-                let presence = map[userID]
-                DiagLog.write("RoomDMPresence", "  update userID=\(userID) found=\(presence != nil) isOnline=\(presence?.isOnline ?? false)")
-                self?.state.dmRecipientPresence = presence
+        DiagLog.write("RoomDMPresence", "setup userID=\(userID) room=\(roomProxy.id) subscribed=\(dmPresenceSubscribed)")
+        // Build 125: shared PresenceService — sync с HomeScreen и ContactsListScreen.
+        guard let service = AppCoordinator.sharedPresenceService else { return }
+        if !dmPresenceSubscribed {
+            dmPresenceSubscribed = true
+            service.presenceSubject
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] map in
+                    let presence = map[userID]
+                    DiagLog.write("RoomDMPresence", "  update userID=\(userID) found=\(presence != nil) isOnline=\(presence?.isOnline ?? false)")
+                    self?.state.dmRecipientPresence = presence
+                }
+                .store(in: &cancellables)
+        }
+        // Регистрируем userID собеседника в общий poll если не зарегистрирован.
+        if !service.currentUserIDs.contains(userID) {
+            let merged = Array(Set(service.currentUserIDs + [userID]))
+            if service.currentUserIDs.isEmpty {
+                service.startPolling(userIDs: merged)
+            } else {
+                service.updatePollingUserIDs(merged)
+                Task { await service.fetchPresence(for: [userID]) }
             }
-            .store(in: &cancellables)
-        service.startPolling(userIDs: [userID])
+        } else {
+            // Уже polit — присвоим cached value для немедленного отображения
+            state.dmRecipientPresence = service.presenceSubject.value[userID]
+        }
     }
     
     private func resolveIdentityPinningViolation(_ userID: String) async {

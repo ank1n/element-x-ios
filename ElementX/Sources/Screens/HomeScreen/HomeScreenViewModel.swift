@@ -446,15 +446,14 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
 
     // MARK: - DM Presence (STMOB-103 build 120)
 
-    private var dmPresenceService: PresenceService?
+    private var dmPresenceServiceSubscribed = false
 
     private func setupDMPresenceService() {
-        guard dmPresenceService == nil,
-              let token = try? userSession.clientProxy.matrixAccessToken() else { return }
-        let service = PresenceService(homeserver: userSession.clientProxy.homeserver,
-                                      accessToken: token,
-                                      ownUserID: userSession.clientProxy.userID)
-        dmPresenceService = service
+        // Build 125: используем shared PresenceService из AppCoordinator вместо
+        // локального instance. Гарантирует sync между HomeScreen list и RoomScreen
+        // header.
+        guard !dmPresenceServiceSubscribed, let service = AppCoordinator.sharedPresenceService else { return }
+        dmPresenceServiceSubscribed = true
         service.presenceSubject
             .receive(on: DispatchQueue.main)
             .sink { [weak self] map in
@@ -465,18 +464,17 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
 
     private func updatePresencePolling() {
         setupDMPresenceService()
-        guard let service = dmPresenceService else { return }
+        guard let service = AppCoordinator.sharedPresenceService else { return }
         let dmUserIDs = Array(Set(state.rooms.compactMap(\.dmUserID)))
-        guard !dmUserIDs.isEmpty else {
-            service.stopPolling()
-            return
-        }
+        // Build 125: merge с existing polling — НЕ перезаписываем (RoomScreen
+        // тоже мог добавить userID собеседника).
+        let merged = Array(Set(service.currentUserIDs).union(dmUserIDs))
+        guard !merged.isEmpty else { return }
         if service.currentUserIDs.isEmpty {
-            service.startPolling(userIDs: dmUserIDs)
-        } else {
-            service.updatePollingUserIDs(dmUserIDs)
-            // Trigger immediate fetch when set changes
-            Task { await service.fetchPresence(for: dmUserIDs) }
+            service.startPolling(userIDs: merged)
+        } else if Set(service.currentUserIDs) != Set(merged) {
+            service.updatePollingUserIDs(merged)
+            Task { await service.fetchPresence(for: merged) }
         }
     }
 

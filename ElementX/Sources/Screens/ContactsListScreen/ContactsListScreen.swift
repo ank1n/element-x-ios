@@ -367,11 +367,11 @@ struct ContactsListScreen: View {
                         .font(.system(size: 12))
                         .foregroundColor(.orange)
                 }
-                if contact.isOnline {
-                    Circle()
-                        .fill(Color.stalkOnlineGreen)
-                        .frame(width: 10, height: 10)
-                }
+                // Build 125: 3-цветная точка (как в HomeScreen + RoomScreen).
+                // Зелёный online / жёлтый <1ч / серый offline.
+                Circle()
+                    .fill(Self.contactPresenceColor(contact))
+                    .frame(width: 10, height: 10)
             }
         }
         .padding(.horizontal, 16)
@@ -617,17 +617,30 @@ struct ContactsListScreen: View {
                         .font(.system(size: 12))
                         .foregroundColor(.orange)
                 }
-                if contact.isOnline {
-                    Circle()
-                        .fill(Color.stalkOnlineGreen)
-                        .frame(width: 10, height: 10)
-                }
+                // Build 125: 3-цветная точка (как в HomeScreen + RoomScreen).
+                // Зелёный online / жёлтый <1ч / серый offline.
+                Circle()
+                    .fill(Self.contactPresenceColor(contact))
+                    .frame(width: 10, height: 10)
             }
         }
         .padding(12)
         .background(cardBg)
         .cornerRadius(14)
         .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
+    }
+}
+
+// MARK: - Presence helper
+
+extension ContactsListScreen {
+    /// Build 125: 3-цветная семантика presence (общая с HomeScreen и RoomScreen).
+    static func contactPresenceColor(_ contact: ContactItem) -> Color {
+        if contact.isOnline { return Color(red: 0.18, green: 0.8, blue: 0.44) }
+        if let last = contact.lastSeenDate, Date().timeIntervalSince(last) < 3600 {
+            return Color(red: 0.95, green: 0.7, blue: 0.18)
+        }
+        return Color(red: 0.55, green: 0.6, blue: 0.65)
     }
 }
 
