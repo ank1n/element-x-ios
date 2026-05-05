@@ -44,7 +44,10 @@ struct RoomScreenViewState: BindableState {
     var roomTitle = ""
     var roomAvatar: RoomAvatar
     var dmRecipientVerificationState: UserIdentityVerificationState?
-    
+    /// STMOB-103 build 122: presence DM-собеседника для RoomHeaderView (зелёная
+    /// точка на avatar + subtitle "в сети"/"был X назад"). Nil для group chats.
+    var dmRecipientPresence: UserPresence?
+
     var lastScrollDirection: ScrollDirection?
     // This is used to control the banner
     var pinnedEventsBannerState: PinnedEventsBannerState = .loading(numbersOfEvents: 0)

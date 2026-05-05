@@ -15,9 +15,12 @@ struct RoomHeaderView: View {
     var roomSubtitle: String?
     let roomAvatar: RoomAvatar
     var dmRecipientVerificationState: UserIdentityVerificationState?
-    
+    /// STMOB-103 build 122: presence DM-собеседника. Telegram-style — точка
+    /// на avatar + subtitle "в сети"/"был в сети X назад" под именем.
+    var dmRecipientPresence: UserPresence?
+
     let mediaProvider: MediaProviderProtocol?
-    
+
     let action: () -> Void
     
     var body: some View {
@@ -43,33 +46,75 @@ struct RoomHeaderView: View {
         HStack(spacing: 8) {
             avatarImage
                 .accessibilityHidden(true)
-            
+
             HStack(spacing: 4) {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(roomName)
                         .lineLimit(1)
                         .font(.compound.bodyLGSemibold)
                         .accessibilityIdentifier(A11yIdentifiers.roomScreen.name)
-                    if let roomSubtitle {
+                    // Build 122: presence subtitle для DM имеет приоритет над roomSubtitle.
+                    if let presenceSubtitleText {
+                        Text(presenceSubtitleText)
+                            .lineLimit(1)
+                            .font(.compound.bodyXS)
+                            .foregroundStyle(presenceSubtitleColor)
+                    } else if let roomSubtitle {
                         Text(roomSubtitle)
                             .lineLimit(1)
                             .font(.compound.bodyXS)
                             .foregroundStyle(.compound.textSecondary)
                     }
                 }
-                
+
                 if let dmRecipientVerificationState {
                     VerificationBadge(verificationState: dmRecipientVerificationState)
                 }
             }
         }
     }
-    
+
     private var avatarImage: some View {
         RoomAvatarImage(avatar: roomAvatar,
                         avatarSize: .room(on: .timeline),
                         mediaProvider: mediaProvider)
             .accessibilityIdentifier(A11yIdentifiers.roomScreen.avatar)
+            // Build 122: зелёная/жёлтая/серая точка на avatar для DM
+            .overlay(alignment: .bottomTrailing) {
+                if let presence = dmRecipientPresence {
+                    Circle()
+                        .fill(Self.presenceColor(presence))
+                        .frame(width: 10, height: 10)
+                        .overlay(Circle().stroke(Color(uiColor: .systemBackground), lineWidth: 1.5))
+                }
+            }
+    }
+
+    private var presenceSubtitleText: String? {
+        guard let presence = dmRecipientPresence else { return nil }
+        if presence.isOnline { return "в сети" }
+        if let last = presence.lastSeenDate {
+            let formatter = RelativeDateTimeFormatter()
+            formatter.unitsStyle = .full
+            formatter.locale = Locale(identifier: "ru_RU")
+            return "был в сети \(formatter.localizedString(for: last, relativeTo: Date()))"
+        }
+        return "не в сети"
+    }
+
+    private var presenceSubtitleColor: Color {
+        guard let presence = dmRecipientPresence, presence.isOnline else {
+            return .compound.textSecondary
+        }
+        return Color(red: 0.18, green: 0.8, blue: 0.44)
+    }
+
+    static func presenceColor(_ presence: UserPresence) -> Color {
+        if presence.isOnline { return Color(red: 0.18, green: 0.8, blue: 0.44) }
+        if let last = presence.lastSeenDate, Date().timeIntervalSince(last) < 5 * 60 {
+            return Color(red: 0.95, green: 0.7, blue: 0.18)
+        }
+        return Color(red: 0.55, green: 0.6, blue: 0.65)
     }
 }
 

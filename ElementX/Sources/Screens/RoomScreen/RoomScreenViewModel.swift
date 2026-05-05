@@ -277,15 +277,38 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
             state.dmRecipientVerificationState = .notVerified
             return
         }
-        
+
         guard let userIdentity else {
             // sTalk: Don't crash — identity may be nil without cross-signing bootstrap
             MXLog.error("User identity is nil for DM recipient, skipping verification badge")
             state.dmRecipientVerificationState = .notVerified
             return
         }
-        
+
         state.dmRecipientVerificationState = userIdentity.verificationState
+
+        // STMOB-103 build 122: presence polling для DM-собеседника
+        setupDMPresence(userID: dmRecipient.userID)
+    }
+
+    // MARK: - DM Presence (STMOB-103 build 122)
+
+    private var dmPresenceService: PresenceService?
+
+    private func setupDMPresence(userID: String) {
+        guard dmPresenceService == nil,
+              let token = try? clientProxy.matrixAccessToken() else { return }
+        let service = PresenceService(homeserver: clientProxy.homeserver,
+                                      accessToken: token,
+                                      ownUserID: clientProxy.userID)
+        dmPresenceService = service
+        service.presenceSubject
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] map in
+                self?.state.dmRecipientPresence = map[userID]
+            }
+            .store(in: &cancellables)
+        service.startPolling(userIDs: [userID])
     }
     
     private func resolveIdentityPinningViolation(_ userID: String) async {
