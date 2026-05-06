@@ -54,9 +54,15 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
                                                             ownUserID: userSession.clientProxy.userID)
                     AppCoordinator.sharedPresenceService = sharedPresenceService
                 }
+                // STMOB-108: держим app icon badge в синхроне с реальным
+                // unreadNotificationsCount из SDK (NSE ставит badge на push,
+                // но при чтении сообщений в app системный счётчик не сбрасывался).
+                setupBadgeUpdates(clientProxy: userSession.clientProxy)
             } else {
                 sharedPresenceService = nil
                 AppCoordinator.sharedPresenceService = nil
+                badgeCancellable?.cancel()
+                badgeCancellable = nil
             }
         }
     }
@@ -79,6 +85,8 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
     private var appDelegateObserver: AnyCancellable?
     private var userSessionObserver: AnyCancellable?
     private var clientProxyObserver: AnyCancellable?
+    /// STMOB-108: app icon badge sync с RoomSummaryProvider.unreadNotificationsCount.
+    private var badgeCancellable: AnyCancellable?
     private var cancellables = Set<AnyCancellable>()
     
     let windowManager: SecureWindowManagerProtocol
@@ -1213,8 +1221,50 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         startSync()
         // STMOB-103: возобновить online ping при возврате из background
         ownPresenceManager?.startOnline()
+        // STMOB-108: при возврате из background — снести delivered notifications
+        // тех комнат, где непрочитанных уже нет (юзер прочитал на другом устройстве
+        // или recompute SDK после sync). Сам badge актуализируется через
+        // badgeCancellable sink на roomListPublisher.
+        cleanupReadDeliveredNotifications()
     }
-    
+
+    // MARK: - STMOB-108: app icon badge sync
+
+    private func setupBadgeUpdates(clientProxy: ClientProxyProtocol) {
+        let provider = clientProxy.roomSummaryProvider
+        badgeCancellable = provider.roomListPublisher
+            .combineLatest(provider.statePublisher)
+            .filter { _, state in state.isLoaded }
+            .map { rooms, _ -> Int in
+                rooms.reduce(0) { acc, room in
+                    room.isMuted ? acc : acc + Int(room.unreadNotificationsCount)
+                }
+            }
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { count in
+                MXLog.info("STMOB-108 badge sync → \(count)")
+                UNUserNotificationCenter.current().setBadgeCount(count)
+            }
+    }
+
+    private func cleanupReadDeliveredNotifications() {
+        guard let provider = userSession?.clientProxy.roomSummaryProvider else { return }
+        let unreadRooms = Set(provider.roomListPublisher.value
+            .filter { !$0.isMuted && $0.unreadNotificationsCount > 0 }
+            .map(\.id))
+        let center = UNUserNotificationCenter.current()
+        center.getDeliveredNotifications { notifications in
+            let identifiersToRemove = notifications.compactMap { notification -> String? in
+                guard let roomID = notification.request.content.roomID else { return nil }
+                return unreadRooms.contains(roomID) ? nil : notification.request.identifier
+            }
+            guard !identifiersToRemove.isEmpty else { return }
+            MXLog.info("STMOB-108 removing \(identifiersToRemove.count) delivered notifications for already-read rooms")
+            center.removeDeliveredNotifications(withIdentifiers: identifiersToRemove)
+        }
+    }
+
     private func endActiveBackgroundTask() {
         guard let backgroundTask else {
             return
