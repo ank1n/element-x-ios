@@ -105,11 +105,17 @@ class PresenceService {
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               let httpResponse = response as? HTTPURLResponse else {
             os_log(.error, log: presenceLog, "fetchPresence(%{public}@): network error", userID)
+            DiagLog.write("Presence", "fetchPresence(\(userID)) network error")
             return nil
         }
 
         let body = String(data: data, encoding: .utf8) ?? ""
         os_log(.info, log: presenceLog, "fetchPresence(%{public}@) → %d: %{public}@", userID, httpResponse.statusCode, body)
+        // STMOB-109: дублируем в DiagLog чтобы видеть HTTP коды по чужим
+        // presence в `nse-events.log` (os_log на устройстве не виден).
+        if httpResponse.statusCode != 200 {
+            DiagLog.write("Presence", "fetchPresence(\(userID)) → HTTP \(httpResponse.statusCode)")
+        }
 
         guard httpResponse.statusCode == 200,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {

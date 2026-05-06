@@ -33,6 +33,14 @@ final class OwnPresenceManager {
     /// rate-limit на /presence endpoint (раньше регулярно прилетало HTTP 429).
     private let pingInterval: TimeInterval = 60
 
+    /// STMOB-109 build 132: дебаунс. iOS lifecycle хуки (willEnterForeground /
+    /// willResignActive) могут стрелять пачкой — без дебаунса setStatus летит
+    /// 3-5 раз за 10 секунд и упирается в Synapse 429. Запоминаем последний
+    /// отправленный статус и время — повтор того же статуса в окне 15с скипаем.
+    private var lastSentStatus: String?
+    private var lastSentAt: Date?
+    private let debounceInterval: TimeInterval = 15
+
     init?(clientProxy: ClientProxyProtocol) {
         // sanity check: token должен быть доступен сейчас (иначе session не set)
         guard (try? clientProxy.matrixAccessToken()) != nil else { return nil }
@@ -73,6 +81,18 @@ final class OwnPresenceManager {
     }
 
     private func setStatus(_ status: String) async {
+        // STMOB-109: дебаунс одинаковых статусов. Lifecycle hooks могут вызвать
+        // setStatus(online) несколько раз за секунды (didBecomeActive +
+        // willEnterForeground, либо переключения экрана) — без дебаунса это
+        // упирается в Synapse rate-limit (HTTP 429), и в результате чужой
+        // presence GET /presence/<user>/status тоже получает 429 (sham per-user
+        // limit), и UI теряет dots / "был в сети".
+        if lastSentStatus == status,
+           let lastSentAt,
+           Date().timeIntervalSince(lastSentAt) < debounceInterval {
+            DiagLog.write("Presence", "setStatus(\(status)) SKIP — debounced (<\(Int(debounceInterval))s)")
+            return
+        }
         var allowed = CharacterSet.urlPathAllowed
         allowed.remove(charactersIn: "@:")
         let encodedUserID = userID.addingPercentEncoding(withAllowedCharacters: allowed) ?? userID
@@ -92,6 +112,12 @@ final class OwnPresenceManager {
             let (_, response) = try await URLSession.shared.data(for: request)
             let code = (response as? HTTPURLResponse)?.statusCode ?? -1
             DiagLog.write("Presence", "setStatus(\(status)) → HTTP \(code)")
+            // STMOB-109: фиксируем lastSent ТОЛЬКО при HTTP 200, чтобы дебаунс
+            // не ел реальный retry после 429 на следующем такте.
+            if code == 200 {
+                lastSentStatus = status
+                lastSentAt = Date()
+            }
             // Build 121: при 429 (rate limit) — backoff 2 мин на следующий ping.
             if code == 429 {
                 try? await Task.sleep(nanoseconds: 120 * 1_000_000_000)
