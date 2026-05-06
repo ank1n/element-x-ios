@@ -1236,8 +1236,13 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
             .combineLatest(provider.statePublisher)
             .filter { _, state in state.isLoaded }
             .map { rooms, _ -> Int in
+                // STMOB-108 build 132: учитываем только реально joined комнаты
+                // (joinRequestType == nil исключает pending invites/knocks),
+                // не-muted и с unreadNotificationsCount > 0. Это соответствует
+                // тому что юзер видит как "непрочитанные в чатах" на HomeScreen.
                 rooms.reduce(0) { acc, room in
-                    room.isMuted ? acc : acc + Int(room.unreadNotificationsCount)
+                    guard room.joinRequestType == nil, !room.isMuted else { return acc }
+                    return acc + Int(room.unreadNotificationsCount)
                 }
             }
             .removeDuplicates()
