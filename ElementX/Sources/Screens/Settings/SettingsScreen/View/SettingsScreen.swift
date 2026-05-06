@@ -471,7 +471,9 @@ struct SettingsScreen: View {
                         .accessibilityIdentifier(A11yIdentifiers.settingsScreen.reportBug)
             }
 
-            if let nseLogURL = nseDiagLogURL() {
+            // STMOB-111: NSE diag log — только если включены developer options
+            // (toggle 7 тапами по версии в самом низу Settings).
+            if context.viewState.showDeveloperOptions, let nseLogURL = nseDiagLogURL() {
                 ListRow(kind: .custom {
                     ShareLink(item: nseLogURL) {
                         HStack(spacing: 16) {

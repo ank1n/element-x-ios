@@ -142,9 +142,16 @@ class NotificationHandler {
             return
         }
 
-        // Copy over the unread information to the notification badge
-        notificationContent.badge = notificationContent.unreadCount as NSNumber?
-        MXLog.info("\(tag) New badge value: \(notificationContent.badge?.stringValue ?? "nil")")
+        // STMOB-108 build 135: НЕ устанавливаем .badge в NSE.
+        // Раньше: notificationContent.badge = unreadCount → каждый push перетирал
+        // системный счётчик значением unreadCount per-room на момент пуша
+        // (обычно 1 для DM), затирая корректный sync из main app
+        // (sum unreadNotificationsCount по всем joined-комнатам).
+        // Теперь app icon badge единственно управляется setupBadgeUpdates в
+        // AppCoordinator. Trade-off: если app убит — badge не растёт от push'ей,
+        // но догоняется при ближайшем запуске app. Это лучше чем рассинхрон
+        // (badge=1 при 3 непрочитанных в чате).
+        MXLog.info("\(tag) Badge skipped — managed by main app (STMOB-108)")
 
         // Fast-fail timeout (3 sec). Если RustSDK не успел fetch+decrypt event за
         // 3 секунды — discard. Раньше блокировались на 19+ секунд пытаясь decrypt

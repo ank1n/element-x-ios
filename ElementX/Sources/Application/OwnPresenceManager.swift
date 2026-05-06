@@ -41,7 +41,10 @@ final class OwnPresenceManager {
     /// предыдущего скипаются (online↔unavailable flapping тоже режется).
     private var lastSentStatus: String?
     private var lastSentAt: Date?
-    private let debounceInterval: TimeInterval = 5
+    /// build 135: 12с (было 5с). На build 134 cooldown 5с пропускал
+    /// большинство 429 из-за iOS lifecycle flapping, в логе соотношение
+    /// 49 HTTP 429 vs 3 SKIP. 12с режет более широкое окно.
+    private let debounceInterval: TimeInterval = 12
 
     init?(clientProxy: ClientProxyProtocol) {
         // sanity check: token должен быть доступен сейчас (иначе session не set)
