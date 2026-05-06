@@ -1236,19 +1236,33 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
             .combineLatest(provider.statePublisher)
             .filter { _, state in state.isLoaded }
             .map { rooms, _ -> Int in
-                // STMOB-108 build 132: учитываем только реально joined комнаты
-                // (joinRequestType == nil исключает pending invites/knocks),
-                // не-muted и с unreadNotificationsCount > 0. Это соответствует
-                // тому что юзер видит как "непрочитанные в чатах" на HomeScreen.
-                rooms.reduce(0) { acc, room in
-                    guard room.joinRequestType == nil, !room.isMuted else { return acc }
-                    return acc + Int(room.unreadNotificationsCount)
+                // STMOB-108 build 134: считаем только реальные чаты, в которых
+                // юзер видит непрочитанные на HomeScreen — joined (joinRequestType nil),
+                // не space, не tombstoned, не muted. Раньше badge=1 залипал из-за
+                // skрытых space-комнат / tombstoned remnants с unread.
+                var total = 0
+                var sources: [String] = []
+                for room in rooms {
+                    guard room.joinRequestType == nil,
+                          !room.isSpace,
+                          !room.isTombstoned,
+                          !room.isMuted else { continue }
+                    let unread = Int(room.unreadNotificationsCount)
+                    if unread > 0 {
+                        total += unread
+                        sources.append("\(room.id)=\(unread)")
+                    }
                 }
+                if total > 0 {
+                    DiagLog.write("Badge", "STMOB-108 sources [\(sources.count)]: \(sources.joined(separator: ", "))")
+                }
+                return total
             }
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { count in
                 MXLog.info("STMOB-108 badge sync → \(count)")
+                DiagLog.write("Badge", "STMOB-108 setBadgeCount(\(count))")
                 UNUserNotificationCenter.current().setBadgeCount(count)
             }
     }

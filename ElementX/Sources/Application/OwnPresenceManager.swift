@@ -33,13 +33,15 @@ final class OwnPresenceManager {
     /// rate-limit на /presence endpoint (раньше регулярно прилетало HTTP 429).
     private let pingInterval: TimeInterval = 60
 
-    /// STMOB-109 build 132: дебаунс. iOS lifecycle хуки (willEnterForeground /
+    /// STMOB-109 build 134: дебаунс. iOS lifecycle хуки (willEnterForeground /
     /// willResignActive) могут стрелять пачкой — без дебаунса setStatus летит
-    /// 3-5 раз за 10 секунд и упирается в Synapse 429. Запоминаем последний
-    /// отправленный статус и время — повтор того же статуса в окне 15с скипаем.
+    /// 3-5 раз за 10 секунд и упирается в Synapse 429.
+    /// build 132: дебаунс работал только для same-status повторов.
+    /// build 134: общий cooldown — любые setStatus в окне 5с после успешного
+    /// предыдущего скипаются (online↔unavailable flapping тоже режется).
     private var lastSentStatus: String?
     private var lastSentAt: Date?
-    private let debounceInterval: TimeInterval = 15
+    private let debounceInterval: TimeInterval = 5
 
     init?(clientProxy: ClientProxyProtocol) {
         // sanity check: token должен быть доступен сейчас (иначе session не set)
@@ -81,16 +83,15 @@ final class OwnPresenceManager {
     }
 
     private func setStatus(_ status: String) async {
-        // STMOB-109: дебаунс одинаковых статусов. Lifecycle hooks могут вызвать
-        // setStatus(online) несколько раз за секунды (didBecomeActive +
-        // willEnterForeground, либо переключения экрана) — без дебаунса это
-        // упирается в Synapse rate-limit (HTTP 429), и в результате чужой
-        // presence GET /presence/<user>/status тоже получает 429 (sham per-user
-        // limit), и UI теряет dots / "был в сети".
-        if lastSentStatus == status,
+        // STMOB-109 build 134: общий cooldown на любой setStatus. Lifecycle hooks
+        // могут флапать online↔unavailable за секунды и каждый запрос ел rate
+        // limit — теперь любой setStatus в окне `debounceInterval` после
+        // успешного предыдущего скипается. Кроме `offline` — это терминальный
+        // статус (на завершении app), его пропускать нельзя.
+        if status != "offline",
            let lastSentAt,
            Date().timeIntervalSince(lastSentAt) < debounceInterval {
-            DiagLog.write("Presence", "setStatus(\(status)) SKIP — debounced (<\(Int(debounceInterval))s)")
+            DiagLog.write("Presence", "setStatus(\(status)) SKIP — debounced (<\(Int(debounceInterval))s, last=\(lastSentStatus ?? "?"))")
             return
         }
         var allowed = CharacterSet.urlPathAllowed

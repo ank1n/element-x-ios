@@ -26,6 +26,16 @@ class PresenceService {
         pollingUserIDs
     }
 
+    /// STMOB-110: in-flight set чтобы не запускать второй fetch для уже
+    /// активного запроса (protect от 100+ duplicates за 12 мс).
+    private var inFlight: Set<String> = []
+
+    /// STMOB-110: кэш юзеров с HTTP 403 (бот без presence permissions).
+    /// На N минут такого юзера не fetchим вообще — Synapse будет возвращать
+    /// 403 и дальше, а каждый запрос съедает per-user rate limit.
+    private var forbiddenUntil: [String: Date] = [:]
+    private let forbiddenTTL: TimeInterval = 600 // 10 минут
+
     let presenceSubject = CurrentValueSubject<[String: UserPresence], Never>([:])
 
     init(homeserver: String, accessToken: String, ownUserID: String) {
@@ -76,15 +86,42 @@ class PresenceService {
     func fetchPresence(for userIDs: [String]) async {
         var results = presenceSubject.value
 
-        await withTaskGroup(of: (String, UserPresence?).self) { group in
-            for userID in userIDs {
+        // STMOB-110: дедуп. Из набора убираем 1) тех кто уже in-flight
+        // (другой fetchPresence call ещё идёт для этого юзера) и 2) тех
+        // кто в forbidden-кэше (бот вернул 403 < 10 мин назад).
+        let now = Date()
+        let dedupedIDs = userIDs.filter { userID in
+            if inFlight.contains(userID) { return false }
+            if let until = forbiddenUntil[userID], until > now { return false }
+            return true
+        }
+        let skippedCount = userIDs.count - dedupedIDs.count
+        if skippedCount > 0 {
+            DiagLog.write("Presence", "fetchPresence batch=\(userIDs.count) → \(dedupedIDs.count) (skipped \(skippedCount): in-flight/forbidden)")
+        } else {
+            DiagLog.write("Presence", "fetchPresence batch=\(dedupedIDs.count)")
+        }
+        guard !dedupedIDs.isEmpty else {
+            return
+        }
+        for id in dedupedIDs {
+            inFlight.insert(id)
+        }
+
+        await withTaskGroup(of: (String, UserPresence?, Int?).self) { group in
+            for userID in dedupedIDs {
                 group.addTask { [weak self] in
-                    guard let self else { return (userID, nil) }
-                    return await (userID, self.fetchSinglePresence(userID: userID))
+                    guard let self else { return (userID, nil, nil) }
+                    let (presence, statusCode) = await self.fetchSinglePresenceWithStatus(userID: userID)
+                    return (userID, presence, statusCode)
                 }
             }
 
-            for await (userID, presence) in group {
+            for await (userID, presence, statusCode) in group {
+                inFlight.remove(userID)
+                if statusCode == 403 {
+                    forbiddenUntil[userID] = now.addingTimeInterval(forbiddenTTL)
+                }
                 if let presence {
                     results[userID] = presence
                 }
@@ -94,44 +131,36 @@ class PresenceService {
         presenceSubject.send(results)
     }
 
-    private func fetchSinglePresence(userID: String) async -> UserPresence? {
+    /// STMOB-110: версия fetchSinglePresence которая дополнительно отдаёт
+    /// HTTP-код наверх (нужен для 403-кэша).
+    private func fetchSinglePresenceWithStatus(userID: String) async -> (UserPresence?, Int?) {
         let encodedUserID = Self.encodeUserID(userID)
-        guard let url = URL(string: "\(homeserver)/_matrix/client/v3/presence/\(encodedUserID)/status") else { return nil }
-
+        guard let url = URL(string: "\(homeserver)/_matrix/client/v3/presence/\(encodedUserID)/status") else { return (nil, nil) }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               let httpResponse = response as? HTTPURLResponse else {
-            os_log(.error, log: presenceLog, "fetchPresence(%{public}@): network error", userID)
             DiagLog.write("Presence", "fetchPresence(\(userID)) network error")
-            return nil
+            return (nil, nil)
         }
-
         let body = String(data: data, encoding: .utf8) ?? ""
         os_log(.info, log: presenceLog, "fetchPresence(%{public}@) → %d: %{public}@", userID, httpResponse.statusCode, body)
-        // STMOB-109: дублируем в DiagLog чтобы видеть HTTP коды по чужим
-        // presence в `nse-events.log` (os_log на устройстве не виден).
         if httpResponse.statusCode != 200 {
             DiagLog.write("Presence", "fetchPresence(\(userID)) → HTTP \(httpResponse.statusCode)")
+            return (nil, httpResponse.statusCode)
         }
-
-        guard httpResponse.statusCode == 200,
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return nil
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return (nil, httpResponse.statusCode)
         }
-
         let presenceStr = json["presence"] as? String ?? "offline"
         let currentlyActive = json["currently_active"] as? Bool ?? false
         let isOnline = presenceStr == "online" || currentlyActive
-
         var lastSeenDate: Date?
         if let lastActiveAgo = json["last_active_ago"] as? Int {
             lastSeenDate = Date().addingTimeInterval(-Double(lastActiveAgo) / 1000.0)
         }
-
-        return UserPresence(isOnline: isOnline, lastSeenDate: lastSeenDate)
+        return (UserPresence(isOnline: isOnline, lastSeenDate: lastSeenDate), httpResponse.statusCode)
     }
 
     // MARK: - Polling
