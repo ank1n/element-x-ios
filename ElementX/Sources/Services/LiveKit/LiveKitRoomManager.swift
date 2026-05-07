@@ -706,15 +706,26 @@ extension LiveKitRoomManager: RoomDelegate {
     }
 
     nonisolated func room(_ room: Room, participant: RemoteParticipant, didSubscribeTrack publication: RemoteTrackPublication) {
+        let pubKind = "\(publication.kind)"
+        let pubName = publication.name
+        let pubSource = "\(publication.source)"
+        let isScreenShare = publication.name == Track.screenShareVideoName || publication.source == .screenShareVideo
+        let identity = participant.identity?.stringValue ?? "?"
         Task { @MainActor in
             self.updateState()
-            MXLog.info("sTalk LiveKit: Subscribed to track: \(publication.kind) from \(participant.identity?.stringValue ?? "unknown")")
+            MXLog.info("sTalk LiveKit: Subscribed to track: \(pubKind) from \(identity)")
+            // STMOB-114: видим в nse-events.log реально ли пришёл screen share track.
+            DiagLog.write("Call", "track subscribed kind=\(pubKind) name=\(pubName) source=\(pubSource) isScreenShare=\(isScreenShare) from=\(identity)")
         }
     }
 
     nonisolated func room(_ room: Room, participant: RemoteParticipant, didUnsubscribeTrack publication: RemoteTrackPublication) {
+        let pubName = publication.name
+        let isScreenShare = publication.name == Track.screenShareVideoName || publication.source == .screenShareVideo
+        let identity = participant.identity?.stringValue ?? "?"
         Task { @MainActor in
             self.updateState()
+            DiagLog.write("Call", "track unsubscribed name=\(pubName) isScreenShare=\(isScreenShare) from=\(identity)")
         }
     }
 

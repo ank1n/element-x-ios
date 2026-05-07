@@ -64,10 +64,20 @@ struct CallScreenViewState: BindableState {
     /// на active speaker / first remote.
     var pinnedParticipantSID: String?
 
-    /// Effective layout mode: user override > auto by participant count.
-    /// Threshold по UX: > 8 человек → speaker по умолчанию (плитки в grid
-    /// слишком мелкие), ≤ 8 → grid.
+    /// Effective layout mode:
+    /// 1. STMOB-114: если есть subscribed screen-share track у любого remote —
+    ///    форсим .speaker (даже override не побеждает — share главнее).
+    /// 2. user override (toolbar toggle).
+    /// 3. auto by remoteCount: > 8 → speaker, иначе grid.
     var effectiveLayoutMode: CallLayoutMode {
+        if let manager = liveKitRoomManager {
+            let hasScreenShare = manager.remoteParticipants.contains { participant in
+                participant.videoTracks.contains { pub in
+                    pub.isSubscribed && (pub.name == "screen_share" || pub.name.lowercased().contains("screen"))
+                }
+            }
+            if hasScreenShare { return .speaker }
+        }
         if let override = layoutOverride { return override }
         let remoteCount = liveKitRoomManager?.remoteParticipants.count ?? 0
         return remoteCount > 8 ? .speaker : .grid
