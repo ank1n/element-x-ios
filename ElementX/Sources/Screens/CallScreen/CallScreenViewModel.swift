@@ -859,46 +859,78 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         recordingPollingTask = nil
         stalkLog("endCall — начинаю завершение звонка")
 
+        // STMOB-115 build 139: каждый шаг с timeout. Если любой await зависает
+        // (network/SDK deadlock), переходим дальше. Финальный dismiss гарантирован
+        // через defer — иначе UI не закрывается, юзер тыкает endCall, watchdog
+        // убивает app (наблюдалось 13 endCall taps + 0xDEADBEEC через 36 мин).
+        defer {
+            DiagLog.write("CallUI", "endCall: dismiss (forced after timeout-bounded cleanup)")
+            elementCallService.tearDownCallSession()
+            UIDevice.current.isProximityMonitoringEnabled = false
+            actionsSubject.send(.dismiss)
+        }
+
         // 1. Остановить запись (до закрытия звонка, иначе ABORTED)
         if let recordingService, recordingService.state.isRecording {
-            do {
-                try await recordingService.stopRecording()
-                stalkLog("[1] Recording stopped")
-            } catch {
-                stalkLog("[1] Recording cleanup error: \(error)")
+            await Self.withDeadline(5, label: "[1] stopRecording") {
+                do {
+                    try await recordingService.stopRecording()
+                } catch {
+                    self.stalkLog("[1] Recording cleanup error: \(error)")
+                }
             }
         }
 
         // 2. Очистить MatrixRTC state event через REST API (основной метод)
-        //    Widget API send_event не работает — Rust SDK принимает но не отправляет на сервер.
-        //    REST API отправляет напрямую на Matrix homeserver.
         if case .roomCall(let roomProxy, let clientProxy, _, _, _, _) = configuration.kind {
-            stalkLog("[2] Clearing call.member via REST API...")
-            await sendLeaveCallStateEventViaREST(roomProxy: roomProxy, clientProxy: clientProxy)
+            await Self.withDeadline(5, label: "[2] sendLeaveCallStateEventViaREST") {
+                await self.sendLeaveCallStateEventViaREST(roomProxy: roomProxy, clientProxy: clientProxy)
+            }
         }
 
         // 3. Отправить .hangup + .close через Widget API (для Rust SDK cleanup)
-        stalkLog("[3] Sending .hangup + .close to Rust SDK")
-        await sendDirectlyToWidgetDriver(.hangup)
-        await sendDirectlyToWidgetDriver(.close)
-
-        // 4. Отключить нативный LiveKit SDK
-        stalkLog("[4] Disconnecting LiveKit")
-        if let nativeSession = nativeCallSession {
-            await nativeSession.stop()
-            nativeCallSession = nil
-        } else {
-            await liveKitRoomManager.disconnect()
+        await Self.withDeadline(3, label: "[3a] widgetDriver hangup") {
+            await self.sendDirectlyToWidgetDriver(.hangup)
+        }
+        await Self.withDeadline(3, label: "[3b] widgetDriver close") {
+            await self.sendDirectlyToWidgetDriver(.close)
         }
 
-        // 5. Закрыть CallKit сессию
-        stalkLog("[5] Tearing down CallKit session")
-        elementCallService.tearDownCallSession()
-        UIDevice.current.isProximityMonitoringEnabled = false
+        // 4. Отключить нативный LiveKit SDK
+        await Self.withDeadline(5, label: "[4] LiveKit disconnect") { [weak self] in
+            guard let self else { return }
+            if let nativeSession = self.nativeCallSession {
+                await nativeSession.stop()
+                self.nativeCallSession = nil
+            } else {
+                await self.liveKitRoomManager.disconnect()
+            }
+        }
+        // CallKit teardown + dismiss — в defer выше (гарантированно).
+    }
 
-        // 6. Dismiss экран звонка
-        stalkLog("[6] endCall complete — dismissing")
-        actionsSubject.send(.dismiss)
+    /// STMOB-115: запускает async-операцию с дедлайном. Если operation не успел
+    /// закончиться за `seconds` — логируем и проваливаемся дальше. Использует
+    /// withTaskGroup для race operation vs sleep, без бросания exceptions
+    /// (cleanup не должен ломаться на любом единичном шаге).
+    private static func withDeadline(_ seconds: TimeInterval,
+                                     label: String,
+                                     operation: @escaping @Sendable () async -> Void) async {
+        DiagLog.write("CallUI", "\(label) start (deadline=\(Int(seconds))s)")
+        let timedOut: Bool = await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                await operation()
+                return false
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                return true
+            }
+            let first = await group.next() ?? false
+            group.cancelAll()
+            return first
+        }
+        DiagLog.write("CallUI", "\(label) \(timedOut ? "TIMEOUT" : "done")")
     }
 
     /// Send a widget message directly to the Rust SDK widget driver, bypassing the WebView JS bridge.
