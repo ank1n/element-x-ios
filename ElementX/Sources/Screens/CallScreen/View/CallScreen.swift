@@ -147,7 +147,10 @@ struct CallScreen: View {
                                isLocalVideoEnabled: context.viewState.isVideoEnabled,
                                isLocalAudioMuted: context.viewState.isMuted,
                                participants: context.viewState.participants,
-                               mediaProvider: context.viewState.mediaProvider)
+                               mediaProvider: context.viewState.mediaProvider,
+                               layoutMode: context.viewState.effectiveLayoutMode,
+                               pinnedParticipantSID: context.viewState.pinnedParticipantSID,
+                               onTogglePin: { sid in context.send(viewAction: .togglePinParticipant(sid: sid)) })
                 .ignoresSafeArea(.container, edges: .bottom)
         } else if context.viewState.url == nil {
             ProgressView()
@@ -257,6 +260,23 @@ struct CallScreen: View {
                     .padding(.vertical, 4)
                     .background(.white.opacity(0.2))
                     .clipShape(Capsule())
+                }
+            }
+
+            // STMOB-113: Layout toggle (Grid ↔ Speaker). Только для group call с
+            // 2+ remote (одного человека закреплять смысла нет).
+            if (context.viewState.liveKitRoomManager?.remoteParticipants.count ?? 0) >= 2 {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { context.send(viewAction: .toggleLayoutMode) } label: {
+                        Image(systemName: context.viewState.effectiveLayoutMode == .speaker
+                            ? "square.grid.2x2"
+                            : "rectangle.inset.filled")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(8)
+                            .background(.white.opacity(0.2))
+                            .clipShape(Circle())
+                    }
                 }
             }
         }

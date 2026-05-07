@@ -56,6 +56,23 @@ struct CallScreenViewState: BindableState {
     /// sTalk: Native LiveKit room manager for rendering video
     var liveKitRoomManager: LiveKitRoomManager?
 
+    // STMOB-113: layout/spotlight для group call.
+    /// nil — auto: при remoteCount > 8 → speaker, иначе grid.
+    /// .grid / .speaker — пользователь явно выбрал, override авто-логики.
+    var layoutOverride: CallLayoutMode?
+    /// SID участника закреплённого в speaker view. nil — focus автоматически
+    /// на active speaker / first remote.
+    var pinnedParticipantSID: String?
+
+    /// Effective layout mode: user override > auto by participant count.
+    /// Threshold по UX: > 8 человек → speaker по умолчанию (плитки в grid
+    /// слишком мелкие), ≤ 8 → grid.
+    var effectiveLayoutMode: CallLayoutMode {
+        if let override = layoutOverride { return override }
+        let remoteCount = liveKitRoomManager?.remoteParticipants.count ?? 0
+        return remoteCount > 8 ? .speaker : .grid
+    }
+
     var callStatusText: String {
         switch callStatus {
         case .connecting:
@@ -118,6 +135,15 @@ enum CallScreenViewAction {
     case restoreFromMinimized
     /// sTalk: LiveKit credentials intercepted from Element Call WebSocket
     case liveKitCredentialsIntercepted(url: String, token: String)
+    // STMOB-113: layout/spotlight для group call.
+    case toggleLayoutMode
+    case togglePinParticipant(sid: String)
+}
+
+/// STMOB-113
+enum CallLayoutMode {
+    case grid
+    case speaker
 }
 
 enum CallScreenError: Error {

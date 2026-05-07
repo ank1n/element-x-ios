@@ -35,7 +35,7 @@ struct NativeCallVideoView: UIViewRepresentable {
 
 // MARK: - Native Call Grid View (1:1 and group layouts)
 
-/// sTalk: Displays native LiveKit video in either 1:1 spotlight or group grid layout.
+/// sTalk: Displays native LiveKit video in either 1:1 spotlight or group grid/speaker layout.
 struct NativeCallGridView: View {
     @ObservedObject var roomManager: LiveKitRoomManager
     let isDirect: Bool
@@ -44,6 +44,10 @@ struct NativeCallGridView: View {
     var isLocalAudioMuted = false
     var participants: [CallParticipantInfo] = []
     var mediaProvider: MediaProviderProtocol?
+    // STMOB-113
+    var layoutMode: CallLayoutMode = .grid
+    var pinnedParticipantSID: String?
+    var onTogglePin: ((String) -> Void)?
 
     var body: some View {
         ZStack {
@@ -56,6 +60,15 @@ struct NativeCallGridView: View {
                 ActiveSpeakerMiniView(roomManager: roomManager,
                                       participants: participants,
                                       mediaProvider: mediaProvider)
+            } else if layoutMode == .speaker {
+                // STMOB-113: Speaker layout — focused main + bottom strip.
+                SpeakerCallLayout(roomManager: roomManager,
+                                  isLocalVideoEnabled: isLocalVideoEnabled,
+                                  isLocalAudioMuted: isLocalAudioMuted,
+                                  participants: participants,
+                                  mediaProvider: mediaProvider,
+                                  pinnedSID: pinnedParticipantSID,
+                                  onTogglePin: onTogglePin)
             } else {
                 GroupCallLayout(roomManager: roomManager,
                                 isLocalVideoEnabled: isLocalVideoEnabled,
@@ -678,6 +691,183 @@ private enum PipCorner {
             let bPos = b.position(in: containerSize, pipSize: pipSize, padding: padding, safeArea: safeArea)
             return hypot(point.x - aPos.x, point.y - aPos.y) < hypot(point.x - bPos.x, point.y - bPos.y)
         } ?? .topRight
+    }
+}
+
+// MARK: - STMOB-113: Speaker Layout (focused main + bottom strip)
+
+/// Большой главный участник (по приоритету: pinned > screen-share > active speaker > first
+/// remote) + горизонтальная полоса миниатюр всех остальных снизу. Tap по миниатюре
+/// — pin/unpin. Default-режим становится включённым автоматически в группах > 8 человек.
+private struct SpeakerCallLayout: View {
+    @ObservedObject var roomManager: LiveKitRoomManager
+    let isLocalVideoEnabled: Bool
+    let isLocalAudioMuted: Bool
+    let participants: [CallParticipantInfo]
+    let mediaProvider: MediaProviderProtocol?
+    let pinnedSID: String?
+    let onTogglePin: ((String) -> Void)?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Main focused area
+            ZStack {
+                Color.black
+                if let track = focusedVideoTrack {
+                    NativeCallVideoView(track: track, contentMode: .fit)
+                } else {
+                    placeholder
+                }
+                // Pin indicator
+                if let pinnedSID, focusedSID == pinnedSID {
+                    VStack {
+                        HStack {
+                            Image(systemName: "pin.fill")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.black.opacity(0.5))
+                                .clipShape(Capsule())
+                                .padding(12)
+                            Spacer()
+                        }
+                        Spacer()
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            // Bottom strip (горизонтальная галерея всех)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(roomManager.remoteParticipants, id: \.sid) { participant in
+                        speakerStripTile(for: participant)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+            }
+            .frame(height: 110)
+            .background(Color.black.opacity(0.6))
+        }
+    }
+
+    // MARK: focused track resolver
+
+    /// SID участника которого показываем в main view.
+    /// Приоритет: pinned > screen-share > active speaker > first remote.
+    private var focusedSID: String? {
+        if let pinnedSID,
+           roomManager.remoteParticipants.contains(where: { $0.sid?.stringValue == pinnedSID }) {
+            return pinnedSID
+        }
+        // Screen share appears as separate track but на том же participant — в SID не отражается.
+        // Берём active speaker.
+        if let speakingSID = roomManager.activeSpeakers
+            .compactMap({ ($0 as? RemoteParticipant)?.sid?.stringValue })
+            .first(where: { sid in roomManager.remoteParticipants.contains(where: { $0.sid?.stringValue == sid }) }) {
+            return speakingSID
+        }
+        return roomManager.remoteParticipants.first?.sid?.stringValue
+    }
+
+    private var focusedParticipant: RemoteParticipant? {
+        guard let sid = focusedSID else { return nil }
+        return roomManager.remoteParticipants.first(where: { $0.sid?.stringValue == sid })
+    }
+
+    /// Track для main view. Screen share (даже у не-focused участника) приоритетнее camera.
+    private var focusedVideoTrack: VideoTrack? {
+        // Если у focused-участника есть screen share — приоритет ему.
+        if let p = focusedParticipant,
+           let screenPub = p.videoTracks.first(where: { $0.name == Track.screenShareVideoName }),
+           screenPub.isSubscribed,
+           let track = screenPub.track as? VideoTrack {
+            return track
+        }
+        // Иначе — screen share от любого remote (если кто-то расшарил).
+        for p in roomManager.remoteParticipants {
+            if let screenPub = p.videoTracks.first(where: { $0.name == Track.screenShareVideoName }),
+               screenPub.isSubscribed,
+               let track = screenPub.track as? VideoTrack {
+                return track
+            }
+        }
+        // Camera focused-участника.
+        if let p = focusedParticipant, let track = p.firstCameraVideoTrack {
+            return track
+        }
+        return nil
+    }
+
+    private var placeholder: some View {
+        ZStack {
+            Color(white: 0.08)
+            if let p = focusedParticipant {
+                let identity = p.identity?.stringValue ?? ""
+                let displayName = participants.first(where: { $0.userID == identity })?.displayName ?? p.name ?? "?"
+                Text(initials(from: displayName))
+                    .font(.system(size: 64, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.6))
+            }
+        }
+    }
+
+    // MARK: strip tile
+
+    @ViewBuilder
+    private func speakerStripTile(for participant: RemoteParticipant) -> some View {
+        let sid = participant.sid?.stringValue ?? ""
+        let isPinned = pinnedSID == sid
+        let cameraTrack = participant.firstCameraVideoTrack
+        let hasScreenShare = participant.videoTracks
+            .contains(where: { $0.name == Track.screenShareVideoName && $0.isSubscribed })
+
+        ZStack {
+            Color.black
+            if let track = cameraTrack {
+                NativeCallVideoView(track: track, contentMode: .fill)
+            } else {
+                let identity = participant.identity?.stringValue ?? ""
+                let name = participants.first(where: { $0.userID == identity })?.displayName ?? participant.name ?? "?"
+                Text(initials(from: name))
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundColor(.white.opacity(0.7))
+            }
+            // Overlays
+            VStack {
+                HStack {
+                    if isPinned {
+                        Image(systemName: "pin.fill")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(3)
+                            .background(Color.black.opacity(0.6))
+                            .clipShape(Circle())
+                    }
+                    Spacer()
+                    if hasScreenShare {
+                        Image(systemName: "rectangle.on.rectangle")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(3)
+                            .background(Color.black.opacity(0.6))
+                            .clipShape(Circle())
+                    }
+                }
+                Spacer()
+            }
+            .padding(4)
+        }
+        .frame(width: 84, height: 94)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8)
+            .stroke(isPinned ? Color.white : Color.clear, lineWidth: 2))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onTogglePin?(sid)
+        }
     }
 }
 

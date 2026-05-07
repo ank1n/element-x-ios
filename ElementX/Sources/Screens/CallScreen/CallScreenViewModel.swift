@@ -370,6 +370,22 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             isMinimized = false
             state.isMinimized = false
             actionsSubject.send(.pictureInPictureStopped)
+        case .toggleLayoutMode:
+            // STMOB-113: ручной toggle Grid ↔ Speaker. Override побеждает auto-логику
+            // (>8 участников → speaker по умолчанию). При hangup сбрасывается в `stop()`.
+            let current = state.effectiveLayoutMode
+            state.layoutOverride = (current == .grid) ? .speaker : .grid
+            MXLog.info("STMOB-113 layoutOverride → \(state.layoutOverride == .speaker ? "speaker" : "grid")")
+        case .togglePinParticipant(let sid):
+            // STMOB-113: pin/unpin в Speaker mode. Если pin совпадает с текущим
+            // — сбрасываем (unpin); иначе закрепляем нового.
+            if state.pinnedParticipantSID == sid {
+                state.pinnedParticipantSID = nil
+                MXLog.info("STMOB-113 unpin")
+            } else {
+                state.pinnedParticipantSID = sid
+                MXLog.info("STMOB-113 pin → \(sid)")
+            }
         case .liveKitCredentialsIntercepted(let url, let token):
             MXLog.info("sTalk: LiveKit credentials intercepted (pass-through) — url=\(url.prefix(80))..., token length=\(token.count)")
             // sTalk: Extract LiveKit room name from JWT for recording-api
@@ -385,6 +401,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         callTimerTask = nil
         recordingPollingTask?.cancel()
         recordingPollingTask = nil
+        // STMOB-113: per-call layout override / pin сбрасываем при hangup.
+        state.layoutOverride = nil
+        state.pinnedParticipantSID = nil
         MXLog.info("sTalk: stop() called — safety net cleanup")
         // Re-allow auto-lock now that call is ending.
         UIApplication.shared.isIdleTimerDisabled = false
