@@ -876,7 +876,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 do {
                     try await recordingService.stopRecording()
                 } catch {
-                    self.stalkLog("[1] Recording cleanup error: \(error)")
+                    stalkLog("[1] Recording cleanup error: \(error)")
                 }
             }
         }
@@ -897,13 +897,13 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         }
 
         // 4. Отключить нативный LiveKit SDK
-        await Self.withDeadline(5, label: "[4] LiveKit disconnect") { [weak self] in
-            guard let self else { return }
-            if let nativeSession = self.nativeCallSession {
-                await nativeSession.stop()
-                self.nativeCallSession = nil
+        let nativeSessionToStop = nativeCallSession
+        nativeCallSession = nil
+        await Self.withDeadline(5, label: "[4] LiveKit disconnect") { [weak liveKitRoomManager] in
+            if let nativeSessionToStop {
+                await nativeSessionToStop.stop()
             } else {
-                await self.liveKitRoomManager.disconnect()
+                await liveKitRoomManager?.disconnect()
             }
         }
         // CallKit teardown + dismiss — в defer выше (гарантированно).
