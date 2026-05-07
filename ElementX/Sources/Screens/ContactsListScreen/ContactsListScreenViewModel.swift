@@ -107,10 +107,13 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
         // Fallback на локальный instance если shared отсутствует (тест scenarios).
         if let shared = AppCoordinator.sharedPresenceService {
             presenceService = shared
-        } else if let concreteProxy = userSession.clientProxy as? ClientProxy,
-                  let accessToken = try? concreteProxy.matrixAccessToken() {
+        } else if let concreteProxy = userSession.clientProxy as? ClientProxy {
+            // STMOB-109 build 138: tokenProvider вместо immutable accessToken —
+            // см. PresenceService.swift про token rotation fix.
             presenceService = PresenceService(homeserver: userSession.clientProxy.homeserver,
-                                              accessToken: accessToken,
+                                              tokenProvider: { [weak concreteProxy] in
+                                                  try? concreteProxy?.matrixAccessToken()
+                                              },
                                               ownUserID: userSession.clientProxy.userID)
         } else {
             return
