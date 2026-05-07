@@ -17,7 +17,13 @@ struct UserPresence: Equatable {
 
 class PresenceService {
     private let homeserver: String
-    private let accessToken: String
+    /// STMOB-109 build 138: token берём свежий через provider перед каждым
+    /// запросом. Раньше держали immutable accessToken — после Matrix token
+    /// rotation все GET-запросы становились HTTP 401, чужой presence
+    /// «отваливался» полностью (в логе 2101 HTTP 401 за день, 0 HTTP 200
+    /// на fetchPresence). OwnPresenceManager уже использует такой подход
+    /// с build 121, теперь и PresenceService.
+    private let tokenProvider: () -> String?
     private let ownUserID: String
 
     private var pollingTask: Task<Void, Never>?
@@ -38,10 +44,10 @@ class PresenceService {
 
     let presenceSubject = CurrentValueSubject<[String: UserPresence], Never>([:])
 
-    init(homeserver: String, accessToken: String, ownUserID: String) {
+    init(homeserver: String, tokenProvider: @escaping () -> String?, ownUserID: String) {
         // Remove trailing slash to avoid double-slash in URLs
         self.homeserver = homeserver.hasSuffix("/") ? String(homeserver.dropLast()) : homeserver
-        self.accessToken = accessToken
+        self.tokenProvider = tokenProvider
         self.ownUserID = ownUserID
         os_log(.info, log: presenceLog, "PresenceService init: homeserver=%{public}@, ownUserID=%{public}@", self.homeserver, ownUserID)
     }
@@ -64,10 +70,14 @@ class PresenceService {
         let urlString = "\(homeserver)/_matrix/client/v3/presence/\(encodedUserID)/status"
         os_log(.info, log: presenceLog, "setOwnPresence URL: %{public}@", urlString)
         guard let url = URL(string: urlString) else { return }
+        guard let token = tokenProvider() else {
+            os_log(.error, log: presenceLog, "setOwnPresence: no token")
+            return
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: ["presence": status])
 
@@ -136,9 +146,13 @@ class PresenceService {
     private func fetchSinglePresenceWithStatus(userID: String) async -> (UserPresence?, Int?) {
         let encodedUserID = Self.encodeUserID(userID)
         guard let url = URL(string: "\(homeserver)/_matrix/client/v3/presence/\(encodedUserID)/status") else { return (nil, nil) }
+        guard let token = tokenProvider() else {
+            DiagLog.write("Presence", "fetchPresence(\(userID)) — no token")
+            return (nil, nil)
+        }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               let httpResponse = response as? HTTPURLResponse else {
             DiagLog.write("Presence", "fetchPresence(\(userID)) network error")

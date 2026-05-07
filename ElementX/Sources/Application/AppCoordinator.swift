@@ -48,12 +48,17 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
                 // STMOB-103 build 125: shared PresenceService для DM presence
                 // (HomeScreen list dots + RoomScreen header subtitle). Раньше были
                 // 2 независимых instance → расхождение статуса.
-                if let token = try? userSession.clientProxy.matrixAccessToken() {
-                    sharedPresenceService = PresenceService(homeserver: userSession.clientProxy.homeserver,
-                                                            accessToken: token,
-                                                            ownUserID: userSession.clientProxy.userID)
-                    AppCoordinator.sharedPresenceService = sharedPresenceService
-                }
+                // STMOB-109 build 138: tokenProvider вместо immutable token —
+                // PresenceService больше не «застревает» на старом токене после
+                // ротации Matrix access token (раньше fetchPresence получал HTTP
+                // 401 каскадом, чужой presence пропадал).
+                let clientProxy = userSession.clientProxy
+                sharedPresenceService = PresenceService(homeserver: clientProxy.homeserver,
+                                                        tokenProvider: { [weak clientProxy] in
+                                                            try? clientProxy?.matrixAccessToken()
+                                                        },
+                                                        ownUserID: clientProxy.userID)
+                AppCoordinator.sharedPresenceService = sharedPresenceService
                 // STMOB-108: держим app icon badge в синхроне с реальным
                 // unreadNotificationsCount из SDK (NSE ставит badge на push,
                 // но при чтении сообщений в app системный счётчик не сбрасывался).
