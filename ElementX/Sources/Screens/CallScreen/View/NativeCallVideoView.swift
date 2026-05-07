@@ -97,12 +97,21 @@ private struct DirectCallLayout: View {
     }
 
     private var firstRemoteVideoTrack: VideoTrack? {
+        // STMOB-112 build 136: приоритет screen-share. Если кто-то из remote
+        // расшарил экран — main view сразу показывает его экран, а не camera.
+        // Раньше main view приоритезировал camera, screen share виделся только
+        // в grid/side-panel.
         for participant in roomManager.remoteParticipants {
-            // Try camera first
+            if let screenPub = participant.videoTracks.first(where: { $0.name == Track.screenShareVideoName }),
+               screenPub.isSubscribed,
+               let track = screenPub.track as? VideoTrack {
+                return track
+            }
+        }
+        for participant in roomManager.remoteParticipants {
             if let track = participant.firstCameraVideoTrack {
                 return track
             }
-            // Fallback: any subscribed video track
             for pub in participant.videoTracks where pub.isSubscribed {
                 if let track = pub.track as? VideoTrack {
                     return track
