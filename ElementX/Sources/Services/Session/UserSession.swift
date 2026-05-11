@@ -248,9 +248,47 @@ class UserSession: UserSessionProtocol {
         case .failure(let error):
             DiagLog.write("E2EE", "domainTrust: own pin failed — \(error)")
         }
-        // STMOB-84 follow-up: per-room subscribeToIdentityStatusChanges + pin each
-        // `@*:stalk.implica.ru` member. Skipped for build 86 (one-shot at recovery
-        // covers most users via own /keys/query with users we share a room with).
+
+        // STMOB-84 build 141: после own — пинить members ВСЕХ joined-комнат с
+        // доменом `@*:stalk.implica.ru`. Решает двусторонний UTD: iPhone больше
+        // не отбрасывает encrypted events от internal users как «untrusted
+        // identity». Парная половина (Михаил web → iPhone доверяет) делается в
+        // production-matrix web-half (Molly STALK-XXX).
+        await pinDomainTrustMembers()
+    }
+
+    /// STMOB-84: pin TOFU всех internal users (`@*:stalk.implica.ru`) которых
+    /// мы видим в joined комнатах. Идемпотентно — повторный pin не вредит.
+    private func pinDomainTrustMembers() async {
+        let domain = ":stalk.implica.ru"
+        let ownUserID = clientProxy.userID
+
+        // Ждём пока RoomSummaryProvider загрузится — иначе roomListPublisher
+        // пустой и pin'ить будет некого.
+        let provider = clientProxy.staticRoomSummaryProvider
+        if !provider.statePublisher.value.isLoaded {
+            _ = await provider.statePublisher.values.first { $0.isLoaded }
+        }
+
+        var seen = Set<String>()
+        seen.insert(ownUserID)
+        var pinned = 0
+        var failed = 0
+        for summary in provider.roomListPublisher.value {
+            // Только joined комнаты, без invites/knocks/spaces/tombstoned.
+            guard summary.joinRequestType == nil,
+                  !summary.isSpace,
+                  !summary.isTombstoned else { continue }
+            guard case let .joined(joined) = await clientProxy.roomForIdentifier(summary.id) else { continue }
+            for member in joined.membersPublisher.value where member.userID.hasSuffix(domain) {
+                guard seen.insert(member.userID).inserted else { continue }
+                switch await clientProxy.pinUserIdentity(member.userID) {
+                case .success: pinned += 1
+                case .failure: failed += 1
+                }
+            }
+        }
+        DiagLog.write("E2EE", "domainTrust: pinned \(pinned) member identities (\(failed) failed)")
     }
 
     /// Ensure recovery key and backup are properly set up on server.

@@ -84,6 +84,8 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
         Task {
             await updateVerificationBadge()
         }
+        // STMOB-84 build 141: lazy pin internal users в этой комнате.
+        pinDomainTrustMembersLazy()
     }
 
     override func process(viewAction: RoomScreenViewAction) {
@@ -270,6 +272,28 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
         }
     }
     
+    /// STMOB-84 build 141: на открытии комнаты дёргаем pin для internal users
+    /// (`@*:stalk.implica.ru`). Идемпотентно — повторный pin SDK игнорирует.
+    /// Покрывает случай: юзер появился в комнате уже ПОСЛЕ initial domain-trust
+    /// hook'а в UserSession (новый member, недавний invite принят и т.д.).
+    private func pinDomainTrustMembersLazy() {
+        let domain = ":stalk.implica.ru"
+        let ownUserID = roomProxy.ownUserID
+        let candidates = roomProxy.membersPublisher.value
+            .map(\.userID)
+            .filter { $0.hasSuffix(domain) && $0 != ownUserID }
+        guard !candidates.isEmpty else { return }
+        Task { [clientProxy] in
+            var pinned = 0
+            for userID in candidates {
+                if case .success = await clientProxy.pinUserIdentity(userID) {
+                    pinned += 1
+                }
+            }
+            DiagLog.write("E2EE", "domainTrust lazy room=\(self.roomProxy.id) pinned=\(pinned)/\(candidates.count)")
+        }
+    }
+
     private func updateVerificationBadge() async {
         // Build 124 fix: исключаем системных ботов (meet-cleanup и подобных) из
         // dmRecipient resolve. У комнаты с Жилиным первым non-self был
