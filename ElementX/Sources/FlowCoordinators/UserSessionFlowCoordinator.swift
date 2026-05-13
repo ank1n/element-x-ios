@@ -141,6 +141,9 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
             .init(coordinator: appsStackCoordinator, details: appsTabDetails),
             .init(coordinator: profileStack, details: profileTabDetails)
         ])
+        // sTalk: при старте открывать Чаты, не Контакты. Tab order в UI остаётся
+        // тот же (Contacts слева как было), но selectedTab = .chats by default.
+        navigationTabCoordinator.selectedTab = .chats
         
         stateMachine = flowParameters.stateMachineFactory.makeUserSessionFlowStateMachine(state: .initial)
         configureStateMachine()
