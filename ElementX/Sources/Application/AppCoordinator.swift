@@ -1228,6 +1228,12 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         scheduleBackgroundAppRefresh()
         // STMOB-103: idle на background (жёлтый dot + "был X назад" на web)
         ownPresenceManager?.setBackground()
+        // STMOB-123 build 159: pause shared presence polling в background.
+        // 30s URLSession requests могут держать file handles в момент suspend
+        // → contribute к watchdog 0xDEADBEEC / lock 0xDEAD10CC. На foreground
+        // restart через applicationDidBecomeActive.
+        sharedPresenceService?.stopPolling()
+        DiagLog.write("AppLifecycle", "  PresenceService polling stopped (background)")
 
         // STMOB-133 build 158: гарантируем что все pending DiagLog writes
         // флашнуты на диск ДО того как iOS suspend'ит process. Иначе
@@ -1259,6 +1265,14 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         startSync()
         // STMOB-103: возобновить online ping при возврате из background
         ownPresenceManager?.startOnline()
+        // STMOB-123 build 159: resume shared presence polling — список userIDs
+        // сохранён в currentUserIDs (если был пуст — startPolling no-op'нется
+        // на первом вызове, фактически restart происходит при возврате на
+        // экран Contacts/Chats который вызовет fetchPresence заново).
+        if let presence = sharedPresenceService, !presence.currentUserIDs.isEmpty {
+            presence.startPolling(userIDs: presence.currentUserIDs)
+            DiagLog.write("AppLifecycle", "  PresenceService polling resumed (\(presence.currentUserIDs.count) users)")
+        }
         // STMOB-108: при возврате из background — снести delivered notifications
         // тех комнат, где непрочитанных уже нет (юзер прочитал на другом устройстве
         // или recompute SDK после sync). Сам badge актуализируется через
