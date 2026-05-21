@@ -29,6 +29,14 @@ enum DiagLog {
         return dir.appending(component: "nse-events.log")
     }
 
+    /// STMOB-133 build 158: synchronous flush — гарантирует что весь async
+    /// queue завершился (все pending writes на диск, FileHandle закрыт).
+    /// Вызывается в applicationWillResignActive чтобы DiagLog не держал
+    /// file lock когда iOS suspend'ит process.
+    static func flush() {
+        queue.sync { /* блокируем пока queue не выполнит всё */ }
+    }
+
     static func write(_ tag: String, _ message: String) {
         guard let url = fileURL else { return }
         let f = DateFormatter()

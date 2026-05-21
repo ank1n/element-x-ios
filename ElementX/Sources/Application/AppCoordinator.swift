@@ -7,6 +7,7 @@
 //
 
 import AnalyticsEvents
+import AVFoundation
 import BackgroundTasks
 import Combine
 import Intents
@@ -1202,10 +1203,36 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
     private func applicationWillResignActive() {
         MXLog.info("Application will resign active")
 
+        // STMOB-133 build 158: diag для 0xDEAD10CC crash. Логируем resources
+        // которые могут держать sqlite/file lock при background suspend.
+        // Если crash повторится — увидим что было active в последний момент.
+        let activeCallRoomID = elementCallService.ongoingCallRoomIDPublisher.value
+        let bgTaskActive = backgroundTask != nil
+        let audioActive = AVAudioSession.sharedInstance().isOtherAudioPlaying
+        DiagLog.write("AppLifecycle", "willResignActive: activeCall=\(activeCallRoomID ?? "nil") bgTask=\(bgTaskActive) otherAudio=\(audioActive)")
+
+        // STMOB-133 build 158: если нет активного звонка — deactivate audio
+        // session. AVAudioSession active в background может держать lock
+        // (RUNNINGBOARD 0xDEAD10CC). Активный звонок имеет CallKit/Voip
+        // background mode, audio session нужен — не трогаем.
+        if activeCallRoomID == nil {
+            do {
+                try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+                DiagLog.write("AppLifecycle", "  AudioSession deactivated (no active call)")
+            } catch {
+                DiagLog.write("AppLifecycle", "  AudioSession deactivate failed: \(error.localizedDescription)")
+            }
+        }
+
         scheduleDelayedSyncStop()
         scheduleBackgroundAppRefresh()
         // STMOB-103: idle на background (жёлтый dot + "был X назад" на web)
         ownPresenceManager?.setBackground()
+
+        // STMOB-133 build 158: гарантируем что все pending DiagLog writes
+        // флашнуты на диск ДО того как iOS suspend'ит process. Иначе
+        // FileHandle мог бы остаться open и attribute к 0xDEAD10CC kill.
+        DiagLog.flush()
     }
     
     private func scheduleDelayedSyncStop() {
