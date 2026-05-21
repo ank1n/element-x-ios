@@ -480,6 +480,25 @@ private struct GroupCallLayout: View {
         // его НЕ нужно дублировать как camera-tile в remote loop.
         let localIdentityString = roomManager.localParticipant?.identity?.stringValue
 
+        // STMOB-129 build 160: local screen share tile — показать ВАМ что вы
+        // шарите. Без этого тайла юзер не видит, что captured (или что capture
+        // не запустилось — нужна Broadcast Extension STMOB-118).
+        if let local = roomManager.localParticipant,
+           let screenPub = local.videoTracks.first(where: { $0.name == Track.screenShareVideoName }),
+           !screenPub.isMuted,
+           let track = screenPub.track as? VideoTrack {
+            let identity = local.identity?.stringValue ?? "local"
+            items.append(ParticipantItem(id: "\(identity)-screen",
+                                         videoTrack: track,
+                                         displayName: "Ваш экран",
+                                         avatarURL: nil,
+                                         isLocal: true,
+                                         isSpeaking: false,
+                                         isAudioMuted: false,
+                                         isVideoMuted: false,
+                                         isScreenShare: true))
+        }
+
         // Screen share tracks first (shown prominently)
         for participant in roomManager.remoteParticipants {
             if let screenPub = participant.videoTracks.first(where: { $0.name == Track.screenShareVideoName }),
