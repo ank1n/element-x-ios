@@ -57,6 +57,12 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
                                                         tokenProvider: { [weak clientProxy] in
                                                             try? clientProxy?.matrixAccessToken()
                                                         },
+                                                        tokenRefresher: { [weak clientProxy] in
+                                                            // STMOB-132 build 153: при 401 принуждаем SDK
+                                                            // обновить OIDC access_token, после чего
+                                                            // matrixAccessToken() вернёт свежий.
+                                                            await clientProxy?.forceTokenRefresh()
+                                                        },
                                                         ownUserID: clientProxy.userID)
                 AppCoordinator.sharedPresenceService = sharedPresenceService
                 // STMOB-108: держим app icon badge в синхроне с реальным

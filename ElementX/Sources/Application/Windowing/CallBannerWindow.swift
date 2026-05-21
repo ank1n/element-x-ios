@@ -47,11 +47,32 @@ final class CallBannerWindow: UIWindow {
     }
 }
 
-/// Hosting controller для CallBannerWindow — фиксирует светлый текст статус-бара
-/// (белые часы/батарея на зелёном фоне).
-final class CallBannerHostingController<Content: View>: UIHostingController<Content> {
+/// Hosting controller для CallBannerWindow — управляет светлым текстом статус-бара
+/// (белые часы/батарея на зелёном фоне banner-а).
+/// STMOB-127 build 149: `.lightContent` ТОЛЬКО когда banner visible. Иначе
+/// CallBannerWindow override'ил статус-бар системы → на белом фоне chat list
+/// были невидимые белые часы. Когда banner скрыт — статус-бар берёт стиль
+/// от mainWindow (default = адаптивный к background).
+/// STMOB-127 build 149: protocol для type-erasure CallBannerHostingController
+/// чтобы WindowManager мог менять bannerVisible без знания generic-параметра.
+protocol BannerStyleControlling: AnyObject {
+    var bannerVisible: Bool { get set }
+}
+
+final class CallBannerHostingController<Content: View>: UIHostingController<Content>, BannerStyleControlling {
+    var bannerVisible = false {
+        didSet {
+            guard bannerVisible != oldValue else { return }
+            setNeedsStatusBarAppearanceUpdate()
+        }
+    }
+
     override var preferredStatusBarStyle: UIStatusBarStyle {
-        .lightContent
+        bannerVisible ? .lightContent : .default
+    }
+
+    override var prefersStatusBarHidden: Bool {
+        false
     }
 }
 

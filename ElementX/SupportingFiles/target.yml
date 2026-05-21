@@ -67,7 +67,15 @@ targets:
             ]
           }
         ]
-        UISupportedInterfaceOrientations: [
+        # STMOB-129 build 148 / build 151 fix: iPhone — только portrait;
+        # iPad — все 4 ориентации (Apple требует для iPad multitasking,
+        # иначе валидация бандла даёт error 409 при загрузке в App Store
+        # Connect). Реальный iPad target у нас не используется, но bundle
+        # universal — поэтому ключи нужны разные для разных devices.
+        UISupportedInterfaceOrientations~iphone: [
+          UIInterfaceOrientationPortrait
+        ]
+        UISupportedInterfaceOrientations~ipad: [
           UIInterfaceOrientationPortrait,
           UIInterfaceOrientationPortraitUpsideDown,
           UIInterfaceOrientationLandscapeLeft,

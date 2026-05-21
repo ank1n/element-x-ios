@@ -19,7 +19,10 @@ enum AppDelegateCallback {
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
     let callbacks = PassthroughSubject<AppDelegateCallback, Never>()
-    var orientationLock = UIInterfaceOrientationMask.all
+    /// STMOB-129 build 152: default = portrait для iPhone. WindowManager
+    /// может временно поменять для специальных экранов (если будут). Info.plist
+    /// ~iphone не сработал — landscape всё равно активировался при повороте.
+    var orientationLock = UIInterfaceOrientationMask.portrait
     
     func application(_ application: UIApplication, configurationForConnecting connectingSceneSession: UISceneSession, options: UIScene.ConnectionOptions) -> UISceneConfiguration {
         // Add a SceneDelegate to the SwiftUI scene so that we can connect up the WindowManager.

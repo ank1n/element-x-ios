@@ -110,9 +110,13 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
         } else if let concreteProxy = userSession.clientProxy as? ClientProxy {
             // STMOB-109 build 138: tokenProvider вместо immutable accessToken —
             // см. PresenceService.swift про token rotation fix.
+            // STMOB-132 build 153: + tokenRefresher для force refresh на 401.
             presenceService = PresenceService(homeserver: userSession.clientProxy.homeserver,
                                               tokenProvider: { [weak concreteProxy] in
                                                   try? concreteProxy?.matrixAccessToken()
+                                              },
+                                              tokenRefresher: { [weak concreteProxy] in
+                                                  await concreteProxy?.forceTokenRefresh()
                                               },
                                               ownUserID: userSession.clientProxy.userID)
         } else {

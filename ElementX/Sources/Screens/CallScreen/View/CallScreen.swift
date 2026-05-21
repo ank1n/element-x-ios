@@ -169,21 +169,35 @@ struct CallScreen: View {
     // sTalk: Native call control buttons
     var callControlButtons: some View {
         HStack(spacing: context.viewState.isDirect ? 20 : 14) {
-            // Hand raise (group only)
+            // STMOB-122 build 143: Hand raise + Screen share объединены в Menu
+            // (•••) — экономит место в нижней панели. Group call only.
             if !context.viewState.isDirect {
-                CallControlButton(icon: "hand.raised.fill",
-                                  label: SL10n.callHand,
-                                  isActive: context.viewState.isHandRaised) {
-                    context.send(viewAction: .toggleHandRaise)
-                }
-            }
-
-            // Screen share (group only)
-            if !context.viewState.isDirect {
-                CallControlButton(icon: context.viewState.isScreenSharing ? "rectangle.inset.filled.and.person.filled" : "rectangle.on.rectangle",
-                                  label: SL10n.callScreenShare,
-                                  isActive: context.viewState.isScreenSharing) {
-                    context.send(viewAction: .toggleScreenShare)
+                Menu {
+                    Button {
+                        context.send(viewAction: .toggleHandRaise)
+                    } label: {
+                        Label(context.viewState.isHandRaised ? "Опустить руку" : SL10n.callHand,
+                              systemImage: context.viewState.isHandRaised ? "hand.raised.slash" : "hand.raised.fill")
+                    }
+                    Button {
+                        context.send(viewAction: .toggleScreenShare)
+                    } label: {
+                        Label(context.viewState.isScreenSharing ? "Остановить шаринг" : SL10n.callScreenShare,
+                              systemImage: context.viewState.isScreenSharing ? "rectangle.inset.filled.and.person.filled" : "rectangle.on.rectangle")
+                    }
+                } label: {
+                    let isActive = context.viewState.isHandRaised || context.viewState.isScreenSharing
+                    VStack(spacing: 6) {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 22))
+                            .foregroundColor(isActive ? Color(red: 0.1, green: 0.1, blue: 0.1) : .white)
+                            .frame(width: 56, height: 56)
+                            .background(isActive ? .white.opacity(0.9) : .white.opacity(0.15))
+                            .clipShape(Circle())
+                        Text("Ещё")
+                            .font(.system(size: 11))
+                            .foregroundColor(.white.opacity(0.85))
+                    }
                 }
             }
 

@@ -32,4 +32,17 @@ protocol ElementCallServiceProtocol {
 
     /// Помечает следующий звонок как входящий (используется когда VoIP push недоступен)
     func markNextCallAsIncoming()
+
+    /// STMOB-130: для native LiveKit call path. Публикует roomID в
+    /// `ongoingCallRoomIDPublisher` БЕЗ запуска CallKit lifecycle.
+    /// Используется RoomScreen чтобы скрыть «Присоединиться» плашку
+    /// когда юзер уже участвует в native звонке этой комнаты.
+    /// Передать nil при leave call чтобы очистить.
+    func markNativeCallActive(roomID: String?)
+}
+
+/// STMOB-130 build 153: default no-op чтобы старые Sourcery-generated mocks
+/// не падали в compile. Реальный impl в ElementCallService.swift.
+extension ElementCallServiceProtocol {
+    func markNativeCallActive(roomID: String?) { }
 }

@@ -61,7 +61,9 @@ class WindowManager: SecureWindowManagerProtocol {
 
     // MARK: - STMOB-102 Phase 3: Call banner window
 
-    private var bannerHostingController: UIViewController?
+    /// STMOB-127 build 149: храним по protocol чтобы переключать bannerVisible
+    /// без знания конкретного generic-параметра CallBannerHostingController.
+    private var bannerHostingController: (UIViewController & BannerStyleControlling)?
 
     func installCallBanner<Tag: Hashable>(coordinator: NavigationTabCoordinator<Tag>) {
         // Re-install: tear down предыдущий host если был
@@ -79,9 +81,14 @@ class WindowManager: SecureWindowManagerProtocol {
             // а пробел ниже banner — passthrough к nav bar.
             let safeTop = self.callBannerWindow.safeAreaInsets.top
             self.callBannerWindow.tappableTopHeight = visible ? (safeTop + CallBannerMetrics.bannerContentHeight) : 0
+            // STMOB-127 build 149: переключаем preferredStatusBarStyle на банере
+            // в зависимости от его visibility, чтобы скрытый banner не делал
+            // часы/батарею светлыми над белым chat list (= невидимыми).
+            self.bannerHostingController?.bannerVisible = visible
         }
         let host = CallBannerHostingController(rootView: content)
-        host.view.backgroundColor = .clear
+        host.bannerVisible = false
+        host.view.backgroundColor = UIColor.clear
         callBannerWindow.rootViewController = host
         callBannerWindow.isHidden = false
         bannerHostingController = host

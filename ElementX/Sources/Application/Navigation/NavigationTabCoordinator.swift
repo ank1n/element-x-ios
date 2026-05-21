@@ -380,6 +380,17 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
             }
         }
         .animation(.easeInOut(duration: 0.25), value: shouldHideTabBar)
+        .onAppear {
+            // sTalk: sync initial selectedIndex с selectedTab. Иначе @State default = 0
+            // показывает первый tab (Contacts) даже если NavigationTabCoordinator
+            // явно установил selectedTab = .chats — onChange срабатывает только
+            // после реального изменения, не на начальном render.
+            if let selected = navigationTabCoordinator.selectedTab,
+               let index = navigationTabCoordinator.tabModules.firstIndex(where: { $0.details.tag == selected }),
+               selectedIndex != index {
+                selectedIndex = index
+            }
+        }
         .onChange(of: selectedIndex) { _, newValue in
             guard newValue < navigationTabCoordinator.tabModules.count else { return }
             navigationTabCoordinator.selectedTab = navigationTabCoordinator.tabModules[newValue].details.tag

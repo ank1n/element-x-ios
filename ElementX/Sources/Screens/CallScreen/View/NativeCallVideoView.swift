@@ -396,15 +396,22 @@ private struct GroupCallLayout: View {
                             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
 
-                    // Regular participants grid
-                    LazyVGrid(columns: columns, spacing: spacing) {
-                        ForEach(regularItems) { item in
-                            ParticipantTile(item: item, mediaProvider: mediaProvider)
-                                .aspectRatio(hasScreenShare
-                                    ? 1.0 // compact squares when screen share is visible
-                                    : tileAspectRatio(for: regularItems.count, columns: layout.columns, geometry: geometry),
-                                    contentMode: .fill)
-                                .clipped()
+                    // STMOB-119 build 144: 3 уч. = 1 крупный сверху + 2 в ряд снизу
+                    // (без пустой ячейки 2x2). При наличии screen share выше —
+                    // отдаём regularItems в обычный grid (compact squares).
+                    if regularItems.count == 3, !hasScreenShare {
+                        threeParticipantsLayout(items: regularItems, geometry: geometry, spacing: spacing)
+                    } else {
+                        // Regular participants grid
+                        LazyVGrid(columns: columns, spacing: spacing) {
+                            ForEach(regularItems) { item in
+                                ParticipantTile(item: item, mediaProvider: mediaProvider)
+                                    .aspectRatio(hasScreenShare
+                                        ? 1.0
+                                        : tileAspectRatio(for: regularItems.count, columns: layout.columns, geometry: geometry),
+                                        contentMode: .fill)
+                                    .clipped()
+                            }
                         }
                     }
                 }
@@ -413,6 +420,32 @@ private struct GroupCallLayout: View {
             .scrollDisabled(!layout.scrollable && !hasScreenShare)
         }
         .background(Color.black)
+    }
+
+    /// STMOB-119 build 144: 3 участника = 1 крупный сверху + 2 маленьких снизу
+    /// (без пустой ячейки 2x2). Заполняет всю высоту minus controls reserve.
+    @ViewBuilder
+    private func threeParticipantsLayout(items: [ParticipantItem], geometry: GeometryProxy, spacing: CGFloat) -> some View {
+        let bottomReserved: CGFloat = 120
+        let availableHeight = geometry.size.height - bottomReserved - spacing * 2 - 8
+        // Top tile = 60% от availableHeight, bottom row = 40%.
+        let topHeight = availableHeight * 0.6
+        let bottomHeight = availableHeight * 0.4
+        VStack(spacing: spacing) {
+            ParticipantTile(item: items[0], mediaProvider: mediaProvider)
+                .frame(height: topHeight)
+                .clipped()
+            HStack(spacing: spacing) {
+                ParticipantTile(item: items[1], mediaProvider: mediaProvider)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: bottomHeight)
+                    .clipped()
+                ParticipantTile(item: items[2], mediaProvider: mediaProvider)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: bottomHeight)
+                    .clipped()
+            }
+        }
     }
 
     private struct GridConfig {
@@ -440,6 +473,12 @@ private struct GroupCallLayout: View {
 
     private var participantItems: [ParticipantItem] {
         var items: [ParticipantItem] = []
+
+        // STMOB-131 build 151: local participant identity для фильтрации дублей
+        // в remote loop. Element Call для screen share может создать отдельный
+        // virtual participant с identity того же юзера (suffix ":screen") —
+        // его НЕ нужно дублировать как camera-tile в remote loop.
+        let localIdentityString = roomManager.localParticipant?.identity?.stringValue
 
         // Screen share tracks first (shown prominently)
         for participant in roomManager.remoteParticipants {
@@ -475,18 +514,28 @@ private struct GroupCallLayout: View {
                                          isSpeaking: false,
                                          isAudioMuted: isLocalAudioMuted,
                                          isVideoMuted: !isLocalVideoEnabled,
-                                         isScreenShare: false))
+                                         isScreenShare: false,
+                                         isHandRaised: roomManager.isHandRaised))
         }
 
         // Remote participants (camera tracks)
         for participant in roomManager.remoteParticipants {
+            let identity = participant.identity?.stringValue ?? participant.sid?.stringValue ?? UUID().uuidString
+            // STMOB-131 build 151: skip virtual screen-share participant который
+            // имеет ту же identity что local (или с суффиксом). Они уже учтены
+            // как screen-share tile сверху + local participant в self-tile.
+            if let localID = localIdentityString,
+               identity == localID || identity.hasPrefix("\(localID):") || identity == "\(localID)-screen" {
+                continue
+            }
             let cameraPub = participant.videoTracks.first(where: { $0.name != Track.screenShareVideoName })
             let videoMuted = cameraPub?.isMuted ?? true
-            let identity = participant.identity?.stringValue ?? participant.sid?.stringValue ?? UUID().uuidString
             let audioMuted = participant.firstAudioPublication?.isMuted ?? false
-            // STMOB: speaking рамку показываем только если micrоphone unmuted —
-            // иначе LiveKit может считать speaking при echo на чужой стороне.
             let speaking = participant.isSpeaking && !audioMuted
+            // STMOB-120: handRaised из set'а raisedHandsSIDs (обновляется через
+            // RoomDelegate.didUpdateMetadata).
+            let sid = participant.sid?.stringValue ?? ""
+            let handRaised = roomManager.raisedHandsSIDs.contains(sid)
             items.append(ParticipantItem(id: identity,
                                          videoTrack: participant.firstCameraVideoTrack,
                                          displayName: resolveDisplayName(for: participant, identity: identity),
@@ -495,7 +544,8 @@ private struct GroupCallLayout: View {
                                          isSpeaking: speaking,
                                          isAudioMuted: audioMuted,
                                          isVideoMuted: videoMuted,
-                                         isScreenShare: false))
+                                         isScreenShare: false,
+                                         isHandRaised: handRaised))
         }
 
         return items
@@ -557,9 +607,14 @@ private struct GroupCallLayout: View {
         let availableWidth = geometry.size.width - CGFloat(columns - 1) * 4 - 8
         let tileWidth = availableWidth / CGFloat(columns)
         let tileHeight = availableHeight / CGFloat(rows)
-        // Use calculated ratio so tiles fill the visible area without scrolling
         if count <= 8 {
-            return tileWidth / max(tileHeight, 1)
+            // STMOB-119 build 144: ограничиваем aspect ratio в [0.75, 1.33].
+            // Раньше для 4 уч. был ≈0.53 (узкий portrait), что в .fill режиме
+            // обрезало landscape camera (1.33) ОЧЕНЬ агрессивно — у юзеров
+            // были видны только пол-лица справа/слева. Теперь tiles ближе
+            // к квадрату, обрезка минимальная.
+            let raw = tileWidth / max(tileHeight, 1)
+            return max(0.75, min(1.33, raw))
         }
         // Scrollable: fixed landscape ratio
         return 4.0 / 3.0
@@ -578,6 +633,8 @@ private struct ParticipantItem: Identifiable {
     let isAudioMuted: Bool
     let isVideoMuted: Bool
     let isScreenShare: Bool
+    /// STMOB-120: участник поднял руку (через participant.metadata).
+    var isHandRaised = false
 }
 
 // MARK: - Participant Tile
@@ -647,6 +704,23 @@ private struct ParticipantTile: View {
                     Spacer()
                 }
             }
+
+            // STMOB-120: Hand raise indicator (top-left)
+            if item.isHandRaised {
+                VStack {
+                    HStack {
+                        Image(systemName: "hand.raised.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.black)
+                            .frame(width: 28, height: 28)
+                            .background(Color.yellow)
+                            .clipShape(Circle())
+                            .padding(8)
+                        Spacer()
+                    }
+                    Spacer()
+                }
+            }
         }
         .background(Color(white: 0.1))
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -709,48 +783,122 @@ private struct SpeakerCallLayout: View {
     let onTogglePin: ((String) -> Void)?
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Main focused area
-            ZStack {
-                Color.black
-                if let track = focusedVideoTrack {
-                    NativeCallVideoView(track: track, contentMode: .fit)
-                } else {
-                    placeholder
-                }
-                // Pin indicator
-                if let pinnedSID, focusedSID == pinnedSID {
-                    VStack {
-                        HStack {
-                            Image(systemName: "pin.fill")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Color.black.opacity(0.5))
-                                .clipShape(Capsule())
-                                .padding(12)
+        GeometryReader { geometry in
+            // STMOB-128 build 148: strip заполняет всё пространство между main view
+            // и callControlButtons (~190pt). Тайлы растягиваются по ширине поровну
+            // в зависимости от count (2..6), height = высоте strip area.
+            let bottomReserved: CGFloat = 190
+            let stripHeight: CGFloat = 150
+            let mainHeight = max(0, geometry.size.height - bottomReserved - stripHeight)
+            VStack(spacing: 0) {
+                // Main focused area
+                ZStack {
+                    Color.black
+                    if let track = focusedVideoTrack {
+                        NativeCallVideoView(track: track, contentMode: .fit)
+                    } else {
+                        placeholder
+                    }
+                    // Pin indicator
+                    if let pinnedSID, focusedSID == pinnedSID {
+                        VStack {
+                            HStack {
+                                Image(systemName: "pin.fill")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.black.opacity(0.5))
+                                    .clipShape(Capsule())
+                                    .padding(12)
+                                Spacer()
+                            }
                             Spacer()
                         }
-                        Spacer()
                     }
                 }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(height: mainHeight)
 
-            // Bottom strip (горизонтальная галерея всех)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(roomManager.remoteParticipants, id: \.sid) { participant in
-                        speakerStripTile(for: participant)
-                    }
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                stripView(in: geometry, height: stripHeight)
+                    .padding(.bottom, bottomReserved)
             }
-            .frame(height: 110)
-            .background(Color.black.opacity(0.6))
         }
+    }
+
+    /// STMOB-128 build 148: тайлы strip растягиваются по ширине поровну.
+    /// 1 тайл = full width, 2-6 — делятся равномерно, >6 — горизонтальный scroll
+    /// с фикс-шириной.
+    @ViewBuilder
+    private func stripView(in geometry: GeometryProxy, height: CGFloat) -> some View {
+        let visibleParticipants = stripParticipants
+        let overflow = roomManager.remoteParticipants.count - visibleParticipants.count
+        let totalTiles = visibleParticipants.count + (overflow > 0 ? 1 : 0)
+        let hpadding: CGFloat = 12
+        let spacing: CGFloat = 8
+        let availableWidth = geometry.size.width - hpadding * 2
+        let tileHeight = height - 16 // vertical padding
+        let computedWidth = totalTiles > 0
+            ? (availableWidth - spacing * CGFloat(max(0, totalTiles - 1))) / CGFloat(totalTiles)
+            : 0
+        let tileWidth = max(72, min(computedWidth, 220))
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: spacing) {
+                ForEach(visibleParticipants, id: \.sid) { participant in
+                    speakerStripTile(for: participant, width: tileWidth, height: tileHeight)
+                }
+                if overflow > 0 {
+                    overflowTile(count: overflow, width: tileWidth, height: tileHeight)
+                }
+            }
+            .padding(.horizontal, hpadding)
+            .padding(.vertical, 8)
+        }
+        .frame(height: height)
+        .background(Color.black.opacity(0.6))
+    }
+
+    /// STMOB-117 build 143: для strip берём не более 3 участников.
+    /// Приоритет: (1) pinned, (2) с camera/screen-share track, (3) последний
+    /// active speaker, (4) первые remote по списку.
+    private var stripParticipants: [RemoteParticipant] {
+        let allRemotes = roomManager.remoteParticipants
+        guard allRemotes.count > 3 else { return allRemotes }
+        var ordered: [RemoteParticipant] = []
+        var seen = Set<String>()
+        func add(_ p: RemoteParticipant) {
+            guard let sid = p.sid?.stringValue, !seen.contains(sid) else { return }
+            ordered.append(p)
+            seen.insert(sid)
+        }
+        // 1. pinned
+        if let pinnedSID, let p = allRemotes.first(where: { $0.sid?.stringValue == pinnedSID }) { add(p) }
+        // 2. с любым subscribed video track (camera или screen)
+        for p in allRemotes where p.videoTracks.contains(where: \.isSubscribed) {
+            if ordered.count >= 3 { break }
+            add(p)
+        }
+        // 3. active speakers
+        for sp in roomManager.activeSpeakers {
+            if ordered.count >= 3 { break }
+            if let p = sp as? RemoteParticipant { add(p) }
+        }
+        // 4. fallback — первые остальные
+        for p in allRemotes {
+            if ordered.count >= 3 { break }
+            add(p)
+        }
+        return ordered
+    }
+
+    private func overflowTile(count: Int, width: CGFloat, height: CGFloat) -> some View {
+        ZStack {
+            Color.black
+            Text("+\(count)")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundColor(.white)
+        }
+        .frame(width: width, height: height)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     // MARK: focused track resolver
@@ -817,12 +965,14 @@ private struct SpeakerCallLayout: View {
     // MARK: strip tile
 
     @ViewBuilder
-    private func speakerStripTile(for participant: RemoteParticipant) -> some View {
+    private func speakerStripTile(for participant: RemoteParticipant, width: CGFloat, height: CGFloat) -> some View {
         let sid = participant.sid?.stringValue ?? ""
         let isPinned = pinnedSID == sid
         let cameraTrack = participant.firstCameraVideoTrack
         let hasScreenShare = participant.videoTracks
             .contains(where: { $0.name == Track.screenShareVideoName && $0.isSubscribed })
+        // STMOB-120
+        let isHandRaised = roomManager.raisedHandsSIDs.contains(sid)
 
         ZStack {
             Color.black
@@ -846,6 +996,14 @@ private struct SpeakerCallLayout: View {
                             .background(Color.black.opacity(0.6))
                             .clipShape(Circle())
                     }
+                    if isHandRaised {
+                        Image(systemName: "hand.raised.fill")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.black)
+                            .padding(3)
+                            .background(Color.yellow)
+                            .clipShape(Circle())
+                    }
                     Spacer()
                     if hasScreenShare {
                         Image(systemName: "rectangle.on.rectangle")
@@ -860,7 +1018,7 @@ private struct SpeakerCallLayout: View {
             }
             .padding(4)
         }
-        .frame(width: 84, height: 94)
+        .frame(width: width, height: height)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8)
             .stroke(isPinned ? Color.white : Color.clear, lineWidth: 2))

@@ -210,7 +210,12 @@ struct RoomScreen: View {
     
     @ViewBuilder
     private var callButton: some View {
-        if context.viewState.hasOngoingCall {
+        // STMOB-121 build 143: показываем «Присоединиться к звонку» ТОЛЬКО если
+        // есть ongoing call в этой комнате И юзер сам в нём ещё не участвует.
+        // Раньше плашка висела даже когда у юзера уже открыт PiP мини-окно
+        // этого же звонка — выглядело странно «вернуться» снизу + «присоединиться»
+        // сверху одновременно.
+        if context.viewState.hasOngoingCall, !context.viewState.isParticipatingInOngoingCall {
             JoinCallButton {
                 context.send(viewAction: .displayCall)
             }

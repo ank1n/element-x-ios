@@ -34,6 +34,12 @@ final class LiveKitRoomManager: ObservableObject {
     /// на первом по JOIN order участнике.
     @Published private(set) var activeSpeakers: [Participant] = []
 
+    /// STMOB-120: множество SID'ов participants поднявших руку.
+    /// Источник — `participant.metadata` JSON с полем `hand_raised: true`.
+    /// Делегат `didUpdateMetadata` обновляет state, SwiftUI views рендерят
+    /// overlay-иконку поверх их тайлов.
+    @Published private(set) var raisedHandsSIDs: Set<String> = []
+
     /// LiveKit room name (used for recording-api)
     var roomName: String? {
         room.name
@@ -612,6 +618,19 @@ final class LiveKitRoomManager: ObservableObject {
         remoteParticipants = Array(room.remoteParticipants.values)
         localParticipant = room.localParticipant
 
+        // STMOB-120: пересчитываем raisedHandsSIDs по текущим metadata всех
+        // remote — нужно для случая когда юзер зашёл в звонок а у кого-то
+        // уже рука поднята (didUpdateMetadata события не было).
+        var current = Set<String>()
+        for p in remoteParticipants {
+            if let sid = p.sid?.stringValue, Self.parseHandRaised(p.metadata) {
+                current.insert(sid)
+            }
+        }
+        if current != raisedHandsSIDs {
+            raisedHandsSIDs = current
+        }
+
         // STMOB: get local video track, исключая muted publications.
         // setCamera(enabled: false) в LiveKit SDK НЕ unpublish'ит track —
         // только мьютит его (publication.isMuted = true). Без фильтра
@@ -638,6 +657,11 @@ extension LiveKitRoomManager: RoomDelegate {
             MXLog.info("sTalk LiveKit: Connection state: \(oldConnectionState) → \(connectionState)")
             os_log(.info, log: livekitLog, "WS state: %{public}@ → %{public}@",
                    "\(oldConnectionState)", "\(connectionState)")
+            // STMOB-126 build 151: видим в DiagLog моменты connect/disconnect/
+            // reconnect — корреллируем с didPublishTrack (E2EE_DEBUG) чтобы
+            // понять race condition при первом подключении (other participants
+            // don't see/hear me).
+            DiagLog.write("LiveKit", "connState \(oldConnectionState) → \(connectionState)")
 
             switch connectionState {
             case .connected:
@@ -733,6 +757,30 @@ extension LiveKitRoomManager: RoomDelegate {
         Task { @MainActor in
             self.updateState()
         }
+    }
+
+    /// STMOB-120: hand raise через participant.metadata. Element Call (web)
+    /// устанавливает `{"hand_raised": true}` когда юзер поднимает руку
+    /// (и пустой JSON `{}` когда опускает). Парсим metadata всех remote
+    /// participants и собираем set SID'ов с raised hand для UI overlay.
+    nonisolated func room(_ room: Room, participant: Participant, didUpdateMetadata metadata: String?) {
+        let sid = participant.sid?.stringValue
+        let isRaised = Self.parseHandRaised(metadata)
+        Task { @MainActor in
+            guard let sid else { return }
+            if isRaised {
+                self.raisedHandsSIDs.insert(sid)
+            } else {
+                self.raisedHandsSIDs.remove(sid)
+            }
+            MXLog.info("sTalk LiveKit: hand raise update sid=\(sid) raised=\(isRaised) total=\(self.raisedHandsSIDs.count)")
+        }
+    }
+
+    private nonisolated static func parseHandRaised(_ metadata: String?) -> Bool {
+        guard let metadata, let data = metadata.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+        return (json["hand_raised"] as? Bool) ?? false
     }
 
     /// STMOB-100: SDK reports speaking participants list (sorted by audio level

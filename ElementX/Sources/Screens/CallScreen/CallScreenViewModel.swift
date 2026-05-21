@@ -522,6 +522,10 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                     // Note: NOT calling elementCallService.setupCallSession —
                     // CallKit would kill the call when WidgetDriver times out.
                     // Native SDK manages call lifecycle independently.
+                    // STMOB-130 build 153: но публикуем roomID для RoomScreen
+                    // (чтобы «Присоединиться к звонку» плашка скрывалась когда
+                    // юзер уже в native звонке этой комнаты) — БЕЗ CallKit.
+                    elementCallService.markNativeCallActive(roomID: roomProxy.id)
                     return
                 }
 
@@ -866,6 +870,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         defer {
             DiagLog.write("CallUI", "endCall: dismiss (forced after timeout-bounded cleanup)")
             elementCallService.tearDownCallSession()
+            // STMOB-130: очистить native call marker (для native path tearDown
+            // не выставляет ongoingCallID=nil, нужно отдельно).
+            elementCallService.markNativeCallActive(roomID: nil)
             UIDevice.current.isProximityMonitoringEnabled = false
             actionsSubject.send(.dismiss)
         }

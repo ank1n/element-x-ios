@@ -211,7 +211,12 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
             .receive(on: DispatchQueue.main)
             .sink { [weak self] ongoingCallRoomID in
                 guard let self else { return }
-                state.isParticipatingInOngoingCall = ongoingCallRoomID == roomProxy.id
+                let match = ongoingCallRoomID == roomProxy.id
+                state.isParticipatingInOngoingCall = match
+                // STMOB-130 build 150: видеть в логе что приходит. У юзера на
+                // build 147 плашка «Присоединиться» висела хотя PiP видно —
+                // значит ongoingCallRoomID не выставлялся / отличался от roomProxy.id.
+                DiagLog.write("Call", "ongoingCallRoomID=\(ongoingCallRoomID ?? "nil") roomProxy.id=\(roomProxy.id) match=\(match)")
             }
             .store(in: &cancellables)
         

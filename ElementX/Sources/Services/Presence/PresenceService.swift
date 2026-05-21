@@ -15,6 +15,7 @@ struct UserPresence: Equatable {
     let lastSeenDate: Date?
 }
 
+@MainActor
 class PresenceService {
     private let homeserver: String
     /// STMOB-109 build 138: token берём свежий через provider перед каждым
@@ -24,6 +25,10 @@ class PresenceService {
     /// на fetchPresence). OwnPresenceManager уже использует такой подход
     /// с build 121, теперь и PresenceService.
     private let tokenProvider: () -> String?
+    /// STMOB-132 build 153: после 401 вызываем forceTokenRefresh чтобы SDK
+    /// обновил OIDC access_token внутри (он rotated на MAS каждые 15 мин),
+    /// затем retry с свежим token.
+    private let tokenRefresher: () async -> Void
     private let ownUserID: String
 
     private var pollingTask: Task<Void, Never>?
@@ -44,16 +49,20 @@ class PresenceService {
 
     let presenceSubject = CurrentValueSubject<[String: UserPresence], Never>([:])
 
-    init(homeserver: String, tokenProvider: @escaping () -> String?, ownUserID: String) {
+    init(homeserver: String,
+         tokenProvider: @escaping () -> String?,
+         tokenRefresher: @escaping () async -> Void = { },
+         ownUserID: String) {
         // Remove trailing slash to avoid double-slash in URLs
         self.homeserver = homeserver.hasSuffix("/") ? String(homeserver.dropLast()) : homeserver
         self.tokenProvider = tokenProvider
+        self.tokenRefresher = tokenRefresher
         self.ownUserID = ownUserID
         os_log(.info, log: presenceLog, "PresenceService init: homeserver=%{public}@, ownUserID=%{public}@", self.homeserver, ownUserID)
     }
 
     deinit {
-        stopPolling()
+        pollingTask?.cancel()
     }
 
     // MARK: - Own Presence
@@ -72,8 +81,12 @@ class PresenceService {
         guard let url = URL(string: urlString) else { return }
         guard let token = tokenProvider() else {
             os_log(.error, log: presenceLog, "setOwnPresence: no token")
+            DiagLog.write("Presence", "setOwnPresence(\(status)) — tokenProvider() returned nil")
             return
         }
+        // STMOB-132 build 150: фиксируем длину/префикс токена и тип запроса —
+        // увидим в логе если PUT и GET берут разные токены.
+        DiagLog.write("Presence", "setOwnPresence(\(status)) PUT tokenLen=\(token.count) tokenPrefix=\(token.prefix(8))…")
 
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
@@ -118,6 +131,9 @@ class PresenceService {
             inFlight.insert(id)
         }
 
+        var sawUnauthorized = false
+        var pendingRetry: [String] = []
+
         await withTaskGroup(of: (String, UserPresence?, Int?).self) { group in
             for userID in dedupedIDs {
                 group.addTask { [weak self] in
@@ -132,8 +148,43 @@ class PresenceService {
                 if statusCode == 403 {
                     forbiddenUntil[userID] = now.addingTimeInterval(forbiddenTTL)
                 }
+                if statusCode == 401 {
+                    sawUnauthorized = true
+                    pendingRetry.append(userID)
+                }
                 if let presence {
                     results[userID] = presence
+                }
+            }
+        }
+
+        // STMOB-132 build 153/155: если SDK accessToken был stale (часть
+        // запросов получили 401), просим SDK обновить OIDC token. Build 155
+        // добавил всегда-логируемое sawUnauthorized/pendingRetry — на 153
+        // retry не запускался, нужно понять почему.
+        DiagLog.write("Presence", "fetchPresence batch result: sawUnauthorized=\(sawUnauthorized) pendingRetry=\(pendingRetry.count)")
+        if sawUnauthorized, !pendingRetry.isEmpty {
+            DiagLog.write("Presence", "401 batch → forceTokenRefresh + retry \(pendingRetry.count)")
+            await tokenRefresher()
+            for id in pendingRetry {
+                inFlight.insert(id)
+            }
+            await withTaskGroup(of: (String, UserPresence?, Int?).self) { group in
+                for userID in pendingRetry {
+                    group.addTask { [weak self] in
+                        guard let self else { return (userID, nil, nil) }
+                        let (presence, statusCode) = await self.fetchSinglePresenceWithStatus(userID: userID)
+                        return (userID, presence, statusCode)
+                    }
+                }
+                for await (userID, presence, statusCode) in group {
+                    inFlight.remove(userID)
+                    if statusCode == 403 {
+                        forbiddenUntil[userID] = Date().addingTimeInterval(forbiddenTTL)
+                    }
+                    if let presence {
+                        results[userID] = presence
+                    }
                 }
             }
         }
@@ -161,7 +212,14 @@ class PresenceService {
         let body = String(data: data, encoding: .utf8) ?? ""
         os_log(.info, log: presenceLog, "fetchPresence(%{public}@) → %d: %{public}@", userID, httpResponse.statusCode, body)
         if httpResponse.statusCode != 200 {
-            DiagLog.write("Presence", "fetchPresence(\(userID)) → HTTP \(httpResponse.statusCode)")
+            // STMOB-132 build 150: при HTTP 401 — записываем prefix токена
+            // чтобы сравнить с тем что использует setOwnPresence (PUT). Если
+            // префиксы разные — tokenProvider возвращает stale токен для GET.
+            if httpResponse.statusCode == 401 {
+                DiagLog.write("Presence", "fetchPresence(\(userID)) → HTTP 401 tokenLen=\(token.count) tokenPrefix=\(token.prefix(8))…")
+            } else {
+                DiagLog.write("Presence", "fetchPresence(\(userID)) → HTTP \(httpResponse.statusCode)")
+            }
             return (nil, httpResponse.statusCode)
         }
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -169,11 +227,25 @@ class PresenceService {
         }
         let presenceStr = json["presence"] as? String ?? "offline"
         let currentlyActive = json["currently_active"] as? Bool ?? false
-        let isOnline = presenceStr == "online" || currentlyActive
+        let lastActiveAgoMs = json["last_active_ago"] as? Int
         var lastSeenDate: Date?
-        if let lastActiveAgo = json["last_active_ago"] as? Int {
-            lastSeenDate = Date().addingTimeInterval(-Double(lastActiveAgo) / 1000.0)
+        if let ago = lastActiveAgoMs {
+            lastSeenDate = Date().addingTimeInterval(-Double(ago) / 1000.0)
         }
+        // STMOB-131 build 156: лог real-server values чтобы понять почему
+        // @nh / @admin показываются "в сети" если в Contacts «23 минуты назад».
+        // Гипотезы: 1) сервер реально шлёт last_active_ago<5min,
+        // 2) currently_active=true без last_active_ago (мой fix даёт false),
+        // 3) другой userID resolved в Header чем в Contacts.
+        DiagLog.write("Presence", "fetchPresence(\(userID)) → presence=\(presenceStr) currently_active=\(currentlyActive) last_active_ago_ms=\(lastActiveAgoMs ?? -1)")
+        // STMOB-133 build 154: считаем online ТОЛЬКО если последняя активность
+        // < 5 мин назад. Без этого Synapse иногда отдаёт `currently_active: true`
+        // для юзеров реально активных 20+ минут назад (race в Synapse
+        // presence_stream) → header показывал «в сети» когда в Contacts list
+        // было корректное «был 23 минуты назад». Теперь оба места дают
+        // одинаковый результат.
+        let recentlyActive = (lastActiveAgoMs ?? .max) < 5 * 60 * 1000
+        let isOnline = (presenceStr == "online" || currentlyActive) && recentlyActive
         return (UserPresence(isOnline: isOnline, lastSeenDate: lastSeenDate), httpResponse.statusCode)
     }
 

@@ -261,6 +261,20 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     func tearDownCallSession() {
         tearDownCallSession(sendEndCallAction: true)
     }
+
+    /// STMOB-130 build 153: native LiveKit path. Публикует roomID в
+    /// ongoingCallRoomIDPublisher БЕЗ полного CallKit setup, чтобы
+    /// RoomScreen знал что юзер в звонке (для скрытия «Присоединиться»
+    /// плашки). nil — очистить при leave.
+    func markNativeCallActive(roomID: String?) {
+        DiagLog.write("Call", "markNativeCallActive(roomID=\(roomID ?? "nil"))")
+        if let roomID {
+            // Создаём минимальный CallID БЕЗ CallKit registration.
+            ongoingCallID = CallID(callKitID: UUID(), roomID: roomID, rtcNotificationID: nil)
+        } else {
+            ongoingCallID = nil
+        }
+    }
     
     func setAudioEnabled(_ enabled: Bool, roomID: String) {
         guard let ongoingCallID else {
