@@ -7,6 +7,7 @@
 import AVFoundation
 import Combine
 import Foundation
+import UIKit
 
 typealias CallDetailScreenViewModelType = StateStoreViewModel<CallDetailScreenViewState, CallDetailScreenViewAction>
 
@@ -155,6 +156,21 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
             Task { await retryTranscription() }
         case .callBack:
             actionsSubject.send(.callBack(roomID: state.call.contactId))
+        case .createTask(let task, let projectId, let overrideText):
+            Task { await createTask(task, projectId: projectId, overrideText: overrideText) }
+        case .openProjectPicker(let task):
+            state.projectPickerForTask = task
+            Task { await loadProjects(query: "") }
+        case .closeProjectPicker:
+            state.projectPickerForTask = nil
+        case .searchProjects(let query):
+            Task { await loadProjects(query: query) }
+        case .openTrackItIssue(let urlString):
+            if let url = URL(string: urlString) {
+                UIApplication.shared.open(url)
+            }
+        case .refreshTasks:
+            Task { await loadTasks(refresh: true) }
         }
     }
 
@@ -190,6 +206,11 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
                 if data.status?.isInProgress == true {
                     startPolling()
                 }
+            }
+            // STALK-255 build 157: подтянуть созданные задачи если транскрипция завершена.
+            // Без этого вкладка "Задачи" пустая при первом открытии хотя в БД задачи есть.
+            if data.status == .completed {
+                await loadTasks(refresh: false)
             }
         } catch {
             DiagLog.write("CallDetail", "  fetchTranscription FAIL \(error)")
@@ -367,6 +388,68 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
     private func stopPlayback() {
         currentDownloadTask?.cancel()
         audioPlayer.stop()
+    }
+
+    // MARK: - STALK-255 Tasks (build 157)
+
+    /// Подтянуть уже созданные TrackIT-задачи для этого звонка.
+    /// Запускается при первом открытии вкладки "Задачи" и по action .refreshTasks.
+    private func loadTasks(refresh: Bool) async {
+        guard let egressId else { return }
+        await MainActor.run { state.isTasksLoading = true }
+        do {
+            let tasks = try await callHistoryService.fetchCreatedTasks(egressId: egressId, refresh: refresh)
+            await MainActor.run {
+                state.createdTasks = tasks
+                state.isTasksLoading = false
+            }
+            DiagLog.write("CallDetail", "  loadTasks OK count=\(tasks.count)")
+        } catch {
+            await MainActor.run { state.isTasksLoading = false }
+            DiagLog.write("CallDetail", "  loadTasks FAIL \(error)")
+        }
+    }
+
+    private func loadProjects(query: String) async {
+        await MainActor.run { state.isProjectsLoading = true }
+        do {
+            let projects = try await callHistoryService.searchTrackItProjects(query: query)
+            await MainActor.run {
+                state.trackItProjects = projects
+                state.isProjectsLoading = false
+            }
+        } catch {
+            await MainActor.run { state.isProjectsLoading = false }
+            DiagLog.write("CallDetail", "  loadProjects FAIL \(error)")
+        }
+    }
+
+    private func createTask(_ task: SuggestedTask, projectId: String, overrideText: String?) async {
+        guard let egressId else { return }
+        do {
+            let created = try await callHistoryService.createTask(egressId: egressId,
+                                                                  topicIndex: task.topicIndex,
+                                                                  taskIndex: task.taskIndex,
+                                                                  projectId: projectId,
+                                                                  overrideText: overrideText)
+            await MainActor.run {
+                // Заменяем или добавляем по (topicIndex, taskIndex) ключу — idempotent
+                // от сервера может вернуть существующую задачу. UI не должен
+                // дублировать карточки.
+                if let i = state.createdTasks.firstIndex(where: { $0.topicIndex == created.topicIndex && $0.taskIndex == created.taskIndex }) {
+                    state.createdTasks[i] = created
+                } else {
+                    state.createdTasks.append(created)
+                }
+                state.projectPickerForTask = nil
+            }
+            DiagLog.write("CallDetail", "  createTask OK \(created.trackitProjectIdentifier ?? "?")-\(created.trackitSequenceId ?? 0)")
+        } catch {
+            await MainActor.run {
+                state.bindings.alertInfo = AlertInfo(id: .init(), title: "Не удалось создать задачу", message: "\(error)")
+            }
+            DiagLog.write("CallDetail", "  createTask FAIL \(error)")
+        }
     }
 
     // MARK: - Helpers

@@ -52,6 +52,18 @@ struct Transcription: Codable, Equatable {
     let fullText: String
 }
 
+/// STALK-255 build 157: tasks предложенные LLM-summarizer внутри topic.
+/// Юзер может конвертировать их в TrackIT issues через POST /api/recording/tasks/create.
+struct SuggestedTask: Codable, Identifiable, Equatable {
+    var id: String {
+        "\(topicIndex)-\(taskIndex)"
+    }
+
+    let topicIndex: Int
+    let taskIndex: Int
+    let text: String
+}
+
 struct SummaryTopic: Codable, Identifiable, Equatable {
     var id: String {
         title
@@ -61,6 +73,57 @@ struct SummaryTopic: Codable, Identifiable, Equatable {
     let discussed: String?
     let agreed: String?
     let timestamp: TimeInterval?
+    /// STALK-255 build 157: только новые записи. Старые звонки suggestedTasks=nil.
+    let suggestedTasks: [SuggestedTask]?
+}
+
+/// STALK-255 build 157: уже созданная задача в TrackIT — приходит из
+/// `GET /api/recording/tasks/{egressId}`. Содержит ссылку на Plane Issue и
+/// текущий статус (Todo/InProgress/Done/...) для отображения badge.
+struct CreatedTask: Codable, Identifiable, Equatable {
+    let id: Int
+    let egressId: String
+    let topicIndex: Int
+    let taskIndex: Int
+    let taskText: String
+    let trackitIssueId: String?
+    let trackitProjectId: String?
+    let trackitProjectIdentifier: String?
+    let trackitSequenceId: Int?
+    let trackitStateId: String?
+    let trackitStateName: String?
+    let trackitStateGroup: String?
+    let trackitUrl: String?
+    let createdBy: String?
+    let createdAt: String?
+    let statusSyncedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case egressId = "egress_id"
+        case topicIndex = "topic_index"
+        case taskIndex = "task_index"
+        case taskText = "task_text"
+        case trackitIssueId = "trackit_issue_id"
+        case trackitProjectId = "trackit_project_id"
+        case trackitProjectIdentifier = "trackit_project_identifier"
+        case trackitSequenceId = "trackit_sequence_id"
+        case trackitStateId = "trackit_state_id"
+        case trackitStateName = "trackit_state_name"
+        case trackitStateGroup = "trackit_state_group"
+        case trackitUrl = "trackit_url"
+        case createdBy = "created_by"
+        case createdAt = "created_at"
+        case statusSyncedAt = "status_synced_at"
+    }
+}
+
+/// STALK-255 build 157: проект TrackIT для выбора при создании задачи.
+struct TrackItProject: Codable, Identifiable, Equatable {
+    let id: String
+    let name: String
+    let identifier: String
+    let description: String?
 }
 
 struct TranscriptionSummary: Codable, Equatable {
@@ -94,12 +157,16 @@ enum CallDetailTab: String, CaseIterable {
     case summary
     case details
     case transcription
+    /// STALK-255 build 157: задачи из LLM-summarizer suggestedTasks +
+    /// уже созданные TrackIT issues. Sync с web "Задачи" вкладкой.
+    case tasks
 
     var title: String {
         switch self {
         case .summary: return "Резюме"
         case .details: return "Подробнее"
         case .transcription: return "Транскрипция"
+        case .tasks: return "Задачи"
         }
     }
 }
@@ -112,6 +179,17 @@ enum CallDetailScreenViewAction {
     case seekPlayback(progress: Double)
     case retryTranscription
     case callBack
+    /// STALK-255 build 157: создать задачу в TrackIT из suggested task.
+    case createTask(SuggestedTask, projectId: String, overrideText: String?)
+    /// STALK-255 build 157: открыть/закрыть picker проектов TrackIT.
+    case openProjectPicker(SuggestedTask)
+    case closeProjectPicker
+    /// STALK-255 build 157: search TrackIT projects по подстроке.
+    case searchProjects(query: String)
+    /// STALK-255 build 157: открыть TrackIT issue в браузере.
+    case openTrackItIssue(url: String)
+    /// STALK-255 build 157: refresh статусов созданных задач из TrackIT.
+    case refreshTasks
 }
 
 enum CallDetailScreenViewModelAction {
@@ -159,12 +237,32 @@ struct CallDetailScreenViewState: BindableState {
         !(transcriptionData?.transcription?.segments.isEmpty ?? true)
     }
 
+    /// STALK-255 build 157: суммируем suggestedTasks из всех topics в плоский
+    /// список — UI tab "Задачи" показывает их как flat list карточек.
+    var allSuggestedTasks: [SuggestedTask] {
+        guard let topics = transcriptionData?.summary?.topics else { return [] }
+        return topics.compactMap(\.suggestedTasks).flatMap(\.self)
+    }
+
+    var hasTasks: Bool {
+        !allSuggestedTasks.isEmpty || !createdTasks.isEmpty
+    }
+
+    /// STALK-255 build 157: уже созданные TrackIT-задачи для звонка.
+    var createdTasks: [CreatedTask] = []
+    var isTasksLoading = false
+    var trackItProjects: [TrackItProject] = []
+    var isProjectsLoading = false
+    /// SuggestedTask для которой открыт project picker. nil = picker закрыт.
+    var projectPickerForTask: SuggestedTask?
+
     /// Available tabs based on data
     var availableTabs: [CallDetailTab] {
         var tabs: [CallDetailTab] = []
         if hasSummary { tabs.append(.summary) }
         if let topics = transcriptionData?.summary?.topics, !topics.isEmpty { tabs.append(.details) }
         if hasSegments { tabs.append(.transcription) }
+        if hasTasks { tabs.append(.tasks) }
         return tabs
     }
 }

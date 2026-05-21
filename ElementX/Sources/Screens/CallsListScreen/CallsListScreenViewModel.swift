@@ -1081,6 +1081,17 @@ protocol CallHistoryServiceProtocol: AnyObject {
     /// Build 115 fix: download recording m4a с Authorization Bearer header.
     /// Без авторизации recording-api отдаёт 401 → AVAudioPlayer не открывает файл → 0:00/0:00.
     func downloadRecording(from url: URL) async throws -> Data
+
+    /// STALK-255 build 157: задачи которые юзер уже конвертировал в TrackIT issues.
+    /// `refresh=true` форсирует re-fetch статусов из TrackIT (иначе кэш на сервере).
+    func fetchCreatedTasks(egressId: String, refresh: Bool) async throws -> [CreatedTask]
+    /// STALK-255 build 157: создать TrackIT issue из suggestedTask. Idempotent
+    /// по ключу (egressId, topicIndex, taskIndex) — повторный вызов возвращает
+    /// существующую задачу с тем же URL.
+    func createTask(egressId: String, topicIndex: Int, taskIndex: Int, projectId: String, overrideText: String?) async throws -> CreatedTask
+    /// STALK-255 build 157: список проектов TrackIT для picker'а. Подстрочный
+    /// фильтр через `q` (пусто = все доступные).
+    func searchTrackItProjects(query: String) async throws -> [TrackItProject]
 }
 
 class CallHistoryService: NSObject, CallHistoryServiceProtocol, URLSessionDelegate {
@@ -1237,7 +1248,7 @@ class CallHistoryService: NSObject, CallHistoryServiceProtocol, URLSessionDelega
         throw lastError ?? CallHistoryError.invalidResponse
     }
 
-    private func performAuthenticatedRequest<T: Decodable>(url: URL, method: String) async throws -> T {
+    private func performAuthenticatedRequest<T: Decodable>(url: URL, method: String, jsonBody: [String: Any]? = nil) async throws -> T {
         var lastError: Error?
         for attempt in 1...3 {
             let token = (try? accessTokenProvider?()) ?? accessToken
@@ -1246,6 +1257,10 @@ class CallHistoryService: NSObject, CallHistoryServiceProtocol, URLSessionDelega
             request.httpMethod = method
             if let token {
                 request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            }
+            if let jsonBody {
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.httpBody = try? JSONSerialization.data(withJSONObject: jsonBody)
             }
             request.timeoutInterval = 30.0
 
@@ -1271,6 +1286,57 @@ class CallHistoryService: NSObject, CallHistoryServiceProtocol, URLSessionDelega
             }
         }
         throw lastError ?? CallHistoryError.invalidResponse
+    }
+
+    // MARK: - STALK-255 Tasks API (build 157)
+
+    private struct TasksListResponse: Decodable {
+        let tasks: [CreatedTask]
+    }
+
+    private struct ProjectsResponse: Decodable {
+        let projects: [TrackItProject]
+    }
+
+    private struct CreateTaskResponse: Decodable {
+        let task: CreatedTask
+        let idempotent: Bool?
+    }
+
+    func fetchCreatedTasks(egressId: String, refresh: Bool) async throws -> [CreatedTask] {
+        var components = URLComponents(url: baseURL.appendingPathComponent("api/recording/tasks/\(egressId)"), resolvingAgainstBaseURL: false)
+        if refresh {
+            components?.queryItems = [URLQueryItem(name: "refresh", value: "1")]
+        }
+        guard let url = components?.url else { throw CallHistoryError.invalidResponse }
+        let resp: TasksListResponse = try await performAuthenticatedRequest(url: url, method: "GET")
+        return resp.tasks
+    }
+
+    func createTask(egressId: String, topicIndex: Int, taskIndex: Int, projectId: String, overrideText: String?) async throws -> CreatedTask {
+        let url = baseURL.appendingPathComponent("api/recording/tasks/create")
+        var body: [String: Any] = [
+            "egressId": egressId,
+            "topicIndex": topicIndex,
+            "taskIndex": taskIndex,
+            "projectId": projectId
+        ]
+        if let overrideText, !overrideText.isEmpty {
+            body["text"] = overrideText
+        }
+        let resp: CreateTaskResponse = try await performAuthenticatedRequest(url: url, method: "POST", jsonBody: body)
+        return resp.task
+    }
+
+    func searchTrackItProjects(query: String) async throws -> [TrackItProject] {
+        var components = URLComponents(url: baseURL.appendingPathComponent("api/recording/trackit/projects"), resolvingAgainstBaseURL: false)
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            components?.queryItems = [URLQueryItem(name: "q", value: trimmed)]
+        }
+        guard let url = components?.url else { throw CallHistoryError.invalidResponse }
+        let resp: ProjectsResponse = try await performAuthenticatedRequest(url: url, method: "GET")
+        return resp.projects
     }
 }
 

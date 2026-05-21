@@ -238,6 +238,176 @@ struct CallDetailScreen: View {
                 detailsTabView
             case .transcription:
                 transcriptTabView
+            case .tasks:
+                tasksTabView
+            }
+        }
+    }
+
+    // MARK: - Tasks Tab (STALK-255 build 157)
+
+    private var tasksTabView: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            let suggested = context.viewState.allSuggestedTasks
+            let created = context.viewState.createdTasks
+            let createdKeys = Set(created.map { "\($0.topicIndex)-\($0.taskIndex)" })
+            let pending = suggested.filter { !createdKeys.contains($0.id) }
+
+            if context.viewState.isTasksLoading, created.isEmpty {
+                HStack { Spacer(); ProgressView(); Spacer() }
+                    .padding(.vertical, 24)
+            }
+
+            if !pending.isEmpty {
+                sectionHeader("Предложения LLM")
+                ForEach(pending) { task in
+                    suggestedTaskCard(task)
+                }
+            }
+
+            if !created.isEmpty {
+                HStack {
+                    sectionHeader("Созданные задачи")
+                    Spacer()
+                    Button {
+                        context.send(viewAction: .refreshTasks)
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 14))
+                    }
+                    .disabled(context.viewState.isTasksLoading)
+                }
+                ForEach(created) { task in
+                    createdTaskCard(task)
+                }
+            }
+
+            if pending.isEmpty, created.isEmpty, !context.viewState.isTasksLoading {
+                VStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle")
+                        .font(.system(size: 32))
+                        .foregroundColor(.secondary)
+                    Text("Нет предложенных задач")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 20)
+        .sheet(isPresented: Binding(get: { context.viewState.projectPickerForTask != nil },
+                                    set: { newValue in
+                                        if !newValue { context.send(viewAction: .closeProjectPicker) }
+                                    })) {
+            projectPickerSheet
+        }
+    }
+
+    private func suggestedTaskCard(_ task: SuggestedTask) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(task.text)
+                .font(.subheadline)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                context.send(viewAction: .openProjectPicker(task))
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "plus.circle.fill")
+                    Text("Создать в TrackIT")
+                }
+                .font(.subheadline)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(uiColor: .secondarySystemBackground))
+        .cornerRadius(10)
+    }
+
+    private func createdTaskCard(_ task: CreatedTask) -> some View {
+        Button {
+            if let url = task.trackitUrl {
+                context.send(viewAction: .openTrackItIssue(url: url))
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    if let identifier = task.trackitProjectIdentifier, let seq = task.trackitSequenceId {
+                        Text("\(identifier)-\(seq)")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                            .foregroundColor(.accentColor)
+                    }
+                    Spacer()
+                    if let stateName = task.trackitStateName {
+                        Text(stateName)
+                            .font(.caption)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(stateBadgeColor(group: task.trackitStateGroup))
+                            .foregroundColor(.white)
+                            .cornerRadius(8)
+                    }
+                }
+                Text(task.taskText)
+                    .font(.subheadline)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .foregroundColor(.primary)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(uiColor: .secondarySystemBackground))
+            .cornerRadius(10)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func stateBadgeColor(group: String?) -> Color {
+        switch group {
+        case "started": return .blue
+        case "completed": return .green
+        case "cancelled": return .gray
+        default: return Color(red: 0.55, green: 0.55, blue: 0.55)
+        }
+    }
+
+    private var projectPickerSheet: some View {
+        NavigationStack {
+            List {
+                if context.viewState.isProjectsLoading {
+                    HStack { Spacer(); ProgressView(); Spacer() }
+                }
+                ForEach(context.viewState.trackItProjects) { project in
+                    Button {
+                        if let task = context.viewState.projectPickerForTask {
+                            context.send(viewAction: .createTask(task, projectId: project.id, overrideText: nil))
+                        }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                Text(project.name).font(.headline)
+                                Spacer()
+                                Text(project.identifier).font(.caption).foregroundColor(.secondary)
+                            }
+                            if let desc = project.description, !desc.isEmpty {
+                                Text(desc).font(.caption).foregroundColor(.secondary).lineLimit(2)
+                            }
+                        }
+                    }
+                    .foregroundColor(.primary)
+                }
+            }
+            .navigationTitle("Выберите проект")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Отмена") { context.send(viewAction: .closeProjectPicker) }
+                }
             }
         }
     }
