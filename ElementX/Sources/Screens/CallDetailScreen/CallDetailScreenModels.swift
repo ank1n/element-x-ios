@@ -52,12 +52,14 @@ struct Transcription: Codable, Equatable {
     let fullText: String
 }
 
-/// STALK-255 build 157/161: tasks предложенные LLM-summarizer внутри topic.
+/// STALK-255 build 157/161/162: tasks предложенные LLM-summarizer внутри topic.
 /// Юзер может конвертировать их в TrackIT issues через POST /api/recording/tasks/create.
 ///
-/// Build 161 hotfix: server отдаёт snake_case (`topic_index`, `task_index`)
-/// несмотря на то что в spec @molly было camelCase. Без CodingKeys
-/// DecodingError ломал весь TranscriptionData → транскрипция не открывалась.
+/// Build 162 defensive: server отдаёт ОБА формата непоследовательно:
+/// - старые записи (session_1779290337452): snake_case (`topic_index`)
+/// - новые записи (session_1779372260542): camelCase (`topicIndex`)
+/// Чтобы транскрипция открывалась всегда — custom init принимает любой
+/// формат + lossy на отсутствующие поля (default 0/"").
 struct SuggestedTask: Codable, Identifiable, Equatable {
     var id: String {
         "\(topicIndex)-\(taskIndex)"
@@ -67,9 +69,47 @@ struct SuggestedTask: Codable, Identifiable, Equatable {
     let taskIndex: Int
     let text: String
 
+    private struct DynKey: CodingKey {
+        var stringValue: String
+        var intValue: Int? {
+            nil
+        }
+
+        init?(stringValue: String) {
+            self.stringValue = stringValue
+        }
+
+        init?(intValue: Int) {
+            nil
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: DynKey.self)
+        func int(_ keys: String...) -> Int {
+            for k in keys {
+                if let key = DynKey(stringValue: k),
+                   let v = try? c.decode(Int.self, forKey: key) {
+                    return v
+                }
+            }
+            return 0
+        }
+        topicIndex = int("topicIndex", "topic_index")
+        taskIndex = int("taskIndex", "task_index")
+        if let key = DynKey(stringValue: "text"),
+           let v = try? c.decode(String.self, forKey: key) {
+            text = v
+        } else {
+            text = ""
+        }
+    }
+
+    /// Encode остаётся camelCase (для будущего использования если потребуется
+    /// serialize). API сейчас только GET, так что не критично.
     enum CodingKeys: String, CodingKey {
-        case topicIndex = "topic_index"
-        case taskIndex = "task_index"
+        case topicIndex
+        case taskIndex
         case text
     }
 }
