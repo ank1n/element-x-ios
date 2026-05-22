@@ -803,11 +803,22 @@ private struct SpeakerCallLayout: View {
 
     var body: some View {
         GeometryReader { geometry in
-            // STMOB-128 build 148: strip заполняет всё пространство между main view
-            // и callControlButtons (~190pt). Тайлы растягиваются по ширине поровну
-            // в зависимости от count (2..6), height = высоте strip area.
-            let bottomReserved: CGFloat = 190
-            let stripHeight: CGFloat = 150
+            // STMOB-128 build 163/164: strip + main заполняют ВСЁ пространство
+            // до controls overlay (callControlButtons ~120pt от низа). Strip
+            // height теперь dynamic — при малом количестве участников (1-2)
+            // тайлы заметно больше, чтобы не было пустого чёрного gap'а:
+            //   1 strip tile  → 220pt
+            //   2 strip tiles → 200pt
+            //   3+ strip tiles → 150pt (текущий)
+            let bottomReserved: CGFloat = 120
+            let visibleCount = stripParticipants.count + (roomManager.remoteParticipants.count > 3 ? 1 : 0)
+            let stripHeight: CGFloat = {
+                switch visibleCount {
+                case ...1: return 220
+                case 2: return 200
+                default: return 150
+                }
+            }()
             let mainHeight = max(0, geometry.size.height - bottomReserved - stripHeight)
             VStack(spacing: 0) {
                 // Main focused area
@@ -859,7 +870,10 @@ private struct SpeakerCallLayout: View {
         let computedWidth = totalTiles > 0
             ? (availableWidth - spacing * CGFloat(max(0, totalTiles - 1))) / CGFloat(totalTiles)
             : 0
-        let tileWidth = max(72, min(computedWidth, 220))
+        // STMOB build 164: убрали cap 220 — при 1-2 тайлах ширина раньше
+        // ограничивалась 220pt → пустые поля справа. Теперь тайл занимает
+        // всю доступную ширину поровну. Min 72pt для overflow scroll сценария.
+        let tileWidth = max(72, computedWidth)
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: spacing) {
                 ForEach(visibleParticipants, id: \.sid) { participant in
