@@ -52,8 +52,12 @@ struct Transcription: Codable, Equatable {
     let fullText: String
 }
 
-/// STALK-255 build 157: tasks предложенные LLM-summarizer внутри topic.
+/// STALK-255 build 157/161: tasks предложенные LLM-summarizer внутри topic.
 /// Юзер может конвертировать их в TrackIT issues через POST /api/recording/tasks/create.
+///
+/// Build 161 hotfix: server отдаёт snake_case (`topic_index`, `task_index`)
+/// несмотря на то что в spec @molly было camelCase. Без CodingKeys
+/// DecodingError ломал весь TranscriptionData → транскрипция не открывалась.
 struct SuggestedTask: Codable, Identifiable, Equatable {
     var id: String {
         "\(topicIndex)-\(taskIndex)"
@@ -62,6 +66,12 @@ struct SuggestedTask: Codable, Identifiable, Equatable {
     let topicIndex: Int
     let taskIndex: Int
     let text: String
+
+    enum CodingKeys: String, CodingKey {
+        case topicIndex = "topic_index"
+        case taskIndex = "task_index"
+        case text
+    }
 }
 
 struct SummaryTopic: Codable, Identifiable, Equatable {
