@@ -67,6 +67,13 @@ targets:
             ]
           }
         ]
+        # STMOB build 163: разрешаем canOpenURL для TrackIT/Plane схем —
+        # tap на созданной задаче в CallDetail tasks tab пытается открыть
+        # TrackIT app deep link. Без этого list canOpenURL вернёт false.
+        LSApplicationQueriesSchemes: [
+          trackit,
+          plane
+        ]
         # STMOB-129 build 148 / build 151 fix: iPhone — только portrait;
         # iPad — все 4 ориентации (Apple требует для iPad multitasking,
         # иначе валидация бандла даёт error 409 при загрузке в App Store

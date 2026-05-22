@@ -166,8 +166,35 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
         case .searchProjects(let query):
             Task { await loadProjects(query: query) }
         case .openTrackItIssue(let urlString):
+            // STMOB build 163: открыть в TrackIT app через deep link если
+            // приложение установлено. Если нет — НЕ открываем браузер
+            // (по запросу юзера: не переходить если нет TrackIT app).
+            // URL формата https://trackit.implica.ru/<ws>/projects/<pid>/issues/<id>
+            // мапим в plane://issue/<id> и trackit://issue/<id>.
             if let url = URL(string: urlString) {
-                UIApplication.shared.open(url)
+                let issueID: String? = {
+                    let comps = url.pathComponents.filter { !$0.isEmpty }
+                    if let i = comps.firstIndex(of: "issues"), i + 1 < comps.count {
+                        return comps[i + 1]
+                    }
+                    return nil
+                }()
+                let candidates: [String] = [
+                    issueID.map { "trackit://issue/\($0)" },
+                    issueID.map { "plane://issue/\($0)" },
+                    "trackit://",
+                    "plane://"
+                ].compactMap { $0 }
+
+                for candidate in candidates {
+                    if let deep = URL(string: candidate),
+                       UIApplication.shared.canOpenURL(deep) {
+                        UIApplication.shared.open(deep)
+                        DiagLog.write("CallDetail", "  openTrackItIssue → app deep link: \(candidate)")
+                        return
+                    }
+                }
+                DiagLog.write("CallDetail", "  openTrackItIssue → TrackIT app NOT installed, NOT opening browser (по запросу)")
             }
         case .refreshTasks:
             Task { await loadTasks(refresh: true) }

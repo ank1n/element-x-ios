@@ -799,15 +799,29 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
     }
         
     private func logout(isSoft: Bool) {
+        // STMOB build 163: userSession МОЖЕТ быть nil — например когда AppLock
+        // (PIN) триггерит logout после max retries, а userSession уже был
+        // cleared предыдущей sync операцией. fatalError() в этом случае
+        // = crash в Release + симуляторе. Лучше graceful — выгоняем в state
+        // .signedOut, очищаем хранилище. Это особенно важно для App Store
+        // submission, иначе Apple Reviewer словит crash на PIN-flow.
         guard let userSession else {
-            fatalError("User session not setup")
+            MXLog.warning("logout: userSession is nil — graceful fallback (likely PIN-lock max-retries)")
+            // Очищаем то что можно безопасно
+            MatrixDeviceIDKeychain.clearStoredDeviceID()
+            UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
+            UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+            UNUserNotificationCenter.current().setBadgeCount(0)
+            AppSettings.resetSessionSpecificSettings()
+            stateMachine.processEvent(.completedSigningOut)
+            return
         }
-        
+
         showLoadingIndicator()
-        
+
         stopSync(isBackgroundTask: false)
         userSessionFlowCoordinator?.stop()
-        
+
         guard !isSoft else {
             stateMachine.processEvent(.showSoftLogout)
             hideLoadingIndicator()
