@@ -2534,7 +2534,7 @@ Rotations теперь только при реальных membership events. �
 
 **Дата**: 2026-05-24
 **Plane**: STMOB-151
-**Коммит**: будет добавлен после commit
+**Коммит**: `1f390d9e` (ios)
 
 #### Симптом (dp.bondar отчёт 22:03-22:05 на iPhone build 173)
 
@@ -2630,5 +2630,74 @@ Meeting presentCallScreen room=!XXX:stalk... state=joined → present
 
 ---
 
+### 59. ✅ STMOB-151 hotfix v2 — roomForIdentifier silent hang после joinRoom (build 175)
+
+**Дата**: 2026-05-25
+**Plane**: STMOB-151 (продолжение)
+**Коммит**: будет добавлен после commit
+
+#### Регрессия build 174
+
+Build 174 fix #58 частично работал: цепочка `.joinCall` доходила до `joinAndPresentCallScreen`, `joinRoom` возвращал `.success`, но **`roomForIdentifier(roomID)` зависал** — call screen не открывался с 1-й попытки.
+
+dp.bondar лог 82 (00:16:18) — 1-я попытка:
+```
+00:16:18.812 presentCallScreen(roomID:) START room=!mkVPBfeZkHWKHQkIHz:stalk...
+00:16:18.813 state=nil(not-synced) → joinRoom
+00:16:19.091 joinRoom OK → re-fetch
+[ничего за 22 секунды]
+```
+
+2-я попытка через 23s (00:16:41) — `state=joined → present` сразу, работает.
+
+#### Корень
+
+`ClientProxy.roomForIdentifier`:
+```swift
+func roomForIdentifier(_ identifier: String) async -> RoomProxyType? {
+    let shouldAwait = roomsToAwait.remove(identifier) != nil  // ← мы не insert'нули
+
+    if let room = await buildRoomForIdentifier(identifier) { return room }  // ← cold cache miss
+
+    if !staticRoomSummaryProvider.statePublisher.value.isLoaded {
+        _ = await staticRoomSummaryProvider.statePublisher.values.first { $0.isLoaded }
+        // ← БЕЗ ТАЙМАУТА. Если sync ещё не подключён после backgrounding —
+        //   await висит навсегда (publisher не emit'ит новый value)
+    }
+
+    if shouldAwait { await waitForRoomToSync(roomID: identifier) }  // ← skipped
+
+    return await buildRoomForIdentifier(identifier)
+}
+```
+
+После `joinRoom OK` cold cache может ещё не обновиться (rust-sdk propagation race), и тогда `roomForIdentifier` падает в `await statePublisher.values.first` без таймаута. Висит до следующего sync event.
+
+#### Fix (build 175)
+
+**A. Insert roomID в `roomsToAwait` ДО joinRoom** — это активирует `waitForRoomToSync` (timeout 10s) в `roomForIdentifier` вместо infinite await.
+
+**B. Дополнительный timeout wrapper** на сам `roomForIdentifier(roomID)` — 8 секунд. Если SDK всё равно завис — error toast вместо infinite UI freeze.
+
+```swift
+let refetched = await withTimeout(seconds: 8) {
+    await self.userSession.clientProxy.roomForIdentifier(roomID)
+}
+DiagLog.write("Meeting", "presentCallScreen room=\(roomID) re-fetch result=\(refetched.map { ... } ?? "TIMEOUT")")
+```
+
+`withTimeout` — простой helper через TaskGroup race между operation и `Task.sleep`.
+
+**Acceptance**:
+- 1-я попытка нажатия "Начать звонок" на meeting room в state `.nil/.invited` → join + open call screen (раньше работало только 2-я попытка через 20+ сек)
+- В DiagLog видна `re-fetch result=...` — TIMEOUT если SDK завис, или actual RoomProxyType
+- При TIMEOUT → error toast, juser может retry
+
+#### Файлы:
+- `ios/ElementX/Sources/FlowCoordinators/UserSessionFlowCoordinator.swift` — `joinAndPresentCallScreen` insert в roomsToAwait + timeout wrapper, новый helper `withTimeout`
+- `ios/project.yml` — build 175
+
+---
+
 **Дата создания**: 2026-01-28
-**Последнее обновление**: 2026-05-24
+**Последнее обновление**: 2026-05-25
