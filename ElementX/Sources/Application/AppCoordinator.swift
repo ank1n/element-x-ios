@@ -12,6 +12,7 @@ import BackgroundTasks
 import Combine
 import Intents
 import MatrixRustSDK
+import os
 import Sentry
 import SwiftUI
 import Version
@@ -807,7 +808,11 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         // submission, иначе Apple Reviewer словит crash на PIN-flow.
         guard let userSession else {
             MXLog.warning("logout: userSession is nil — graceful fallback (likely PIN-lock max-retries)")
-            // Очищаем то что можно безопасно
+            // STMOB build 165: ВАЖНО — очистить PIN и biometric state, иначе
+            // юзер попадает в цикл: PIN max-retries → logout → welcome →
+            // login → запрашивает PIN снова (старый из Keychain). disable()
+            // снимает блок и юзер сможет создать новый PIN после login.
+            appLockFlowCoordinator.appLockService.disable()
             MatrixDeviceIDKeychain.clearStoredDeviceID()
             UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
             UNUserNotificationCenter.current().removeAllDeliveredNotifications()
@@ -840,6 +845,13 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         // returned выше — в этом случае keychain запись остаётся, и
         // следующий login переиспользует тот же device_id.
         MatrixDeviceIDKeychain.clearStoredDeviceID()
+
+        // STMOB build 166: ВАЖНО — disable AppLock (удалить PIN из Keychain)
+        // при explicit logout. Без этого после logout юзер заново логинится
+        // и app показывает unlock screen со старым PIN (который он забыл) →
+        // cycle. disable() удаляет PIN + biometric state + сбрасывает PIN
+        // attempts. На следующем login → mandatory setup нового PIN.
+        appLockFlowCoordinator.appLockService.disable()
 
         Task {
             // First log out from the server
@@ -881,11 +893,20 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
             startAuthentication()
         }
         
+        let msg1 = "presentSplashScreen disableAppLock=\(disableAppLock) isSoft=\(isSoftLogout)"
+        MXLog.info("[AppLock] \(msg1)")
+        os_log(.info, log: OSLog(subsystem: "ru.implica.stalk", category: "AppLock"), "%{public}@", msg1)
+        DiagLog.write("AppLock", msg1)
         if disableAppLock {
             Task {
-                // Ensure the navigation stack has settled.
                 try? await Task.sleep(for: .milliseconds(500))
+                let before = appLockFlowCoordinator.appLockService.isEnabled
                 appLockFlowCoordinator.appLockService.disable()
+                let after = appLockFlowCoordinator.appLockService.isEnabled
+                let msg2 = "disable() containsPIN before=\(before) after=\(after)"
+                MXLog.info("[AppLock] \(msg2)")
+                os_log(.info, log: OSLog(subsystem: "ru.implica.stalk", category: "AppLock"), "%{public}@", msg2)
+                DiagLog.write("AppLock", msg2)
                 windowManager.switchToMain()
             }
         }
@@ -1238,7 +1259,14 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
             }
         }
 
-        scheduleDelayedSyncStop()
+        // STMOB-133 build 173: НЕМЕДЛЕННЫЙ stopSync вместо scheduleDelayedSyncStop.
+        // Раньше stopSync вызывался только в expirationHandler через 30 сек —
+        // SDK всё это время продолжал writes в sqlite → когда iOS suspended до
+        // expiration, sqlite lock оставался → kill 0xDEAD10CC.
+        // Теперь begin background task + сразу stopSync + ждём completion +
+        // end background task. Даёт SDK максимум background time для graceful
+        // shutdown crypto store + sliding sync (обычно <5 сек).
+        immediateStopSyncOnBackground()
         scheduleBackgroundAppRefresh()
         // STMOB-103: idle на background (жёлтый dot + "был X назад" на web)
         ownPresenceManager?.setBackground()
@@ -1259,16 +1287,40 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         guard backgroundTask == nil else {
             return
         }
-        
+
         backgroundTask = appMediator.beginBackgroundTask {
             MXLog.info("Background task is about to expire.")
-            
+
             // We're intentionally strongly retaining self here to an EXC_BAD_ACCESS
             // `backgroundTask` will be eventually released in `endActiveBackgroundTask`
             // https://sentry.tools.element.io/organizations/element/issues/4477794/events/9cfd04e4d045440f87498809cf718de5/
             self.stopSync(isBackgroundTask: true) {
                 self.endActiveBackgroundTask()
             }
+        }
+    }
+
+    /// STMOB-133 build 173: вызывает stopSync СРАЗУ при resign active вместо
+    /// ожидания background task expiration. Освобождает sqlite lock до того
+    /// как iOS suspend'ит process → предотвращает 0xDEAD10CC RUNNINGBOARD kill.
+    private func immediateStopSyncOnBackground() {
+        guard backgroundTask == nil else { return }
+
+        let startTime = Date()
+        DiagLog.write("AppLifecycle", "immediateStopSync START")
+
+        backgroundTask = appMediator.beginBackgroundTask {
+            MXLog.warning("STMOB-133: immediate stopSync did not finish in background time")
+            DiagLog.write("AppLifecycle", "immediateStopSync TIMEOUT — forcing endBackgroundTask")
+            self.endActiveBackgroundTask()
+        }
+
+        // Запускаем stopSync СРАЗУ с completion callback который end'ит
+        // background task как только SDK освободит ресурсы.
+        stopSync(isBackgroundTask: true) {
+            let elapsed = Date().timeIntervalSince(startTime)
+            DiagLog.write("AppLifecycle", "immediateStopSync DONE in \(String(format: "%.2f", elapsed))s")
+            self.endActiveBackgroundTask()
         }
     }
     
