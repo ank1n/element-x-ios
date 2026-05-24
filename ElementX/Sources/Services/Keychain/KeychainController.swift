@@ -112,9 +112,17 @@ final class KeychainController: KeychainControllerProtocol {
     func saveSessionInKeychain(session: Session) {
         MXLog.info("Saving session changes in the keychain.")
 
+        // STMOB build 171: graceful fallback вместо fatalError.
+        // Корень: SDK вызывает saveSessionInKeychain callback ДО того как
+        // addSession записал restoration token в Keychain (race при first
+        // login flow). Раньше fatalError → crash при login dp.bondar
+        // (build 167 crash report 14:28:03). App не доходил до bootstrap.
+        // Теперь log error + return: SDK позже вызовет ещё раз когда
+        // restoration token будет записан.
         guard let oldToken = restorationTokenForUsername(session.userId) else {
-            MXLog.error("Failed retrieving the restoration token for \(session.userId)")
-            fatalError("Something has gone mega wrong, all bets are off.")
+            MXLog.error("STMOB-135: saveSessionInKeychain skipped — no restoration token yet for \(session.userId) (likely race during initial login, will retry)")
+            DiagLog.write("Keychain", "saveSession skipped — no restoration token for \(session.userId) (race during initial login)")
+            return
         }
         // sTalk: STMOB-90 — instrument deviceId churn. SDK is supposed to
         // refresh the access/refresh tokens on the existing session and keep

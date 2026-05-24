@@ -667,8 +667,32 @@ class UserSession: UserSessionProtocol {
             MXLog.error("sTalk: resetIdentity failed: \(error)")
         }
 
-        // Wait for SDK to process the new cross-signing keys
-        try? await Task.sleep(for: .seconds(3))
+        // STMOB-144 build 171: КРИТИЧЕСКИ ВАЖНО — дождаться LOCAL verified
+        // state перед forceEnableRecovery. Если local OlmMachine ещё НЕ
+        // подгрузил cross-signing keys (даже если они на сервере) — backup
+        // будет signed by device key (а не master) → backup unrecoverable
+        // на новых устройствах (bug у dp.bondar — backup 141 signed device
+        // 8GtZzwLLei, никто его не cross-signed → архив потерян).
+        //
+        // Loop wait до 30s (15×2s). На fast сети секунда-две, на slow
+        // 30s достаточно. После 30s — fallback (backup всё равно создастся,
+        // возможно signed device — но это последний resort, не успели).
+        var verified = false
+        for i in 1...15 {
+            try? await Task.sleep(for: .seconds(2))
+            let state = clientProxy.verificationStatePublisher.value
+            os_log(.fault, log: e2eeLog, "bootstrap: wait verified %d/15 — state=%{public}@", i, String(describing: state))
+            DiagLog.write("E2EE", "bootstrap: wait verified \(i)/15 state=\(state)")
+            if state == .verified {
+                verified = true
+                os_log(.fault, log: e2eeLog, "bootstrap: LOCAL master ready after %ds — safe to enableRecovery", i * 2)
+                break
+            }
+        }
+        if !verified {
+            os_log(.fault, log: e2eeLog, "bootstrap: ⚠️ proceeding without local verified after 30s — backup might be signed by device key (STMOB-144 risk)")
+            DiagLog.write("E2EE", "bootstrap: ⚠️ NOT verified after 30s — risk of device-signed backup")
+        }
 
         // Step 3: Now enable recovery with the fresh cross-signing keys
         let result = await clientProxy.secureBackupController.forceEnableRecovery()
