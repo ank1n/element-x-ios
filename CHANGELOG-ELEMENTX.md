@@ -2634,7 +2634,7 @@ Meeting presentCallScreen room=!XXX:stalk... state=joined → present
 
 **Дата**: 2026-05-25
 **Plane**: STMOB-151 (продолжение)
-**Коммит**: будет добавлен после commit
+**Коммит**: `33bfa7e9` (ios)
 
 #### Регрессия build 174
 
@@ -2696,6 +2696,53 @@ DiagLog.write("Meeting", "presentCallScreen room=\(roomID) re-fetch result=\(ref
 #### Файлы:
 - `ios/ElementX/Sources/FlowCoordinators/UserSessionFlowCoordinator.swift` — `joinAndPresentCallScreen` insert в roomsToAwait + timeout wrapper, новый helper `withTimeout`
 - `ios/project.yml` — build 175
+
+---
+
+### 60. ✅ STMOB-152 iOS DiagLog для incoming encryption_keys + LiveKit identity (build 176)
+
+**Дата**: 2026-05-25
+**Plane**: STMOB-152
+**Коммит**: `4d8da4c7` (ios)
+
+#### Контекст
+
+Поддержка Molly server-side fix STALK-303 (fan-out guest's encryption_keys через to-device от meet-api appservice). iOS native уже принимает incoming `io.element.call.encryption_keys` через widget bridge — никаких iOS-side code changes для key delivery не нужно. Но без DiagLog не видно реально ли keys доходят до iOS.
+
+Также добавлен DiagLog для hand raise events (STALK-302 Phase 2 correlation).
+
+#### NativeCallSession.swift
+
+В `processIncomingWidgetMessage` (path "encryption_keys" detected) — DiagLog raw payload prefix 300 chars. Это покажет format (array vs object для keys field — important warning Molly уже знает).
+
+В `handleEncryptionKeys`:
+- При успешном extract: `DiagLog "E2EE incoming key parsed from=<participantId> index=<n> keyLen=<n>"`
+- При guard fail (extract returned nil): `DiagLog "E2EE handleEncryptionKeys EXTRACT FAILED action=<n>"`
+
+#### LiveKitRoomManager.swift
+
+- `participantDidConnect`/`Disconnect` — DiagLog с identity + sid + totalRemote. Видим момент когда guest JOIN'ит call.
+- `setHandRaise` — DiagLog `Call hand raise OUTGOING setMetadata raised=<bool>` (iOS публикует metadata).
+- `didUpdateMetadata` — DiagLog `Call hand raise INCOMING identity=<id> raised=<bool>` (iOS receives от remote — другой iOS или guest meet-app после Molly STALK-302 patch).
+
+#### Realtime correlation flow (после Molly deploy)
+
+1. dp.bondar joins meeting в iOS, guest joins meeting через meet-app
+2. `Call participant JOIN identity=@meet-XXX` появляется в nse-events.log
+3. Molly meet-api fan-out отправляет to-device `io.element.call.encryption_keys` каждому non-guest device
+4. iOS rust-sdk delivers to widget → `E2EE incoming widget message api=toWidget action=send_to_device`
+5. Parsed: `E2EE incoming key parsed from=@meet-XXX:MEETXXX index=0 keyLen=...`
+6. LiveKit E2EE manager use key для frame decrypt → guest video shows ✓
+
+**Diagnostic gaps**:
+- Step 2 есть, step 4 нет → KS fan-out не достиг iOS (server-side issue, Molly debug)
+- Step 4 есть, step 5 EXTRACT FAILED → формат payload не совпадает (Molly warning array vs object)
+- Step 5 есть, video всё ещё чёрный → LiveKit E2EE manager не applied key (iOS-side investigation)
+
+#### Файлы
+- `ios/ElementX/Sources/Services/NativeCall/NativeCallSession.swift` — incoming encryption_keys DiagLog (2 places)
+- `ios/ElementX/Sources/Services/LiveKit/LiveKitRoomManager.swift` — participant JOIN/LEAVE + hand raise OUTGOING/INCOMING DiagLog
+- `ios/project.yml` — build 176
 
 ---
 
