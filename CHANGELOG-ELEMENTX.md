@@ -2530,5 +2530,105 @@ Rotations теперь только при реальных membership events. �
 
 ---
 
+### 58. ✅ STMOB-151 — Meeting "Начать звонок" silent fail fix + диагностика (build 174)
+
+**Дата**: 2026-05-24
+**Plane**: STMOB-151
+**Коммит**: будет добавлен после commit
+
+#### Симптом (dp.bondar отчёт 22:03-22:05 на iPhone build 173)
+
+Юзер открыл MeetingDetailScreen, нажал "Начать звонок" — ничего не произошло. Ни UI feedback, ни записей в лог 81 (DiagLog), ни alert. Кнопка выглядит мёртвой.
+
+#### Анализ цепочки actions
+
+Цепочка передачи `.joinCall` action через 5 хопов оказалась целой:
+
+```
+Button .joinCall
+  → MeetingDetailViewModel.joinCall()
+  → actionsSubject.send(.joinCall(roomId:))
+  → MeetingsScreenCoordinator → .startCall
+  → WidgetsTabFlowCoordinator → .startCall
+  → UserSessionFlowCoordinator.presentCallScreen(roomID:)
+```
+
+**Обрыв на последнем хопе** — `UserSessionFlowCoordinator.swift:460-466`:
+
+```swift
+private func presentCallScreen(roomID: String) async {
+    guard case let .joined(roomProxy) = await userSession.clientProxy.roomForIdentifier(roomID) else {
+        return   // ← SILENT FAIL
+    }
+    presentCallScreen(roomProxy: roomProxy)
+}
+```
+
+Если `roomForIdentifier` вернул не `.joined` (а `nil` / `.invited` / `.left`), guard молча выходил. UI не показывает ошибку, MXLog ничего не пишет, DiagLog тоже пусто — silent swallow.
+
+**Вероятные сценарии для meeting room:**
+1. Room ещё не sync'нута локально (server создал room по meeting code, прислал invite, но iOS rust-sdk не успел подтянуть в локальный store) → `roomForIdentifier` = nil
+2. Юзер в state `.invited`, не `.joined` (meeting сервис auto-invite, но iOS клиент не accept'ит автоматом)
+3. Локальный store stale после backgrounding (STMOB-133) — sync остановлен
+
+В `MeetingDetailViewModel.joinCall` второй silent guard для `meetingCode` empty, и `MXLog.error("sTalk: ensureRoom failed")` без UI alert. Вся цепочка swallows errors.
+
+#### Fix (build 174)
+
+**A. UserSessionFlowCoordinator.presentCallScreen(roomID:)** — auto-join + диагностика
+
+Switch по всем кейсам `RoomProxyType`:
+- `.joined` → present (как раньше)
+- `.invited` / `.none` → `clientProxy.joinRoom(roomID, via: [])`, потом re-fetch → present
+- `.left` → joinRoom (для повторного присоединения)
+- `.knocked` / `.banned` → error toast (нельзя join без approval)
+
+Каждая ветка пишет `DiagLog.write("Meeting", ...)` — теперь видно где именно цепочка обрывается.
+
+При неуспехе — `userIndicatorController.submitIndicator(.init(title: L10n.errorUnknown))` (toast).
+
+**B. MeetingDetailViewModel.joinCall** — трассировка + UI error
+
+- `DiagLog.write("Meeting", "MeetingDetailViewModel.joinCall PRESSED meeting=... matrixRoomId=... code=...")` — entry trace
+- `DiagLog` для каждой ветки (direct path / ensureRoom)
+- Если ни `matrixRoomId` ни `meetingCode` — `state.bindings.alertInfo` (UI alert), не silent return
+- Если `ensureRoom` failed — `DiagLog` + `alertInfo` (раньше swallow `MXLog.error`)
+
+**C. MeetingDetailScreen** — `.alert(item: $context.alertInfo)` для error display
+
+**D. Hop-by-hop трассировка**
+
+- `MeetingsScreenCoordinator` — `DiagLog.write("Meeting", "...joinCall → .startCall")` в handler
+- `WidgetsTabFlowCoordinator` — `DiagLog.write("Meeting", "...startCall → UserSessionFlow")` в handler
+
+Теперь при нажатии кнопки в лог 81 (`nse-events.log`) последовательность:
+```
+Meeting MeetingDetailViewModel.joinCall PRESSED meeting=... matrixRoomId=!XXX:stalk... code=...
+Meeting MeetingDetailViewModel.joinCall direct path room=!XXX:stalk...
+Meeting MeetingsScreenCoordinator .joinCall → .startCall room=!XXX:stalk...
+Meeting WidgetsTabFlowCoordinator .startCall room=!XXX:stalk... → UserSessionFlow
+Meeting presentCallScreen(roomID:) START room=!XXX:stalk...
+Meeting presentCallScreen room=!XXX:stalk... state=joined → present
+```
+
+Если room в `.invited` — будет видна попытка `joinRoom` и её результат.
+
+#### Файлы:
+- `ios/ElementX/Sources/FlowCoordinators/UserSessionFlowCoordinator.swift` — переписан `presentCallScreen(roomID:)` + новый helper `joinAndPresentCallScreen`
+- `ios/ElementX/Sources/Screens/MeetingsScreen/MeetingDetailViewModel.swift` — DiagLog трассировка `joinCall()`, set `alertInfo` при error
+- `ios/ElementX/Sources/Screens/MeetingsScreen/MeetingsScreenModels.swift` — `alertInfo: AlertInfo<UUID>?` в `MeetingDetailViewStateBindings`
+- `ios/ElementX/Sources/Screens/MeetingsScreen/View/MeetingDetailScreen.swift` — `.alert(item: $context.alertInfo)`
+- `ios/ElementX/Sources/Screens/MeetingsScreen/MeetingsScreenCoordinator.swift` — DiagLog в `.joinCall` handler
+- `ios/ElementX/Sources/FlowCoordinators/WidgetsTabFlowCoordinator.swift` — DiagLog в `.startCall` handler
+- `ios/project.yml` — build 174
+
+#### Acceptance
+- Нажать "Начать звонок" в MeetingDetail для room где state = .invited → join + open call screen (раньше тишина)
+- Нажать "Начать звонок" для room где `matrixRoomId = ""` И `meetingCode = nil` → UI alert "Что-то пошло не так" (раньше тишина)
+- При `ensureRoom` failure → UI alert + DiagLog запись (раньше только MXLog)
+- В DiagLog видна полная цепочка хопов с roomID на каждом — можно понять где обрыв
+
+---
+
 **Дата создания**: 2026-01-28
-**Последнее обновление**: 2026-05-03
+**Последнее обновление**: 2026-05-24
