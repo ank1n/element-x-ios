@@ -2746,5 +2746,75 @@ DiagLog.write("Meeting", "presentCallScreen room=\(roomID) re-fetch result=\(ref
 
 ---
 
+### 61. ✅ STMOB-152 build 177 — base64url normalization для guest E2EE keys
+
+**Дата**: 2026-05-25
+**Plane**: STMOB-152 (продолжение)
+**Коммит**: `8df66ffd` (ios)
+
+#### Симптом (после Molly fan-out deploy)
+
+Build 176 + DiagLog показал что Molly server-side fan-out (STALK-303 `b6f4877`) работает: `incoming key parsed from=@meet-051cb6cb:stalk.implica.ru:MEET9011E6 index=0 keyLen=22`. iOS получил ключ от guest. **Но видео всё равно чёрное** — LiveKit SFrame decrypt fail.
+
+#### Root cause
+
+Guest meet-app генерирует ключ через `crypto.randomBytes(16).toString("base64url")` (Node.js, `meet-api-index.js:704,1396`):
+- `base64url` = URL-safe base64 БЕЗ padding (RFC 4648 §5)
+- 16 bytes → 22 chars, alphabet `-_` вместо `+/`
+
+iOS Swift `Data(base64Encoded:)` **strict про оба**:
+- ❌ Не accept unpadded (length not multiple of 4)
+- ❌ Не accept `-`/`_` chars
+
+В `NativeCallSession.handleEncryptionKeys` silent fallback на else branch → `keyProvider.setKey(key: base64STRING, ...)` вместо raw bytes → LiveKit SFrame decrypt fails → черный экран.
+
+Лог 85 dp.bondar (01:28:10): guest key `IV9NRa02nGPGQwxjMlAnkA` (22 chars, no `-`/`_` случайно — но ~50% future keys будут содержать `-`/`_`).
+
+#### Fix (build 177)
+
+`NativeCallSession.swift handleEncryptionKeys` — normalize base64url → standard padded base64 перед `Data(base64Encoded:)`:
+
+```swift
+let paddedKey: String = {
+    var normalized = keyInfo.key
+        .replacingOccurrences(of: "-", with: "+")
+        .replacingOccurrences(of: "_", with: "/")
+    let mod = normalized.count % 4
+    if mod != 0 {
+        normalized += String(repeating: "=", count: 4 - mod)
+    }
+    return normalized
+}()
+if let rawKey = Data(base64Encoded: paddedKey) {
+    setRawKeyInProvider(...)
+    DiagLog.write("E2EE", "incoming key DECODED rawBytes=\(rawKey.count) for \(participantId)")
+} else {
+    DiagLog.write("E2EE", "incoming key BASE64 DECODE FAILED (even padded keyLen=\(paddedKey.count)) for \(participantId)")
+    keyProvider.setKey(key: keyInfo.key, ...)
+}
+```
+
+#### Server-side parallel fix (Molly STALK-303 commit `383963b`)
+
+Параллельно Molly изменила generator на сервере:
+```js
+// meet-api-index.js:704,1396
+crypto.randomBytes(16).toString("base64url")   // 22 chars, alphabet -_
+↓
+crypto.randomBytes(16).toString("base64")      // 24 chars padded, alphabet +/
+```
+
+Это базовый fix — server отдаёт standard padded base64 → iOS любой версии decode'нет правильно. **Build 177 = belt-and-suspenders** на случай future key sources которые отдадут base64url напрямую к iOS (минуя meet-api fan-out path).
+
+#### Acceptance
+- В DiagLog: `E2EE incoming key DECODED rawBytes=16 for @meet-XXX:MEETXXX`
+- Видео гостя на iPhone не чёрное
+
+#### Файлы
+- `ios/ElementX/Sources/Services/NativeCall/NativeCallSession.swift` — base64url normalization в `handleEncryptionKeys`
+- `ios/project.yml` — build 177
+
+---
+
 **Дата создания**: 2026-01-28
 **Последнее обновление**: 2026-05-25
