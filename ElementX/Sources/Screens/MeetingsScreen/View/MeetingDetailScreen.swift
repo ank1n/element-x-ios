@@ -77,6 +77,9 @@ struct MeetingDetailScreen: View {
         .navigationTitle(SL10n.meetingTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarVisibility(.hidden, for: .tabBar)
+        // STMOB-151 build 174: показываем error если joinCall не смог
+        // найти/создать room. Раньше silent fail.
+        .alert(item: $context.alertInfo)
     }
 
     // MARK: - Header Card

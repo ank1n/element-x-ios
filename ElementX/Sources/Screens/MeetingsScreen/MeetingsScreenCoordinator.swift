@@ -87,6 +87,7 @@ final class MeetingsScreenCoordinator: CoordinatorProtocol {
                     navigationStackCoordinator.pop()
                 case .joinCall(let roomId):
                     MXLog.info("sTalk: Join call for room \(roomId)")
+                    DiagLog.write("Meeting", "MeetingsScreenCoordinator .joinCall → .startCall room=\(roomId)")
                     self.actionsSubject.send(.startCall(roomID: roomId))
                 }
             }

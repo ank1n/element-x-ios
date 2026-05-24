@@ -458,11 +458,52 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
     }
     
     private func presentCallScreen(roomID: String) async {
-        guard case let .joined(roomProxy) = await userSession.clientProxy.roomForIdentifier(roomID) else {
-            return
+        // STMOB-151 build 174: переписан с silent guard на auto-join +
+        // диагностику. Раньше guard let .joined exit'ил молча если room
+        // не sync'нута (nil) или ещё в .invited (meeting auto-invite
+        // не accepted клиентом) — кнопка "Начать звонок" из MeetingDetail
+        // не делала НИЧЕГО, ни ошибки в UI, ни записи в лог. Теперь:
+        // .joined → present, .invited/.nil → joinRoom + retry, иначе → error toast.
+        DiagLog.write("Meeting", "presentCallScreen(roomID:) START room=\(roomID)")
+        let roomType = await userSession.clientProxy.roomForIdentifier(roomID)
+        switch roomType {
+        case .joined(let roomProxy):
+            DiagLog.write("Meeting", "presentCallScreen room=\(roomID) state=joined → present")
+            presentCallScreen(roomProxy: roomProxy)
+        case .invited:
+            await joinAndPresentCallScreen(roomID: roomID, fromState: "invited")
+        case .none:
+            await joinAndPresentCallScreen(roomID: roomID, fromState: "nil(not-synced)")
+        case .knocked:
+            DiagLog.write("Meeting", "presentCallScreen room=\(roomID) state=knocked — нельзя join без approval")
+            flowParameters.userIndicatorController.submitIndicator(.init(title: L10n.errorUnknown))
+        case .banned:
+            DiagLog.write("Meeting", "presentCallScreen room=\(roomID) state=banned — забанены")
+            flowParameters.userIndicatorController.submitIndicator(.init(title: L10n.errorUnknown))
+        case .left:
+            DiagLog.write("Meeting", "presentCallScreen room=\(roomID) state=left → joinRoom")
+            await joinAndPresentCallScreen(roomID: roomID, fromState: "left")
         }
-        
-        presentCallScreen(roomProxy: roomProxy)
+    }
+
+    /// Helper: join room then re-fetch and present call screen.
+    /// Used когда room в .invited/.left/nil — нужно join сначала.
+    private func joinAndPresentCallScreen(roomID: String, fromState: String) async {
+        DiagLog.write("Meeting", "presentCallScreen room=\(roomID) state=\(fromState) → joinRoom")
+        let joinResult = await userSession.clientProxy.joinRoom(roomID, via: [])
+        switch joinResult {
+        case .success:
+            DiagLog.write("Meeting", "presentCallScreen room=\(roomID) joinRoom OK → re-fetch")
+            if case let .joined(roomProxy) = await userSession.clientProxy.roomForIdentifier(roomID) {
+                presentCallScreen(roomProxy: roomProxy)
+            } else {
+                DiagLog.write("Meeting", "presentCallScreen room=\(roomID) joinRoom OK но re-fetch != .joined")
+                flowParameters.userIndicatorController.submitIndicator(.init(title: L10n.errorUnknown))
+            }
+        case .failure(let err):
+            DiagLog.write("Meeting", "presentCallScreen room=\(roomID) joinRoom FAILED \(err)")
+            flowParameters.userIndicatorController.submitIndicator(.init(title: L10n.errorUnknown))
+        }
     }
     
     private func presentCallScreen(roomProxy: JoinedRoomProxyProtocol, videoEnabled: Bool = true) {

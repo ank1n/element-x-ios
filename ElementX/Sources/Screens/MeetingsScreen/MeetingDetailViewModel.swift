@@ -103,24 +103,38 @@ class MeetingDetailViewModel: MeetingDetailViewModelType {
     }
 
     private func joinCall() {
+        // STMOB-151 build 174: трассировка + UI error если ensureRoom fail.
+        // Раньше silent guard и silent catch — кнопка "Начать звонок" могла
+        // ничего не сделать без видимой причины.
+        DiagLog.write("Meeting", "MeetingDetailViewModel.joinCall PRESSED meeting=\(state.meeting.id) matrixRoomId=\(state.meeting.matrixRoomId ?? "nil") code=\(state.meeting.meetingCode ?? "nil")")
+
         // If we already have a room ID, join directly
         if let roomId = state.meeting.matrixRoomId, !roomId.isEmpty {
+            DiagLog.write("Meeting", "MeetingDetailViewModel.joinCall direct path room=\(roomId)")
             actionsSubject.send(.joinCall(roomId: roomId))
             return
         }
 
         // Otherwise, ensure room via meeting code
-        guard let code = state.meeting.meetingCode, !code.isEmpty else { return }
+        guard let code = state.meeting.meetingCode, !code.isEmpty else {
+            DiagLog.write("Meeting", "MeetingDetailViewModel.joinCall ABORT — нет ни matrixRoomId ни meetingCode")
+            state.bindings.alertInfo = .init(id: .init(), title: L10n.commonError, message: L10n.errorUnknown)
+            return
+        }
 
         Task { [weak self] in
             guard let self else { return }
             state.isLoading = true
             do {
+                DiagLog.write("Meeting", "MeetingDetailViewModel.joinCall ensureRoom code=\(code)")
                 let roomId = try await service.ensureRoom(code: code, userId: state.currentUserId)
+                DiagLog.write("Meeting", "MeetingDetailViewModel.joinCall ensureRoom OK room=\(roomId)")
                 state.meeting.matrixRoomId = roomId
                 actionsSubject.send(.joinCall(roomId: roomId))
             } catch {
+                DiagLog.write("Meeting", "MeetingDetailViewModel.joinCall ensureRoom FAILED \(error)")
                 MXLog.error("sTalk: ensureRoom failed: \(error)")
+                state.bindings.alertInfo = .init(id: .init(), title: L10n.commonError, message: L10n.errorUnknown)
             }
             state.isLoading = false
         }

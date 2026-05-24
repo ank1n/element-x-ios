@@ -134,6 +134,7 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
                 .sink { [weak self] action in
                     switch action {
                     case .startCall(let roomID):
+                        DiagLog.write("Meeting", "WidgetsTabFlowCoordinator .startCall room=\(roomID) → UserSessionFlow")
                         self?.actionsSubject.send(.startCall(roomID: roomID))
                     case .hideTabBar(let hide):
                         self?.actionsSubject.send(.hideTabBar(hide))

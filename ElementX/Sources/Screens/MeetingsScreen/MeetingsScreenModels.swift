@@ -104,7 +104,12 @@ struct MeetingDetailViewState: BindableState {
     }
 }
 
-struct MeetingDetailViewStateBindings { }
+struct MeetingDetailViewStateBindings {
+    /// STMOB-151 build 174: показывается как alert в MeetingDetailScreen.
+    /// Раньше ensureRoom error swallowed без feedback в UI — кнопка
+    /// "Начать звонок" могла выглядеть мёртвой.
+    var alertInfo: AlertInfo<UUID>?
+}
 
 // MARK: - Edit/Create
 
