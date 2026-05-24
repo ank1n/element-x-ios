@@ -1082,13 +1082,41 @@ final class NativeCallSession: ObservableObject {
         // подтверждение что Molly fan-out (STALK-303) работает.
         DiagLog.write("E2EE", "incoming key parsed from=\(keyInfo.participantId) index=\(keyInfo.index) keyLen=\(keyInfo.key.count)")
 
+        // STMOB-152 build 177: normalize base64url → standard padded base64.
+        // Guest meet-app использует Node `crypto.randomBytes(16).toString("base64url")`
+        // (meet-api-index.js:348) — это URL-safe base64 БЕЗ padding (RFC 4648 §5).
+        // 16 bytes → 22 chars, '-' вместо '+', '_' вместо '/'.
+        //
+        // Swift Data(base64Encoded:) strict — требует standard alphabet +
+        // правильное padding. Без normalization returns nil → silent fallback
+        // на else branch → keyProvider.setKey с base64 STRING вместо raw bytes
+        // → LiveKit SFrame decrypt fails → черный экран для guest video.
+        //
+        // Лог 85 dp.bondar (01:28): guest key "IV9NRa02nGPGQwxjMlAnkA" (22 chars)
+        // vs iOS local "gKcCiyjfzfuOCZN76ObkVg==" (24 chars). Random key мог бы
+        // содержать '-' / '_' → ещё один уровень failure.
+        let paddedKey: String = {
+            // base64url → standard base64
+            var normalized = keyInfo.key
+                .replacingOccurrences(of: "-", with: "+")
+                .replacingOccurrences(of: "_", with: "/")
+            // padding до multiple of 4
+            let mod = normalized.count % 4
+            if mod != 0 {
+                normalized += String(repeating: "=", count: 4 - mod)
+            }
+            return normalized
+        }()
+
         // Decode base64 → raw bytes
-        if let rawKey = Data(base64Encoded: keyInfo.key) {
+        if let rawKey = Data(base64Encoded: paddedKey) {
             // Set key for the given index AND all previous indexes (in case we missed earlier keys)
             for idx in 0...Int32(keyInfo.index) {
                 setRawKeyInProvider(keyProvider, key: rawKey, participantId: keyInfo.participantId, index: idx)
             }
+            DiagLog.write("E2EE", "incoming key DECODED rawBytes=\(rawKey.count) for \(keyInfo.participantId)")
         } else {
+            DiagLog.write("E2EE", "incoming key BASE64 DECODE FAILED (even padded keyLen=\(paddedKey.count)) for \(keyInfo.participantId)")
             keyProvider.setKey(key: keyInfo.key, participantId: keyInfo.participantId, index: Int32(keyInfo.index))
         }
         participantKeys[keyInfo.participantId] = true
