@@ -490,11 +490,25 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
     /// Used когда room в .invited/.left/nil — нужно join сначала.
     private func joinAndPresentCallScreen(roomID: String, fromState: String) async {
         DiagLog.write("Meeting", "presentCallScreen room=\(roomID) state=\(fromState) → joinRoom")
+        // STMOB-151 build 175: insert roomID в roomsToAwait ДО joinRoom.
+        // ClientProxy.roomForIdentifier использует roomsToAwait для активации
+        // waitForRoomToSync (с timeout 10s). Без этого после joinRoom OK
+        // re-fetch может зависнуть на `staticRoomSummaryProvider.statePublisher
+        // .values.first { $0.isLoaded }` БЕЗ таймаута если sync ещё не подключён.
+        // Симптом build 174 (dp.bondar 00:16:18): joinRoom OK → re-fetch
+        // никогда не вернулся, кнопка работала только со 2-го нажатия через 23s.
+        userSession.clientProxy.roomsToAwait.insert(roomID)
         let joinResult = await userSession.clientProxy.joinRoom(roomID, via: [])
         switch joinResult {
         case .success:
             DiagLog.write("Meeting", "presentCallScreen room=\(roomID) joinRoom OK → re-fetch")
-            if case let .joined(roomProxy) = await userSession.clientProxy.roomForIdentifier(roomID) {
+            // STMOB-151 build 175: timeout wrapper 8s. Если roomForIdentifier
+            // не вернулся за 8s — error toast + suggest retry. Раньше silent hang.
+            let refetched = await withTimeout(seconds: 8) {
+                await self.userSession.clientProxy.roomForIdentifier(roomID)
+            }
+            DiagLog.write("Meeting", "presentCallScreen room=\(roomID) re-fetch result=\(refetched.map { String(describing: $0).prefix(40) } ?? "TIMEOUT")")
+            if case let .joined(roomProxy) = refetched {
                 presentCallScreen(roomProxy: roomProxy)
             } else {
                 DiagLog.write("Meeting", "presentCallScreen room=\(roomID) joinRoom OK но re-fetch != .joined")
@@ -503,6 +517,23 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         case .failure(let err):
             DiagLog.write("Meeting", "presentCallScreen room=\(roomID) joinRoom FAILED \(err)")
             flowParameters.userIndicatorController.submitIndicator(.init(title: L10n.errorUnknown))
+        }
+    }
+
+    /// STMOB-151 build 175: timeout wrapper для async operations. Возвращает
+    /// результат если завершилось до timeout, иначе nil.
+    private func withTimeout<T>(seconds: TimeInterval, operation: @escaping @Sendable () async -> T) async -> T? {
+        await withTaskGroup(of: T?.self) { group in
+            group.addTask {
+                await operation()
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                return nil
+            }
+            let result = await group.next() ?? nil
+            group.cancelAll()
+            return result
         }
     }
     
