@@ -1098,6 +1098,11 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             do {
                 try await liveKitRoomManager.setHandRaise(enabled: newValue)
                 state.isHandRaised = newValue
+                // STMOB-154 build 178: параллельно отправляем Matrix m.reaction.
+                // LiveKit metadata path покрывает iOS↔iOS и iOS↔guest. Web Element
+                // Call widget слушает только Matrix m.reaction, не LK metadata —
+                // без этого Web участники не видят руку iOS host.
+                await nativeCallSession?.sendHandRaiseReaction(raised: newValue)
             } catch {
                 MXLog.error("sTalk: Failed to toggle hand raise: \(error)")
             }

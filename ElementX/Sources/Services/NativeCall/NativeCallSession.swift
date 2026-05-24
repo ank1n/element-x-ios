@@ -54,6 +54,16 @@ final class NativeCallSession: ObservableObject {
     private var pendingParticipants: [String: RemoteParticipant] = [:]
     private var credentialsReceived = false
     private var hasSeenRemoteParticipant = false
+
+    // MARK: - Hand Raise (STMOB-154)
+
+    /// event_id своего org.matrix.msc3401.call.member state event. Используется как
+    /// `m.relates_to.event_id` в m.reaction events для hand raise (Element Call widget
+    /// в Web фильтрует reactions по этому ID для определения чьё это hand raise).
+    private(set) var callMemberEventID: String?
+    /// event_id текущего активного m.reaction hand raise. Сохраняется чтобы при опускании
+    /// руки можно было его redact'нуть. nil если рука сейчас опущена.
+    private var handReactionEventID: String?
     /// STMOB-96: tracks remote participant identities seen so far. When a new
     /// identity appears (reconnect → новый pID, или newcomer), мы триггерим
     /// rebroadcast текущего encryption key — иначе он не сможет расшифровать
@@ -352,6 +362,10 @@ final class NativeCallSession: ObservableObject {
 
         // Send MatrixRTC join via REST API so remote participants see us
         let joinEventID = await sendJoinViaREST()
+        // STMOB-154 build 178: сохраняем для использования в m.reaction events
+        // (hand raise iOS → Web bridge). Web Element Call widget читает m.reaction
+        // с m.relates_to.event_id равным call.member event_id для отображения hand raise.
+        callMemberEventID = joinEventID
 
         // Send call notification for incoming call ring on remote
         await sendCallNotification(callMemberEventID: joinEventID)
@@ -425,6 +439,85 @@ final class NativeCallSession: ObservableObject {
             MXLog.error("sTalk NativeCall: REST join failed: \(error)")
         }
         return nil
+    }
+
+    // MARK: - Hand Raise Matrix Reaction (STMOB-154)
+
+    /// Send или redact Matrix `m.reaction` event для hand raise.
+    /// Web Element Call widget слушает только Matrix m.reaction, не LiveKit metadata —
+    /// без этого Web участники не видят руку iOS host. Параллельный путь к
+    /// `LiveKitRoomManager.setHandRaise` (LiveKit metadata, для iOS↔iOS и iOS↔guest).
+    func sendHandRaiseReaction(raised: Bool) async {
+        guard let callMemberEventID, !callMemberEventID.isEmpty else {
+            DiagLog.write("Call", "sendHandRaiseReaction ABORT — нет callMemberEventID (call не joined через REST?)")
+            return
+        }
+        let encodedRoom = matrixRoomId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? matrixRoomId
+
+        if raised {
+            // PUT /rooms/{room}/send/m.reaction/{txn}
+            let body: [String: Any] = [
+                "m.relates_to": [
+                    "rel_type": "m.annotation",
+                    "event_id": callMemberEventID,
+                    "key": "🖐️"
+                ]
+            ]
+            let txn = "hand-raise-\(UUID().uuidString)"
+            let encodedTxn = txn.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? txn
+            let url = "\(homeserverURL)/_matrix/client/v3/rooms/\(encodedRoom)/send/m.reaction/\(encodedTxn)"
+            if let eventID = await sendMatrixEvent(url: url, body: body, method: "PUT") {
+                handReactionEventID = eventID
+                DiagLog.write("Call", "hand raise m.reaction SENT eventID=\(eventID) relates_to=\(callMemberEventID)")
+            } else {
+                DiagLog.write("Call", "hand raise m.reaction SEND FAILED relates_to=\(callMemberEventID)")
+            }
+        } else {
+            guard let prevEventID = handReactionEventID, !prevEventID.isEmpty else {
+                DiagLog.write("Call", "hand raise redact SKIP — нет handReactionEventID (рука уже опущена)")
+                return
+            }
+            // PUT /rooms/{room}/redact/{eventID}/{txn}
+            let encodedEventID = prevEventID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? prevEventID
+            let txn = "hand-redact-\(UUID().uuidString)"
+            let encodedTxn = txn.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? txn
+            let url = "\(homeserverURL)/_matrix/client/v3/rooms/\(encodedRoom)/redact/\(encodedEventID)/\(encodedTxn)"
+            if let eventID = await sendMatrixEvent(url: url, body: [:], method: "PUT") {
+                DiagLog.write("Call", "hand raise REDACTED \(prevEventID) → \(eventID)")
+            } else {
+                DiagLog.write("Call", "hand raise REDACT FAILED for \(prevEventID)")
+            }
+            handReactionEventID = nil
+        }
+    }
+
+    /// Generic helper: PUT/POST Matrix event с access token, parse event_id из response.
+    private func sendMatrixEvent(url: String, body: [String: Any], method: String) async -> String? {
+        guard let urlObj = URL(string: url) else { return nil }
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else { return nil }
+
+        var request = URLRequest(url: urlObj)
+        request.httpMethod = method
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if status >= 200, status < 300,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let eventID = json["event_id"] as? String {
+                return eventID
+            } else {
+                let respBody = String(data: data, encoding: .utf8) ?? ""
+                MXLog.error("sTalk NativeCall: sendMatrixEvent \(method) \(url) → \(status) body=\(respBody.prefix(200))")
+                return nil
+            }
+        } catch {
+            MXLog.error("sTalk NativeCall: sendMatrixEvent failed: \(error)")
+            return nil
+        }
     }
 
     // MARK: - Raw Key Provider Access
