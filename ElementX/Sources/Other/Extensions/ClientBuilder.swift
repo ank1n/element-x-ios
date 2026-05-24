@@ -48,7 +48,13 @@ extension ClientBuilder {
                 // потому что backup state остаётся .unknown пока user не откроет message.
                 .backupDownloadStrategy(backupDownloadStrategy: .oneShot)
                 .enableShareHistoryOnInvite(enableShareHistoryOnInvite: enableKeyShareOnInvite)
-                .autoEnableBackups(autoEnableBackups: true)
+                // STMOB-144 build 172: autoEnableBackups DISABLED.
+                // Раньше при login SDK сразу создавал backup до того как cross-signing
+                // master был ready локально → backup signed device key (не master) →
+                // backup unrecoverable (см. dp.bondar архив 129-141, окончательно
+                // потеряно). Теперь backup enable вручную в bootstrapRecoveryForFirstDevice
+                // ПОСЛЕ wait_verified loop — гарантирует signed master.
+                .autoEnableBackups(autoEnableBackups: false)
         }
 
         // Set recipient strategy and trust requirement even if `setupEncryption` is false to ensure messages
