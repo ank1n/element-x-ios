@@ -152,6 +152,48 @@ class UserSession: UserSessionProtocol {
 
     /// Try to restore E2EE keys using recovery key from server.
     /// Returns true if restoration succeeded.
+    /// STMOB-141 build 170: 3-state check — нужно для guard в selfVerifyDevice
+    /// (отличить «есть» от «не уверены» vs «точно нет»). `tryRestoreFromServerKey`
+    /// возвращает false когда confirmRecoveryKey fails — даже если recovery_key
+    /// есть на сервере. Для guard это false-negative → resetIdentity делается
+    /// несмотря на existing recovery → потеря backup access.
+    enum RecoveryKeyPresence {
+        case present // HTTP 200 + valid JSON с непустым key
+        case absent // HTTP 404 — точно нет на сервере
+        case unknown // auth/server error — не уверены, fail-safe считать present
+    }
+
+    private func recoveryKeyExistsOnServer() async -> RecoveryKeyPresence {
+        await clientProxy.forceTokenRefresh()
+        let homeserverURL = clientProxy.homeserver.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let accessToken = try? clientProxy.matrixAccessToken() else {
+            DiagLog.write("E2EE", "  recoveryKeyExists: no access token — UNKNOWN")
+            return .unknown
+        }
+        let encodedUserID = clientProxy.userID
+        guard let url = URL(string: "\(homeserverURL)/_matrix/client/v3/user/\(encodedUserID)/account_data/im.stalk.recovery_key") else {
+            return .unknown
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else { return .unknown }
+            DiagLog.write("E2EE", "  recoveryKeyExists: HTTP \(httpResponse.statusCode), \(data.count) bytes")
+            if httpResponse.statusCode == 404 { return .absent }
+            if httpResponse.statusCode != 200 { return .unknown }
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let key = json["key"] as? String, !key.isEmpty else {
+                return .unknown
+            }
+            return .present
+        } catch {
+            DiagLog.write("E2EE", "  recoveryKeyExists: network error \(error.localizedDescription) — UNKNOWN")
+            return .unknown
+        }
+    }
+
     private func tryRestoreFromServerKey() async -> Bool {
         DiagLog.write("E2EE", "tryRestoreFromServerKey START")
         // sTalk: refresh access token via SDK to ensure our custom URLSession call
@@ -529,21 +571,23 @@ class UserSession: UserSessionProtocol {
         // (юзер может verify через другую Web-сессию) или event-driven update.
         // Только если recovery+backup ОТСУТСТВУЮТ (первичный setup) — OK
         // делать resetIdentity для bootstrap fresh identity.
-        let hasRecovery = await tryRestoreFromServerKey()
+        // STMOB-141 build 170: используем RecoveryKeyPresence (3-state) вместо
+        // tryRestoreFromServerKey (которая false и на «нет», и на «confirm fails»).
+        let recoveryPresence = await recoveryKeyExistsOnServer()
+        let recoveryAvailable = (recoveryPresence != .absent) // present + unknown = fail-safe preserve
         let backupState = clientProxy.secureBackupController.keyBackupState.value
-        // SecureBackupKeyBackupState: .unknown / .enabling / .enabled / .disabling.
-        // Считаем backup существующим если .enabled, .enabling, .disabling
-        // (любое НЕ-.unknown — backup есть, просто в transition state).
-        // .unknown = «we didn't explicitly disable on this client» = fail-safe
-        // считать что есть (preserve identity на сомнения).
+        // SecureBackupKeyBackupState enum: .unknown / .enabling / .enabled / .disabling.
+        // .unknown по SDK comment = "treat as disabled" — но мы fail-safe preserve
+        // (rollback Molly мог восстановить backup, но SDK ещё не догнал на момент
+        // login → видим .unknown несмотря на existing backup на сервере).
         let backupExists: Bool = {
             switch backupState {
             case .enabled, .enabling, .disabling, .unknown: return true
             }
         }()
-        DiagLog.write("E2EE", "selfVerifyDevice: hasRecovery=\(hasRecovery) backupState=\(backupState) backupExists=\(backupExists)")
+        DiagLog.write("E2EE", "selfVerifyDevice: recovery=\(recoveryPresence) backupState=\(backupState) → preserve=\(recoveryAvailable && backupExists)")
 
-        if hasRecovery, backupExists {
+        if recoveryAvailable, backupExists {
             os_log(.fault, log: e2eeLog, "selfVerify: ABORT resetIdentity — recovery_key + backup EXIST (preserve identity to keep backup access)")
             DiagLog.write("E2EE", "selfVerify: ABORT — recovery+backup exist, preserve identity")
             // Device остаётся unverified — юзер может SAS-verify с другой сессии
@@ -553,7 +597,7 @@ class UserSession: UserSessionProtocol {
             return
         }
 
-        os_log(.fault, log: e2eeLog, "selfVerify: resetting identity (recovery=%{public}@ backup=%{public}@) — fresh setup", String(describing: hasRecovery), String(describing: backupExists))
+        os_log(.fault, log: e2eeLog, "selfVerify: resetting identity (recovery=%{public}@ backup=%{public}@) — fresh setup", String(describing: recoveryPresence), String(describing: backupExists))
 
         // Step 1: Reset identity — creates new cross-signing keys + signs this device
         let resetResult = await clientProxy.resetIdentity()
