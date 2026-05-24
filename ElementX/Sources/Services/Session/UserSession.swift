@@ -480,11 +480,15 @@ class UserSession: UserSessionProtocol {
             case .success:
                 os_log(.fault, log: e2eeLog, "autoVerify: confirmRecoveryKey SUCCESS! Keys restored from backup.")
                 DiagLog.write("E2EE", "  autoVerify: confirmRecoveryKey SUCCESS — keys restored")
-                for i in 1...5 {
+                // STMOB-141 build 168: расширили wait 10s → 30s. Race condition
+                // dp.bondar: SDK не успевал применить cross-signing state за
+                // 10s → fallback резет identity → новые master keys → у всех
+                // в комнате shield/UTD. На медленной сети 30s достаточно.
+                for i in 1...15 {
                     try? await Task.sleep(for: .seconds(2))
                     let currentState = clientProxy.verificationStatePublisher.value
-                    os_log(.fault, log: e2eeLog, "autoVerify: check %d/5 — state: %{public}@", i, String(describing: currentState))
-                    DiagLog.write("E2EE", "  autoVerify: check \(i)/5 — state=\(currentState)")
+                    os_log(.fault, log: e2eeLog, "autoVerify: check %d/15 — state: %{public}@", i, String(describing: currentState))
+                    DiagLog.write("E2EE", "  autoVerify: check \(i)/15 — state=\(currentState)")
                     if currentState == .verified {
                         os_log(.fault, log: e2eeLog, "autoVerify: device auto-verified after recovery!")
                         DiagLog.write("E2EE", "  autoVerify: device verified ✅")
@@ -492,8 +496,8 @@ class UserSession: UserSessionProtocol {
                         return
                     }
                 }
-                os_log(.fault, log: e2eeLog, "autoVerify: still unverified after 10s — cross-signing device via resetIdentity")
-                DiagLog.write("E2EE", "  autoVerify: still unverified after 10s — selfVerifyDevice")
+                os_log(.fault, log: e2eeLog, "autoVerify: still unverified after 30s — cross-signing device via resetIdentity")
+                DiagLog.write("E2EE", "  autoVerify: still unverified after 30s — selfVerifyDevice")
                 await selfVerifyDevice()
                 await cleanupOldDevicesByIDFV()
             case .failure(let error):
