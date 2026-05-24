@@ -515,11 +515,45 @@ class UserSession: UserSessionProtocol {
     }
 
     /// Cross-sign this device after successful key recovery.
-    /// Called when confirmRecoveryKey succeeded but device is still unverified after 10s.
+    /// Called when confirmRecoveryKey succeeded but device is still unverified after 30s.
     /// ONLY resets cross-signing identity — does NOT touch SSSS or backup.
     /// Keys are already restored at this point, SDK will auto-upload to backup.
     private func selfVerifyDevice() async {
-        os_log(.fault, log: e2eeLog, "selfVerify: resetting identity to cross-sign device...")
+        // STMOB-141 build 169: КРИТИЧЕСКИЙ guard перед resetIdentity.
+        // Раньше при slow sync делали resetIdentity → новые master keys →
+        // у dp.bondar 2 ротации мастер-ключей → backup access потерян →
+        // 'На этом устройстве недоступна история сообщений' во всех комнатах.
+        //
+        // Правило: если на сервере УЖЕ есть recovery_key + key backup →
+        // НЕ ротировать identity. Если SDK ещё не догнал — ждать manual SAS
+        // (юзер может verify через другую Web-сессию) или event-driven update.
+        // Только если recovery+backup ОТСУТСТВУЮТ (первичный setup) — OK
+        // делать resetIdentity для bootstrap fresh identity.
+        let hasRecovery = await tryRestoreFromServerKey()
+        let backupState = clientProxy.secureBackupController.keyBackupState.value
+        // SecureBackupKeyBackupState: .unknown / .enabling / .enabled / .disabling.
+        // Считаем backup существующим если .enabled, .enabling, .disabling
+        // (любое НЕ-.unknown — backup есть, просто в transition state).
+        // .unknown = «we didn't explicitly disable on this client» = fail-safe
+        // считать что есть (preserve identity на сомнения).
+        let backupExists: Bool = {
+            switch backupState {
+            case .enabled, .enabling, .disabling, .unknown: return true
+            }
+        }()
+        DiagLog.write("E2EE", "selfVerifyDevice: hasRecovery=\(hasRecovery) backupState=\(backupState) backupExists=\(backupExists)")
+
+        if hasRecovery, backupExists {
+            os_log(.fault, log: e2eeLog, "selfVerify: ABORT resetIdentity — recovery_key + backup EXIST (preserve identity to keep backup access)")
+            DiagLog.write("E2EE", "selfVerify: ABORT — recovery+backup exist, preserve identity")
+            // Device остаётся unverified — юзер может SAS-verify с другой сессии
+            // (Web). Identity не меняется → backup access сохраняется → старые
+            // megolm sessions остаются доступны как только device получит keys
+            // через cross-signing от trusted Web-сессии.
+            return
+        }
+
+        os_log(.fault, log: e2eeLog, "selfVerify: resetting identity (recovery=%{public}@ backup=%{public}@) — fresh setup", String(describing: hasRecovery), String(describing: backupExists))
 
         // Step 1: Reset identity — creates new cross-signing keys + signs this device
         let resetResult = await clientProxy.resetIdentity()
