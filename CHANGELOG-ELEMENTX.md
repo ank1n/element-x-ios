@@ -2816,5 +2816,56 @@ crypto.randomBytes(16).toString("base64")      // 24 chars padded, alphabet +/
 
 ---
 
+### 62. ✅ STMOB-154 build 178 — iOS host → Web hand raise через Matrix m.reaction
+
+**Дата**: 2026-05-25
+**Plane**: STMOB-154
+**Коммит**: `b19742765` (ios)
+
+#### Корень
+
+Web Element Call widget слушает только Matrix `m.reaction` events для hand raise (читает room timeline через свой rust-sdk). iOS native использует только LiveKit metadata. Без iOS-side capability — Web участники не видят руку iOS host. Last direction в hand raise matrix (9/9 coverage).
+
+Server-side impersonation alternative не работает: Synapse appservice namespace ограничен `@meet-*` regex, admin token не может send-as `@dp.bondar`. Plus Element Call widget делает client-side validation на `m.relates_to.event_id`'s call.member sender match с reaction sender — даже если bypass admin → widget отфильтрует.
+
+#### Implementation
+
+**NativeCallSession.swift:**
+- Property `private(set) var callMemberEventID: String?` — capture'ит event_id своего `org.matrix.msc3401.call.member` state event из `sendJoinViaREST` response. Используется как `m.relates_to.event_id` в hand raise reaction.
+- Property `private var handReactionEventID: String?` — текущий активный hand raise event_id для последующего redaction.
+- New `sendHandRaiseReaction(raised: Bool) async`:
+  - `raised=true`: PUT `/rooms/{room}/send/m.reaction/{txn}` с body `{"m.relates_to": {"rel_type": "m.annotation", "event_id": callMemberEventID, "key": "🖐️"}}`. Save returned event_id в `handReactionEventID`.
+  - `raised=false`: PUT `/rooms/{room}/redact/{handReactionEventID}/{txn}` empty body. Reset `handReactionEventID = nil`.
+- Generic helper `sendMatrixEvent(url:body:method:)` для REST PUT с access token + parse `event_id` из response.
+
+**CallScreenViewModel.swift toggleHandRaise:**
+- После `liveKitRoomManager.setHandRaise(enabled: newValue)` параллельно вызывает `nativeCallSession?.sendHandRaiseReaction(raised: newValue)`.
+- Dual path: LK metadata (iOS↔iOS, iOS↔guest) + Matrix m.reaction (iOS→Web).
+
+**DiagLog:**
+- `Call hand raise m.reaction SENT eventID=$abc relates_to=$def`
+- `Call hand raise REDACTED $old → $new`
+- `Call sendHandRaiseReaction ABORT — нет callMemberEventID` (если REST join failed)
+
+#### Implementation choice — REST не widget
+
+Выбран **direct REST API** через `accessToken` вместо `fromWidget action=send_event`:
+- Тот же pattern что `sendJoinViaREST` уже использует — proven path
+- Не требует capability extension в widget API (capabilities остаются unchanged)
+- Меньше moving parts (не зависит от widget driver state / capability negotiation)
+- Тот же accessToken = same Matrix identity = same sender в Element Call widget validation
+
+#### Acceptance
+- В DiagLog: `Call hand raise m.reaction SENT eventID=$abc relates_to=$def` + `Call hand raise REDACTED ...`
+- Web participants видят hand raise icon на iOS host tile в Element Call UI
+- Closes 9/9 directions hand raise matrix (last open direction iOS → Web)
+
+#### Файлы
+- `ios/ElementX/Sources/Services/NativeCall/NativeCallSession.swift` — callMemberEventID storage + sendHandRaiseReaction + sendMatrixEvent helper
+- `ios/ElementX/Sources/Screens/CallScreen/CallScreenViewModel.swift` — dual path call в toggleHandRaise
+- `ios/project.yml` — build 178
+
+---
+
 **Дата создания**: 2026-01-28
 **Последнее обновление**: 2026-05-25
