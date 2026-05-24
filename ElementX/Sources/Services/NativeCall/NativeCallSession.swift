@@ -998,6 +998,11 @@ final class NativeCallSession: ObservableObject {
         // Also check any direction for encryption_keys
         if messageString.contains("encryption_keys") {
             MXLog.info("sTalk NativeCall E2EE RAW: \(messageString.prefix(500))")
+            // STMOB-152 build 176: DiagLog для incoming E2EE keys.
+            // Помогает Molly верифицировать что её server-side fan-out
+            // (STALK-303) достигает iOS — каждый received key event
+            // от guest должен появляться здесь.
+            DiagLog.write("E2EE", "incoming widget message api=\(message.api) action=\(message.action) raw=\(messageString.prefix(300))")
             handleEncryptionKeys(message)
         }
     }
@@ -1065,9 +1070,17 @@ final class NativeCallSession: ObservableObject {
     }
 
     private func handleEncryptionKeys(_ message: WidgetAPIMessage) {
-        guard let keyInfo = message.extractEncryptionKeys(), !keyInfo.participantId.isEmpty else { return }
+        guard let keyInfo = message.extractEncryptionKeys(), !keyInfo.participantId.isEmpty else {
+            // STMOB-152 build 176: incoming event пришёл но extract failed —
+            // вероятно payload format mismatch (array vs object keys field).
+            DiagLog.write("E2EE", "handleEncryptionKeys EXTRACT FAILED action=\(message.action)")
+            return
+        }
 
         MXLog.info("sTalk NativeCall: E2EE key from \(keyInfo.participantId) index=\(keyInfo.index)")
+        // STMOB-152 build 176: каждый успешно parsed incoming key —
+        // подтверждение что Molly fan-out (STALK-303) работает.
+        DiagLog.write("E2EE", "incoming key parsed from=\(keyInfo.participantId) index=\(keyInfo.index) keyLen=\(keyInfo.key.count)")
 
         // Decode base64 → raw bytes
         if let rawKey = Data(base64Encoded: keyInfo.key) {

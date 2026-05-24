@@ -416,6 +416,10 @@ final class LiveKitRoomManager: ObservableObject {
         let metadata = enabled ? "{\"hand_raised\": true}" : "{}"
         try await room.localParticipant.set(metadata: metadata)
         MXLog.info("sTalk LiveKit: Hand raise \(enabled ? "raised" : "lowered")")
+        // STMOB-152 build 176: DiagLog для realtime correlation с Molly
+        // hand raise bridge (STALK-302 Phase 2). iOS publishes LiveKit
+        // metadata — meet-app должен видеть через ParticipantMetadataChanged.
+        DiagLog.write("Call", "hand raise OUTGOING setMetadata raised=\(enabled)")
     }
 
     /// Toggle screen sharing
@@ -716,16 +720,26 @@ extension LiveKitRoomManager: RoomDelegate {
     }
 
     nonisolated func room(_ room: Room, participantDidConnect participant: RemoteParticipant) {
+        let identity = participant.identity?.stringValue ?? "unknown"
+        let sid = participant.sid?.stringValue ?? "nil"
         Task { @MainActor in
             self.updateState()
-            MXLog.info("sTalk LiveKit: Participant joined: \(participant.identity?.stringValue ?? "unknown"), sid=\(participant.sid?.stringValue ?? "nil"), totalRemote=\(self.remoteParticipants.count)")
+            MXLog.info("sTalk LiveKit: Participant joined: \(identity), sid=\(sid), totalRemote=\(self.remoteParticipants.count)")
+            // STMOB-152 build 176: DiagLog для realtime correlation с Molly
+            // server-side observation. Видим момент guest JOIN на iOS — после
+            // этого должен прилететь incoming encryption_keys через
+            // server fan-out (STALK-303).
+            DiagLog.write("Call", "participant JOIN identity=\(identity) sid=\(sid) totalRemote=\(self.remoteParticipants.count)")
         }
     }
 
     nonisolated func room(_ room: Room, participantDidDisconnect participant: RemoteParticipant) {
+        let identity = participant.identity?.stringValue ?? "unknown"
+        let sid = participant.sid?.stringValue ?? "nil"
         Task { @MainActor in
             self.updateState()
-            MXLog.info("sTalk LiveKit: Participant left: \(participant.identity?.stringValue ?? "unknown"), sid=\(participant.sid?.stringValue ?? "nil"), remainingRemote=\(self.remoteParticipants.count)")
+            MXLog.info("sTalk LiveKit: Participant left: \(identity), sid=\(sid), remainingRemote=\(self.remoteParticipants.count)")
+            DiagLog.write("Call", "participant LEAVE identity=\(identity) sid=\(sid) remainingRemote=\(self.remoteParticipants.count)")
         }
     }
 
@@ -765,6 +779,7 @@ extension LiveKitRoomManager: RoomDelegate {
     /// participants и собираем set SID'ов с raised hand для UI overlay.
     nonisolated func room(_ room: Room, participant: Participant, didUpdateMetadata metadata: String?) {
         let sid = participant.sid?.stringValue
+        let identity = participant.identity?.stringValue ?? "?"
         let isRaised = Self.parseHandRaised(metadata)
         Task { @MainActor in
             guard let sid else { return }
@@ -774,6 +789,10 @@ extension LiveKitRoomManager: RoomDelegate {
                 self.raisedHandsSIDs.remove(sid)
             }
             MXLog.info("sTalk LiveKit: hand raise update sid=\(sid) raised=\(isRaised) total=\(self.raisedHandsSIDs.count)")
+            // STMOB-152 build 176: DiagLog для realtime correlation с Molly
+            // hand raise bridge. INCOMING metadata от remote participant
+            // (другой iOS native, либо guest meet-app после Molly patch).
+            DiagLog.write("Call", "hand raise INCOMING identity=\(identity) sid=\(sid) raised=\(isRaised) total=\(self.raisedHandsSIDs.count)")
         }
     }
 
