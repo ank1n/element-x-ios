@@ -71,7 +71,7 @@ struct CallScreenViewState: BindableState {
     /// 3. auto by remoteCount: > 8 → speaker, иначе grid.
     var effectiveLayoutMode: CallLayoutMode {
         if let manager = liveKitRoomManager {
-            let hasScreenShare = manager.remoteParticipants.contains { participant in
+            let hasScreenShare = manager.displayParticipants.contains { participant in
                 participant.videoTracks.contains { pub in
                     pub.isSubscribed && (pub.name == "screen_share" || pub.name.lowercased().contains("screen"))
                 }
@@ -79,7 +79,7 @@ struct CallScreenViewState: BindableState {
             if hasScreenShare { return .speaker }
         }
         if let override = layoutOverride { return override }
-        let remoteCount = liveKitRoomManager?.remoteParticipants.count ?? 0
+        let remoteCount = liveKitRoomManager?.displayParticipants.count ?? 0
         return remoteCount > 8 ? .speaker : .grid
     }
 

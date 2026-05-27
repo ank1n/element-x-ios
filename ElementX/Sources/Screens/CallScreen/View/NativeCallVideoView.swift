@@ -114,14 +114,14 @@ private struct DirectCallLayout: View {
         // расшарил экран — main view сразу показывает его экран, а не camera.
         // Раньше main view приоритезировал camera, screen share виделся только
         // в grid/side-panel.
-        for participant in roomManager.remoteParticipants {
+        for participant in roomManager.displayParticipants {
             if let screenPub = participant.videoTracks.first(where: { $0.name == Track.screenShareVideoName }),
                screenPub.isSubscribed,
                let track = screenPub.track as? VideoTrack {
                 return track
             }
         }
-        for participant in roomManager.remoteParticipants {
+        for participant in roomManager.displayParticipants {
             if let track = participant.firstCameraVideoTrack {
                 return track
             }
@@ -135,7 +135,7 @@ private struct DirectCallLayout: View {
     }
 
     private var remoteParticipant: RemoteParticipant? {
-        roomManager.remoteParticipants.first
+        roomManager.displayParticipants.first
     }
 
     private var remotePlaceholder: some View {
@@ -285,7 +285,7 @@ private struct ActiveSpeakerMiniView: View {
     }
 
     private var activeSpeaker: SpeakerInfo? {
-        let remotes = roomManager.remoteParticipants
+        let remotes = roomManager.displayParticipants
 
         // Priority 1: anyone sharing screen
         for remote in remotes {
@@ -500,7 +500,7 @@ private struct GroupCallLayout: View {
         }
 
         // Screen share tracks first (shown prominently)
-        for participant in roomManager.remoteParticipants {
+        for participant in roomManager.displayParticipants {
             if let screenPub = participant.videoTracks.first(where: { $0.name == Track.screenShareVideoName }),
                !screenPub.isMuted,
                let track = screenPub.track as? VideoTrack {
@@ -538,7 +538,7 @@ private struct GroupCallLayout: View {
         }
 
         // Remote participants (camera tracks)
-        for participant in roomManager.remoteParticipants {
+        for participant in roomManager.displayParticipants {
             let identity = participant.identity?.stringValue ?? participant.sid?.stringValue ?? UUID().uuidString
             // STMOB-131 build 151: skip virtual screen-share participant который
             // имеет ту же identity что local (или с суффиксом). Они уже учтены
@@ -811,7 +811,7 @@ private struct SpeakerCallLayout: View {
             //   2 strip tiles → 200pt
             //   3+ strip tiles → 150pt (текущий)
             let bottomReserved: CGFloat = 120
-            let visibleCount = stripParticipants.count + (roomManager.remoteParticipants.count > 3 ? 1 : 0)
+            let visibleCount = stripParticipants.count + (roomManager.displayParticipants.count > 3 ? 1 : 0)
             let stripHeight: CGFloat = {
                 switch visibleCount {
                 case ...1: return 220
@@ -861,7 +861,7 @@ private struct SpeakerCallLayout: View {
     @ViewBuilder
     private func stripView(in geometry: GeometryProxy, height: CGFloat) -> some View {
         let visibleParticipants = stripParticipants
-        let overflow = roomManager.remoteParticipants.count - visibleParticipants.count
+        let overflow = roomManager.displayParticipants.count - visibleParticipants.count
         let totalTiles = visibleParticipants.count + (overflow > 0 ? 1 : 0)
         let hpadding: CGFloat = 12
         let spacing: CGFloat = 8
@@ -894,7 +894,7 @@ private struct SpeakerCallLayout: View {
     /// Приоритет: (1) pinned, (2) с camera/screen-share track, (3) последний
     /// active speaker, (4) первые remote по списку.
     private var stripParticipants: [RemoteParticipant] {
-        let allRemotes = roomManager.remoteParticipants
+        let allRemotes = roomManager.displayParticipants
         guard allRemotes.count > 3 else { return allRemotes }
         var ordered: [RemoteParticipant] = []
         var seen = Set<String>()
@@ -940,22 +940,22 @@ private struct SpeakerCallLayout: View {
     /// Приоритет: pinned > screen-share > active speaker > first remote.
     private var focusedSID: String? {
         if let pinnedSID,
-           roomManager.remoteParticipants.contains(where: { $0.sid?.stringValue == pinnedSID }) {
+           roomManager.displayParticipants.contains(where: { $0.sid?.stringValue == pinnedSID }) {
             return pinnedSID
         }
         // Screen share appears as separate track but на том же participant — в SID не отражается.
         // Берём active speaker.
         if let speakingSID = roomManager.activeSpeakers
             .compactMap({ ($0 as? RemoteParticipant)?.sid?.stringValue })
-            .first(where: { sid in roomManager.remoteParticipants.contains(where: { $0.sid?.stringValue == sid }) }) {
+            .first(where: { sid in roomManager.displayParticipants.contains(where: { $0.sid?.stringValue == sid }) }) {
             return speakingSID
         }
-        return roomManager.remoteParticipants.first?.sid?.stringValue
+        return roomManager.displayParticipants.first?.sid?.stringValue
     }
 
     private var focusedParticipant: RemoteParticipant? {
         guard let sid = focusedSID else { return nil }
-        return roomManager.remoteParticipants.first(where: { $0.sid?.stringValue == sid })
+        return roomManager.displayParticipants.first(where: { $0.sid?.stringValue == sid })
     }
 
     /// Track для main view. Screen share (даже у не-focused участника) приоритетнее camera.
@@ -968,7 +968,7 @@ private struct SpeakerCallLayout: View {
             return track
         }
         // Иначе — screen share от любого remote (если кто-то расшарил).
-        for p in roomManager.remoteParticipants {
+        for p in roomManager.displayParticipants {
             if let screenPub = p.videoTracks.first(where: { $0.name == Track.screenShareVideoName }),
                screenPub.isSubscribed,
                let track = screenPub.track as? VideoTrack {

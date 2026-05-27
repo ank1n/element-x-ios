@@ -279,7 +279,7 @@ struct CallScreen: View {
 
             // STMOB-113: Layout toggle (Grid ↔ Speaker). Только для group call с
             // 2+ remote (одного человека закреплять смысла нет).
-            if (context.viewState.liveKitRoomManager?.remoteParticipants.count ?? 0) >= 2 {
+            if (context.viewState.liveKitRoomManager?.displayParticipants.count ?? 0) >= 2 {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { context.send(viewAction: .toggleLayoutMode) } label: {
                         Image(systemName: context.viewState.effectiveLayoutMode == .speaker

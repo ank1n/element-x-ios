@@ -26,6 +26,21 @@ final class LiveKitRoomManager: ObservableObject {
     @Published private(set) var remoteParticipants: [RemoteParticipant] = []
     @Published private(set) var localVideoTrack: VideoTrack?
     @Published private(set) var localParticipant: LocalParticipant?
+
+    /// STMOB-163 build 180: remoteParticipants без egress / service bots.
+    /// Фильтр через `participant.kind == .standard` — LiveKit protocol-level
+    /// enum различает real users от bots (egress, ingress, sip, agent).
+    /// Recording multichannel (Molly STALK-237) подключает egress как
+    /// participants с `kind == .egress` — фильтруются автоматически.
+    ///
+    /// Подход согласован с Molly. Преимущества над identity-prefix filter:
+    ///  - Не зависит от identity convention (`@matrix:user` или другая)
+    ///  - Не зависит от publish tracks (muted user всё ещё .standard, visible)
+    ///  - Future-proof: новые service kinds (agent для AI bot, etc) автоматически hide
+    var displayParticipants: [RemoteParticipant] {
+        remoteParticipants.filter { $0.kind == .standard }
+    }
+
     /// STMOB-100: actively speaking participants, sorted by audioLevel desc.
     /// Maintained by LiveKit SDK via `room(_:didUpdateSpeakingParticipants:)`
     /// delegate. SwiftUI views (ActiveSpeakerMiniView) подписываются на это

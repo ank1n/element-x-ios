@@ -250,11 +250,11 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                     // — это m.call.member state events в Synapse, может отставать или не
                     // содержать участников чьи события застряли в sync. liveKit.remoteParticipants
                     // — реальное состояние медиа-сессии (видишь ли ты людей на экране). +1 за себя.
-                    let liveKitTotal = self.liveKitRoomManager.remoteParticipants.count + 1
+                    let liveKitTotal = self.liveKitRoomManager.displayParticipants.count + 1
                     self.state.callParticipantsCount = max(callParticipants.count, liveKitTotal)
                     self.state.activeCallParticipantIDs = callParticipants.map { $0 }
                     if callParticipants.count != prevCount {
-                        MXLog.info("sTalk: MatrixRTC participants changed: \(prevCount) → \(callParticipants.count), users=\(callParticipants), liveKit remote=\(self.liveKitRoomManager.remoteParticipants.count)")
+                        MXLog.info("sTalk: MatrixRTC participants changed: \(prevCount) → \(callParticipants.count), users=\(callParticipants), liveKit remote=\(self.liveKitRoomManager.displayParticipants.count)")
                     }
 
                     // sTalk: For 1:1 — start timer only when BOTH participants are in the call.
@@ -283,8 +283,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                        self.state.callElapsedTime > 30 {
                         let matrixRTCEmpty = callParticipants.isEmpty ||
                             (callParticipants.count == 1 && callParticipants.contains(roomProxy.ownUserID))
-                        let liveKitEmpty = self.liveKitRoomManager.remoteParticipants.isEmpty
-                        MXLog.info("sTalk: Auto-end check — matrixRTC participants=\(callParticipants.count), liveKit remote=\(self.liveKitRoomManager.remoteParticipants.count), elapsed=\(self.state.callElapsedTime)")
+                        let liveKitEmpty = self.liveKitRoomManager.displayParticipants.isEmpty
+                        MXLog.info("sTalk: Auto-end check — matrixRTC participants=\(callParticipants.count), liveKit remote=\(self.liveKitRoomManager.displayParticipants.count), elapsed=\(self.state.callElapsedTime)")
                         if matrixRTCEmpty, liveKitEmpty {
                             MXLog.info("sTalk: Remote party left 1:1 call (both MatrixRTC and LiveKit empty) — auto-ending")
                             Task { await self.endCall() }
