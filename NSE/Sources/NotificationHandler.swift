@@ -153,16 +153,23 @@ class NotificationHandler {
         // (badge=1 при 3 непрочитанных в чате).
         MXLog.info("\(tag) Badge skipped — managed by main app (STMOB-108)")
 
-        // Fast-fail timeout (3 sec). Если RustSDK не успел fetch+decrypt event за
-        // 3 секунды — discard. Раньше блокировались на 19+ секунд пытаясь decrypt
-        // ratchet keys, к моменту обработки следующего ring event NSE уже мёртв.
-        // Лучше пропустить один потерянный chat event чем зависнуть весь pipeline.
+        // Fast-fail timeout. Если RustSDK не успел fetch+decrypt event —
+        // discard. Раньше блокировались на 19+ секунд пытаясь decrypt ratchet
+        // keys, к моменту обработки следующего ring event NSE уже мёртв.
+        //
+        // STMOB-159 build 179: bump 3s → 10s. С 3s падало для regular text
+        // notifications когда Synapse "холодный" (давно не обращались) —
+        // первый message за день timeout-ил, Apple показывал baseline
+        // "Уведомление" placeholder вместо контента (см. dp.bondar лог 87,
+        // 09:00:15 Tracy DailyStatus). 10s хватает на cold-start retrieve,
+        // ring-event hang всё равно перехватит handleTimeExpiration перед
+        // Apple kill на 30s.
         let item: NotificationItemProxyProtocol? = await withTaskGroup(of: NotificationItemProxyProtocol?.self) { group in
             group.addTask { [weak self] in
                 await self?.userSession.notificationItemProxy(roomID: roomID, eventID: eventID)
             }
             group.addTask {
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
                 return nil
             }
             let first = await group.next() ?? nil
@@ -172,7 +179,7 @@ class NotificationHandler {
 
         guard let notificationItemProxy = item else {
             MXLog.error("\(tag) Failed retrieving notification item (or timeout)")
-            NSEDiagLog.write("  → failed/timeout retrieving notification item (>3s), DISCARD")
+            NSEDiagLog.write("  → failed/timeout retrieving notification item (>10s), DISCARD")
             discardNotification()
             return
         }
