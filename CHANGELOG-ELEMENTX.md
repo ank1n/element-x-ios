@@ -2917,5 +2917,65 @@ Upstream Element X **не имеет** этого timeout вообще — по�
 
 ---
 
+### 64. ✅ STMOB-163 — filter egress / service bot tiles из call UI (build 180)
+
+**Дата**: 2026-05-28
+**Plane**: STMOB-163
+**Коммит**: `4d174b96` (ios)
+
+#### Симптом
+
+dp.bondar 2026-05-27 в звонке Aibolit (8 участников, recording on): появились дубликаты tile с identities `EG_x9eZ5hFvkm72`, `EG_TUEMsLFN9Soa`, `EG_32V9NQYKb4vP`, `EG_eQPoVYi9Vom9` — placeholder «E» аватар + mic-off иконка. Захламляют сетку — для 8 user видно 12 tiles.
+
+#### Root cause
+
+Molly переключила recording на **multichannel** (STALK-237) — теперь по одному track egress на каждого user (не один composite). Каждый egress подключается как LiveKit participant с identity `EG_XXX`, kind=`.egress`. iOS UI не фильтровал — все попадали в `remoteParticipants`.
+
+#### Fix (build 180)
+
+Новое computed property `LiveKitRoomManager.displayParticipants` — filter через `participant.kind == .standard`:
+
+```swift
+var displayParticipants: [RemoteParticipant] {
+    remoteParticipants.filter { $0.kind == .standard }
+}
+```
+
+LiveKit `ParticipantKind` enum:
+- `.standard` — real user
+- `.ingress`, `.egress`, `.sip`, `.agent` — bots / recorders
+
+**Преимущества над identity-prefix или publish-tracks filter** (согласовано с Molly):
+- Protocol-level API — не зависит от identity convention (если Molly через месяц поменяет `EG_` → стабильно)
+- Не зависит от publish tracks — muted user всё ещё `.standard`, visible
+- Future-proof: новые service kinds (`.agent` для AI bot, etc) автоматически hide
+
+#### UI references update
+
+Все usages `roomManager.remoteParticipants` → `displayParticipants` в:
+- `NativeCallVideoView.swift` (15 references)
+- `CallScreen.swift` (1)
+- `CallScreenModels.swift` (2)
+- `CallScreenViewModel.swift` (4 — auto-end check учитывает только real users)
+
+Combine subscription `liveKitRoomManager.$remoteParticipants` в `NativeCallSession.swift` оставлено как есть — E2EE key rebroadcast адресован ВСЕМ participants включая egress (egress тоже должен decrypt'ить).
+
+#### Acceptance
+
+- Запись в групповом звонке: только real users в tile grid
+- Counter «N участников» считает только display participants (без egress)
+- При muted local mic/camera — user всё ещё видим
+
+#### Файлы
+
+- `ios/ElementX/Sources/Services/LiveKit/LiveKitRoomManager.swift` — новый `displayParticipants`
+- `ios/ElementX/Sources/Screens/CallScreen/View/NativeCallVideoView.swift`
+- `ios/ElementX/Sources/Screens/CallScreen/View/CallScreen.swift`
+- `ios/ElementX/Sources/Screens/CallScreen/CallScreenModels.swift`
+- `ios/ElementX/Sources/Screens/CallScreen/CallScreenViewModel.swift`
+- `ios/project.yml` — build 180
+
+---
+
 **Дата создания**: 2026-01-28
-**Последнее обновление**: 2026-05-27
+**Последнее обновление**: 2026-05-28
