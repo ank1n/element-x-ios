@@ -2867,5 +2867,55 @@ Server-side impersonation alternative не работает: Synapse appservice 
 
 ---
 
+### 63. ✅ STMOB-159 — NSE timeout 3s → 10s для cold Synapse race (build 179)
+
+**Дата**: 2026-05-27
+**Plane**: STMOB-159
+**Коммит**: `3fd8aed03` (ios)
+
+#### Симптом
+
+dp.bondar 2026-05-27 09:00 МСК: в чат #ops пришли 2 сообщения подряд (от @tracy и @molly), iPhone push showed:
+1. @molly ad-sync → full content «[ad-sync] 06:00 UTC daily report — no new users...»
+2. @tracy DailyStatus → **«sTalk: Уведомление»** baseline placeholder
+
+#### Root cause (лог 87)
+
+```
+09:00:15.726 NSE processEvent eventID=$FzH8l3j2... (Tracy DailyStatus)
+09:00:18.896 NSE   → failed/timeout retrieving notification item (>3s), DISCARD
+09:00:19.115 NSE processEvent eventID=$u3q5vsvf... (Molly ad-sync, 220ms спустя)
+09:00:19.263 NSE   preprocess: ...[ad-sync] daily report
+09:00:19.266 NSE   → result=shouldDisplay
+```
+
+NSE имел кастомный **3-секундный fast-fail timeout** в `NotificationHandler.swift:160-171` для предотвращения hang на ring events (decrypt ratchet keys 19+ сек, NSE мёртв до следующего ring). Для **regular text notifications** когда Synapse «холодный» (давно не обращались) первый retrieve не успевал в 3 сек → `discardNotification()` → `makePassiveContent()` → iOS 26.3 fallback на baseline alert payload (известная limitation STMOB-94).
+
+Второе сообщение (220ms спустя) шло уже по «горячему» каналу — 148ms preprocess success.
+
+#### Fix (build 179)
+
+Bump timeout 3s → 10s в `NSE/Sources/NotificationHandler.swift:165`:
+
+```swift
+try? await Task.sleep(nanoseconds: 10_000_000_000)  // было 3_000_000_000
+```
+
+10s хватает на cold-start Synapse retrieve. Ring-event hang всё равно перехватит `handleTimeExpiration` перед Apple kill через 30s (margin 20s).
+
+Upstream Element X **не имеет** этого timeout вообще — полагается на `handleTimeExpiration` callback. Наш custom timeout остаётся как защита от worst-case hang (10s достаточно для cold-start, но не для multi-second decrypt loops).
+
+#### Acceptance
+
+- Первое сообщение в чат за день → full content, не «Уведомление» placeholder
+- Ring events suppress'ятся как раньше через NSE → CallKit takeover (нет regression STMOB-99)
+
+#### Файлы
+
+- `ios/NSE/Sources/NotificationHandler.swift` — bump 3s → 10s + updated DiagLog «>10s»
+- `ios/project.yml` — build 179
+
+---
+
 **Дата создания**: 2026-01-28
-**Последнее обновление**: 2026-05-25
+**Последнее обновление**: 2026-05-27
