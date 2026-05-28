@@ -39,7 +39,23 @@ extension ClientBuilder {
         
         if setupEncryption {
             builder = builder
-                .autoEnableCrossSigning(autoEnableCrossSigning: true)
+                // STMOB-180 build 182: autoEnableCrossSigning DISABLED.
+                // Раньше SDK автоматически bootstrap'ил cross-signing identity
+                // при первом sync если detect missing self-sig для current device.
+                // У Алёны (build 26.04.05): после `confirmRecoveryKey` SUCCESS
+                // (existing master восстановлен) → app в background → первый sync
+                // → SDK detect missing self-sig для нового deviceID →
+                // autoEnableCrossSigning bootstraps fresh identity → destructive
+                // override existing keys → `m.secret_storage.default_key={}`,
+                // recovery_state=disabled. Симметричная история с
+                // autoEnableBackups (STMOB-144 build 172).
+                //
+                // Cross-signing setup теперь делается вручную в
+                // bootstrapRecoveryForFirstDevice / selfVerifyDevice — ПОСЛЕ
+                // wait_verified loop и ТОЛЬКО если recovery+backup отсутствуют
+                // на сервере (true first-time setup). Existing identity
+                // preserved через confirmRecoveryKey без rotation.
+                .autoEnableCrossSigning(autoEnableCrossSigning: false)
                 // sTalk: oneShot — после получения recovery key (через 4S confirmRecoveryKey)
                 // SDK сам скачивает ВСЕ room keys из backup. Это нужно для StalkAutoE2EE
                 // flow когда identity restored через server-stored recovery key —
