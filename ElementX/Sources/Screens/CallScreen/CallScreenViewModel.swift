@@ -298,11 +298,18 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         // remote participants — иначе counter застывает на значениях из последнего
         // Matrix roomInfo sync, а LiveKit может опережать sync (новый участник
         // появился медиа-сессии до того как m.call.member дошёл).
+        //
+        // STMOB-163 build 181: фильтруем .standard kind внутри closure — без
+        // этого counter показывал "4 из 3" в звонке с recording (2 real users
+        // + 2 EG_ egress). displayParticipants — computed property, через
+        // Combine не emits, поэтому подписываемся на raw $remoteParticipants
+        // и применяем filter здесь.
         liveKitRoomManager.$remoteParticipants
             .receive(on: DispatchQueue.main)
             .sink { [weak self] participants in
                 guard let self else { return }
-                let liveKitTotal = participants.count + 1
+                let realUsersCount = participants.filter { $0.kind == .standard }.count
+                let liveKitTotal = realUsersCount + 1
                 if liveKitTotal > self.state.callParticipantsCount {
                     self.state.callParticipantsCount = liveKitTotal
                 }
