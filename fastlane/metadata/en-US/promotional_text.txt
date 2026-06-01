@@ -1,0 +1,1 @@
+Corporate messenger with end-to-end encryption, video calls and voice messages. Secure team communication built on the Matrix protocol.

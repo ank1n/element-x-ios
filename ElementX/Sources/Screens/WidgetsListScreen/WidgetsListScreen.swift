@@ -55,20 +55,7 @@ struct WidgetsListScreen: View {
         .navigationTitle(SL10n.tabApps)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.visible, for: .navigationBar)
-        .toolbar { toolbar }
-    }
-
-    @ToolbarContentBuilder
-    private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .primaryAction) {
-            Button {
-                // Add app action
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(accentBlue)
-            }
-        }
+        // STMOB-184: «+» (Add app) убрана — была пустой заглушкой, не нужна пользователю.
     }
 
     // MARK: - Classic Design

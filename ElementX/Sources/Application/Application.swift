@@ -12,7 +12,7 @@ import SwiftUI
 struct Application: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @Environment(\.openURL) private var openURL
-    
+
     private var appCoordinator: AppCoordinatorProtocol!
 
     init() {

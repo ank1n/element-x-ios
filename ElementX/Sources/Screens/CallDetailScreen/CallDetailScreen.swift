@@ -33,7 +33,7 @@ struct CallDetailScreen: View {
             }
         }
         .background(isCosmos ? Color(.systemGroupedBackground) : Color(.systemBackground))
-        .navigationTitle("Детали звонка")
+        .navigationTitle(NSLocalizedString("stalk_calldetail_title", tableName: "Localizable", value: "Детали звонка", comment: "Call detail screen title"))
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -73,7 +73,7 @@ struct CallDetailScreen: View {
                 }
 
                 if context.viewState.call.isGroupCall {
-                    Text("\(context.viewState.call.participantCount) участников")
+                    Text(String(format: NSLocalizedString("stalk_calldetail_participants_count", tableName: "Localizable", value: "%d участников", comment: "Call detail: participants count"), context.viewState.call.participantCount))
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -153,7 +153,7 @@ struct CallDetailScreen: View {
         if context.viewState.isTranscriptionLoading {
             VStack(spacing: 12) {
                 ProgressView()
-                Text("Загрузка...")
+                Text(NSLocalizedString("stalk_calldetail_loading", tableName: "Localizable", value: "Загрузка...", comment: "Loading placeholder"))
                     .font(.subheadline)
                     .foregroundColor(.secondary)
             }
@@ -162,7 +162,7 @@ struct CallDetailScreen: View {
         } else if let status = context.viewState.transcriptionData?.status, status.isInProgress {
             VStack(spacing: 12) {
                 ProgressView()
-                Text("Транскрипция обрабатывается...")
+                Text(NSLocalizedString("stalk_calldetail_transcription_processing", tableName: "Localizable", value: "Транскрипция обрабатывается...", comment: "Transcription in progress placeholder"))
                     .font(.subheadline)
                     .foregroundColor(.secondary)
             }
@@ -177,7 +177,7 @@ struct CallDetailScreen: View {
                 Image(systemName: "text.bubble")
                     .font(.system(size: 32))
                     .foregroundColor(.secondary.opacity(0.5))
-                Text("Транскрипция недоступна")
+                Text(NSLocalizedString("stalk_calldetail_transcription_unavailable", tableName: "Localizable", value: "Транскрипция недоступна", comment: "Transcription unavailable placeholder"))
                     .font(.subheadline)
                     .foregroundColor(.secondary)
             }
@@ -191,7 +191,7 @@ struct CallDetailScreen: View {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 28))
                 .foregroundColor(.orange)
-            Text("Не удалось создать транскрипцию")
+            Text(NSLocalizedString("stalk_calldetail_transcription_failed", tableName: "Localizable", value: "Не удалось создать транскрипцию", comment: "Transcription creation failed message"))
                 .font(.subheadline)
                 .foregroundColor(.secondary)
 
@@ -199,7 +199,7 @@ struct CallDetailScreen: View {
                 Button {
                     context.send(viewAction: .retryTranscription)
                 } label: {
-                    Text("Повторить")
+                    Text(NSLocalizedString("stalk_calldetail_retry", tableName: "Localizable", value: "Повторить", comment: "Retry button"))
                         .font(.subheadline.weight(.medium))
                         .padding(.horizontal, 20)
                         .padding(.vertical, 8)
@@ -259,7 +259,7 @@ struct CallDetailScreen: View {
             }
 
             if !pending.isEmpty {
-                sectionHeader("Предложения LLM")
+                sectionHeader(NSLocalizedString("stalk_calldetail_llm_suggestions", tableName: "Localizable", value: "Предложения LLM", comment: "Section header: LLM suggestions"))
                 ForEach(pending) { task in
                     suggestedTaskCard(task)
                 }
@@ -267,7 +267,7 @@ struct CallDetailScreen: View {
 
             if !created.isEmpty {
                 HStack {
-                    sectionHeader("Созданные задачи")
+                    sectionHeader(NSLocalizedString("stalk_calldetail_created_tasks", tableName: "Localizable", value: "Созданные задачи", comment: "Section header: created tasks"))
                     Spacer()
                     Button {
                         context.send(viewAction: .refreshTasks)
@@ -287,7 +287,7 @@ struct CallDetailScreen: View {
                     Image(systemName: "checkmark.circle")
                         .font(.system(size: 32))
                         .foregroundColor(.secondary)
-                    Text("Нет предложенных задач")
+                    Text(NSLocalizedString("stalk_calldetail_no_suggested_tasks", tableName: "Localizable", value: "Нет предложенных задач", comment: "Empty state: no suggested tasks"))
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
@@ -315,7 +315,7 @@ struct CallDetailScreen: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "plus.circle.fill")
-                    Text("Создать в TrackIT")
+                    Text(NSLocalizedString("stalk_calldetail_create_in_trackit", tableName: "Localizable", value: "Создать в TrackIT", comment: "Create task in TrackIT button"))
                 }
                 .font(.subheadline)
             }
@@ -402,11 +402,11 @@ struct CallDetailScreen: View {
                     .foregroundColor(.primary)
                 }
             }
-            .navigationTitle("Выберите проект")
+            .navigationTitle(NSLocalizedString("stalk_calldetail_select_project", tableName: "Localizable", value: "Выберите проект", comment: "Project picker title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Отмена") { context.send(viewAction: .closeProjectPicker) }
+                    Button(NSLocalizedString("stalk_calldetail_cancel", tableName: "Localizable", value: "Отмена", comment: "Cancel button")) { context.send(viewAction: .closeProjectPicker) }
                 }
             }
         }
@@ -436,7 +436,7 @@ struct CallDetailScreen: View {
 
             // Key points
             if let keyPoints = context.viewState.transcriptionData?.summary?.keyPoints, !keyPoints.isEmpty {
-                sectionHeader("Ключевые моменты")
+                sectionHeader(NSLocalizedString("stalk_calldetail_key_points", tableName: "Localizable", value: "Ключевые моменты", comment: "Section header: key points"))
                 ForEach(Array(keyPoints.enumerated()), id: \.offset) { _, point in
                     HStack(alignment: .top, spacing: 8) {
                         Image(systemName: "star.fill")
@@ -451,7 +451,7 @@ struct CallDetailScreen: View {
 
             // Action items
             if let actionItems = context.viewState.transcriptionData?.summary?.actionItems, !actionItems.isEmpty {
-                sectionHeader("Задачи")
+                sectionHeader(NSLocalizedString("stalk_calldetail_action_items", tableName: "Localizable", value: "Задачи", comment: "Section header: action items / tasks"))
                 ForEach(Array(actionItems.enumerated()), id: \.offset) { _, item in
                     HStack(alignment: .top, spacing: 8) {
                         Image(systemName: "checkmark.circle")
@@ -608,10 +608,10 @@ struct CallDetailScreen: View {
 
     private func formatDuration(_ seconds: TimeInterval) -> String {
         let totalSec = Int(seconds)
-        if totalSec < 60 { return "\(totalSec)с" }
+        if totalSec < 60 { return String(format: NSLocalizedString("stalk_calldetail_dur_seconds", tableName: "Localizable", value: "%dс", comment: "Duration seconds (short, no space)"), totalSec) }
         let min = totalSec / 60
         let sec = totalSec % 60
-        return sec > 0 ? "\(min)м \(sec)с" : "\(min)м"
+        return sec > 0 ? String(format: NSLocalizedString("stalk_calldetail_dur_min_sec", tableName: "Localizable", value: "%1$dм %2$dс", comment: "Duration minutes and seconds (short)"), min, sec) : String(format: NSLocalizedString("stalk_calldetail_dur_minutes", tableName: "Localizable", value: "%dм", comment: "Duration minutes (short, no space)"), min)
     }
 
     private var isPlaying: Bool {

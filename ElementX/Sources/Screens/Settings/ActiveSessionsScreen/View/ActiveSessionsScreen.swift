@@ -25,7 +25,7 @@ struct ActiveSessionsScreen: View {
                 Section {
                     deviceRow(item: current)
                 } header: {
-                    Text("Это устройство")
+                    Text(NSLocalizedString("stalk_sessions_this_device", tableName: "Localizable", value: "Это устройство", comment: "Active session trust status: this device"))
                         .compoundListSectionHeader()
                 }
             }
@@ -34,7 +34,7 @@ struct ActiveSessionsScreen: View {
                 let filtered = filteredOtherDevices()
                 Section {
                     Toggle(isOn: $context.filterActiveLastWeekOnly) {
-                        Text("Только активные за неделю")
+                        Text(NSLocalizedString("stalk_sessions_active_last_week", tableName: "Localizable", value: "Только активные за неделю", comment: "Filter toggle: only active last week"))
                             .font(.compound.bodyMD)
                     }
                     // STMOB-87: "Завершить все другие" скрыта — Matrix DELETE
@@ -42,7 +42,7 @@ struct ActiveSessionsScreen: View {
                     // sessions возвращают 404 M_UNRECOGNIZED). Bulk cleanup
                     // делается серверным SQL — обратиться к admin.
                 } header: {
-                    Text("Фильтр")
+                    Text(NSLocalizedString("stalk_sessions_filter", tableName: "Localizable", value: "Фильтр", comment: "Filter section header"))
                         .compoundListSectionHeader()
                 }
 
@@ -53,26 +53,26 @@ struct ActiveSessionsScreen: View {
                                 Button(role: .destructive) {
                                     context.send(viewAction: .requestSignOut(deviceID: device.id))
                                 } label: {
-                                    Label("Завершить", systemImage: "rectangle.portrait.and.arrow.right")
+                                    Label(NSLocalizedString("stalk_sessions_end", tableName: "Localizable", value: "Завершить", comment: "End session button"), systemImage: "rectangle.portrait.and.arrow.right")
                                 }
                             }
                     }
                 } header: {
-                    Text("Другие сессии (\(filtered.count) из \(context.viewState.otherDevices.count))")
+                    Text(String(format: NSLocalizedString("stalk_sessions_other_header", tableName: "Localizable", value: "Другие сессии (%1$d из %2$d)", comment: "Other sessions section header: shown/total"), filtered.count, context.viewState.otherDevices.count))
                         .compoundListSectionHeader()
                 }
             }
 
             if let err = context.viewState.loadError {
                 Section {
-                    Text("Не удалось загрузить: \(err)")
+                    Text(String(format: NSLocalizedString("stalk_sessions_load_failed", tableName: "Localizable", value: "Не удалось загрузить: %@", comment: "Failed to load sessions error"), err))
                         .foregroundStyle(.compound.textCriticalPrimary)
                         .font(.compound.bodyMD)
                 }
             }
         }
         .compoundList()
-        .navigationTitle("Активные сессии")
+        .navigationTitle(NSLocalizedString("stalk_sessions_title", tableName: "Localizable", value: "Активные сессии", comment: "Active sessions screen title"))
         .navigationBarTitleDisplayMode(.inline)
         .refreshable {
             context.send(viewAction: .reload)
@@ -112,11 +112,11 @@ struct ActiveSessionsScreen: View {
     private func trustDetails(for status: ActiveSessionTrustStatus) -> ListRowDetails<Image>? {
         switch status {
         case .current:
-            return .label(title: "Текущая", systemIcon: .checkmarkCircleFill)
+            return .label(title: NSLocalizedString("stalk_sessions_current", tableName: "Localizable", value: "Текущая", comment: "Session detail label: current"), systemIcon: .checkmarkCircleFill)
         case .verified:
-            return .label(title: "Проверено", systemIcon: .lockFill)
+            return .label(title: NSLocalizedString("stalk_sessions_verified", tableName: "Localizable", value: "Проверено", comment: "Active session trust status: verified"), systemIcon: .lockFill)
         case .unverified:
-            return .label(title: "Не проверено", systemIcon: .exclamationmarkTriangle)
+            return .label(title: NSLocalizedString("stalk_sessions_unverified", tableName: "Localizable", value: "Не проверено", comment: "Active session trust status: unverified"), systemIcon: .exclamationmarkTriangle)
         case .unknown:
             return nil
         }

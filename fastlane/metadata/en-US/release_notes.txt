@@ -1,0 +1,1 @@
+Version 26.04.05 — redesigned calls tab, video conference improvements, iOS 26 support.

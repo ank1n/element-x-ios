@@ -92,14 +92,14 @@ struct RoomHeaderView: View {
 
     private var presenceSubtitleText: String? {
         guard let presence = dmRecipientPresence else { return nil }
-        if presence.isOnline { return "в сети" }
+        if presence.isOnline { return NSLocalizedString("stalk_presence_online_lower", tableName: "Localizable", value: "в сети", comment: "Presence subtitle: online (lowercase)") }
         if let last = presence.lastSeenDate {
             let formatter = RelativeDateTimeFormatter()
             formatter.unitsStyle = .full
             formatter.locale = Locale(identifier: "ru_RU")
-            return "был в сети \(formatter.localizedString(for: last, relativeTo: Date()))"
+            return String(format: NSLocalizedString("stalk_presence_last_seen_lower", tableName: "Localizable", value: "был в сети %@", comment: "Presence subtitle: last seen <relative time> (lowercase)"), formatter.localizedString(for: last, relativeTo: Date()))
         }
-        return "не в сети"
+        return NSLocalizedString("stalk_presence_offline_lower", tableName: "Localizable", value: "не в сети", comment: "Presence subtitle: offline (lowercase)")
     }
 
     private var presenceSubtitleColor: Color {

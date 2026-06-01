@@ -565,10 +565,10 @@ struct MeetingsListScreen: View {
     }
 
     private func formatGapMinutes(_ minutes: Int) -> String {
-        if minutes < 60 { return "\(minutes) мин" }
+        if minutes < 60 { return String(format: NSLocalizedString("stalk_duration_minutes", tableName: "Localizable", value: "%d мин", comment: "Duration in minutes (short)"), minutes) }
         let h = minutes / 60
         let m = minutes % 60
-        return m == 0 ? "\(h) ч" : "\(h) ч \(m) мин"
+        return m == 0 ? String(format: NSLocalizedString("stalk_duration_hours", tableName: "Localizable", value: "%d ч", comment: "Duration in hours (short)"), h) : String(format: NSLocalizedString("stalk_duration_hours_minutes", tableName: "Localizable", value: "%1$d ч %2$d мин", comment: "Duration in hours and minutes (short)"), h, m)
     }
 
     // MARK: - Now Tab (зелёный блок текущего времени)
@@ -690,14 +690,14 @@ struct MeetingsListScreen: View {
         let interval = meeting.endTime.timeIntervalSince(meeting.startTime)
         let minutes = Int(interval / 60)
         if minutes < 60 {
-            return "\(minutes) мин"
+            return String(format: NSLocalizedString("stalk_duration_minutes", tableName: "Localizable", value: "%d мин", comment: "Duration in minutes (short)"), minutes)
         }
         let hours = minutes / 60
         let remainingMin = minutes % 60
         if remainingMin == 0 {
-            return "\(hours) ч"
+            return String(format: NSLocalizedString("stalk_duration_hours", tableName: "Localizable", value: "%d ч", comment: "Duration in hours (short)"), hours)
         }
-        return "\(hours) ч \(remainingMin) мин"
+        return String(format: NSLocalizedString("stalk_duration_hours_minutes", tableName: "Localizable", value: "%1$d ч %2$d мин", comment: "Duration in hours and minutes (short)"), hours, remainingMin)
     }
 
     // MARK: - Empty State

@@ -95,10 +95,11 @@ struct CacheAndStorageScreen: View {
 
     private func calculateSizes() async {
         guard let cacheService = ServiceLocator.shared.cacheService else {
-            apiCacheSize = "0 Б"
-            imageCacheSize = "0 Б"
-            downloadedRecordingsSize = "0 Б"
-            totalSize = "0 Б"
+            let zeroBytes = NSLocalizedString("stalk_cache_zero_bytes", tableName: "Localizable", value: "0 Б", comment: "Zero bytes size placeholder")
+            apiCacheSize = zeroBytes
+            imageCacheSize = zeroBytes
+            downloadedRecordingsSize = zeroBytes
+            totalSize = zeroBytes
             return
         }
 

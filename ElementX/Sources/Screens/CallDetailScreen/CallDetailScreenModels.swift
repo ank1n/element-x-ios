@@ -213,10 +213,10 @@ enum CallDetailTab: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .summary: return "Резюме"
-        case .details: return "Подробнее"
-        case .transcription: return "Транскрипция"
-        case .tasks: return "Задачи"
+        case .summary: return NSLocalizedString("stalk_calldetail_tab_summary", tableName: "Localizable", value: "Резюме", comment: "Call detail tab: summary")
+        case .details: return NSLocalizedString("stalk_calldetail_tab_details", tableName: "Localizable", value: "Подробнее", comment: "Call detail tab: details")
+        case .transcription: return NSLocalizedString("stalk_calldetail_tab_transcription", tableName: "Localizable", value: "Транскрипция", comment: "Call detail tab: transcription")
+        case .tasks: return NSLocalizedString("stalk_calldetail_tab_tasks", tableName: "Localizable", value: "Задачи", comment: "Call detail tab: tasks")
         }
     }
 }

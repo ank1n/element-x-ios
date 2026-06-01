@@ -124,7 +124,10 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         appMediator = AppMediator(windowManager: windowManager, networkMonitor: networkMonitor)
         
         let appSettings = appHooks.appSettingsHook.configure(AppSettings())
-        
+
+        // Apply the interface language override before any UI is built (STMOB-183).
+        Bundle.setAppLanguage(appSettings.appLanguageIdentifier)
+
         targetConfiguration = Target.mainApp.configure(logLevel: appSettings.logLevel,
                                                        traceLogPacks: appSettings.traceLogPacks,
                                                        sentryURL: appSettings.bugReportSentryRustURL,

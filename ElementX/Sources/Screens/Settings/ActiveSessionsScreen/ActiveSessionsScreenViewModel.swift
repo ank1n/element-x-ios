@@ -42,9 +42,9 @@ class ActiveSessionsScreenViewModel: ActiveSessionsScreenViewModelType, ActiveSe
         case .requestSignOut(let deviceID):
             guard let device = state.otherDevices.first(where: { $0.id == deviceID }) else { return }
             state.bindings.alertInfo = AlertInfo(id: .confirmSignOut(deviceID: deviceID, displayName: device.displayName),
-                                                 title: "Завершить сессию?",
-                                                 message: "Сессия \"\(device.displayName)\" будет завершена. Это устройство выйдет из аккаунта.",
-                                                 primaryButton: .init(title: "Завершить", role: .destructive) { [weak self] in
+                                                 title: NSLocalizedString("stalk_sessions_end_confirm_title", tableName: "Localizable", value: "Завершить сессию?", comment: "End session confirmation title"),
+                                                 message: String(format: NSLocalizedString("stalk_sessions_end_confirm_message", tableName: "Localizable", value: "Сессия \"%@\" будет завершена. Это устройство выйдет из аккаунта.", comment: "End session confirmation message"), device.displayName),
+                                                 primaryButton: .init(title: NSLocalizedString("stalk_sessions_end", tableName: "Localizable", value: "Завершить", comment: "End session button"), role: .destructive) { [weak self] in
                                                      self?.process(viewAction: .confirmSignOut(deviceID: deviceID))
                                                  },
                                                  secondaryButton: .init(title: L10n.actionCancel, role: .cancel, action: nil))
@@ -54,9 +54,9 @@ class ActiveSessionsScreenViewModel: ActiveSessionsScreenViewModelType, ActiveSe
             // STMOB-87: bulk delete native — confirmation alert.
             let count = state.otherDevices.count
             state.bindings.alertInfo = AlertInfo(id: .confirmEndAllOthers(count: count),
-                                                 title: "Завершить все другие сессии?",
-                                                 message: "Будет завершено \(count) сессий. Это может занять несколько минут.",
-                                                 primaryButton: .init(title: "Завершить все", role: .destructive) { [weak self] in
+                                                 title: NSLocalizedString("stalk_sessions_end_all_confirm_title", tableName: "Localizable", value: "Завершить все другие сессии?", comment: "End all other sessions confirmation title"),
+                                                 message: String(format: NSLocalizedString("stalk_sessions_end_all_confirm_message", tableName: "Localizable", value: "Будет завершено %d сессий. Это может занять несколько минут.", comment: "End all other sessions confirmation message"), count),
+                                                 primaryButton: .init(title: NSLocalizedString("stalk_sessions_end_all", tableName: "Localizable", value: "Завершить все", comment: "End all sessions button"), role: .destructive) { [weak self] in
                                                      self?.process(viewAction: .confirmEndAllOthers)
                                                  },
                                                  secondaryButton: .init(title: L10n.actionCancel, role: .cancel, action: nil))
@@ -75,7 +75,7 @@ class ActiveSessionsScreenViewModel: ActiveSessionsScreenViewModelType, ActiveSe
         var done = 0
         var failed = 0
         var firstErrorDetail: String?
-        userIndicatorController.submitIndicator(.init(id: "bulkDelete", type: .modal, title: "Завершение 0/\(total)…", persistent: true))
+        userIndicatorController.submitIndicator(.init(id: "bulkDelete", type: .modal, title: String(format: NSLocalizedString("stalk_sessions_ending_progress", tableName: "Localizable", value: "Завершение 0/%d…", comment: "Bulk delete sessions: initial progress"), total), persistent: true))
 
         // Concurrent batches по 5 — баланс между скоростью и rate limit Synapse
         let batchSize = 5
@@ -115,17 +115,17 @@ class ActiveSessionsScreenViewModel: ActiveSessionsScreenViewModelType, ActiveSe
                 }
             }
             // Update progress between batches
-            userIndicatorController.submitIndicator(.init(id: "bulkDelete", type: .modal, title: "Завершено \(done)/\(total) (ошибок \(failed))", persistent: true))
+            userIndicatorController.submitIndicator(.init(id: "bulkDelete", type: .modal, title: String(format: NSLocalizedString("stalk_sessions_ended_progress", tableName: "Localizable", value: "Завершено %1$d/%2$d (ошибок %3$d)", comment: "Bulk delete sessions: progress with done/total/failed counts"), done, total, failed), persistent: true))
         }
 
         userIndicatorController.retractIndicatorWithId("bulkDelete")
 
-        var msg = "Завершено успешно: \(done)\nС ошибками: \(failed)"
+        var msg = String(format: NSLocalizedString("stalk_sessions_bulk_result_message", tableName: "Localizable", value: "Завершено успешно: %1$d\nС ошибками: %2$d", comment: "Bulk delete sessions result: succeeded/failed counts"), done, failed)
         if let firstErrorDetail {
-            msg += "\n\nПервая ошибка:\n\(firstErrorDetail)"
+            msg += String(format: NSLocalizedString("stalk_sessions_bulk_first_error", tableName: "Localizable", value: "\n\nПервая ошибка:\n%@", comment: "Bulk delete sessions: first error detail"), firstErrorDetail)
         }
         state.bindings.alertInfo = AlertInfo(id: .bulkResult(succeeded: done, failed: failed),
-                                             title: "Готово",
+                                             title: NSLocalizedString("stalk_sessions_done", tableName: "Localizable", value: "Готово", comment: "Done alert title"),
                                              message: msg)
 
         await reload()
@@ -199,7 +199,7 @@ class ActiveSessionsScreenViewModel: ActiveSessionsScreenViewModelType, ActiveSe
             return
         }
 
-        userIndicatorController.submitIndicator(.init(type: .modal, title: "Завершение сессии…", persistent: true))
+        userIndicatorController.submitIndicator(.init(type: .modal, title: NSLocalizedString("stalk_sessions_ending_single", tableName: "Localizable", value: "Завершение сессии…", comment: "Ending single session indicator"), persistent: true))
         defer { userIndicatorController.retractAllIndicators() }
 
         let result = await clientProxy.signOutDevice(deviceID: deviceID)
@@ -215,7 +215,7 @@ class ActiveSessionsScreenViewModel: ActiveSessionsScreenViewModelType, ActiveSe
                 detail = "\(error)"
             }
             state.bindings.alertInfo = AlertInfo(id: .signOutError(message: detail),
-                                                 title: "Не удалось завершить сессию",
+                                                 title: NSLocalizedString("stalk_sessions_end_failed_title", tableName: "Localizable", value: "Не удалось завершить сессию", comment: "Failed to end session alert title"),
                                                  message: detail)
         }
     }

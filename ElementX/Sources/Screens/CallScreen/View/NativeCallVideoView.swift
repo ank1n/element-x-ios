@@ -294,7 +294,7 @@ private struct ActiveSpeakerMiniView: View {
                let track = screenPub.track as? VideoTrack {
                 let identity = remote.identity?.stringValue ?? ""
                 return SpeakerInfo(identity: identity,
-                                   name: "\(remote.name ?? "?") — экран",
+                                   name: String(format: NSLocalizedString("stalk_call_screen_share_name", tableName: "Localizable", value: "%@ — экран", comment: "Screen share tile name: <participant> — screen"), remote.name ?? "?"),
                                    videoTrack: track,
                                    avatarURL: nil)
             }
@@ -490,7 +490,7 @@ private struct GroupCallLayout: View {
             let identity = local.identity?.stringValue ?? "local"
             items.append(ParticipantItem(id: "\(identity)-screen",
                                          videoTrack: track,
-                                         displayName: "Ваш экран",
+                                         displayName: NSLocalizedString("stalk_call_your_screen", tableName: "Localizable", value: "Ваш экран", comment: "Local screen share tile name"),
                                          avatarURL: nil,
                                          isLocal: true,
                                          isSpeaking: false,
@@ -508,7 +508,7 @@ private struct GroupCallLayout: View {
                 let name = participant.name ?? participant.identity?.stringValue ?? "?"
                 items.append(ParticipantItem(id: "\(identity)-screen",
                                              videoTrack: track,
-                                             displayName: "\(name) — экран",
+                                             displayName: String(format: NSLocalizedString("stalk_call_screen_share_name", tableName: "Localizable", value: "%@ — экран", comment: "Screen share tile name: <participant> — screen"), name),
                                              avatarURL: nil,
                                              isLocal: false,
                                              isSpeaking: false,

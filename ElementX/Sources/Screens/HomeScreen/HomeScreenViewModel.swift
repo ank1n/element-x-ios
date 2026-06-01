@@ -368,7 +368,7 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
                 let names = rooms.prefix(3).map(\.name)
                 state.archivePreviewText = names.joined(separator: ", ")
                 if rooms.count > 3 {
-                    state.archivePreviewText += " и ещё \(rooms.count - 3)"
+                    state.archivePreviewText += String(format: NSLocalizedString("stalk_home_archive_and_more", tableName: "Localizable", value: " и ещё %d", comment: "Archive preview: and N more"), rooms.count - 3)
                 }
             }
             .store(in: &cancellables)

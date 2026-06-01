@@ -45,7 +45,10 @@ struct SettingsScreenViewState: BindableState {
     var userAvatarURL: URL?
     var userDisplayName: String?
     var showDeveloperOptions: Bool
-    
+
+    /// Interface language override (STMOB-183). `nil` = follow system.
+    var appLanguageIdentifier: String?
+
     var securitySectionMode = SettingsScreenSecuritySectionMode.none
     var showSecuritySectionBadge = false
     
@@ -79,6 +82,7 @@ enum SettingsScreenViewAction {
     case labs
     case cacheAndStorage
     case activeSessions // sTalk: STMOB-87
+    case setLanguage(String?) // sTalk: STMOB-183 — nil = system
     case logout
     case deactivateAccount
 }

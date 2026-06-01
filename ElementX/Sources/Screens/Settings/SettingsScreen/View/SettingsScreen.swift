@@ -13,6 +13,15 @@ import SwiftUI
 struct SettingsScreen: View {
     let context: SettingsScreenViewModel.Context
     @AppStorage("stalk_design_theme") private var settingsDesignTheme = "cosmos"
+    @State private var showLanguageRestartAlert = false
+
+    /// STMOB-183: применяет выбор языка и просит перезапустить (UIKit-навигация
+    /// не перелокализуется на лету — язык вступает в силу при следующем запуске).
+    private func selectLanguage(_ identifier: String?) {
+        guard identifier != context.viewState.appLanguageIdentifier else { return }
+        context.send(viewAction: .setLanguage(identifier))
+        showLanguageRestartAlert = true
+    }
 
     private var isCosmos: Bool {
         settingsDesignTheme == "cosmos"
@@ -64,6 +73,8 @@ struct SettingsScreen: View {
 
                 appearanceSection
 
+                languageSection
+
                 generalSection
 
                 storageSection
@@ -84,9 +95,49 @@ struct SettingsScreen: View {
         .navigationTitle(SL10n.tabSettings)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.visible, for: .navigationBar)
+        .alert(NSLocalizedString("stalk_settings_language_restart_title", tableName: "Localizable", value: "Перезапустите приложение", comment: "Language change restart alert title"),
+               isPresented: $showLanguageRestartAlert) {
+            Button(NSLocalizedString("stalk_settings_language_restart_ok", tableName: "Localizable", value: "Понятно", comment: "OK"), role: .cancel) { }
+        } message: {
+            Text(NSLocalizedString("stalk_settings_language_restart_message", tableName: "Localizable", value: "Язык интерфейса изменится после перезапуска приложения.", comment: "Language change restart alert message"))
+        }
     }
     
     private let accentBlue = StalkTheme.accent
+
+    // MARK: - Interface language (STMOB-183)
+
+    private var currentLanguageName: String {
+        switch context.viewState.appLanguageIdentifier {
+        case "ru": return "Русский"
+        case "en": return "English"
+        default: return NSLocalizedString("stalk_settings_language_system", tableName: "Localizable", value: "Системный", comment: "Interface language: follow system")
+        }
+    }
+
+    private var languageSection: some View {
+        Section(header: Text(NSLocalizedString("stalk_settings_language", tableName: "Localizable", value: "Язык интерфейса", comment: "Interface language setting title"))) {
+            Menu {
+                Button { selectLanguage(nil) } label: {
+                    Label(NSLocalizedString("stalk_settings_language_system", tableName: "Localizable", value: "Системный", comment: "Interface language: follow system"),
+                          systemImage: context.viewState.appLanguageIdentifier == nil ? "checkmark" : "globe")
+                }
+                Button { selectLanguage("ru") } label: {
+                    Label("Русский", systemImage: context.viewState.appLanguageIdentifier == "ru" ? "checkmark" : "character.bubble")
+                }
+                Button { selectLanguage("en") } label: {
+                    Label("English", systemImage: context.viewState.appLanguageIdentifier == "en" ? "checkmark" : "character.bubble")
+                }
+            } label: {
+                HStack {
+                    Image(systemName: "globe").foregroundColor(StalkTheme.accent).frame(width: 24)
+                    Text(currentLanguageName).foregroundColor(.primary)
+                    Spacer()
+                    Image(systemName: "chevron.up.chevron.down").foregroundColor(.secondary).font(.system(size: 12))
+                }
+            }
+        }
+    }
 
     private var userSection: some View {
         Section {
@@ -265,7 +316,7 @@ struct SettingsScreen: View {
             }
 
             // sTalk: STMOB-87 — нативный экран активных сессий (parity с web)
-            ListRow(label: .default(title: "Активные сессии",
+            ListRow(label: .default(title: NSLocalizedString("stalk_sessions_title", tableName: "Localizable", value: "Активные сессии", comment: "Active sessions screen title"),
                                     icon: \.devices),
                     kind: .navigationLink {
                         context.send(viewAction: .activeSessions)

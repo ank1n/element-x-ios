@@ -176,13 +176,13 @@ struct CallScreen: View {
                     Button {
                         context.send(viewAction: .toggleHandRaise)
                     } label: {
-                        Label(context.viewState.isHandRaised ? "Опустить руку" : SL10n.callHand,
+                        Label(context.viewState.isHandRaised ? NSLocalizedString("stalk_call_lower_hand", tableName: "Localizable", value: "Опустить руку", comment: "Lower raised hand in call") : SL10n.callHand,
                               systemImage: context.viewState.isHandRaised ? "hand.raised.slash" : "hand.raised.fill")
                     }
                     Button {
                         context.send(viewAction: .toggleScreenShare)
                     } label: {
-                        Label(context.viewState.isScreenSharing ? "Остановить шаринг" : SL10n.callScreenShare,
+                        Label(context.viewState.isScreenSharing ? NSLocalizedString("stalk_call_stop_sharing", tableName: "Localizable", value: "Остановить шаринг", comment: "Stop screen sharing in call") : SL10n.callScreenShare,
                               systemImage: context.viewState.isScreenSharing ? "rectangle.inset.filled.and.person.filled" : "rectangle.on.rectangle")
                     }
                 } label: {
@@ -194,7 +194,7 @@ struct CallScreen: View {
                             .frame(width: 56, height: 56)
                             .background(isActive ? .white.opacity(0.9) : .white.opacity(0.15))
                             .clipShape(Circle())
-                        Text("Ещё")
+                        Text(NSLocalizedString("stalk_call_more", tableName: "Localizable", value: "Ещё", comment: "More actions in call"))
                             .font(.system(size: 11))
                             .foregroundColor(.white.opacity(0.85))
                     }

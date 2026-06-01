@@ -443,11 +443,11 @@ struct MeetingDetailScreen: View {
     private var durationText: String {
         let interval = meeting.endTime.timeIntervalSince(meeting.startTime)
         let minutes = Int(interval / 60)
-        if minutes < 60 { return "\(minutes) мин" }
+        if minutes < 60 { return String(format: NSLocalizedString("stalk_duration_minutes", tableName: "Localizable", value: "%d мин", comment: "Duration in minutes (short)"), minutes) }
         let hours = minutes / 60
         let rem = minutes % 60
-        if rem == 0 { return "\(hours) ч" }
-        return "\(hours) ч \(rem) мин"
+        if rem == 0 { return String(format: NSLocalizedString("stalk_duration_hours", tableName: "Localizable", value: "%d ч", comment: "Duration in hours (short)"), hours) }
+        return String(format: NSLocalizedString("stalk_duration_hours_minutes", tableName: "Localizable", value: "%1$d ч %2$d мин", comment: "Duration in hours and minutes (short)"), hours, rem)
     }
 
     private func rsvpColor(_ rsvp: RSVPStatus) -> Color {

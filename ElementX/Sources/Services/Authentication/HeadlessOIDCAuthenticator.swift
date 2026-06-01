@@ -37,6 +37,12 @@ final class HeadlessOIDCAuthenticator {
     ///   - password: User's password
     /// - Returns: The callback URL containing the authorization code
     func authenticate(authURL: URL, username: String, password: String) async throws -> URL {
+        // STMOB-182: clear any leftover SSO session cookies before a fresh login.
+        // Otherwise Keycloak/MAS sees a previous user's session, serves the consent
+        // page directly (skipping the login form), and the credentials we POST are
+        // never used — silently authenticating the previous user on a shared device.
+        clearAuthCookies()
+
         // Use a single session with cookie storage but no auto-redirects
         let session = makeSessionWithCookies()
         defer { session.invalidateAndCancel() }
@@ -123,6 +129,23 @@ final class HeadlessOIDCAuthenticator {
     // MARK: - Private
 
     private let cookieStorage = HTTPCookieStorage.shared
+
+    /// Remove SSO/session cookies for our auth domains so each explicit login starts
+    /// from a clean Keycloak session (forces the login form instead of reusing a
+    /// previous user's session). See STMOB-182.
+    private func clearAuthCookies() {
+        let authDomains = ["stalk.implica.ru", "trackit.implica.ru"]
+        let cookies = cookieStorage.cookies ?? []
+        var cleared = 0
+        for cookie in cookies {
+            let domain = cookie.domain.hasPrefix(".") ? String(cookie.domain.dropFirst()) : cookie.domain
+            if authDomains.contains(where: { domain == $0 || domain.hasSuffix(".\($0)") }) {
+                cookieStorage.deleteCookie(cookie)
+                cleared += 1
+            }
+        }
+        MXLog.info("sTalk HeadlessOIDC: cleared \(cleared)/\(cookies.count) auth cookies before login")
+    }
 
     private func makeSessionWithCookies() -> URLSession {
         let config = URLSessionConfiguration.ephemeral

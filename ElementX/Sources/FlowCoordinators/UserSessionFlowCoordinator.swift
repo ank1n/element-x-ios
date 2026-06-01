@@ -722,9 +722,12 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
             return
         }
         
-        presentSecureBackupLogoutConfirmationScreen()
+        // STMOB-187: recovery key управляется централизованно (корп-провижининг),
+        // поэтому отдельный экран "Have you saved your recovery key?" не нужен —
+        // показываем обычный диалог подтверждения выхода.
+        logout()
     }
-    
+
     private func logout() {
         flowParameters.userIndicatorController.alertInfo = .init(id: .init(),
                                                                  title: L10n.screenSignoutConfirmationDialogTitle,
@@ -732,28 +735,5 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                                                                  primaryButton: .init(title: L10n.screenSignoutConfirmationDialogSubmit, role: .destructive) { [weak self] in
                                                                      self?.actionsSubject.send(.logout)
                                                                  })
-    }
-    
-    private func presentSecureBackupLogoutConfirmationScreen() {
-        let coordinator = SecureBackupLogoutConfirmationScreenCoordinator(parameters: .init(secureBackupController: userSession.clientProxy.secureBackupController,
-                                                                                            homeserverReachabilityPublisher: userSession.clientProxy.homeserverReachabilityPublisher))
-        
-        coordinator.actions
-            .sink { [weak self] action in
-                guard let self else { return }
-                
-                switch action {
-                case .cancel:
-                    navigationTabCoordinator.setSheetCoordinator(nil)
-                case .settings:
-                    chatsTabFlowCoordinator.handleAppRoute(.chatBackupSettings, animated: true)
-                    navigationTabCoordinator.setSheetCoordinator(nil)
-                case .logout:
-                    actionsSubject.send(.logout)
-                }
-            }
-            .store(in: &cancellables)
-        
-        navigationTabCoordinator.setSheetCoordinator(coordinator, animated: true)
     }
 }

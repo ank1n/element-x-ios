@@ -33,8 +33,8 @@ struct CallsListScreen: View {
             switch self {
             case .all: return SL10n.callsAll
             case .missed: return SL10n.callsMissed
-            case .incoming: return "Входящие"
-            case .outgoing: return "Исходящие"
+            case .incoming: return NSLocalizedString("stalk_calls_incoming", tableName: "Localizable", value: "Входящие", comment: "Calls filter: incoming")
+            case .outgoing: return NSLocalizedString("stalk_calls_outgoing", tableName: "Localizable", value: "Исходящие", comment: "Calls filter: outgoing")
             }
         }
     }
@@ -1126,29 +1126,9 @@ struct CallsListScreen: View {
                     }
                 }
 
-                // Нижняя панель: Видеозвонок + кнопка
+                // Нижняя панель: только кнопка звонка.
+                // Тип звонка (аудио/видео) переключается камерой в топ-баре (STMOB-184).
                 VStack(spacing: 12) {
-                    // Видеозвонок toggle
-                    Button {
-                        context.isVideoCall.toggle()
-                    } label: {
-                        HStack(spacing: 8) {
-                            ZStack {
-                                Circle()
-                                    .stroke(context.isVideoCall ? accentBlue : Color(UIColor.systemGray3), lineWidth: 2)
-                                    .frame(width: 22, height: 22)
-                                if context.isVideoCall {
-                                    Circle()
-                                        .fill(accentBlue)
-                                        .frame(width: 14, height: 14)
-                                }
-                            }
-                            Text(SL10n.callsVideoCall)
-                                .font(.system(size: 16))
-                                .foregroundColor(.primary)
-                        }
-                    }
-
                     // Call button
                     Button {
                         startCallWithSelectedContacts()
@@ -1178,6 +1158,17 @@ struct CallsListScreen: View {
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(.primary)
                     }
+                }
+                // STMOB-184: тип звонка — камера в топ-баре. Вкл = видео, выкл = аудио.
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        context.isVideoCall.toggle()
+                    } label: {
+                        Image(systemName: context.isVideoCall ? "video.fill" : "video")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(context.isVideoCall ? accentBlue : .primary)
+                    }
+                    .accessibilityLabel(SL10n.callsVideoCall)
                 }
             }
         }

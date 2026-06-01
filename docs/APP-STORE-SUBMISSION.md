@@ -1,7 +1,25 @@
 # App Store Submission Checklist (STMOB-124)
 
 Target: публикация **sTalk** в App Store (App ID `ru.implica.stalk`).
-Текущий build для submission: **162** (build delivered 2026-05-22).
+Текущий build для submission: **182** (`f0855fa3b`, cross-signing fix STMOB-180/181, в TestFlight 2026-05-28).
+
+> ⚠️ Public release **только на build 182** — он содержит критичный fix `autoEnableCrossSigning=false`.
+> Build 181 безопасен для Apple review (fresh reviewer), но для wide release несёт cross-signing rotation bug.
+
+## Готовность артефактов (2026-05-29)
+
+| Артефакт | Статус |
+|----------|--------|
+| Build 182 `.ipa` | ✅ `ios/build-archive/export/sTalk.ipa`, в TestFlight |
+| Иконка 1024×1024 | ✅ `app-store-screenshots/AppIcon-1024.png` (no alpha) |
+| Скриншоты 6.9" (1290×2796) | ✅ `app-store-screenshots/asc-final/69/` — 5 шт |
+| Скриншоты 6.7" (1284×2778) | ✅ `app-store-screenshots/asc-final/67/` — 5 шт |
+| Описание RU + EN, Keywords, Promo | ✅ разделы 6–7 ниже |
+| Privacy / Terms / Support | ✅ `legal-pages/{privacy,terms,support}.html` → `https://stalk.implica.ru/{privacy,terms,support}` |
+| Encryption compliance | ✅ `ITSAppUsesNonExemptEncryption=false` (раздел 5) |
+| Review Notes + demo account | ✅ раздел 9 (проверить что demo account жив) |
+
+**Остаток — только ручные действия в App Store Connect UI (раздел 10), плюс проверка demo-аккаунта.**
 
 ---
 
@@ -252,17 +270,19 @@ messenger,calls,video,e2ee,encryption,matrix,corporate,chat,meeting,conference
 
 ## 8. Screenshots
 
-Текущее: 2/6 готово в `app-store-screenshots/`:
+✅ **Готово** — 5 шт, ASC-ready размеры, без альфа-канала. Загружать из:
+- 6.9" (1290×2796): `app-store-screenshots/asc-final/69/`
+- 6.7" (1284×2778): `app-store-screenshots/asc-final/67/`
+
+Набор (одинаковый в обеих папках):
 - `01-chats-list.png` — список чатов
 - `02-room-message.png` — переписка в комнате
+- `03-call-active.png` — активный групповой звонок
+- `05-contacts-list.png` — список контактов с presence dots
+- `06-call-details.png` — детали звонка с транскрипцией + tabs
 
-**Нужно ещё** (минимум 4, рекомендуется 6-10):
-- `03-call-active.png` — активный групповой звонок (3-4 участника, layout 1+2 или 2×2)
-- `04-call-strip.png` — Speaker layout с горизонтальной полосой участников снизу
-- `05-call-screen-share.png` — расшаривание экрана
-- `06-contacts-list.png` — список контактов с presence dots
-- `07-call-details.png` — детали звонка с транскрипцией + tabs
-- `08-call-history.png` — история звонков
+> Сырые исходники (1320×2868, нативный iPhone 17 Pro Max) — в корне `app-store-screenshots/`.
+> Resized-варианты сделаны через `sips`; повторить при пересъёмке.
 
 ### Размеры (iPhone)
 - **6.9"** (iPhone 17 Pro Max, 1290×2796) — обязательно для submission
@@ -322,16 +342,16 @@ Contact: dp.bondar@gmail.com
 ## 10. Submission Checklist
 
 ### Pre-submit (юзер в App Store Connect UI)
-- [ ] Загрузить **icon 1024×1024 PNG без альфа** (есть в `ElementX/Resources/AppIcon.icon/Assets/AppIcon.png` — конвертировать в RGB)
-- [ ] Загрузить минимум 4 screenshots для 6.9"/6.7"
-- [ ] Заполнить Description / Keywords / Promo (RU + en-US)
-- [ ] Privacy Policy URL заполнен
-- [ ] App Privacy questionnaire заполнен
-- [ ] Age Rating заполнен
+- [ ] Иконку 1024×1024 ASC берёт из бандла build 182 автоматически (запасной файл: `app-store-screenshots/AppIcon-1024.png`, no alpha)
+- [ ] Загрузить screenshots: `asc-final/69/` (6.9") + `asc-final/67/` (6.7"), по 5 шт
+- [ ] Заполнить Description / Keywords / Promo (RU + en-US) — copy-paste из разделов 6–7
+- [ ] Privacy Policy URL: `https://stalk.implica.ru/privacy`
+- [ ] App Privacy questionnaire заполнен (раздел 4)
+- [ ] Age Rating: 12+ (раздел 1)
 - [ ] Sign-in Required: Yes
-- [ ] Demo account credentials в Review Information
+- [ ] Demo account credentials в Review Information (раздел 9 — проверить что аккаунт жив)
 - [ ] Review Notes из раздела 9 выше
-- [ ] Build 162 (или новее) выбран в "Build" секции
+- [ ] **Build 182** выбран в "Build" секции
 
 ### Submit
 - [ ] "Submit for Review"
@@ -363,8 +383,8 @@ Contact: dp.bondar@gmail.com
 - `ElementX/SupportingFiles/PrivacyInfo.xcprivacy` — privacy manifest
 - `NSE/SupportingFiles/PrivacyInfo.xcprivacy` — для extension
 - `ElementX/Resources/AppIcon.icon/Assets/AppIcon.png` — иконка 1024×1024 (RGBA — нужно конвертировать в RGB без альфы для submission)
-- `app-store-screenshots/` — screenshots (2/6 done)
-- `ios/build-archive/sTalk.xcarchive` — последний archive (162)
+- `app-store-screenshots/asc-final/{69,67}/` — screenshots ready (5 шт каждая папка)
+- `ios/build-archive/sTalk.xcarchive` + `export/sTalk.ipa` — archive/ipa build 182
 - `ios/ExportOptions.plist` — для re-export если нужно
 
 ---

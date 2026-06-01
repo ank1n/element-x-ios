@@ -28,12 +28,17 @@ class SettingsScreenViewModel: SettingsScreenViewModelType, SettingsScreenViewMo
                                            showLinkNewDeviceButton: appSettings.linkNewDeviceEnabled,
                                            showAccountDeactivation: userSession.clientProxy.canDeactivateAccount,
                                            showDeveloperOptions: appSettings.developerOptionsEnabled,
+                                           appLanguageIdentifier: appSettings.appLanguageIdentifier,
                                            showAnalyticsSettings: appSettings.canPromptForAnalytics,
                                            isBugReportServiceEnabled: isBugReportServiceEnabled),
                    mediaProvider: userSession.mediaProvider)
         
         appSettings.$developerOptionsEnabled
             .weakAssign(to: \.state.showDeveloperOptions, on: self)
+            .store(in: &cancellables)
+
+        appSettings.$appLanguageIdentifier
+            .weakAssign(to: \.state.appLanguageIdentifier, on: self)
             .store(in: &cancellables)
         
         appSettings.$linkNewDeviceEnabled
@@ -130,6 +135,10 @@ class SettingsScreenViewModel: SettingsScreenViewModelType, SettingsScreenViewMo
             actionsSubject.send(.cacheAndStorage)
         case .activeSessions:
             actionsSubject.send(.activeSessions)
+        case .setLanguage(let language):
+            // STMOB-183: persist + apply interface language immediately.
+            appSettings.appLanguageIdentifier = language
+            Bundle.setAppLanguage(language)
         case .deactivateAccount:
             actionsSubject.send(.deactivateAccount)
         }

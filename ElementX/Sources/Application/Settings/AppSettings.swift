@@ -79,6 +79,9 @@ final class AppSettings {
         // Doug's tweaks 🔧
         case hideUnreadMessagesBadge
         case hideQuietNotificationAlerts
+
+        /// Interface language override (STMOB-183): nil = follow system
+        case appLanguageIdentifier
     }
     
     private static var suiteName: String = InfoPlistReader.main.appGroupIdentifier
@@ -440,6 +443,11 @@ final class AppSettings {
     
     @UserPreference(key: UserDefaultsKeys.developerOptionsEnabled, defaultValue: isDevelopmentBuild, storageType: .userDefaults(store))
     var developerOptionsEnabled
+
+    /// Interface language override (STMOB-183). `nil` follows the system language;
+    /// otherwise a language code such as `"en"` or `"ru"`.
+    @UserPreference(key: UserDefaultsKeys.appLanguageIdentifier, defaultValue: nil, storageType: .userDefaults(store))
+    var appLanguageIdentifier: String?
 }
 
 extension AppSettings: CommonSettingsProtocol { }

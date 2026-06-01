@@ -86,9 +86,9 @@ enum ActiveSessionTrustStatus: Hashable {
 
     var localizedTitle: String {
         switch self {
-        case .current: return "Это устройство"
-        case .verified: return "Проверено"
-        case .unverified: return "Не проверено"
+        case .current: return NSLocalizedString("stalk_sessions_this_device", tableName: "Localizable", value: "Это устройство", comment: "Active session trust status: this device")
+        case .verified: return NSLocalizedString("stalk_sessions_verified", tableName: "Localizable", value: "Проверено", comment: "Active session trust status: verified")
+        case .unverified: return NSLocalizedString("stalk_sessions_unverified", tableName: "Localizable", value: "Не проверено", comment: "Active session trust status: unverified")
         case .unknown: return "—"
         }
     }

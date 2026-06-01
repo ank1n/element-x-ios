@@ -23,10 +23,28 @@ public extension Bundle {
     }
     
     // MARK: - Localisation
-    
-    /// Overrides `Bundle.app.preferredLocalizations` for testing translations.
+
+    /// Overrides `Bundle.app.preferredLocalizations` for testing translations
+    /// and for the in-app language picker (STMOB-183).
     static var overrideLocalizations: [String]?
-    
+
+    /// Force the whole app's UI language at runtime (STMOB-183).
+    ///
+    /// `language` is a language code (`"en"`, `"ru"`) or `nil` to follow the system.
+    /// Drives both `L10n.tr` (via `overrideLocalizations`) and every raw
+    /// `NSLocalizedString` call (by redirecting `Bundle.main`'s localized lookup to a
+    /// specific `.lproj` bundle) so custom `stalk_*` strings switch too.
+    static func setAppLanguage(_ language: String?) {
+        overrideLocalizations = language.map { [$0] }
+
+        if !(Bundle.main is StalkLanguageBundle) {
+            object_setClass(Bundle.main, StalkLanguageBundle.self)
+        }
+
+        let languageBundle = language.flatMap { lprojBundle(for: $0) }
+        objc_setAssociatedObject(Bundle.main, &StalkLanguageBundle.associatedBundleKey, languageBundle, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
+
     private static let cacheDispatchQueue = DispatchQueue(label: "ru.implica.stalk.localization_bundle_cache")
     private static var cachedBundles = [String: Bundle]()
     
@@ -62,7 +80,22 @@ public extension Bundle {
         cacheDispatchQueue.sync {
             result = cachedBundles[key]
         }
-        
+
         return result
+    }
+}
+
+/// `Bundle.main` is reclassed to this at runtime by `Bundle.setAppLanguage(_:)` so that
+/// every `NSLocalizedString` lookup can be redirected to a forced-language `.lproj` bundle.
+/// When no language is forced the associated bundle is `nil` and lookups fall through to
+/// the default system behaviour. (STMOB-183)
+private final class StalkLanguageBundle: Bundle, @unchecked Sendable {
+    static var associatedBundleKey: UInt8 = 0
+
+    override func localizedString(forKey key: String, value: String?, table tableName: String?) -> String {
+        if let languageBundle = objc_getAssociatedObject(self, &StalkLanguageBundle.associatedBundleKey) as? Bundle {
+            return languageBundle.localizedString(forKey: key, value: value, table: tableName)
+        }
+        return super.localizedString(forKey: key, value: value, table: tableName)
     }
 }

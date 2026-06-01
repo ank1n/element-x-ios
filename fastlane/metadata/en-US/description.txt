@@ -1,0 +1,64 @@
+sTalk is a corporate messenger built on the open Matrix protocol with end-to-end encryption for all messages and calls.
+
+FEATURES
+
+Instant Messaging
+• Rich text formatting (bold, italic, quotes, code)
+• Emoji reactions
+• Threaded replies with quoting
+• Edit and delete sent messages
+• Typing indicators, read receipts
+• Full-text chat history search
+
+Groups & Rooms
+• Direct messages and group rooms
+• Threads for structured discussions
+• Member management and permissions
+• Pinned messages
+
+Video & Audio Calls
+• Group calls up to 30 participants
+• Screen sharing
+• Noise suppression, background blur
+• Call recording (with room owner permission)
+• Hand raise, active speaker
+• AirPods and Bluetooth support
+
+Files & Media
+• Photos, videos, audio, documents
+• Voice messages with waveform visualization
+• Location sharing with maps
+• Polls
+
+Security
+• End-to-end encryption (E2EE) for all chats and calls (Megolm/Olm)
+• Corporate authentication via OIDC (Keycloak)
+• Device verification with cross-signing
+• Local key storage in Apple Keychain
+
+Notifications
+• VoIP push notifications for calls with CallKit
+• Push notifications for new messages
+• Per-room mute and mentions-only settings
+• Live Activities for active calls
+
+REQUIREMENTS
+
+• Corporate account at your organization
+• iOS 18.5+
+• Internet connection
+• Camera and microphone access for calls
+
+OPEN SOURCE
+
+sTalk is built on open protocols:
+• Matrix protocol (matrix.org)
+• Element X iOS (element-hq/element-x-ios)
+• LiveKit (livekit.io)
+
+PRIVACY
+
+• No user tracking
+• No data shared with third parties
+• Server hosted in your corporate infrastructure
+• Full control over your data

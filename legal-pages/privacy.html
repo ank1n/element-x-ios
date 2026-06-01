@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Политика конфиденциальности — sTalk</title>
+<link rel="icon" type="image/png" href="/vector-icons/512.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/vector-icons/180.png">
+<meta property="og:site_name" content="sTalk">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Политика конфиденциальности — sTalk">
+<meta property="og:description" content="Корпоративный мессенджер с E2EE. Условия обработки персональных данных.">
+<meta property="og:image" content="https://stalk.implica.ru/themes/element/img/logos/opengraph.png">
+<meta property="og:url" content="https://stalk.implica.ru/privacy">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="sTalk — Privacy Policy">
+<meta name="twitter:description" content="Корпоративный мессенджер с E2EE">
+<meta name="twitter:image" content="https://stalk.implica.ru/themes/element/img/logos/opengraph.png">
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 760px; margin: 0 auto; padding: 24px; line-height: 1.6; color: #1f2937; }
+  h1 { font-size: 28px; border-bottom: 2px solid #2563eb; padding-bottom: 8px; }
+  h2 { font-size: 20px; margin-top: 32px; color: #1e40af; }
+  h3 { font-size: 16px; margin-top: 20px; }
+  a { color: #2563eb; }
+  .meta { color: #6b7280; font-size: 14px; margin-bottom: 24px; }
+  .lang-switch { text-align: right; margin-bottom: 16px; }
+  ul li { margin: 4px 0; }
+  code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="lang-switch"><a href="#en">English</a></div>
+
+<h1>Политика конфиденциальности sTalk</h1>
+<p class="meta">Действует с 25 мая 2026 г. Последнее обновление: 25 мая 2026 г.</p>
+
+<h2>1. Кто мы</h2>
+<p>sTalk — корпоративный мессенджер на протоколе Matrix с end-to-end шифрованием, разработанный компанией Implica. Контакт: <a href="mailto:support@stalk.implica.ru">support@stalk.implica.ru</a>.</p>
+
+<h2>2. Какие данные мы собираем</h2>
+<h3>2.1 Учётная запись (через OIDC SSO)</h3>
+<ul>
+  <li>Логин, отображаемое имя, email — для аутентификации через корпоративный Keycloak.</li>
+  <li>Matrix user_id, device_id, public ключи cross-signing — для работы протокола Matrix.</li>
+</ul>
+<h3>2.2 Контент пользователя</h3>
+<ul>
+  <li>Сообщения, файлы, голосовые и видеозвонки, реакции — <strong>зашифрованы end-to-end</strong> (алгоритмы Olm/Megolm). Сервер хранит только зашифрованный шифротекст и метаданные доставки.</li>
+  <li>Изображения и медиафайлы — зашифрованы перед загрузкой на сервер.</li>
+</ul>
+<h3>2.3 Технические данные</h3>
+<ul>
+  <li>Идентификатор устройства (IDFV), модель, версия iOS — для уведомлений и устранения неполадок.</li>
+  <li>Логи диагностики (без содержимого сообщений) — для исправления сбоев.</li>
+  <li>Отчёты о сбоях через Sentry — содержат stack trace, версию приложения, идентификатор устройства.</li>
+</ul>
+<h3>2.4 Что мы НЕ собираем</h3>
+<ul>
+  <li>Геолокацию (если пользователь сам не отправит её как сообщение).</li>
+  <li>Рекламные идентификаторы (IDFA, App Tracking Transparency не используется).</li>
+  <li>Списки контактов из адресной книги телефона.</li>
+</ul>
+
+<h2>3. Зачем мы используем данные</h2>
+<ul>
+  <li>Доставка сообщений и звонков между пользователями.</li>
+  <li>Уведомления push (через Apple Push Notification Service).</li>
+  <li>Диагностика сбоев и улучшение качества приложения.</li>
+  <li>Аутентификация в корпоративной системе.</li>
+</ul>
+
+<h2>4. Передача данных третьим лицам</h2>
+<ul>
+  <li>Apple Push Notification Service — для доставки push-уведомлений (зашифрованных).</li>
+  <li>Sentry — для отчётов о сбоях (без содержимого сообщений).</li>
+  <li>Мы не передаём данные рекламным сетям, аналитическим брокерам или иным третьим сторонам.</li>
+</ul>
+
+<h2>5. Хранение данных</h2>
+<p>Серверы расположены в Российской Федерации. Зашифрованные сообщения хранятся на сервере до их доставки всем получателям, после чего могут быть удалены согласно retention policy компании. Метаданные (время отправки, идентификаторы участников) хранятся в течение жизненного цикла учётной записи.</p>
+
+<h2>6. Ваши права</h2>
+<ul>
+  <li>Удаление учётной записи — обратитесь к администратору вашей организации или на <a href="mailto:support@stalk.implica.ru">support@stalk.implica.ru</a>.</li>
+  <li>Экспорт данных — доступен через корпоративного администратора.</li>
+  <li>Право знать какие данные о вас хранятся — запрос на support@.</li>
+</ul>
+
+<h2>7. Дети</h2>
+<p>Приложение предназначено для пользователей старше 12 лет. Мы не собираем сознательно данные детей младше 13 лет.</p>
+
+<h2>8. Изменения политики</h2>
+<p>При существенных изменениях мы уведомим пользователей через приложение и обновим дату на этой странице.</p>
+
+<h2>9. Контакт</h2>
+<p>По вопросам конфиденциальности: <a href="mailto:privacy@stalk.implica.ru">privacy@stalk.implica.ru</a></p>
+
+<hr style="margin: 48px 0;">
+
+<a name="en"></a>
+<h1>sTalk Privacy Policy (English)</h1>
+<p class="meta">Effective May 25, 2026. Last updated: May 25, 2026.</p>
+
+<h2>1. Who we are</h2>
+<p>sTalk is a corporate messenger built on the Matrix protocol with end-to-end encryption, developed by Implica. Contact: <a href="mailto:support@stalk.implica.ru">support@stalk.implica.ru</a>.</p>
+
+<h2>2. Data we collect</h2>
+<h3>2.1 Account (via OIDC SSO)</h3>
+<ul>
+  <li>Login, display name, email — for corporate Keycloak authentication.</li>
+  <li>Matrix user_id, device_id, cross-signing public keys — for Matrix protocol operation.</li>
+</ul>
+<h3>2.2 User content</h3>
+<ul>
+  <li>Messages, files, voice and video calls, reactions — <strong>end-to-end encrypted</strong> (Olm/Megolm algorithms). The server stores only encrypted ciphertext and delivery metadata.</li>
+  <li>Images and media files — encrypted before upload to the server.</li>
+</ul>
+<h3>2.3 Technical data</h3>
+<ul>
+  <li>Device identifier (IDFV), model, iOS version — for notifications and troubleshooting.</li>
+  <li>Diagnostic logs (without message content) — for crash fixing.</li>
+  <li>Sentry crash reports — contain stack trace, app version, device identifier.</li>
+</ul>
+<h3>2.4 What we do NOT collect</h3>
+<ul>
+  <li>Location (unless explicitly shared as a message).</li>
+  <li>Advertising identifiers (IDFA, App Tracking Transparency is not used).</li>
+  <li>Phone contact lists.</li>
+</ul>
+
+<h2>3. How we use data</h2>
+<ul>
+  <li>Delivery of messages and calls between users.</li>
+  <li>Push notifications (via Apple Push Notification Service).</li>
+  <li>Crash diagnostics and app quality improvement.</li>
+  <li>Corporate system authentication.</li>
+</ul>
+
+<h2>4. Data sharing with third parties</h2>
+<ul>
+  <li>Apple Push Notification Service — for push notification delivery (encrypted).</li>
+  <li>Sentry — for crash reports (no message content).</li>
+  <li>We do not share data with ad networks, analytics brokers, or any other third parties.</li>
+</ul>
+
+<h2>5. Data storage</h2>
+<p>Servers are located in the Russian Federation. Encrypted messages are stored on the server until delivered to all recipients, after which they may be removed per organizational retention policy. Metadata (timestamps, participant identifiers) is retained for the account lifecycle.</p>
+
+<h2>6. Your rights</h2>
+<ul>
+  <li>Account deletion — contact your organization administrator or <a href="mailto:support@stalk.implica.ru">support@stalk.implica.ru</a>.</li>
+  <li>Data export — available through corporate administrator.</li>
+  <li>Right to know what data is stored about you — request at support@.</li>
+</ul>
+
+<h2>7. Children</h2>
+<p>The application is intended for users aged 12+. We do not knowingly collect data from children under 13.</p>
+
+<h2>8. Changes to this policy</h2>
+<p>For material changes we will notify users through the app and update the date on this page.</p>
+
+<h2>9. Contact</h2>
+<p>For privacy questions: <a href="mailto:privacy@stalk.implica.ru">privacy@stalk.implica.ru</a></p>
+
+</body>
+</html>

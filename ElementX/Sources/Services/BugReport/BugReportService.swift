@@ -278,7 +278,8 @@ class BugReportService: NSObject, BugReportServiceProtocol {
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")
 
-        var html = "<p><b>Описание</b></p><p>\(escapedText.replacingOccurrences(of: "\n", with: "<br>"))</p>"
+        let descriptionLabel = NSLocalizedString("stalk_bugreport_description", tableName: "Localizable", value: "Описание", comment: "Bug report description label")
+        var html = "<p><b>\(descriptionLabel)</b></p><p>\(escapedText.replacingOccurrences(of: "\n", with: "<br>"))</p>"
         html += "<h3>Diagnostic</h3><ul>"
         html += "<li>App: sTalk \(InfoPlistReader.main.bundleShortVersionString) (build \(InfoPlistReader.main.bundleVersion))</li>"
         html += "<li>OS: \(os)</li>"

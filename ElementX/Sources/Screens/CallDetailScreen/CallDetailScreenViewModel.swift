@@ -473,7 +473,7 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
             DiagLog.write("CallDetail", "  createTask OK \(created.trackitProjectIdentifier ?? "?")-\(created.trackitSequenceId ?? 0)")
         } catch {
             await MainActor.run {
-                state.bindings.alertInfo = AlertInfo(id: .init(), title: "Не удалось создать задачу", message: "\(error)")
+                state.bindings.alertInfo = AlertInfo(id: .init(), title: NSLocalizedString("stalk_calldetail_task_create_failed", tableName: "Localizable", value: "Не удалось создать задачу", comment: "Failed to create task alert title"), message: "\(error)")
             }
             DiagLog.write("CallDetail", "  createTask FAIL \(error)")
         }

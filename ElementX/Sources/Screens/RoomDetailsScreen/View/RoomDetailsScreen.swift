@@ -54,7 +54,7 @@ struct RoomDetailsScreen: View {
                 }
             }
         }
-        .navigationTitle(context.viewState.isDirect ? "Информация о чате" : L10n.screenRoomDetailsTitle)
+        .navigationTitle(context.viewState.isDirect ? NSLocalizedString("stalk_roomdetails_chat_info_title", tableName: "Localizable", value: "Информация о чате", comment: "Room details title for direct chat") : L10n.screenRoomDetailsTitle)
         .navigationBarTitleDisplayMode(.inline)
         .track(screen: .RoomDetails)
         .interactiveQuickLook(item: $context.mediaPreviewItem, allowEditing: false)
@@ -85,15 +85,15 @@ struct RoomDetailsScreen: View {
     @ViewBuilder
     private func presenceLabel(for presence: UserPresence) -> some View {
         if presence.isOnline {
-            Text("В сети")
+            Text(NSLocalizedString("stalk_roomdetails_presence_online", tableName: "Localizable", value: "В сети", comment: "Room details presence: online"))
                 .font(.subheadline)
                 .foregroundColor(Color(red: 0.18, green: 0.8, blue: 0.44))
         } else if let last = presence.lastSeenDate {
-            Text("Был в сети \(Self.relativeLastSeen(last))")
+            Text(String(format: NSLocalizedString("stalk_roomdetails_presence_last_seen", tableName: "Localizable", value: "Был в сети %@", comment: "Room details presence: last seen <relative time>"), Self.relativeLastSeen(last)))
                 .font(.subheadline)
                 .foregroundColor(.secondary)
         } else {
-            Text("Не в сети")
+            Text(NSLocalizedString("stalk_roomdetails_presence_offline", tableName: "Localizable", value: "Не в сети", comment: "Room details presence: offline"))
                 .font(.subheadline)
                 .foregroundColor(.secondary)
         }

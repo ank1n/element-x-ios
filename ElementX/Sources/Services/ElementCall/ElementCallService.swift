@@ -390,7 +390,7 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         let roomDisplayName = dict[ElementCallServiceNotificationKey.roomDisplayName.rawValue] as? String
         let senderDisplayName = dict["sender_display_name"] as? String
         let senderMXID = dict["sender"] as? String
-        let callerName = roomDisplayName ?? senderDisplayName ?? senderMXID ?? "Входящий звонок"
+        let callerName = roomDisplayName ?? senderDisplayName ?? senderMXID ?? NSLocalizedString("stalk_incoming_call", tableName: "Localizable", value: "Входящий звонок", comment: "Fallback caller name for incoming call")
         os_log(.info, log: pushLog, "Incoming VoIP call: room=%{public}@ caller=%{public}@ rtcEventID=%{public}@",
                roomID, callerName, rtcNotificationID ?? "nil")
 

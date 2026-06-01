@@ -94,7 +94,7 @@ struct CallScreenViewState: BindableState {
             if isDirect {
                 return timeStr
             } else {
-                return "\(timeStr) · \(callParticipantsCount) из \(totalMembersCount) участников"
+                return String(format: NSLocalizedString("stalk_call_status_participants", tableName: "Localizable", value: "%1$@ · %2$d из %3$d участников", comment: "Call status: elapsed time, active count of total participants"), timeStr, callParticipantsCount, totalMembersCount)
             }
         case .reconnecting:
             return SL10n.callReconnecting

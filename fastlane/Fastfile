@@ -129,6 +129,41 @@ lane :config_production do
   xcodegen(spec: "project.yml")
 end
 
+# STMOB-124: залить метаданные App Store + скриншоты к УЖЕ загруженному build (182).
+# Бинарь не собираем и не аплоадим — он уже в ASC через Transporter.
+# Требует ASC API key. Запуск:
+#   export ASC_KEY_ID=... ASC_ISSUER_ID=... ASC_KEY_PATH=/path/AuthKey_XXX.p8
+#   fastlane upload_appstore_metadata            # dry-run по умолчанию (verify only)
+#   fastlane upload_appstore_metadata submit:true   # реально залить + submit for review
+lane :upload_appstore_metadata do |options|
+  api_key = app_store_connect_api_key(
+    key_id: ENV.fetch("ASC_KEY_ID"),
+    issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+    key_filepath: ENV.fetch("ASC_KEY_PATH")
+  )
+
+  submit = options[:submit] == true || options[:submit] == "true"
+
+  upload_to_app_store(
+    api_key: api_key,
+    app_identifier: "ru.implica.stalk",
+    skip_binary_upload: true,         # build 182 уже в ASC
+    skip_app_version_update: false,
+    metadata_path: "./fastlane/metadata",
+    screenshots_path: "./fastlane/screenshots",
+    overwrite_screenshots: true,
+    run_precheck_before_submit: false,
+    submit_for_review: submit,
+    automatic_release: false,         # Manual Release — контроль тайминга
+    force: true,                      # не открывать HTML-превью (CI/headless)
+    submission_information: {
+      add_id_info_uses_idfa: false,
+      export_compliance_uses_encryption: true,
+      export_compliance_is_exempt: true
+    }
+  )
+end
+
 lane :build_and_upload_testflight do |options|
   # Generate the Xcode project
   xcodegen(spec: "project.yml")
