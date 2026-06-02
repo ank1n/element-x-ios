@@ -34,8 +34,11 @@ struct RoomHeaderView: View {
             // On iOS 18 and lower, the editor role causes an animation glitch with the back button whenever
             // you push a screen whilst the large title is visible on the room screen.
             content
-                // So take up as much space as possible, with a leading alignment for use in the default principal toolbar position
-                .frame(idealWidth: .greatestFiniteMagnitude, maxWidth: .infinity, alignment: .leading)
+                // So take up as much space as possible, with a leading alignment for use in the default principal toolbar position.
+                // STMOB-190/STALK-358: idealWidth must stay FINITE. `.greatestFiniteMagnitude` overflowed to
+                // NaN/∞ inside _UITAMICAdaptorView → NSLayoutConstraint.setConstant assertion → SIGABRT on iOS ≤18
+                // when the principal nav-bar title laid out (crash on re-entry restoring the last room).
+                .frame(maxWidth: .infinity, alignment: .leading)
                 // Using a button stops it from getting truncated in the navigation bar
                 .contentShape(.rect)
                 .onTapGesture(perform: action)
