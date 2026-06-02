@@ -45,7 +45,12 @@ class PresenceService {
     /// На N минут такого юзера не fetchим вообще — Synapse будет возвращать
     /// 403 и дальше, а каждый запрос съедает per-user rate limit.
     private var forbiddenUntil: [String: Date] = [:]
-    private let forbiddenTTL: TimeInterval = 600 // 10 минут
+    // STMOB-193: 403 = нет общей комнаты (Synapse M_FORBIDDEN на чужой presence).
+    // Этот статус в рамках сессии почти не меняется, а presence «своих» приходит
+    // через sync presence EDU, а не через этот REST-поллинг. При 10-мин TTL и
+    // 30-сек интервале forbidden-юзеры ре-поллились каждые 10 мин → сотни лишних 403
+    // (515 за полчаса в логе тестера). Делаем TTL длинным — один 403 на сессию.
+    private let forbiddenTTL: TimeInterval = 6 * 60 * 60 // 6 часов
 
     let presenceSubject = CurrentValueSubject<[String: UserPresence], Never>([:])
 
