@@ -165,8 +165,8 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
                 let sfSymbol = app.icon.sf ?? "app.fill"
 
                 return WidgetItem(id: app.id,
-                                  name: app.name,
-                                  description: app.description,
+                                  name: Self.localizedAppText(app.name),
+                                  description: Self.localizedAppText(app.description),
                                   icon: sfSymbol,
                                   url: fullURL,
                                   apiURL: app.apiUrl,
@@ -174,6 +174,28 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
                                   category: WidgetCategory(apiCategory: app.category))
             }
     }
+
+    /// STMOB-196: apps-api (`/apps-api/apps`) пока отдаёт name/description только на
+    /// русском. Серверная локализация по Accept-Language — STALK-368 (ещё не задеплоена).
+    /// До тех пор, когда UI на английском, подменяем известные строки встроенных
+    /// приложений клиентским словарём. Незнакомые строки отдаём как есть (graceful).
+    private static func localizedAppText(_ text: String) -> String {
+        let language = Bundle.overrideLocalizations?.first ?? Bundle.app.preferredLocalizations.first
+        guard language?.hasPrefix("en") == true else { return text }
+        return appTextRuToEn[text.trimmingCharacters(in: .whitespacesAndNewlines)] ?? text
+    }
+
+    private static let appTextRuToEn: [String: String] = [
+        // Названия
+        "Календарь": "Calendar",
+        "Статистика": "Statistics",
+        "Погода": "Weather",
+        // Описания
+        "Планирование встреч, RSVP, повторяющиеся события": "Meeting scheduling, RSVP, recurring events",
+        "Статистика использования системы": "System usage statistics",
+        "Прогноз погоды": "Weather forecast",
+        "Мониторинг производительности звонков": "Call performance monitoring"
+    ]
 
     /// Fallback widgets when API is unreachable
     private func fallbackWidgets() -> [WidgetItem] {
