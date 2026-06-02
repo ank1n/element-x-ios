@@ -98,10 +98,12 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
         case .displayRoomDetails:
             actionsSubject.send(.displayRoomDetails)
         case .displayCall:
+            Task { await sendCallInitiateMarkerIfInitiator(callType: "video") }
             actionsSubject.send(.displayCall)
             actionsSubject.send(.removeComposerFocus)
             analyticsService.trackInteraction(name: .MobileRoomCallButton)
         case .displayVoiceCall:
+            Task { await sendCallInitiateMarkerIfInitiator(callType: "voice") }
             actionsSubject.send(.displayVoiceCall)
             actionsSubject.send(.removeComposerFocus)
             analyticsService.trackInteraction(name: .MobileRoomCallButton)
@@ -366,6 +368,38 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
         }
     }
     
+    /// STMOB-188: cross-platform call direction. When the user starts a call in a room
+    /// that has NO active RTC session, they are the initiator — send an
+    /// `io.stalk.call.initiate` timeline event so Web/Android can show the correct
+    /// incoming/outgoing direction. If a call is already ongoing we're joining, not
+    /// initiating, so we send nothing. Contract agreed in #ops (STALK-366), matched by
+    /// room + ts (±30s). Sent via REST (room metadata, non-sensitive); degrade gracefully.
+    private func sendCallInitiateMarkerIfInitiator(callType: String) async {
+        guard !roomProxy.infoPublisher.value.hasRoomCall else { return }
+        guard let concreteProxy = clientProxy as? ClientProxy,
+              let accessToken = try? concreteProxy.matrixAccessToken() else { return }
+
+        let baseURL = clientProxy.homeserver.hasSuffix("/") ? String(clientProxy.homeserver.dropLast()) : clientProxy.homeserver
+        let encodedRoom = roomProxy.id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? roomProxy.id
+        let txnID = "stalk-call-initiate-\(UUID().uuidString)"
+        guard let url = URL(string: "\(baseURL)/_matrix/client/v3/rooms/\(encodedRoom)/send/io.stalk.call.initiate/\(txnID)") else { return }
+
+        let ts = Int(Date().timeIntervalSince1970 * 1000)
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["call_type": callType, "ts": ts])
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+            MXLog.info("STMOB-188: sent io.stalk.call.initiate call_type=\(callType) ts=\(ts) → \(statusCode)")
+        } catch {
+            MXLog.warning("STMOB-188: failed to send io.stalk.call.initiate: \(error.localizedDescription)")
+        }
+    }
+
     private func resolveIdentityPinningViolation(_ userID: String) async {
         defer {
             hideLoadingIndicator()
