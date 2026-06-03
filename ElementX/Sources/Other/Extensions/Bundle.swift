@@ -35,14 +35,28 @@ public extension Bundle {
     /// `NSLocalizedString` call (by redirecting `Bundle.main`'s localized lookup to a
     /// specific `.lproj` bundle) so custom `stalk_*` strings switch too.
     static func setAppLanguage(_ language: String?) {
-        overrideLocalizations = language.map { [$0] }
+        // STMOB-183: resolve the effective language explicitly. For "system" (nil) we do
+        // NOT rely on `preferredLocalizations` — with 30+ bundled localizations it can
+        // resolve to ru even when the device is English. Instead we read the device's
+        // preferred language and clamp it to a supported one (ru/en, default en), then
+        // pin that. This guarantees: system EN → English, system RU → Russian,
+        // anything else → English. Explicit ru/en from the picker is used as-is.
+        let effective = language ?? resolveSystemLanguage()
+        overrideLocalizations = [effective]
 
         if !(Bundle.main is StalkLanguageBundle) {
             object_setClass(Bundle.main, StalkLanguageBundle.self)
         }
 
-        let languageBundle = language.flatMap { lprojBundle(for: $0) }
+        let languageBundle = lprojBundle(for: effective)
         objc_setAssociatedObject(Bundle.main, &StalkLanguageBundle.associatedBundleKey, languageBundle, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
+
+    /// Map the device's preferred language to a supported app language (`ru`/`en`),
+    /// defaulting to English for anything else (STMOB-183).
+    private static func resolveSystemLanguage() -> String {
+        let preferred = Locale.preferredLanguages.first ?? "en"
+        return preferred.hasPrefix("ru") ? "ru" : "en"
     }
 
     private static let cacheDispatchQueue = DispatchQueue(label: "ru.implica.stalk.localization_bundle_cache")
