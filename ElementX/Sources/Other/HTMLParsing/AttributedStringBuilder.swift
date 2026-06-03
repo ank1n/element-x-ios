@@ -494,6 +494,13 @@ private struct TextParsingMatch {
 private extension NSMutableAttributedString {
     func setFontPreservingSymbolicTraits(_ newFont: UIFont) {
         enumerateAttribute(.font, in: NSRange(location: 0, length: length)) { value, range, _ in
+            // STMOB-195: don't override the font on emoji runs. Forcing the system font
+            // (which lacks emoji glyphs) onto an emoji range strips the Apple Color Emoji
+            // font that DTCoreText assigned, so emoji render as tofu/“?”. Leave such
+            // ranges untouched and only restyle text runs.
+            if attributedSubstring(from: range).string.containsEmoji {
+                return
+            }
             if let oldFont = value as? UIFont {
                 // keep the traits (bold, italic, etc.)
                 let traits = oldFont.fontDescriptor.symbolicTraits
@@ -507,6 +514,20 @@ private extension NSMutableAttributedString {
             } else {
                 addAttribute(.font, value: newFont, range: range)
             }
+        }
+    }
+}
+
+private extension String {
+    /// STMOB-195: true if the string contains any emoji scalar — used to avoid
+    /// overriding the emoji font when restyling attributed text.
+    var containsEmoji: Bool {
+        unicodeScalars.contains { scalar in
+            scalar.properties.isEmojiPresentation ||
+                (scalar.properties.isEmoji && scalar.value > 0x238C) ||
+                scalar.value == 0x200D || // ZWJ (emoji sequences)
+                (0x1F000...0x1FAFF).contains(scalar.value) ||
+                (0x2600...0x27BF).contains(scalar.value) // misc symbols / dingbats
         }
     }
 }
