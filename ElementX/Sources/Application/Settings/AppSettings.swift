@@ -197,8 +197,10 @@ final class AppSettings {
     /// Account provider is the friendly term for the server name. It should not contain an `https` prefix and should
     /// match the last part of the user ID. For example `example.com` and not `https://matrix.example.com`.
     private(set) var accountProviders = ["stalk.implica.ru"]
-    /// Whether or not the user is allowed to manually enter their own account provider or must select from one of `defaultAccountProviders`.
-    private(set) var allowOtherAccountProviders = false
+    /// STMOB-202: allow entering any Matrix server. stalk.implica.ru is default and uses the
+    /// custom headless-OIDC flow; other servers fall back to the standard Element X login.
+    /// Makes the app a general-purpose Matrix client → addresses App Store Guideline 3.2.
+    private(set) var allowOtherAccountProviders = true
     /// Whether the components surrounding the app brand/logo should be hidden or not
     private(set) var hideBrandChrome = true
     
