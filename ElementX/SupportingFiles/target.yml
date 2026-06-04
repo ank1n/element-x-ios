@@ -143,6 +143,9 @@ targets:
       base:
         PRODUCT_NAME: $(APP_NAME)
         PRODUCT_BUNDLE_IDENTIFIER: $(BASE_BUNDLE_IDENTIFIER)
+        # STMOB-198: iPhone-only (1). Было дефолтное "1,2" (universal) → Apple требовал
+        # iPad 13" скриншоты и блокировал submit. iPad не поддерживаем целенаправленно.
+        TARGETED_DEVICE_FAMILY: "1"
         MARKETING_VERSION: $(MARKETING_VERSION)
         CURRENT_PROJECT_VERSION: $(CURRENT_PROJECT_VERSION)
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

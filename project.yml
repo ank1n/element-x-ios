@@ -53,9 +53,12 @@ settings:
   APP_NAME: sTalk
   KEYCHAIN_ACCESS_GROUP_IDENTIFIER: "$(DEVELOPMENT_TEAM).$(BASE_BUNDLE_IDENTIFIER)"
   MARKETING_VERSION: 26.04.05
-  CURRENT_PROJECT_VERSION: 187
+  CURRENT_PROJECT_VERSION: 188
   SUPPORTS_MACCATALYST: false
   DEVELOPMENT_TEAM: Z44H678J3R
+  # STMOB-198: iPhone-only across app + extensions (avoid device-family mismatch +
+  # Apple's iPad-screenshot requirement at submit). iPad not targeted.
+  TARGETED_DEVICE_FAMILY: "1"
 
 include:
 - path: app.yml

@@ -9843,7 +9843,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 187;
+				CURRENT_PROJECT_VERSION = 188;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = Z44H678J3R;
 				ENABLE_BITCODE = NO;
@@ -9877,6 +9877,7 @@
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -9918,7 +9919,7 @@
 				PRODUCT_NAME = ShareExtension;
 				PROVISIONING_PROFILE_SPECIFIER = "sTalk ShareExtension AppStore";
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -9978,7 +9979,7 @@
 				PROVISIONING_PROFILE_SPECIFIER = "sTalk NSE AppStore";
 				SDKROOT = iphoneos;
 				SWIFT_OBJC_INTERFACE_HEADER_NAME = "GeneratedInterface-Swift.h";
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -10078,7 +10079,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 187;
+				CURRENT_PROJECT_VERSION = 188;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = Z44H678J3R;
 				ENABLE_BITCODE = NO;
@@ -10105,6 +10106,7 @@
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};
@@ -10138,7 +10140,7 @@
 				SDKROOT = iphoneos;
 				SWIFT_OBJC_BRIDGING_HEADER = "ElementX/SupportingFiles/ElementX-Bridging-Header.h";
 				SWIFT_OBJC_INTERFACE_HEADER_NAME = "GeneratedInterface-Swift.h";
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -10193,7 +10195,7 @@
 				SDKROOT = iphoneos;
 				SWIFT_OBJC_BRIDGING_HEADER = "ElementX/SupportingFiles/ElementX-Bridging-Header.h";
 				SWIFT_OBJC_INTERFACE_HEADER_NAME = "GeneratedInterface-Swift.h";
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};
@@ -10217,7 +10219,7 @@
 				PRODUCT_NAME = ShareExtension;
 				PROVISIONING_PROFILE_SPECIFIER = "sTalk ShareExtension AppStore";
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};
@@ -10245,7 +10247,7 @@
 				PROVISIONING_PROFILE_SPECIFIER = "sTalk NSE AppStore";
 				SDKROOT = iphoneos;
 				SWIFT_OBJC_INTERFACE_HEADER_NAME = "GeneratedInterface-Swift.h";
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};
