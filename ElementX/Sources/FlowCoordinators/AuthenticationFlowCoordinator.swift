@@ -466,8 +466,14 @@ class AuthenticationFlowCoordinator: FlowCoordinatorProtocol {
                     navigationStackCoordinator.setSheetCoordinator(nil)
                     return
                 case .cancelled:
+                    // STMOB-203: setSheetCoordinator(nil) synchronously fires the dismissal
+                    // callback below, which already transitions oidcAuthentication → startScreen.
+                    // Firing the event again here crashed the state machine with an unexpected
+                    // transition (startScreen → startScreen). Only fire if still in oidcAuthentication.
                     navigationStackCoordinator.setSheetCoordinator(nil)
-                    stateMachine.tryEvent(.cancelledOIDCAuthentication(previousState: fromState))
+                    if stateMachine.state == .oidcAuthentication {
+                        stateMachine.tryEvent(.cancelledOIDCAuthentication(previousState: fromState))
+                    }
                 }
                 nativeLoginCoordinator = nil
             }

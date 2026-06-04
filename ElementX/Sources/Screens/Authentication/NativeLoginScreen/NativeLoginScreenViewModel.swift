@@ -63,15 +63,23 @@ class NativeLoginScreenViewModel: NativeLoginScreenViewModelType {
             guard let self else { return }
 
             do {
+                // STMOB-202: use the chosen homeserver so login works on any server.
+                let homeserver = authenticationService.homeserver.value.address
+
                 // Step 1: Headless OIDC — submit credentials to Keycloak programmatically
-                MXLog.info("sTalk NativeLogin: Starting headless OIDC auth")
+                MXLog.info("sTalk NativeLogin: Starting headless OIDC auth for \(homeserver)")
                 let callbackURL = try await headlessAuthenticator.authenticate(authURL: oidcData.url,
                                                                                username: username,
-                                                                               password: password)
+                                                                               password: password,
+                                                                               homeserver: homeserver)
                 MXLog.info("sTalk NativeLogin: Got callback URL: \(callbackURL)")
 
-                // Step 2: Rewrite custom scheme to HTTPS if needed (same as OIDCPresenter does)
-                let finalURL = callbackURL.rewritingCustomSchemeToHTTPS()
+                // Step 2: stalk.implica.ru uses an HTTPS redirect_uri (static registration), so
+                // its custom-scheme callback must be rewritten back to HTTPS for the SDK. Other
+                // servers register the custom scheme directly, so the callback is passed as-is.
+                let finalURL = homeserver == "stalk.implica.ru"
+                    ? callbackURL.rewritingCustomSchemeToHTTPS(homeserver: homeserver)
+                    : callbackURL
 
                 // Step 3: Pass callback URL to SDK for token exchange + device registration
                 switch await authenticationService.loginWithOIDCCallback(finalURL) {

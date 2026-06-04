@@ -257,13 +257,27 @@ final class AppSettings {
     /// The redirect URL used for OIDC. Server redirects HTTPS → custom scheme for Personal Team compatibility.
     private(set) var oidcRedirectURL: URL = "https://stalk.implica.ru/oidc/login"
     
-    private(set) lazy var oidcConfiguration = OIDCConfiguration(clientName: InfoPlistReader.main.bundleDisplayName,
-                                                                redirectURI: oidcRedirectURL,
-                                                                clientURI: websiteURL,
-                                                                logoURI: logoURL,
-                                                                tosURI: acceptableUseURL,
-                                                                policyURI: privacyURL,
-                                                                staticRegistrations: oidcStaticRegistrations.mapKeys { $0.absoluteString })
+    /// STMOB-202: OIDC config with a redirect_uri derived from the chosen homeserver,
+    /// so login works on any server (not only stalk.implica.ru). Server redirects
+    /// HTTPS → custom scheme. Falls back to the default redirect when no server is given.
+    func oidcConfiguration(for homeserverAddress: String? = nil) -> OIDCConfiguration {
+        // stalk.implica.ru has a static client registration with an HTTPS redirect_uri
+        // (STMOB-186). Other servers use dynamic registration, for which MAS requires a
+        // native custom-scheme redirect_uri — an HTTPS one is rejected as invalid_redirect_uri.
+        let redirectURI: URL = if let homeserverAddress, !homeserverAddress.isEmpty,
+                                  homeserverAddress != "stalk.implica.ru" {
+            URL(string: "ru.implica.stalk:/oidc/callback") ?? oidcRedirectURL
+        } else {
+            oidcRedirectURL
+        }
+        return OIDCConfiguration(clientName: InfoPlistReader.main.bundleDisplayName,
+                                 redirectURI: redirectURI,
+                                 clientURI: websiteURL,
+                                 logoURI: logoURL,
+                                 tosURI: acceptableUseURL,
+                                 policyURI: privacyURL,
+                                 staticRegistrations: oidcStaticRegistrations.mapKeys { $0.absoluteString })
+    }
     
     /// Whether or not the Create Account button is shown on the start screen.
     ///

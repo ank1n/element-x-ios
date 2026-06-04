@@ -177,7 +177,7 @@ class AuthenticationService: AuthenticationServiceProtocol {
             // сгенерирует свежий device_id который мы сохраним после callback.
             let storedDeviceID = MatrixDeviceIDKeychain.savedDeviceID()
             DiagLog.write("STMOB98", "urlForOIDCLogin reuse deviceID=\(storedDeviceID ?? "nil")")
-            let oidcData = try await client.urlForOidc(oidcConfiguration: appSettings.oidcConfiguration.rustValue,
+            let oidcData = try await client.urlForOidc(oidcConfiguration: appSettings.oidcConfiguration(for: homeserverSubject.value.address).rustValue,
                                                        prompt: prompt,
                                                        loginHint: loginHint,
                                                        deviceId: storedDeviceID,
@@ -280,7 +280,7 @@ class AuthenticationService: AuthenticationServiceProtocol {
         Task {
             do {
                 let client = try await makeClient(homeserverAddress: scannedServerName)
-                let qrCodeHandler = client.newLoginWithQrCodeHandler(oidcConfiguration: appSettings.oidcConfiguration.rustValue)
+                let qrCodeHandler = client.newLoginWithQrCodeHandler(oidcConfiguration: appSettings.oidcConfiguration(for: scannedServerName).rustValue)
                 try await qrCodeHandler.scan(qrCodeData: qrData, progressListener: listener)
                 
                 switch await userSession(for: client) {

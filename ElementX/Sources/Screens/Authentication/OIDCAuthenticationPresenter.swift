@@ -130,17 +130,19 @@ extension ASWebAuthenticationSession.Callback {
 
 extension URL {
     /// Rewrites a custom scheme callback URL back to the HTTPS redirect URL expected by the SDK.
-    /// ru.implica.stalk://oidc/callback?code=X → https://stalk.implica.ru/oidc/callback?code=X
+    /// ru.implica.stalk://oidc/callback?code=X → https://<homeserver>/oidc/callback?code=X
     /// Note: URLComponents parses ru.implica.stalk://oidc/callback as host="oidc" path="/callback",
     /// so we reconstruct the full path from host + path.
-    func rewritingCustomSchemeToHTTPS() -> URL {
+    /// STMOB-202: `homeserver` is the chosen server (defaults to stalk.implica.ru) so login
+    /// works on any server, not only stalk.implica.ru.
+    func rewritingCustomSchemeToHTTPS(homeserver: String = "stalk.implica.ru") -> URL {
         guard scheme == ASWebAuthenticationSession.Callback.sTalkCustomScheme else { return self }
         var components = URLComponents(url: self, resolvingAgainstBaseURL: false)
         // Reconstruct path: host was parsed as "oidc", path as "/callback" → need "/oidc/callback"
         let originalHost = components?.host ?? ""
         let originalPath = components?.path ?? ""
         components?.scheme = "https"
-        components?.host = "stalk.implica.ru"
+        components?.host = homeserver
         components?.path = originalHost.isEmpty ? originalPath : "/\(originalHost)\(originalPath)"
         MXLog.info("sTalk: OIDC callback rewrite: \(self) → \(components?.url?.absoluteString ?? "nil")")
         return components?.url ?? self

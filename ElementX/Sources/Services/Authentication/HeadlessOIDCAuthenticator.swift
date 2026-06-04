@@ -36,7 +36,13 @@ final class HeadlessOIDCAuthenticator {
     ///   - username: User's login
     ///   - password: User's password
     /// - Returns: The callback URL containing the authorization code
-    func authenticate(authURL: URL, username: String, password: String) async throws -> URL {
+    /// STMOB-202: the chosen homeserver (e.g. "market.implica.ru"). Used to recognise the
+    /// final OIDC callback and to scope cookie clearing, so login works on any server.
+    private var homeserver = "stalk.implica.ru"
+
+    func authenticate(authURL: URL, username: String, password: String, homeserver: String = "stalk.implica.ru") async throws -> URL {
+        self.homeserver = homeserver
+
         // STMOB-182: clear any leftover SSO session cookies before a fresh login.
         // Otherwise Keycloak/MAS sees a previous user's session, serves the consent
         // page directly (skipping the login form), and the credentials we POST are
@@ -134,7 +140,10 @@ final class HeadlessOIDCAuthenticator {
     /// from a clean Keycloak session (forces the login form instead of reusing a
     /// previous user's session). See STMOB-182.
     private func clearAuthCookies() {
-        let authDomains = ["stalk.implica.ru", "trackit.implica.ru"]
+        // STMOB-202: include the chosen homeserver + its auth subdomain so cookie clearing
+        // works for any server, not only stalk.implica.ru.
+        var authDomains = ["stalk.implica.ru", "trackit.implica.ru", homeserver]
+        if !homeserver.hasPrefix("auth.") { authDomains.append("auth.\(homeserver)") }
         let cookies = cookieStorage.cookies ?? []
         var cleared = 0
         for cookie in cookies {
@@ -305,8 +314,12 @@ final class HeadlessOIDCAuthenticator {
 
     private func isCallbackURL(_ url: URL) -> Bool {
         let urlString = url.absoluteString
-        // Only match our final redirect_uri, NOT intermediate MAS/Keycloak callbacks
-        return urlString.contains("stalk.implica.ru/oidc/login") ||
+        // Only match our final redirect_uri, NOT intermediate MAS/Keycloak callbacks.
+        // STMOB-202: match the chosen homeserver's redirect (any server), plus the
+        // custom scheme. stalk.implica.ru kept for backward compatibility.
+        return urlString.contains("\(homeserver)/oidc/login") ||
+            urlString.contains("\(homeserver)/oidc/callback") ||
+            urlString.contains("stalk.implica.ru/oidc/login") ||
             urlString.contains("stalk.implica.ru/oidc/callback") ||
             urlString.hasPrefix("ru.implica.stalk://")
     }
