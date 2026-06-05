@@ -10,6 +10,16 @@
 import LiveKit
 import SwiftUI
 
+// STMOB-204: detect screen-share by source too, not just by track name.
+// Web / other clients publish the share track with an EMPTY name but
+// source == .screenShareVideo, so the name-only check missed it and the
+// shared screen never rendered. Mirrors LiveKitRoomManager's detection.
+private extension TrackPublication {
+    var isScreenShareTrack: Bool {
+        name == Track.screenShareVideoName || source == .screenShareVideo
+    }
+}
+
 // MARK: - Single Video View (LiveKit VideoView wrapper)
 
 /// sTalk: Wraps LiveKit's `VideoView` for use in SwiftUI.
@@ -115,7 +125,7 @@ private struct DirectCallLayout: View {
         // Раньше main view приоритезировал camera, screen share виделся только
         // в grid/side-panel.
         for participant in roomManager.displayParticipants {
-            if let screenPub = participant.videoTracks.first(where: { $0.name == Track.screenShareVideoName }),
+            if let screenPub = participant.videoTracks.first(where: { $0.isScreenShareTrack }),
                screenPub.isSubscribed,
                let track = screenPub.track as? VideoTrack {
                 return track
@@ -289,7 +299,7 @@ private struct ActiveSpeakerMiniView: View {
 
         // Priority 1: anyone sharing screen
         for remote in remotes {
-            if let screenPub = remote.videoTracks.first(where: { $0.name == Track.screenShareVideoName }),
+            if let screenPub = remote.videoTracks.first(where: { $0.isScreenShareTrack }),
                !screenPub.isMuted,
                let track = screenPub.track as? VideoTrack {
                 let identity = remote.identity?.stringValue ?? ""
@@ -319,7 +329,7 @@ private struct ActiveSpeakerMiniView: View {
 
         let identity = speaker.identity?.stringValue ?? ""
         let avatarURL = findAvatarURL(for: identity)
-        let cameraPub = speaker.videoTracks.first(where: { $0.name != Track.screenShareVideoName })
+        let cameraPub = speaker.videoTracks.first(where: { !$0.isScreenShareTrack })
         let videoMuted = cameraPub?.isMuted ?? true
         let track = videoMuted ? nil : speaker.firstCameraVideoTrack
 
@@ -484,7 +494,7 @@ private struct GroupCallLayout: View {
         // шарите. Без этого тайла юзер не видит, что captured (или что capture
         // не запустилось — нужна Broadcast Extension STMOB-118).
         if let local = roomManager.localParticipant,
-           let screenPub = local.videoTracks.first(where: { $0.name == Track.screenShareVideoName }),
+           let screenPub = local.videoTracks.first(where: { $0.isScreenShareTrack }),
            !screenPub.isMuted,
            let track = screenPub.track as? VideoTrack {
             let identity = local.identity?.stringValue ?? "local"
@@ -501,7 +511,7 @@ private struct GroupCallLayout: View {
 
         // Screen share tracks first (shown prominently)
         for participant in roomManager.displayParticipants {
-            if let screenPub = participant.videoTracks.first(where: { $0.name == Track.screenShareVideoName }),
+            if let screenPub = participant.videoTracks.first(where: { $0.isScreenShareTrack }),
                !screenPub.isMuted,
                let track = screenPub.track as? VideoTrack {
                 let identity = participant.identity?.stringValue ?? participant.sid?.stringValue ?? UUID().uuidString
@@ -547,7 +557,7 @@ private struct GroupCallLayout: View {
                identity == localID || identity.hasPrefix("\(localID):") || identity == "\(localID)-screen" {
                 continue
             }
-            let cameraPub = participant.videoTracks.first(where: { $0.name != Track.screenShareVideoName })
+            let cameraPub = participant.videoTracks.first(where: { !$0.isScreenShareTrack })
             let videoMuted = cameraPub?.isMuted ?? true
             let audioMuted = participant.firstAudioPublication?.isMuted ?? false
             let speaking = participant.isSpeaking && !audioMuted
@@ -962,14 +972,14 @@ private struct SpeakerCallLayout: View {
     private var focusedVideoTrack: VideoTrack? {
         // Если у focused-участника есть screen share — приоритет ему.
         if let p = focusedParticipant,
-           let screenPub = p.videoTracks.first(where: { $0.name == Track.screenShareVideoName }),
+           let screenPub = p.videoTracks.first(where: { $0.isScreenShareTrack }),
            screenPub.isSubscribed,
            let track = screenPub.track as? VideoTrack {
             return track
         }
         // Иначе — screen share от любого remote (если кто-то расшарил).
         for p in roomManager.displayParticipants {
-            if let screenPub = p.videoTracks.first(where: { $0.name == Track.screenShareVideoName }),
+            if let screenPub = p.videoTracks.first(where: { $0.isScreenShareTrack }),
                screenPub.isSubscribed,
                let track = screenPub.track as? VideoTrack {
                 return track
@@ -1003,7 +1013,7 @@ private struct SpeakerCallLayout: View {
         let isPinned = pinnedSID == sid
         let cameraTrack = participant.firstCameraVideoTrack
         let hasScreenShare = participant.videoTracks
-            .contains(where: { $0.name == Track.screenShareVideoName && $0.isSubscribed })
+            .contains(where: { $0.isScreenShareTrack && $0.isSubscribed })
         // STMOB-120
         let isHandRaised = roomManager.raisedHandsSIDs.contains(sid)
 
