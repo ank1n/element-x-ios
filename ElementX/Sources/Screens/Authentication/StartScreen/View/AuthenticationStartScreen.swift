@@ -123,7 +123,16 @@ struct AuthenticationStartScreen: View {
                 .accessibilityIdentifier(A11yIdentifiers.authenticationStartScreen.signInWithQr)
             }
 
-            Button { context.send(viewAction: .login) } label: {
+            Button {
+                // STMOB-204: when no account provider is selected yet, open the
+                // existing server picker sheet (the pill's sheet) instead of
+                // pushing a separate "Select your server" screen.
+                if context.viewState.serverName == nil {
+                    showServerSheet = true
+                } else {
+                    context.send(viewAction: .login)
+                }
+            } label: {
                 Text(context.viewState.loginButtonTitle)
             }
             .buttonStyle(.compound(.primary))
