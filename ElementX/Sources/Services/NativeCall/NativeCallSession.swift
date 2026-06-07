@@ -55,6 +55,13 @@ final class NativeCallSession: ObservableObject {
     private var credentialsReceived = false
     private var hasSeenRemoteParticipant = false
 
+    // MARK: - Delayed Leave (STMOB-211)
+
+    /// MSC4140 delay_id запланированного на сервере отложенного leave.
+    private var delayedLeaveID: String?
+    /// Heartbeat-таск, продлевающий отложенный leave пока мы в звонке.
+    private var delayedLeaveHeartbeat: Task<Void, Never>?
+
     // MARK: - Hand Raise (STMOB-154)
 
     /// event_id своего org.matrix.msc3401.call.member state event. Используется как
@@ -366,6 +373,9 @@ final class NativeCallSession: ObservableObject {
         // (hand raise iOS → Web bridge). Web Element Call widget читает m.reaction
         // с m.relates_to.event_id равным call.member event_id для отображения hand raise.
         callMemberEventID = joinEventID
+
+        // STMOB-211: подстраховка от зависшего membership — серверный отложенный leave.
+        await scheduleDelayedLeave()
 
         // Send call notification for incoming call ring on remote
         await sendCallNotification(callMemberEventID: joinEventID)
@@ -1015,6 +1025,9 @@ final class NativeCallSession: ObservableObject {
     }
 
     private func sendLeaveViaREST() async {
+        // STMOB-211: штатный выход — отменяем серверный отложенный leave и шлём обычный.
+        await cancelDelayedLeave()
+
         let encodedRoom = matrixRoomId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? matrixRoomId
         let stateKey = "_\(userId)_\(deviceId)_m.call"
         let encodedStateKey = stateKey.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? stateKey
@@ -1040,6 +1053,90 @@ final class NativeCallSession: ObservableObject {
             } catch {
                 MXLog.error("sTalk NativeCall: REST leave failed: \(error)")
             }
+        }
+    }
+
+    // MARK: - MSC4140 Delayed Leave (STMOB-211)
+
+    /// Delay until the server auto-sends our leave if we stop refreshing (app killed/crashed).
+    private static let delayedLeaveMs = 20000
+    /// Refresh cadence — well under `delayedLeaveMs`, so one missed tick isn't fatal.
+    private static let delayedLeaveRestartSeconds: UInt64 = 8
+
+    /// STMOB-211: schedule a server-side delayed leave (MSC4140). If the app dies
+    /// without a clean hangup the homeserver sends the empty call.member state for us
+    /// after `delayedLeaveMs` — no more stuck memberships re-ringing participants for
+    /// hours (phantom "silent" calls). Servers without MSC4140 → graceful skip,
+    /// legacy expires-only behavior stays.
+    private func scheduleDelayedLeave() async {
+        let encodedRoom = matrixRoomId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? matrixRoomId
+        let stateKey = "_\(userId)_\(deviceId)_m.call"
+        let encodedStateKey = stateKey.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? stateKey
+        let eventType = "org.matrix.msc3401.call.member"
+        let encodedType = eventType.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? eventType
+        let url = "\(homeserverURL)/_matrix/client/v3/rooms/\(encodedRoom)/state/\(encodedType)/\(encodedStateKey)?org.matrix.msc4140.delay=\(Self.delayedLeaveMs)"
+
+        var request = URLRequest(url: URL(string: url)!)
+        request.httpMethod = "PUT"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = Data("{}".utf8)
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            guard status == 200,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let delayID = json["delay_id"] as? String else {
+                DiagLog.write("Call", "delayed leave NOT scheduled (status=\(status)) — MSC4140 unsupported?")
+                return
+            }
+            delayedLeaveID = delayID
+            DiagLog.write("Call", "delayed leave scheduled delay_id=\(delayID) delay=\(Self.delayedLeaveMs)ms")
+            startDelayedLeaveHeartbeat(delayID: delayID)
+        } catch {
+            DiagLog.write("Call", "delayed leave schedule FAILED: \(error.localizedDescription)")
+        }
+    }
+
+    private func startDelayedLeaveHeartbeat(delayID: String) {
+        delayedLeaveHeartbeat?.cancel()
+        delayedLeaveHeartbeat = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: Self.delayedLeaveRestartSeconds * 1_000_000_000)
+                guard !Task.isCancelled, let self else { return }
+                await self.delayedLeaveAction("restart", delayID: delayID)
+            }
+        }
+    }
+
+    @discardableResult
+    private func delayedLeaveAction(_ action: String, delayID: String) async -> Bool {
+        let url = "\(homeserverURL)/_matrix/client/unstable/org.matrix.msc4140/delayed_events/\(delayID)"
+        var request = URLRequest(url: URL(string: url)!)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = Data("{\"action\":\"\(action)\"}".utf8)
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if status != 200 {
+                DiagLog.write("Call", "delayed leave \(action) → \(status)")
+            }
+            return status == 200
+        } catch {
+            DiagLog.write("Call", "delayed leave \(action) FAILED: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    private func cancelDelayedLeave() async {
+        delayedLeaveHeartbeat?.cancel()
+        delayedLeaveHeartbeat = nil
+        if let delayID = delayedLeaveID {
+            await delayedLeaveAction("cancel", delayID: delayID)
+            delayedLeaveID = nil
         }
     }
 
