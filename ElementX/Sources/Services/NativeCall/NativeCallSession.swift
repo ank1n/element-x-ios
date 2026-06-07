@@ -1203,11 +1203,13 @@ final class NativeCallSession: ObservableObject {
 
         // Decode base64 → raw bytes
         if let rawKey = Data(base64Encoded: paddedKey) {
-            // Set key for the given index AND all previous indexes (in case we missed earlier keys)
-            for idx in 0...Int32(keyInfo.index) {
-                setRawKeyInProvider(keyProvider, key: rawKey, participantId: keyInfo.participantId, index: idx)
-            }
-            DiagLog.write("E2EE", "incoming key DECODED rawBytes=\(rawKey.count) for \(keyInfo.participantId)")
+            // STMOB-77/201: set ONLY the announced slot. The old `0...index` backfill
+            // overwrote previous slots with the NEW key — on web key rotation
+            // (join/leave bumps the index) this destroyed the still-in-use old key,
+            // in-flight frames stopped decrypting and remote video went black.
+            // Backfilling can't help missed keys anyway (they were different keys).
+            setRawKeyInProvider(keyProvider, key: rawKey, participantId: keyInfo.participantId, index: Int32(keyInfo.index))
+            DiagLog.write("E2EE", "incoming key DECODED rawBytes=\(rawKey.count) for \(keyInfo.participantId) index=\(keyInfo.index)")
         } else {
             DiagLog.write("E2EE", "incoming key BASE64 DECODE FAILED (even padded keyLen=\(paddedKey.count)) for \(keyInfo.participantId)")
             keyProvider.setKey(key: keyInfo.key, participantId: keyInfo.participantId, index: Int32(keyInfo.index))
