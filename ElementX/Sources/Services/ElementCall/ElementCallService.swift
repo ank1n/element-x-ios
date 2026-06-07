@@ -647,7 +647,7 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     }
 
     /// Register VoIP pusher with the Matrix homeserver so Sygnal can send VoIP pushes
-    private func registerVoIPPusher(with token: Data) async {
+    private func registerVoIPPusher(with token: Data, isRetry: Bool = false) async {
         guard let clientProxy else {
             os_log(.info, log: pushLog, "VoIP pusher deferred — no clientProxy yet")
             MXLog.info("VoIP pusher registration deferred — no client proxy yet")
@@ -692,6 +692,18 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
             MXLog.info("VoIP pusher registered successfully (appID: \(appID))")
             DiagLog.write("VoIP", "registerVoIPPusher OK appID=\(appID) pushkey=\(pushkey.prefix(16))…")
         } catch {
+            // STMOB-212: MAS access tokens expire every ~15 min. If registration hits
+            // a stale token (M_UNKNOWN_TOKEN), force the SDK to refresh and retry once —
+            // otherwise the VoIP pusher silently lapses and incoming calls stop ringing.
+            if !isRetry,
+               let clientError = error as? ClientError,
+               case .MatrixApi(_, let code, _, _) = clientError,
+               code == "M_UNKNOWN_TOKEN" {
+                DiagLog.write("VoIP", "registerVoIPPusher M_UNKNOWN_TOKEN → forceTokenRefresh + retry")
+                await clientProxy.forceTokenRefresh()
+                await registerVoIPPusher(with: token, isRetry: true)
+                return
+            }
             os_log(.error, log: pushLog, "VoIP pusher FAILED: %{public}@", "\(error)")
             MXLog.error("Failed to register VoIP pusher: \(error)")
             DiagLog.write("VoIP", "registerVoIPPusher FAILED: \(error.localizedDescription)")

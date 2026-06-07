@@ -8,6 +8,7 @@
 
 import Combine
 import Foundation
+import MatrixRustSDK
 import os.log
 import UIKit
 import UserNotifications
@@ -245,7 +246,7 @@ final class NotificationManager: NSObject, NotificationManagerProtocol {
         notificationCenter.removeDeliveredNotifications(withIdentifiers: notificationsIdentifiers)
     }
 
-    private func setPusher(with deviceToken: Data, clientProxy: ClientProxyProtocol) async -> Bool {
+    private func setPusher(with deviceToken: Data, clientProxy: ClientProxyProtocol, isRetry: Bool = false) async -> Bool {
         let pushkey = deviceToken.base64EncodedString()
         let appId = appSettings.pusherAppID
         let gateway = appSettings.pushGatewayNotifyEndpoint.absoluteString
@@ -303,6 +304,17 @@ final class NotificationManager: NSObject, NotificationManagerProtocol {
             DiagLog.write("APNS", "setPusher OK appId=\(appId) format=eventIdOnly")
             return true
         } catch {
+            // STMOB-212: MAS access tokens expire every ~15 min. On a stale token
+            // (M_UNKNOWN_TOKEN) force the SDK to refresh and retry once — otherwise
+            // the APNS pusher silently lapses and push notifications stop arriving.
+            if !isRetry,
+               let clientError = error as? ClientError,
+               case .MatrixApi(_, let code, _, _) = clientError,
+               code == "M_UNKNOWN_TOKEN" {
+                DiagLog.write("APNS", "setPusher M_UNKNOWN_TOKEN → forceTokenRefresh + retry")
+                await clientProxy.forceTokenRefresh()
+                return await setPusher(with: deviceToken, clientProxy: clientProxy, isRetry: true)
+            }
             os_log(.error, log: pushLog, "setPusher FAILED: %{public}@", "\(error)")
             MXLog.error("Set pusher failed: \(error)")
             DiagLog.write("APNS", "setPusher FAILED: \(error.localizedDescription)")
