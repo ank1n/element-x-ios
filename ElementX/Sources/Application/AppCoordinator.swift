@@ -291,6 +291,10 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
                 } else {
                     presentCallScreen(genericCallLink: url)
                 }
+            case .meeting:
+                // STMOB-216: meeting links need a signed-in session to resolve the
+                // code → room, so route through normal app-route handling.
+                handleAppRoute(route)
             case .userProfile(let userID):
                 if isExternalURL {
                     handleAppRoute(route)

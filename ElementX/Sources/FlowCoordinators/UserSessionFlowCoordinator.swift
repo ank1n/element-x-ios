@@ -173,6 +173,8 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
             Task { await presentCallScreen(roomID: roomID) }
         case .genericCallLink(let url):
             presentCallScreen(genericCallLink: url)
+        case .meeting(let code):
+            Task { await presentCallScreen(meetingCode: code) }
         case .roomList, .room, .roomAlias, .childRoom, .childRoomAlias,
              .roomDetails, .roomMemberDetails, .userProfile,
              .event, .eventOnRoomAlias, .childEvent, .childEventOnRoomAlias,
@@ -457,6 +459,32 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         presentCallScreen(configuration: .init(genericCallLink: url))
     }
     
+    /// STMOB-216: resolve a meeting code (from a `/meet/s/<code>` link) to a room via
+    /// the meet-api, then open its native call. Falls back to an error toast on failure.
+    private func presentCallScreen(meetingCode code: String) async {
+        guard let concreteProxy = userSession.clientProxy as? ClientProxy else {
+            DiagLog.write("Meeting", "meeting link code=\(code) — no concrete clientProxy")
+            return
+        }
+        let service = MeetingsService(homeserver: userSession.clientProxy.homeserver,
+                                      accessTokenProvider: { try concreteProxy.matrixAccessToken() },
+                                      forceTokenRefresh: { await concreteProxy.forceTokenRefresh() })
+
+        let loadingID = "meetingLinkResolve"
+        flowParameters.userIndicatorController.submitIndicator(.init(id: loadingID, type: .modal, title: L10n.commonLoading, persistent: true))
+        DiagLog.write("Meeting", "meeting link code=\(code) → ensureRoom")
+        do {
+            let roomID = try await service.ensureRoom(code: code, userId: userSession.clientProxy.userID)
+            flowParameters.userIndicatorController.retractIndicatorWithId(loadingID)
+            DiagLog.write("Meeting", "meeting link code=\(code) → room=\(roomID) → present")
+            await presentCallScreen(roomID: roomID)
+        } catch {
+            flowParameters.userIndicatorController.retractIndicatorWithId(loadingID)
+            DiagLog.write("Meeting", "meeting link ensureRoom FAILED code=\(code): \(error.localizedDescription)")
+            flowParameters.userIndicatorController.submitIndicator(.init(title: L10n.errorUnknown))
+        }
+    }
+
     private func presentCallScreen(roomID: String) async {
         // STMOB-151 build 174: переписан с silent guard на auto-join +
         // диагностику. Раньше guard let .joined exit'ил молча если room

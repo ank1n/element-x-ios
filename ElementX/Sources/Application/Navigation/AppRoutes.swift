@@ -43,6 +43,9 @@ enum AppRoute: Hashable {
     case call(roomID: String)
     /// An Element Call link generated outside of a chat room.
     case genericCallLink(url: URL)
+    /// STMOB-216: a sTalk meeting link (https://<host>/meet/s/<code>) — resolves the
+    /// meeting code to a room and opens its native call.
+    case meeting(code: String)
     /// The settings screen.
     case settings
     /// The setting screen for key backup.
@@ -82,6 +85,7 @@ struct AppRouteURLParser {
             AppGroupURLParser(),
             MatrixPermalinkParser(),
             ElementWebURLParser(domains: appSettings.elementWebHosts),
+            MeetLinkURLParser(domains: appSettings.elementWebHosts),
             AccountProvisioningURLParser(domain: appSettings.accountProvisioningHost),
             ElementCallURLParser()
         ]
@@ -130,6 +134,23 @@ private struct AppGroupURLParser: URLParser {
             MXLog.error("Failed decoding share payload with error: \(error)")
             return nil
         }
+    }
+}
+
+/// STMOB-216: parser for sTalk meeting links — `https://<host>/meet/s/<code>`.
+/// Returns `.meeting(code:)` so the app resolves the code to a room and opens
+/// the native call, instead of letting the link fall through to the browser.
+private struct MeetLinkURLParser: URLParser {
+    let domains: [String]
+
+    func route(from url: URL) -> AppRoute? {
+        guard let host = url.host, domains.contains(host) else { return nil }
+        // Expecting exactly /meet/s/<code>
+        let parts = url.pathComponents.filter { $0 != "/" }
+        guard parts.count == 3, parts[0] == "meet", parts[1] == "s", !parts[2].isEmpty else {
+            return nil
+        }
+        return .meeting(code: parts[2])
     }
 }
 

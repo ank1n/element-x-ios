@@ -170,7 +170,7 @@ class ChatsTabFlowCoordinator: FlowCoordinatorProtocol {
             } else {
                 stateMachine.processEvent(.selectRoom(roomID: roomID, via: [], entryPoint: .transferOwnership))
             }
-        case .accountProvisioningLink, .settings, .chatBackupSettings, .call, .genericCallLink:
+        case .accountProvisioningLink, .settings, .chatBackupSettings, .call, .genericCallLink, .meeting:
             break // These routes cannot be handled.
         }
     }
