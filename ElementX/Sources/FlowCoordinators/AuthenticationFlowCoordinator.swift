@@ -297,9 +297,13 @@ class AuthenticationFlowCoordinator: FlowCoordinatorProtocol {
             case .signInManually:
                 // STMOB-217: no other device → go straight to server/credentials input
                 // (stalk.implica.ru pre-filled) instead of the empty saved-accounts list.
+                // Present the server-input sheet only AFTER the QR sheet has dismissed —
+                // firing it synchronously races the dismissal and the new sheet is dropped.
                 navigationStackCoordinator.setSheetCoordinator(nil)
                 stateMachine.tryEvent(.cancelledLoginWithQR)
-                stateMachine.tryEvent(.showServerInputForLogin)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                    self?.stateMachine.tryEvent(.showServerInputForLogin)
+                }
             case .dismiss:
                 navigationStackCoordinator.setSheetCoordinator(nil)
                 stateMachine.tryEvent(.cancelledLoginWithQR)
