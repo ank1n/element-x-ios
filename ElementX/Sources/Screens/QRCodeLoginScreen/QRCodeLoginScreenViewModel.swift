@@ -64,7 +64,7 @@ class QRCodeLoginScreenViewModel: QRCodeLoginScreenViewModelType, QRCodeLoginScr
             }
         case .errorAction(.openSettings):
             appMediator.openAppSettings()
-        case .errorAction(.signInManually):
+        case .errorAction(.signInManually), .signInManually:
             actionsSubject.send(.signInManually)
         }
     }

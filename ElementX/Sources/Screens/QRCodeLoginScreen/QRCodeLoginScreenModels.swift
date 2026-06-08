@@ -84,6 +84,8 @@ enum QRCodeLoginScreenViewAction {
     case dismiss
     case startScan
     case sendCheckCode
+    /// STMOB-217: user has no other signed-in device → fall back to email/password sign-in.
+    case signInManually
     case errorAction(QRCodeErrorView.Action)
 }
 

@@ -32,7 +32,11 @@ class ServerSelectionScreenViewModel: ServerSelectionScreenViewModelType, Server
         self.appSettings = appSettings
         self.userIndicatorController = userIndicatorController
         
-        let bindings = ServerSelectionScreenBindings(homeserverAddress: "")
+        // STMOB-217: pre-fill the default provider (stalk.implica.ru) for the login
+        // flow so the manual sign-in fallback is one tap (Continue → credentials);
+        // the field stays editable for any other Matrix server.
+        let defaultAddress = authenticationFlow == .login ? (appSettings.accountProviders.first ?? "") : ""
+        let bindings = ServerSelectionScreenBindings(homeserverAddress: defaultAddress)
         let placeholder = authenticationFlow == .register ? "matrix.org" : L10n.commonServerUrl
         super.init(initialViewState: ServerSelectionScreenViewState(placeholder: placeholder, bindings: bindings))
     }

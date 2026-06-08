@@ -60,6 +60,8 @@ class AuthenticationFlowCoordinator: FlowCoordinatorProtocol {
         case showSavedAccounts
         /// Show server input screen for registration.
         case showServerInput
+        /// STMOB-217: show server/credentials input for login (manual fallback from QR).
+        case showServerInputForLogin
 
         /// The QR login flow was aborted.
         case cancelledLoginWithQR
@@ -188,6 +190,10 @@ class AuthenticationFlowCoordinator: FlowCoordinatorProtocol {
         stateMachine.addRoutes(event: .showServerInput, transitions: [.startScreen => .serverInputScreen]) { [weak self] _ in
             self?.showServerInputScreen(authenticationFlow: .register, fromState: .startScreen)
         }
+        // STMOB-217: manual sign-in fallback from the QR screen → server/credentials input.
+        stateMachine.addRoutes(event: .showServerInputForLogin, transitions: [.startScreen => .serverInputScreen]) { [weak self] _ in
+            self?.showServerInputScreen(authenticationFlow: .login, fromState: .startScreen)
+        }
         stateMachine.addRoutes(event: .addNewServer, transitions: [.savedAccountsScreen => .serverInputScreen]) { [weak self] _ in
             self?.showServerInputScreen(authenticationFlow: .login, fromState: .savedAccountsScreen)
         }
@@ -289,9 +295,11 @@ class AuthenticationFlowCoordinator: FlowCoordinatorProtocol {
             }
             switch action {
             case .signInManually:
+                // STMOB-217: no other device → go straight to server/credentials input
+                // (stalk.implica.ru pre-filled) instead of the empty saved-accounts list.
                 navigationStackCoordinator.setSheetCoordinator(nil)
                 stateMachine.tryEvent(.cancelledLoginWithQR)
-                stateMachine.tryEvent(.showSavedAccounts)
+                stateMachine.tryEvent(.showServerInputForLogin)
             case .dismiss:
                 navigationStackCoordinator.setSheetCoordinator(nil)
                 stateMachine.tryEvent(.cancelledLoginWithQR)

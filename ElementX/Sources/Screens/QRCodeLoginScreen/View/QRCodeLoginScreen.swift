@@ -88,19 +88,31 @@ struct QRCodeLoginScreen: View {
                 SFNumberedListView(items: context.viewState.instructions.loginItems)
             }
         } bottomContent: {
-            if isCosmos {
-                cosmosButton(L10n.screenQrCodeLoginInitialStateButtonTitle) {
-                    context.send(viewAction: .startScan)
+            VStack(spacing: 16) {
+                if isCosmos {
+                    cosmosButton(L10n.screenQrCodeLoginInitialStateButtonTitle) {
+                        context.send(viewAction: .startScan)
+                    }
+                } else {
+                    Button(L10n.screenQrCodeLoginInitialStateButtonTitle) {
+                        context.send(viewAction: .startScan)
+                    }
+                    .buttonStyle(.compound(.primary))
                 }
-            } else {
-                Button(L10n.screenQrCodeLoginInitialStateButtonTitle) {
-                    context.send(viewAction: .startScan)
+
+                // STMOB-217: escape hatch for users without another signed-in device —
+                // go straight to email/password sign-in instead of being stuck on the
+                // QR scanner waiting for a code that doesn't exist.
+                if context.viewState.canSignInManually {
+                    Button(L10n.screenOnboardingSignInManually) {
+                        context.send(viewAction: .signInManually)
+                    }
+                    .buttonStyle(.compound(.tertiary))
                 }
-                .buttonStyle(.compound(.primary))
             }
         }
     }
-    
+
     private var linkDesktopInstructionsContent: some View {
         FullscreenDialog(topPadding: 24, horizontalPadding: 24) {
             VStack(alignment: .leading, spacing: 40) {
