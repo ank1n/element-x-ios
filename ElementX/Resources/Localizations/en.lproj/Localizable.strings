@@ -1731,6 +1731,8 @@
 
 /* sTalk STMOB-183: English translations for previously hardcoded strings */
 "stalk_auth_add_server" = "Add server";
+"stalk_auth_no_devices_signin" = "No active devices? Sign in with email and password";
+"stalk_auth_no_devices_hint" = "No active devices — please sign in with your email and password";
 "stalk_auth_delete_server" = "Delete";
 "stalk_auth_invalid_response" = "Invalid server response";
 "stalk_auth_network_error" = "Network error: %@";

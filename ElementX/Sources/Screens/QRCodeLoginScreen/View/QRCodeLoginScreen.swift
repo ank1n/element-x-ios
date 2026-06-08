@@ -104,7 +104,7 @@ struct QRCodeLoginScreen: View {
                 // go straight to email/password sign-in instead of being stuck on the
                 // QR scanner waiting for a code that doesn't exist.
                 if context.viewState.canSignInManually {
-                    Button(L10n.screenOnboardingSignInManually) {
+                    Button(SL10n.authNoDevicesSignIn) {
                         context.send(viewAction: .signInManually)
                     }
                     .buttonStyle(.compound(.tertiary))

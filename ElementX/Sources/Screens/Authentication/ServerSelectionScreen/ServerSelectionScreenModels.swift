@@ -27,9 +27,13 @@ struct ServerSelectionScreenViewState: BindableState {
     /// An error message to be shown in the text field footer.
     var footerErrorMessage: String?
 
+    /// STMOB-217: optional non-error footer hint (e.g. the "no active devices" note
+    /// shown when this screen is reached from the QR manual sign-in fallback).
+    var customFooterMessage: String?
+
     /// The message to show in the text field footer.
     var footerMessage: String {
-        footerErrorMessage ?? regularFooterMessage
+        footerErrorMessage ?? customFooterMessage ?? regularFooterMessage
     }
 
     /// The text field is showing an error.

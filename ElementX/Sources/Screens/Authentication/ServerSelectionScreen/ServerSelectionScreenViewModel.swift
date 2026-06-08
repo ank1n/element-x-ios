@@ -38,7 +38,10 @@ class ServerSelectionScreenViewModel: ServerSelectionScreenViewModelType, Server
         let defaultAddress = authenticationFlow == .login ? (appSettings.accountProviders.first ?? "") : ""
         let bindings = ServerSelectionScreenBindings(homeserverAddress: defaultAddress)
         let placeholder = authenticationFlow == .register ? "matrix.org" : L10n.commonServerUrl
-        super.init(initialViewState: ServerSelectionScreenViewState(placeholder: placeholder, bindings: bindings))
+        // STMOB-217: this screen is reached for login via the QR "no other device"
+        // fallback — show the hint so the user knows to enter credentials.
+        let customFooter = authenticationFlow == .login ? SL10n.authNoDevicesHint : nil
+        super.init(initialViewState: ServerSelectionScreenViewState(placeholder: placeholder, bindings: bindings, customFooterMessage: customFooter))
     }
     
     override func process(viewAction: ServerSelectionScreenViewAction) {

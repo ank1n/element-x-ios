@@ -214,6 +214,10 @@ enum SL10n {
     static let authInvalidCredentials = NSLocalizedString("stalk_auth_invalid_credentials", tableName: "Localizable", value: "Неверный логин или пароль", comment: "Invalid credentials error")
     static let authAddServer = NSLocalizedString("stalk_auth_add_server", tableName: "Localizable", value: "Добавить сервер", comment: "Add server button")
     static let authServers = NSLocalizedString("stalk_auth_servers", tableName: "Localizable", value: "Серверы", comment: "Servers section title")
+    /// STMOB-217: QR login fallback button when the user has no other signed-in device.
+    static let authNoDevicesSignIn = NSLocalizedString("stalk_auth_no_devices_signin", tableName: "Localizable", value: "Нет активных устройств? Войти по логину и паролю", comment: "QR login fallback button — no other signed-in device")
+    /// STMOB-217: footer hint on the login screen reached from the QR fallback.
+    static let authNoDevicesHint = NSLocalizedString("stalk_auth_no_devices_hint", tableName: "Localizable", value: "Нет активных устройств — введите логин и пароль", comment: "Footer hint on the login screen reached from the QR fallback")
     static let authSelectServer = NSLocalizedString("stalk_auth_select_server", tableName: "Localizable", value: "Выбор сервера", comment: "Select server title")
     static let authServerPlaceholder = NSLocalizedString("stalk_auth_server_placeholder", tableName: "Localizable", value: "Адрес сервера", comment: "Server address placeholder")
     static let authDeleteServer = NSLocalizedString("stalk_auth_delete_server", tableName: "Localizable", value: "Удалить", comment: "Delete server button")
