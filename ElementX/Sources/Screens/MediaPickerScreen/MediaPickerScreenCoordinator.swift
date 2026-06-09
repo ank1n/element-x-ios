@@ -58,7 +58,9 @@ class MediaPickerScreenCoordinator: CoordinatorProtocol {
     
     func stop() {
         if mode.source == .camera {
-            orientationManager.lockOrientation(.all)
+            // STMOB-394: restore portrait lock (was .all). Only the call screen
+            // is allowed to rotate now that iPhone landscape is enabled in Info.plist.
+            orientationManager.lockOrientation(.portrait)
         }
     }
     

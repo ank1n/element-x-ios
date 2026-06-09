@@ -79,8 +79,14 @@ targets:
         # иначе валидация бандла даёт error 409 при загрузке в App Store
         # Connect). Реальный iPad target у нас не используется, но bundle
         # universal — поэтому ключи нужны разные для разных devices.
+        # STMOB-394: добавлены landscape-ориентации для iPhone, чтобы экран
+        # звонка мог поворачиваться. Остальное приложение остаётся portrait
+        # через AppDelegate.orientationLock (.portrait по умолчанию); только
+        # CallScreenCoordinator временно разрешает .allButUpsideDown.
         UISupportedInterfaceOrientations~iphone: [
-          UIInterfaceOrientationPortrait
+          UIInterfaceOrientationPortrait,
+          UIInterfaceOrientationLandscapeLeft,
+          UIInterfaceOrientationLandscapeRight
         ]
         UISupportedInterfaceOrientations~ipad: [
           UIInterfaceOrientationPortrait,

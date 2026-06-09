@@ -77,7 +77,10 @@ final class QRCodeLoginScreenCoordinator: CoordinatorProtocol {
     }
     
     func stop() {
-        orientationManager.lockOrientation(.all)
+        // STMOB-394: keep the app portrait-only after onboarding. Only the call
+        // screen opts into landscape (was .all upstream, which would let the whole
+        // app rotate once iPhone landscape became allowed in Info.plist).
+        orientationManager.lockOrientation(.portrait)
     }
         
     func toPresentable() -> AnyView {
