@@ -359,6 +359,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             Task { await startRecording() }
         case .toggleMute:
             Task { await toggleMute() }
+        case .toggleDeafen:
+            toggleDeafen()
         case .toggleVideo:
             Task { await toggleVideo() }
         case .showSpeakerPicker:
@@ -819,6 +821,15 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
 
         // Also notify Widget API for MatrixRTC state sync
         await setAudioEnabled(!newMuted)
+    }
+
+    /// STMOB-219: deafen — mute/unmute all incoming audio (does not touch the mic).
+    private func toggleDeafen() {
+        let newDeafened = !state.isDeafened
+        state.isDeafened = newDeafened
+        liveKitRoomManager.setDeafened(newDeafened)
+        MXLog.info("sTalk: Deafen toggled to \(newDeafened ? "ON" : "OFF")")
+        DiagLog.write("CallUI", "toggleDeafen tap: state.isDeafened → \(newDeafened), callStatus=\(state.callStatus)")
     }
 
     private func toggleSpeaker() {

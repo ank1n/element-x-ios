@@ -47,6 +47,8 @@ struct CallScreenViewState: BindableState {
     var isMuted = false
     var isVideoEnabled = true
     var isSpeakerOn = false
+    /// STMOB-219: incoming audio muted (deafen). Toggled by tapping the speaker button.
+    var isDeafened = false
     var isHandRaised = false
     var isScreenSharing = false
     var isBackgroundBlurEnabled = false
@@ -132,8 +134,10 @@ enum CallScreenViewAction {
     // Recording actions
     case toggleRecording
     case confirmStartRecording
-    // Native call control actions
+    /// Native call control actions
     case toggleMute
+    /// STMOB-219: toggle deafen (mute/unmute all incoming audio).
+    case toggleDeafen
     case toggleVideo
     case showSpeakerPicker
     case toggleSpeaker

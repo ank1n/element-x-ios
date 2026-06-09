@@ -1569,6 +1569,8 @@
 "stalk_call_mic" = "microphone";
 "stalk_call_speaker" = "speaker";
 "stalk_call_phone" = "phone";
+"stalk_call_sound" = "sound";
+"stalk_call_sound_on" = "unmute";
 "stalk_call_end" = "end";
 "stalk_call_back" = "Back";
 "stalk_call_calling" = "Calling...";

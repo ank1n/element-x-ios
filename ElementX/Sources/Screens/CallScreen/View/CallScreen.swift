@@ -215,14 +215,15 @@ struct CallScreen: View {
                 context.send(viewAction: .toggleMute)
             }
 
-            // Speaker toggle — earpiece (phone icon) ↔ speaker (speaker icon), like Telegram.
-            // STMOB-219: long press opens the native audio-route picker (phone /
-            // speaker / AirPods / Bluetooth / wired) — no extra button needed.
-            CallControlButton(icon: context.viewState.isSpeakerOn ? "speaker.wave.3.fill" : "phone.fill",
-                              label: context.viewState.isSpeakerOn ? SL10n.callSpeaker : SL10n.callPhone,
-                              isActive: context.viewState.isSpeakerOn,
+            // STMOB-219: speaker button repurposed — TAP toggles deafen (mute
+            // incoming audio without touching the mic), LONG PRESS opens the
+            // native audio-route picker (phone / speaker / AirPods / Bluetooth /
+            // wired) where loudspeaker vs earpiece is also chosen. No extra button.
+            CallControlButton(icon: context.viewState.isDeafened ? "speaker.slash.fill" : "speaker.wave.2.fill",
+                              label: context.viewState.isDeafened ? SL10n.callSoundOn : SL10n.callSound,
+                              isActive: !context.viewState.isDeafened,
                               action: {
-                                  context.send(viewAction: .toggleSpeaker)
+                                  context.send(viewAction: .toggleDeafen)
                               },
                               onLongPress: {
                                   context.send(viewAction: .showSpeakerPicker)

@@ -94,6 +94,9 @@ enum SL10n {
     static let callMic = NSLocalizedString("stalk_call_mic", tableName: "Localizable", value: "микрофон", comment: "Microphone label")
     static let callSpeaker = NSLocalizedString("stalk_call_speaker", tableName: "Localizable", value: "динамик", comment: "Speaker label")
     static let callPhone = NSLocalizedString("stalk_call_phone", tableName: "Localizable", value: "телефон", comment: "Phone speaker label")
+    // STMOB-219: deafen button labels (tap toggles incoming audio; long press opens route picker).
+    static let callSound = NSLocalizedString("stalk_call_sound", tableName: "Localizable", value: "звук", comment: "Incoming audio on label")
+    static let callSoundOn = NSLocalizedString("stalk_call_sound_on", tableName: "Localizable", value: "вкл. звук", comment: "Turn incoming audio on label (when deafened)")
     static let callScreenShare = NSLocalizedString("stalk_call_screen_share", tableName: "Localizable", value: "экран", comment: "Screen share button")
     static let callEnd = NSLocalizedString("stalk_call_end", tableName: "Localizable", value: "завершить", comment: "End call button")
     static let callBack = NSLocalizedString("stalk_call_back", tableName: "Localizable", value: "Назад", comment: "Back button on call screen")
