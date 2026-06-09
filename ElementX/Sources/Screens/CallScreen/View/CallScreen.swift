@@ -215,12 +215,21 @@ struct CallScreen: View {
                 context.send(viewAction: .toggleMute)
             }
 
-            // Speaker toggle — earpiece (phone icon) ↔ speaker (speaker icon), like Telegram
+            // Speaker toggle — earpiece (phone icon) ↔ speaker (speaker icon), like Telegram.
+            // STMOB-219: long press opens the native audio-route picker (phone /
+            // speaker / AirPods / Bluetooth / wired) — no extra button needed.
             CallControlButton(icon: context.viewState.isSpeakerOn ? "speaker.wave.3.fill" : "phone.fill",
                               label: context.viewState.isSpeakerOn ? SL10n.callSpeaker : SL10n.callPhone,
-                              isActive: context.viewState.isSpeakerOn) {
-                context.send(viewAction: .toggleSpeaker)
-            }
+                              isActive: context.viewState.isSpeakerOn,
+                              action: {
+                                  context.send(viewAction: .toggleSpeaker)
+                              },
+                              onLongPress: {
+                                  context.send(viewAction: .showSpeakerPicker)
+                              })
+                              .background(CallRoutePickerView(viewModelContext: context)
+                                  .frame(width: 0, height: 0)
+                                  .accessibilityHidden(true))
 
             // End call
             CallControlButton(icon: "phone.down.fill",
@@ -330,6 +339,10 @@ private struct CallControlButton: View {
     let label: String
     var isActive = true
     var style: Style = .normal
+    /// STMOB-219: optional secondary action on long press (used by the speaker
+    /// button to open the system audio-route picker without a separate button).
+    /// Declared before `action` so the trailing-closure call sites still bind to `action`.
+    var onLongPress: (() -> Void)?
     let action: () -> Void
 
     var body: some View {
@@ -342,6 +355,11 @@ private struct CallControlButton: View {
                     .background(backgroundColor)
                     .clipShape(Circle())
             }
+            .simultaneousGesture(LongPressGesture(minimumDuration: 0.4).onEnded { _ in
+                guard let onLongPress else { return }
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                onLongPress()
+            })
 
             Text(label)
                 .font(.system(size: 11))
@@ -366,6 +384,31 @@ private struct CallControlButton: View {
             return isActive ? .white : Color(red: 0.1, green: 0.1, blue: 0.1)
         }
     }
+}
+
+/// STMOB-219: hosts a hidden `AVRoutePickerView` so the speaker button's long press
+/// can open the native audio-route menu (phone / speaker / AirPods / Bluetooth / wired)
+/// in BOTH native (LiveKit) and web call modes. The original picker lived inside
+/// `CallView`, which isn't rendered for native calls, so the long press did nothing there.
+private struct CallRoutePickerView: UIViewRepresentable {
+    let viewModelContext: CallScreenViewModel.Context
+
+    func makeUIView(context: Context) -> AVRoutePickerView {
+        let picker = AVRoutePickerView(frame: .zero)
+        picker.isHidden = true
+        picker.isUserInteractionEnabled = false
+
+        DispatchQueue.main.async { // Avoid `Publishing changes from within view update` warnings
+            viewModelContext.showSpeakerPickerHandler = { [weak picker] in
+                guard let button = picker?.subviews.first(where: { $0 is UIButton }) as? UIButton else { return }
+                button.sendActions(for: .touchUpInside)
+            }
+        }
+
+        return picker
+    }
+
+    func updateUIView(_ uiView: AVRoutePickerView, context: Context) { }
 }
 
 private struct CallView: UIViewRepresentable {
