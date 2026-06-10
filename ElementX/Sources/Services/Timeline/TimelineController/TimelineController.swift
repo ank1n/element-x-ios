@@ -29,6 +29,9 @@ class TimelineController: TimelineControllerProtocol {
     }
     
     private(set) var timelineItems = [RoomTimelineItemProtocol]()
+
+    /// STMOB-222: guards the one-shot empty-room recovery (event-cache auto-shrink workaround).
+    private var didAttemptEmptyRoomRecovery = false
     
     private(set) var paginationState: PaginationState = .initial {
         didSet {
@@ -472,9 +475,55 @@ class TimelineController: TimelineControllerProtocol {
         }
         
         timelineItems = newTimelineItems
-        
+
         callbacks.send(.updatedTimelineItems(timelineItems: newTimelineItems, isSwitchingTimelines: isNewTimeline))
         self.paginationState = paginationState
+
+        recoverEmptyRoomIfNeeded(items: newTimelineItems, paginationState: paginationState)
+    }
+
+    /// STMOB-222: event-cache auto-shrink workaround.
+    /// On re-entry to a "quiet" room (no recent activity) the SDK shrinks the in-memory
+    /// linked chunk on room exit and the rebuilt live timeline comes up at the timeline
+    /// start with no messages — `paginateBackwards` immediately reports "reached start"
+    /// without re-loading the persisted history. Detect that state and recover by focusing
+    /// the timeline on its latest event, which fetches context from the server / persisted
+    /// store and shows the history again. One-shot, live-mode only.
+    private func recoverEmptyRoomIfNeeded(items: [RoomTimelineItemProtocol], paginationState: PaginationState) {
+        guard !didAttemptEmptyRoomRecovery,
+              timelineKind == .live,
+              paginationState.backward == .timelineEndReached,
+              !containsMessageItem(items) else {
+            return
+        }
+
+        didAttemptEmptyRoomRecovery = true
+
+        Task { [weak self] in
+            guard let self else { return }
+            // Only recover rooms that actually have message history. A state-only
+            // room (membership/topic) or a genuinely empty chat must stay on the
+            // normal empty state — focusing it would fail pagination and surface a
+            // spurious "failed to load messages" error.
+            guard await roomProxy.hasMessageHistory(),
+                  let eventID = await activeTimeline.latestEventID() else {
+                return
+            }
+            MXLog.warning("STMOB-222: live timeline reached start with no messages in \(roomID) — recovering via focus on \(eventID)")
+            _ = await focusOnEvent(eventID, timelineSize: 100)
+        }
+    }
+
+    private func containsMessageItem(_ items: [RoomTimelineItemProtocol]) -> Bool {
+        items.contains { item in
+            if item is EventBasedMessageTimelineItemProtocol {
+                return true
+            }
+            if let collapsible = item as? CollapsibleTimelineItem {
+                return collapsible.items.contains { $0 is EventBasedMessageTimelineItemProtocol }
+            }
+            return false
+        }
     }
     
     private nonisolated func buildTimelineItem(for itemProxy: TimelineItemProxy,

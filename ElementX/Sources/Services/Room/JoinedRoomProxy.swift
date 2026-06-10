@@ -144,6 +144,25 @@ class JoinedRoomProxy: JoinedRoomProxyProtocol {
         })
     }
     
+    func hasMessageHistory() async -> Bool {
+        // STMOB-222: the room's latest event drives the empty-room recovery gate.
+        // Only a real message (`.msgLike`) counts — `.none` (empty room) and
+        // state-only latest events (membership/topic) must not trigger a focus.
+        let content: TimelineItemContent
+        switch await room.latestEvent() {
+        case .remote(_, _, _, _, let eventContent):
+            content = eventContent
+        case .local(_, _, _, let eventContent, _):
+            content = eventContent
+        case .none:
+            return false
+        }
+        if case .msgLike = content {
+            return true
+        }
+        return false
+    }
+
     func timelineFocusedOnEvent(eventID: String, numberOfEvents: UInt16) async -> Result<TimelineProxyProtocol, RoomProxyError> {
         do {
             let sdkTimeline = try await room.timelineWithConfiguration(configuration: .init(focus: .event(eventId: eventID,

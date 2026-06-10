@@ -95,7 +95,12 @@ protocol JoinedRoomProxyProtocol: RoomProxyProtocol {
     func subscribeToRoomInfoUpdates()
     
     func timelineFocusedOnEvent(eventID: String, numberOfEvents: UInt16) async -> Result<TimelineProxyProtocol, RoomProxyError>
-    
+
+    /// STMOB-222: whether the room's latest event is an actual message (not a
+    /// state-only event / empty room). Used to gate the empty-room timeline
+    /// recovery so genuinely empty rooms aren't focused (which would error).
+    func hasMessageHistory() async -> Bool
+
     func threadTimeline(eventID: String) async -> Result<TimelineProxyProtocol, RoomProxyError>
     
     func loadOrFetchEventDetails(for eventID: String) async -> Result<TimelineEvent, RoomProxyError>

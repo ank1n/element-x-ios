@@ -63,7 +63,11 @@ protocol TimelineProxyProtocol {
     func messageEventContent(for timelineItemID: TimelineItemIdentifier) async -> RoomMessageEventContentWithoutRelation?
     
     func retryDecryption(sessionIDs: [String]?)
-    
+
+    /// STMOB-222: the latest event ID known to this timeline (used to recover a
+    /// "quiet" room whose history was dropped by the SDK event-cache auto-shrink).
+    func latestEventID() async -> String?
+
     func paginateBackwards(requestSize: UInt16) async -> Result<Void, TimelineProxyError>
     func paginateForwards(requestSize: UInt16) async -> Result<Void, TimelineProxyError>
     

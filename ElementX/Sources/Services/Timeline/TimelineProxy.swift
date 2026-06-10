@@ -64,6 +64,10 @@ final class TimelineProxy: TimelineProxyProtocol {
         }
     }
     
+    func latestEventID() async -> String? {
+        await timeline.latestEventId()
+    }
+
     func fetchDetails(for eventID: String) {
         Task {
             do {
