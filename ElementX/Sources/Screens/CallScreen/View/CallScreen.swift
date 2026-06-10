@@ -222,11 +222,11 @@ struct CallScreen: View {
             CallControlButton(icon: context.viewState.isDeafened ? "speaker.slash.fill" : "speaker.wave.2.fill",
                               label: context.viewState.isDeafened ? SL10n.callSoundOn : SL10n.callSound,
                               isActive: !context.viewState.isDeafened,
-                              action: {
-                                  context.send(viewAction: .toggleDeafen)
-                              },
                               onLongPress: {
                                   context.send(viewAction: .showSpeakerPicker)
+                              },
+                              action: {
+                                  context.send(viewAction: .toggleDeafen)
                               })
                               .background(CallRoutePickerView(viewModelContext: context)
                                   .frame(width: 0, height: 0)
