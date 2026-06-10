@@ -493,6 +493,16 @@ class ClientProxy: ClientProxyProtocol {
     
     func createDirectRoom(with userID: String, expectedRoomName: String?) async -> Result<String, ClientProxyError> {
         do {
+            // STMOB-71: reuse the existing DM room if there is one. `createRoom`
+            // always creates a NEW room, so callers that don't pre-check (User
+            // Profile, Room Member Details) were producing duplicate 1:1 rooms with
+            // the same user. Centralising the check here covers every caller — the
+            // per-screen checks in StartChat/Contacts become a harmless fast path.
+            if let existingRoomID = try client.getDmRoom(userId: userID)?.id() {
+                MXLog.info("Reusing existing direct room \(existingRoomID) for userID: \(userID)")
+                return .success(existingRoomID)
+            }
+
             let parameters = CreateRoomParameters(name: nil,
                                                   topic: nil,
                                                   isEncrypted: true,
