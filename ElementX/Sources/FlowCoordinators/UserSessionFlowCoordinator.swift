@@ -627,7 +627,28 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
             case .roomCall(let roomProxy, _, _, _, _, _):
                 roomID = roomProxy.id
             }
-            currentCallID = callHistoryService.startCall(roomID: roomID, direction: .outgoing)
+            let callID = callHistoryService.startCall(roomID: roomID, direction: .outgoing)
+            currentCallID = callID
+
+            // STMOB-221: enrich the outgoing history entry with the room name and
+            // participants. startCall only stores a roomID, and outgoing calls were
+            // never enriched (only incoming calls are, in CallHistoryCoordinator),
+            // so call history fell back to the generic "Звонок" label for the callee.
+            if case .roomCall(let roomProxy, _, _, _, _, _) = configuration.kind {
+                let ownUserID = userSession.clientProxy.userID
+                Task {
+                    let roomDisplayName = roomProxy.infoPublisher.value.displayName
+                    var participants: [String: String] = [:]
+                    if let members = await roomProxy.members() {
+                        for member in members where member.isActive && member.userID != ownUserID {
+                            participants[member.userID] = member.displayName ?? member.userID
+                        }
+                    }
+                    callHistoryService.updateCallInfo(id: callID,
+                                                      roomDisplayName: roomDisplayName,
+                                                      participants: participants)
+                }
+            }
         }
 
         let callScreenCoordinator = CallScreenCoordinator(parameters: .init(elementCallService: flowParameters.elementCallService,
