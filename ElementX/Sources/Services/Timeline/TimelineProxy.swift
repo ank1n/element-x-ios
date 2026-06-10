@@ -123,12 +123,24 @@ final class TimelineProxy: TimelineProxyProtocol {
         do {
             let _ = try await timeline.paginateBackwards(numEvents: requestSize)
             MXLog.info("Finished paginating backwards")
-            
+
             return .success(())
         } catch {
+            if Self.isAlreadyPaginatingError(error) {
+                MXLog.info("Ignoring benign 'already paginating' error (backwards)")
+                return .success(())
+            }
             MXLog.error("Failed paginating backwards with error: \(error)")
             return .failure(.sdkError(error))
         }
+    }
+
+    /// STMOB-222: the SDK throws `InvalidPreviousState { expected: Idle, actual: Paginating }`
+    /// when a pagination is already in flight (e.g. our empty-room recovery focus collided
+    /// with the view's auto-pagination). It's benign — the running pagination still completes —
+    /// so we must not surface a "failed to load messages" error for it.
+    private static func isAlreadyPaginatingError(_ error: Error) -> Bool {
+        "\(error)".contains("InvalidPreviousState")
     }
     
     /// Paginate forward or backwards using our own logic to drive the pagination state as the
@@ -157,8 +169,12 @@ final class TimelineProxy: TimelineProxyProtocol {
             subject.send(timelineEndReached ? .timelineEndReached : .idle)
             return .success(())
         } catch {
-            MXLog.error("Failed paginating \(direction.rawValue) with error: \(error)")
             subject.send(.idle)
+            if Self.isAlreadyPaginatingError(error) {
+                MXLog.info("Ignoring benign 'already paginating' error (\(direction.rawValue))")
+                return .success(())
+            }
+            MXLog.error("Failed paginating \(direction.rawValue) with error: \(error)")
             return .failure(.sdkError(error))
         }
     }
