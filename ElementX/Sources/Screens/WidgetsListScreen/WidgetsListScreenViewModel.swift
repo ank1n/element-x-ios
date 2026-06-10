@@ -151,6 +151,13 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
 
         return apiResponse.apps
             .filter(\.enabled)
+            // STMOB-220: the App Store build shows only native builtin apps (Calendar).
+            // Web widgets (Weather / Statistics / Call Performance) are server-driven and
+            // can error — Apple rejected build 193 (Guideline 2.1(a)) because the Weather
+            // widget showed an error on iPad. Filtering them out client-side makes the
+            // Apps tab deterministic for review regardless of apps-api state. Remove this
+            // filter to re-enable web widgets once they are reliable on all devices.
+            .filter { $0.type == "builtin" }
             .map { app in
                 // URL is already absolute from API v3
                 var fullURL = app.url
@@ -197,18 +204,11 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
         "Мониторинг производительности звонков": "Call performance monitoring"
     ]
 
-    /// Fallback widgets when API is unreachable
+    /// Fallback widgets when API is unreachable.
+    /// STMOB-220: return nothing rather than the Statistics web widget — a web
+    /// widget shown during an API hiccup could error in App Review (see the 2.1(a)
+    /// Weather reject). The Apps tab shows its empty state until apps-api responds.
     private func fallbackWidgets() -> [WidgetItem] {
-        let baseURL = serverBaseURL
-        let userId = userSession.clientProxy.userID
-        let encodedUserId = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
-        return [
-            WidgetItem(id: "stats",
-                       name: SL10n.appsStatistics,
-                       description: SL10n.appsStatisticsDesc,
-                       icon: "chart.bar.fill",
-                       url: "\(baseURL)/stats/?userId=\(encodedUserId)",
-                       category: .tools)
-        ]
+        []
     }
 }
