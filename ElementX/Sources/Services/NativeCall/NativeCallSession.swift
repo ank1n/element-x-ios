@@ -87,6 +87,20 @@ final class NativeCallSession: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var heartbeatTask: Task<Void, Never>?
 
+    // STMOB-126: периодический re-broadcast текущего E2EE-ключа.
+    /// Ключ рассылается по Matrix to-device — на деградировавшем (но не
+    /// сменившемся) канале эта отправка может молча отвалиться, и другие
+    /// перестают расшифровывать наш звук (мы слышим всех, нас — нет; mute/unmute
+    /// не помогает, только полный rejoin). on-event триггеров (foreground / JOIN /
+    /// смена сетевого интерфейса) недостаточно: канал тот же, новых участников нет.
+    /// Низкочастотный rebroadcast ТОГО ЖЕ ключа (без ротации) самозалечивает
+    /// desync в пределах интервала. Тот же подход, что в Element Call web.
+    private var keyRebroadcastTimer: Task<Void, Never>?
+    private static let keyRebroadcastInterval: UInt64 = 15_000_000_000 // 15s
+    /// STMOB-126: предыдущее состояние LiveKit-соединения — для детекта
+    /// восстановления (.reconnecting → .connected) и немедленного rebroadcast.
+    private var lastConnectionState: ConnectionState = .disconnected
+
     // Network change monitoring — triggers E2EE key resend on wifi/cellular/none transitions.
     private var pathMonitor: NWPathMonitor?
     private var lastNetworkInterface = ""
@@ -249,9 +263,20 @@ final class NativeCallSession: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] state in
                 guard let self else { return }
+                let previous = self.lastConnectionState
+                self.lastConnectionState = state
                 if state == .disconnected, self.sessionState == .connected {
                     MXLog.info("sTalk NativeCall: LiveKit disconnected while connected — ending session")
                     self.sessionState = .disconnected
+                }
+                // STMOB-126: транспорт восстановился после деградации канала —
+                // немедленно пере-рассылаем ключ (быстрый путь, не дожидаясь
+                // периодического таймера). Раньше на .connected ничего не
+                // пересылалось → других держало в desync до ручного rejoin.
+                if previous == .reconnecting, state == .connected, self.sessionState == .connected {
+                    DiagLog.write("E2EE", "connection recovered (reconnecting → connected) → rebroadcast same key")
+                    MXLog.info("sTalk NativeCall E2EE: connection recovered — rebroadcasting key")
+                    Task { [weak self] in await self?.rebroadcastCurrentEncryptionKey() }
                 }
             }
             .store(in: &cancellables)
@@ -1001,12 +1026,31 @@ final class NativeCallSession: ObservableObject {
 
     // MARK: - Stop
 
+    /// STMOB-126: периодический rebroadcast текущего ключа пока идёт E2EE-звонок.
+    /// Самозалечивает key-desync, возникший когда Matrix to-device отправка
+    /// ключа отвалилась на деградировавшем канале (без смены интерфейса / без
+    /// reconnect транспорта — то, что не ловят on-event триггеры).
+    private func startKeyRebroadcastTimer() {
+        keyRebroadcastTimer?.cancel()
+        guard isEncrypted else { return }
+        keyRebroadcastTimer = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: Self.keyRebroadcastInterval)
+                guard let self, !Task.isCancelled else { return }
+                guard self.sessionState == .connected else { continue }
+                await self.rebroadcastCurrentEncryptionKey()
+            }
+        }
+    }
+
     func stop() async {
         MXLog.info("sTalk NativeCall: Stopping session")
         sessionState = .disconnecting
 
         heartbeatTask?.cancel()
         heartbeatTask = nil
+        keyRebroadcastTimer?.cancel()
+        keyRebroadcastTimer = nil
         stopNetworkMonitor()
 
         // STMOB-101 v3: remove foreground observer (rebroadcast loop удалён)
@@ -1376,6 +1420,9 @@ final class NativeCallSession: ObservableObject {
             sessionState = .connected
             roomManager = liveKitRoomManager
             MXLog.info("sTalk NativeCall: Connected to LiveKit")
+
+            // STMOB-126: запускаем периодический rebroadcast ключа (E2EE only).
+            startKeyRebroadcastTimer()
 
             // Publish media
             try? await liveKitRoomManager.setMicrophone(enabled: true)
