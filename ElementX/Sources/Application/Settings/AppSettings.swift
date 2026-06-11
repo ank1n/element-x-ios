@@ -253,7 +253,25 @@ final class AppSettings {
     // MARK: - Authentication
     
     /// Any pre-defined static client registrations for OIDC issuers.
-    let oidcStaticRegistrations: [URL: String] = ["https://id.thirdroom.io/realms/thirdroom": "elementx"]
+    /// STMOB-186/STALK-354: stalk uses a STATIC client_id instead of dynamic
+    /// registration. Dynamic reg let anyone (incl. upstream Element X) self-declare
+    /// an arbitrary client_name and log in to our server with a stock client that
+    /// rotates cross-signing identity (autoEnableCrossSigning=true) — this broke
+    /// real testers' E2EE keys. With a static client_id the server (MAS) accepts
+    /// only our pre-registered app; upstream Element X (client_id io.element) is
+    /// rejected at the OAuth layer. The client_id is a Crockford-Base32 ULID
+    /// `000000000000000000STAK0APP` (26 chars; "STAK0IOS" is invalid — I/O are
+    /// forbidden in Crockford). Issuer key MUST match MAS discovery byte-for-byte
+    /// (https://auth.stalk.implica.ru/ with trailing slash). Deploy is synchronized
+    /// with Rusty's mas-config `clients:` allowlist (STALK-412) — both must carry
+    /// the same client_id + redirect_uri or login breaks for everyone.
+    /// NOTE: client_id ≠ device_id. Each login still gets its own per-session
+    /// device_id from MAS, so device distinction / active-sessions / E2EE are
+    /// unaffected — only the *app* identity is shared, as with any native OAuth app.
+    let oidcStaticRegistrations: [URL: String] = [
+        "https://id.thirdroom.io/realms/thirdroom": "elementx",
+        "https://auth.stalk.implica.ru/": "000000000000000000STAK0APP"
+    ]
     /// The redirect URL used for OIDC. Server redirects HTTPS → custom scheme for Personal Team compatibility.
     private(set) var oidcRedirectURL: URL = "https://stalk.implica.ru/oidc/login"
     
