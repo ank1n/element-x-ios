@@ -395,6 +395,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 state.pinnedParticipantSID = sid
                 MXLog.info("STMOB-113 pin → \(sid)")
             }
+        case .requestPortraitOrientation:
+            // STMOB-218: leave the landscape fullscreen-share view back to portrait.
+            actionsSubject.send(.requestPortraitOrientation)
         case .liveKitCredentialsIntercepted(let url, let token):
             MXLog.info("sTalk: LiveKit credentials intercepted (pass-through) — url=\(url.prefix(80))..., token length=\(token.count)")
             // sTalk: Extract LiveKit room name from JWT for recording-api

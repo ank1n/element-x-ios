@@ -95,6 +95,11 @@ final class CallScreenCoordinator: CoordinatorProtocol {
             case .showRecordingConsent:
                 // Handled in the view via sheet
                 break
+            case .requestPortraitOrientation:
+                // STMOB-218: snap back to portrait when the user taps the speaker PiP
+                // in the landscape fullscreen-share view. Keep the call free to rotate
+                // again (lock stays .allButUpsideDown from start()).
+                orientationManager.setOrientation(.portrait)
             }
         }
         .store(in: &cancellables)

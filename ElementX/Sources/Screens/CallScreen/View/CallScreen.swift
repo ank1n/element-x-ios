@@ -150,7 +150,8 @@ struct CallScreen: View {
                                mediaProvider: context.viewState.mediaProvider,
                                layoutMode: context.viewState.effectiveLayoutMode,
                                pinnedParticipantSID: context.viewState.pinnedParticipantSID,
-                               onTogglePin: { sid in context.send(viewAction: .togglePinParticipant(sid: sid)) })
+                               onTogglePin: { sid in context.send(viewAction: .togglePinParticipant(sid: sid)) },
+                               onRequestPortrait: { context.send(viewAction: .requestPortraitOrientation) })
                 .ignoresSafeArea(.container, edges: .bottom)
         } else if context.viewState.url == nil {
             ProgressView()

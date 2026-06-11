@@ -17,6 +17,9 @@ enum CallScreenViewModelAction {
     case minimizeCall
     case dismiss
     case showRecordingConsent
+    /// STMOB-218: user tapped the participant PiP in landscape screen-share mode —
+    /// snap the device back to portrait (coordinator drives the orientationManager).
+    case requestPortraitOrientation
 }
 
 struct CallScreenViewState: BindableState {
@@ -148,6 +151,8 @@ enum CallScreenViewAction {
     // STMOB-113: layout/spotlight для group call.
     case toggleLayoutMode
     case togglePinParticipant(sid: String)
+    /// STMOB-218: tap on the speaker PiP in landscape screen-share → back to portrait.
+    case requestPortraitOrientation
 }
 
 /// STMOB-113

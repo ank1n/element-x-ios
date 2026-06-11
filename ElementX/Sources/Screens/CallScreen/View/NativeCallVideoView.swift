@@ -58,6 +58,11 @@ struct NativeCallGridView: View {
     var layoutMode: CallLayoutMode = .grid
     var pinnedParticipantSID: String?
     var onTogglePin: ((String) -> Void)?
+    // STMOB-218: tap the speaker PiP in landscape screen-share → request portrait.
+    var onRequestPortrait: (() -> Void)?
+
+    // STMOB-218: on iPhone, landscape ⇒ verticalSizeClass == .compact.
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     var body: some View {
         ZStack {
@@ -70,6 +75,14 @@ struct NativeCallGridView: View {
                 ActiveSpeakerMiniView(roomManager: roomManager,
                                       participants: participants,
                                       mediaProvider: mediaProvider)
+            } else if verticalSizeClass == .compact, roomManager.hasRemoteScreenShare {
+                // STMOB-218: landscape + active screen-share → give the share the WHOLE
+                // screen (no participant strip), with a single draggable PiP of the
+                // active speaker. Tap the PiP to snap back to portrait.
+                LandscapeScreenShareLayout(roomManager: roomManager,
+                                           participants: participants,
+                                           mediaProvider: mediaProvider,
+                                           onRequestPortrait: onRequestPortrait)
             } else if layoutMode == .speaker {
                 // STMOB-113: Speaker layout — focused main + bottom strip.
                 SpeakerCallLayout(roomManager: roomManager,
@@ -1114,6 +1127,193 @@ private struct SpeakerCallLayout: View {
         .onTapGesture {
             onTogglePin?(sid)
         }
+    }
+}
+
+// MARK: - STMOB-218: Landscape Fullscreen Screen-Share
+
+/// Шаринг экрана занимает ВЕСЬ экран (максимум площади под контент), без полосы
+/// участников. Поверх — один draggable PiP активного говорящего; тап по нему
+/// возвращает в портретный режим.
+private struct LandscapeScreenShareLayout: View {
+    @ObservedObject var roomManager: LiveKitRoomManager
+    let participants: [CallParticipantInfo]
+    let mediaProvider: MediaProviderProtocol?
+    let onRequestPortrait: (() -> Void)?
+
+    @State private var pipOffset: CGSize = .zero
+    @State private var pipCorner: PipCorner = .topRight
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                Color.black.ignoresSafeArea()
+
+                // Шаринг на весь экран.
+                if let shareTrack = screenShareTrack {
+                    NativeCallVideoView(track: shareTrack, contentMode: .fit)
+                        .ignoresSafeArea()
+                } else {
+                    Color(white: 0.06).ignoresSafeArea()
+                }
+
+                // Подпись чей экран (top-left).
+                if let label = screenShareLabel {
+                    VStack {
+                        HStack {
+                            Label(label, systemImage: "rectangle.on.rectangle")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.white)
+                                .lineLimit(1)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Color.black.opacity(0.55))
+                                .clipShape(Capsule())
+                                .padding(12)
+                            Spacer()
+                        }
+                        Spacer()
+                    }
+                }
+
+                // PiP активного говорящего — draggable, тап → портрет.
+                speakerPip(in: geometry)
+            }
+        }
+    }
+
+    // MARK: speaker PiP
+
+    @ViewBuilder
+    private func speakerPip(in geometry: GeometryProxy) -> some View {
+        let pipWidth: CGFloat = 132
+        let pipHeight: CGFloat = 92
+        let padding: CGFloat = 12
+        let anchor = pipCorner.position(in: geometry.size,
+                                        pipSize: CGSize(width: pipWidth, height: pipHeight),
+                                        padding: padding,
+                                        safeArea: geometry.safeAreaInsets)
+
+        ZStack(alignment: .bottomLeading) {
+            Color.black
+            if let speaker = activeSpeaker {
+                if let track = speaker.videoTrack {
+                    NativeCallVideoView(track: track, contentMode: .fill)
+                } else {
+                    LoadableAvatarImage(url: speaker.avatarURL,
+                                        name: speaker.name,
+                                        contentID: speaker.identity,
+                                        avatarSize: .custom(40),
+                                        mediaProvider: mediaProvider)
+                }
+                if let name = speaker.name {
+                    Text(name)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.black.opacity(0.5))
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                        .padding(5)
+                }
+            } else {
+                Image(systemName: "person.fill")
+                    .font(.system(size: 22))
+                    .foregroundColor(.white.opacity(0.4))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+
+            // Подсказка «вернуться в портрет» (top-right).
+            VStack {
+                HStack {
+                    Spacer()
+                    Image(systemName: "arrow.down.right.and.arrow.up.left")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 24, height: 24)
+                        .background(Color.black.opacity(0.5))
+                        .clipShape(Circle())
+                        .padding(5)
+                }
+                Spacer()
+            }
+        }
+        .frame(width: pipWidth, height: pipHeight)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .stroke(Color.white.opacity(0.25), lineWidth: 1))
+        .shadow(color: .black.opacity(0.4), radius: 8, x: 0, y: 4)
+        .position(x: anchor.x + pipOffset.width, y: anchor.y + pipOffset.height)
+        .onTapGesture { onRequestPortrait?() }
+        .simultaneousGesture(DragGesture(minimumDistance: 10)
+            .onChanged { value in pipOffset = value.translation }
+            .onEnded { value in
+                let finalPoint = CGPoint(x: anchor.x + value.translation.width,
+                                         y: anchor.y + value.translation.height)
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    pipCorner = PipCorner.nearest(to: finalPoint,
+                                                  in: geometry.size,
+                                                  pipSize: CGSize(width: pipWidth, height: pipHeight),
+                                                  padding: padding,
+                                                  safeArea: geometry.safeAreaInsets)
+                    pipOffset = .zero
+                }
+            })
+    }
+
+    // MARK: resolvers
+
+    private var screenShareTrack: VideoTrack? {
+        for p in roomManager.displayParticipants {
+            if let pub = p.videoTracks.first(where: { $0.isScreenShareTrack }),
+               pub.isSubscribed, let track = pub.track as? VideoTrack {
+                return track
+            }
+        }
+        return nil
+    }
+
+    private var screenShareLabel: String? {
+        guard let owner = roomManager.displayParticipants.first(where: { p in
+            p.videoTracks.contains { $0.isScreenShareTrack && $0.isSubscribed }
+        }) else { return nil }
+        let identity = owner.identity?.stringValue ?? ""
+        let name = participants.first(where: { $0.userID == identity })?.displayName
+            ?? participants.first(where: { identity.hasPrefix($0.userID) })?.displayName
+            ?? owner.name
+            ?? "?"
+        return String(format: NSLocalizedString("stalk_call_screen_share_name", tableName: "Localizable", value: "%@ — экран", comment: "Screen share tile name: <participant> — screen"), name)
+    }
+
+    private struct SpeakerInfo {
+        let identity: String
+        let name: String?
+        let videoTrack: VideoTrack?
+        let avatarURL: URL?
+    }
+
+    /// Активный говорящий (НЕ screen-share трек): speaking remote → первый remote.
+    private var activeSpeaker: SpeakerInfo? {
+        let remotes = roomManager.displayParticipants
+        let speakingIDs = Set(roomManager.activeSpeakers
+            .compactMap { ($0 as? RemoteParticipant)?.identity?.stringValue })
+        let speaking = remotes
+            .filter { speakingIDs.contains($0.identity?.stringValue ?? "") }
+            .filter { !($0.firstAudioPublication?.isMuted ?? false) }
+        guard let speaker = speaking.first ?? remotes.first else { return nil }
+        let identity = speaker.identity?.stringValue ?? ""
+        let cameraPub = speaker.videoTracks.first(where: { !$0.isScreenShareTrack })
+        let videoMuted = cameraPub?.isMuted ?? true
+        let name = participants.first(where: { $0.userID == identity })?.displayName
+            ?? participants.first(where: { identity.hasPrefix($0.userID) })?.displayName
+            ?? speaker.name
+        let avatarURL = participants.first(where: { $0.userID == identity })?.avatarURL
+            ?? participants.first(where: { identity.hasPrefix($0.userID) })?.avatarURL
+        return SpeakerInfo(identity: identity,
+                           name: name,
+                           videoTrack: videoMuted ? nil : speaker.firstCameraVideoTrack,
+                           avatarURL: avatarURL)
     }
 }
 
