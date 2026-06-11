@@ -402,8 +402,18 @@ final class NativeCallSession: ObservableObject {
         // STMOB-211: подстраховка от зависшего membership — серверный отложенный leave.
         await scheduleDelayedLeave()
 
-        // Send call notification for incoming call ring on remote
-        await sendCallNotification(callMemberEventID: joinEventID)
+        // STMOB-200: ring ТОЛЬКО если мы инициатор — в комнате нет других
+        // активных участников звонка. Заход в уже идущую встречу не должен
+        // ре-звонить: раньше отправлялся CallKit-пуш «входящий» ВСЕМ active-членам
+        // комнаты, включая тех, кто уже в звонке (напр. Сергей с веба) — он жал
+        // «Ответить» и не мог войти, т.к. уже был в встрече.
+        let alreadyInCall = await fetchActiveCallMemberUserIDs()
+        if alreadyInCall.isEmpty {
+            await sendCallNotification(callMemberEventID: joinEventID)
+        } else {
+            MXLog.info("sTalk NativeCall: joining ongoing call (\(alreadyInCall.count) already in) — skip ring")
+            DiagLog.write("Call", "join ongoing call: \(alreadyInCall.count) members already in → NO ring (STMOB-200)")
+        }
 
         // Debug: read current state events to compare formats
         await debugReadCallMemberState()
@@ -968,6 +978,33 @@ final class NativeCallSession: ObservableObject {
     }
 
     // MARK: - Call Notification
+
+    /// STMOB-200: user_ids участников с АКТИВНЫМ call.member state (уже в звонке),
+    /// кроме себя. По нему решаем: мы инициатор (звоним) или просто заходим в
+    /// идущую встречу (НЕ звоним — иначе CallKit-пуш «входящий» прилетает тем,
+    /// кто уже в звонке, напр. с веба, и «Ответить» не срабатывает — они уже там).
+    private func fetchActiveCallMemberUserIDs() async -> Set<String> {
+        let encodedRoom = matrixRoomId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? matrixRoomId
+        let url = "\(homeserverURL)/_matrix/client/v3/rooms/\(encodedRoom)/state"
+        var request = URLRequest(url: URL(string: url)!)
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        var result: Set<String> = []
+        guard let (data, _) = try? await URLSession.shared.data(for: request),
+              let events = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            return result
+        }
+        for event in events {
+            guard let type = event["type"] as? String, type == "org.matrix.msc3401.call.member" else { continue }
+            // Пустой content = участник вышел; непустой = активное членство.
+            let content = event["content"] as? [String: Any] ?? [:]
+            guard !content.isEmpty else { continue }
+            // sender = юзер, выставивший membership (state_key device-scoped в MSC4143).
+            if let sender = event["sender"] as? String, sender != userId {
+                result.insert(sender)
+            }
+        }
+        return result
+    }
 
     /// Send ring notification with proper user_ids and m.relates_to referencing our call.member event.
     /// Web client requires m.relates_to.rel_type="m.reference" + event_id of call.member to show incoming call toast.
