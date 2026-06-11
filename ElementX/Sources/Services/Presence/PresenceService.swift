@@ -257,16 +257,34 @@ class PresenceService {
     // MARK: - Polling
 
     func startPolling(userIDs: [String], interval: TimeInterval = 30) {
-        os_log(.info, log: presenceLog, "startPolling: %d users: %{public}@", userIDs.count, userIDs.joined(separator: ", "))
-        pollingUserIDs = userIDs
-        stopPolling()
+        // STMOB-110: union-merge, НЕ replace. Раньше три экрана (Contacts,
+        // Home, RoomScreen) шарят один PresenceService и каждый перетирал
+        // общий pollingUserIDs своим списком. Когда экран А ронял @molly из
+        // набора, RoomScreen.setupDMPresence видел `!contains(@molly)` →
+        // fetchPresence([@molly]) + ре-добавление, и так на КАЖДЫЙ апдейт
+        // активного бот-DM. В логе: @molly = 1161 фетч против ~15 у других.
+        // Монотонный набор (юзер не выпадает) держит гард RoomScreen закрытым.
+        let newUsers = userIDs.filter { !pollingUserIDs.contains($0) }
+        pollingUserIDs = Array(Set(pollingUserIDs).union(userIDs))
+        os_log(.info, log: presenceLog, "startPolling: +%d new, %d total", newUsers.count, pollingUserIDs.count)
+
+        // STMOB-110: идемпотентность. Раньше каждый вызов делал stopPolling()
+        // + новый Task с немедленным ПОЛНЫМ fetchPresence — навигация между
+        // экранами = шторм рестартов. Если цикл уже идёт — не трогаем его,
+        // лишь до-фетчим реально новых юзеров один раз.
+        if pollingTask != nil {
+            if !newUsers.isEmpty {
+                Task { [weak self] in await self?.fetchPresence(for: newUsers) }
+            }
+            return
+        }
 
         pollingTask = Task { [weak self] in
             guard let self else { return }
 
             // Initial fetch + set own presence
             await self.setOwnPresence("online")
-            await self.fetchPresence(for: userIDs)
+            await self.fetchPresence(for: self.pollingUserIDs)
 
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
@@ -279,7 +297,9 @@ class PresenceService {
     }
 
     func updatePollingUserIDs(_ userIDs: [String]) {
-        pollingUserIDs = userIDs
+        // STMOB-110: union, не replace — набор монотонный в рамках сессии,
+        // юзер не выпадает → нет ping-pong ре-фетчей у RoomScreen.
+        pollingUserIDs = Array(Set(pollingUserIDs).union(userIDs))
     }
 
     func stopPolling() {
