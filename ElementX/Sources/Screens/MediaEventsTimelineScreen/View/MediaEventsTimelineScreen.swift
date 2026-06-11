@@ -266,8 +266,15 @@ struct MediaEventsTimelineScreen: View {
             if #available(iOS 26, *) {
                 screenModePicker
             } else {
+                // STMOB-116: idealWidth must stay FINITE. `.greatestFiniteMagnitude`
+                // overflows to NaN/∞ inside _UITAMICAdaptorView (UIKit multiplies it
+                // by the constraint multiplier) → NSLayoutConstraint.setConstant
+                // assertion → SIGABRT on iOS ≤18 when the principal toolbar item lays
+                // out. Same crash + fix as RoomHeaderView (STMOB-190/STALK-358):
+                // use maxWidth:.infinity, which SwiftUI special-cases as "fill" and
+                // never lowers into a literal constraint constant.
                 screenModePicker
-                    .frame(idealWidth: .greatestFiniteMagnitude)
+                    .frame(maxWidth: .infinity)
             }
         }
         
