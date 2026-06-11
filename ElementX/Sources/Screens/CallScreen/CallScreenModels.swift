@@ -72,14 +72,10 @@ struct CallScreenViewState: BindableState {
     /// 2. user override (toolbar toggle).
     /// 3. auto by remoteCount: > 8 → speaker, иначе grid.
     var effectiveLayoutMode: CallLayoutMode {
-        if let manager = liveKitRoomManager {
-            let hasScreenShare = manager.displayParticipants.contains { participant in
-                participant.videoTracks.contains { pub in
-                    pub.isSubscribed && (pub.name == "screen_share" || pub.name.lowercased().contains("screen"))
-                }
-            }
-            if hasScreenShare { return .speaker }
-        }
+        // STMOB-223: используем единый детект `hasRemoteScreenShare` (по source).
+        // Старый name-only детект мимо web/desktop share (пустое имя трека) —
+        // звонок залипал в grid, шаринг лез под кнопки. См. STMOB-204.
+        if liveKitRoomManager?.hasRemoteScreenShare == true { return .speaker }
         if let override = layoutOverride { return override }
         let remoteCount = liveKitRoomManager?.displayParticipants.count ?? 0
         return remoteCount > 8 ? .speaker : .grid

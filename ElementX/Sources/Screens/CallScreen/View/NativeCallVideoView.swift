@@ -856,6 +856,27 @@ private struct SpeakerCallLayout: View {
                             Spacer()
                         }
                     }
+
+                    // STMOB-223: подпись чей экран расшарен (bottom-left main area).
+                    // Раньше в main-области не было НИКАКОЙ подписи у шаринга —
+                    // непонятно чей экран. Показываем «<имя> — экран».
+                    if let screenShareLabel {
+                        VStack {
+                            Spacer()
+                            HStack {
+                                Label(screenShareLabel, systemImage: "rectangle.on.rectangle")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(.white)
+                                    .lineLimit(1)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(Color.black.opacity(0.55))
+                                    .clipShape(Capsule())
+                                    .padding(12)
+                                Spacer()
+                            }
+                        }
+                    }
                 }
                 .frame(height: mainHeight)
 
@@ -990,6 +1011,30 @@ private struct SpeakerCallLayout: View {
             return track
         }
         return nil
+    }
+
+    /// STMOB-223: участник, чей screen-share сейчас отображается в main-области
+    /// (если шаринг активен). Тот же приоритет, что в `focusedVideoTrack`:
+    /// сперва focused-участник, иначе любой remote с share-треком.
+    private var focusedScreenShareOwner: RemoteParticipant? {
+        if let p = focusedParticipant,
+           p.videoTracks.contains(where: { $0.isScreenShareTrack && $0.isSubscribed }) {
+            return p
+        }
+        return roomManager.displayParticipants.first { p in
+            p.videoTracks.contains(where: { $0.isScreenShareTrack && $0.isSubscribed })
+        }
+    }
+
+    /// STMOB-223: подпись «<имя> — экран» для main-области. nil — если шаринга нет.
+    private var screenShareLabel: String? {
+        guard let owner = focusedScreenShareOwner else { return nil }
+        let identity = owner.identity?.stringValue ?? ""
+        let name = participants.first(where: { $0.userID == identity })?.displayName
+            ?? participants.first(where: { identity.hasPrefix($0.userID) })?.displayName
+            ?? owner.name
+            ?? "?"
+        return String(format: NSLocalizedString("stalk_call_screen_share_name", tableName: "Localizable", value: "%@ — экран", comment: "Screen share tile name: <participant> — screen"), name)
     }
 
     private var placeholder: some View {

@@ -46,6 +46,18 @@ final class LiveKitRoomManager: ObservableObject {
         remoteParticipants.filter { $0.kind == .standard }
     }
 
+    /// STMOB-223: активен ли screen-share у любого remote-участника.
+    /// Детект по `source == .screenShareVideo` (а не по имени!): web/desktop
+    /// публикует share-трек с ПУСТЫМ именем (см. STMOB-204), name-детект мимо.
+    /// Единый источник для авто-переключения раскладки на .speaker.
+    var hasRemoteScreenShare: Bool {
+        displayParticipants.contains { participant in
+            participant.videoTracks.contains { pub in
+                pub.isSubscribed && (pub.name == Track.screenShareVideoName || pub.source == .screenShareVideo)
+            }
+        }
+    }
+
     /// STMOB-100: actively speaking participants, sorted by audioLevel desc.
     /// Maintained by LiveKit SDK via `room(_:didUpdateSpeakingParticipants:)`
     /// delegate. SwiftUI views (ActiveSpeakerMiniView) подписываются на это
