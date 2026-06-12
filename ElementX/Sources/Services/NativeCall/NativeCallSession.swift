@@ -36,6 +36,10 @@ final class NativeCallSession: ObservableObject {
         ))
     private let isEncrypted: Bool
     private let userId: String
+    /// STMOB-232: own display name для LiveKit JWT `name` claim. Раньше в JWT
+    /// клали `name = userId` → другие участники видели нас сырым Matrix ID
+    /// (@dp.bondar:...) вместо имени. Теперь шлём display name (fallback userId).
+    private let ownDisplayName: String?
     private let deviceId: String
     private let matrixRoomId: String
     private let homeserverURL: String
@@ -111,6 +115,7 @@ final class NativeCallSession: ObservableObject {
          liveKitRoomManager: LiveKitRoomManager,
          isEncrypted: Bool,
          userId: String,
+         displayName: String? = nil,
          deviceId: String,
          matrixRoomId: String,
          homeserverURL: String,
@@ -120,6 +125,7 @@ final class NativeCallSession: ObservableObject {
         self.liveKitRoomManager = liveKitRoomManager
         self.isEncrypted = isEncrypted
         self.userId = userId
+        ownDisplayName = displayName
         self.deviceId = deviceId
         self.matrixRoomId = matrixRoomId
         self.homeserverURL = homeserverURL.hasSuffix("/") ? String(homeserverURL.dropLast()) : homeserverURL
@@ -1526,11 +1532,15 @@ final class NativeCallSession: ObservableObject {
         // is set the server may assign a fallback identity → mismatch with
         // `/api/keys/pp/<room>/<userId:deviceId>` upload. Set both to the same
         // string so JWT identity and key-publish identity are guaranteed equal.
+        // STMOB-232: в `name` шлём display name (а не сырой userId) — чтобы
+        // другие участники (web + iOS) видели «Dmitriy Bondar», а не
+        // @dp.bondar:stalk.implica.ru. Fallback на userId если имени нет.
+        let jwtName = (ownDisplayName?.isEmpty == false) ? ownDisplayName! : userId
         let payload: [String: Any] = [
             "iss": livekitAPIKey,
             "sub": identity,
             "identity": identity,
-            "name": userId,
+            "name": jwtName,
             "nbf": now,
             "exp": now + 3600,
             "video": [

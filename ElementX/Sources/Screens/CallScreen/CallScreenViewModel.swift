@@ -485,6 +485,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                                                     liveKitRoomManager: liveKitRoomManager,
                                                     isEncrypted: isEncrypted,
                                                     userId: clientProxy.userID,
+                                                    // STMOB-232: своё имя в LiveKit JWT, чтобы другие видели имя, не userID
+                                                    displayName: clientProxy.userDisplayNamePublisher.value,
                                                     deviceId: clientProxy.deviceID ?? "unknown",
                                                     matrixRoomId: roomProxy.id,
                                                     homeserverURL: clientProxy.homeserver,
