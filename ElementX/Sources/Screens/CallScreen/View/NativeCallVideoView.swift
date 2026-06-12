@@ -357,16 +357,20 @@ private struct ActiveSpeakerMiniView: View {
     /// вместо сырого identity вида `@user:server:DEVICEID`.
     private func resolveSpeakerName(for participant: RemoteParticipant, identity: String) -> String {
         let raw: String = {
-            if let name = participant.name, !name.isEmpty { return name }
+            // STMOB-232: JWT-name берём ТОЛЬКО если это не сырой Matrix ID.
+            // Сервер для юзеров без profile display name кладёт в JWT name=userID,
+            // и он раньше затенял настоящее имя из Matrix-массива (регрессия имён).
+            if let name = participant.name, !name.isEmpty, !name.hasPrefix("@") { return name }
             if let match = participants.first(where: { $0.userID == identity }),
                let name = match.displayName, !name.isEmpty { return name }
             if let match = participants.first(where: { identity.hasPrefix($0.userID) }),
                let name = match.displayName, !name.isEmpty { return name }
             if let match = participants.first(where: { $0.userID.hasPrefix(identity) }),
                let name = match.displayName, !name.isEmpty { return name }
+            if let name = participant.name, !name.isEmpty { return name }
             return identity
         }()
-        // STMOB-232: сырой Matrix ID → localpart.
+        // STMOB-232: если всё равно сырой Matrix ID → localpart.
         return prettifyParticipantName(raw)
     }
 
@@ -601,7 +605,10 @@ private struct GroupCallLayout: View {
     /// даже если LiveKit ещё не получил metadata от широгателя.
     private func resolveDisplayName(for participant: RemoteParticipant, identity: String) -> String {
         let raw: String = {
-            if let name = participant.name, !name.isEmpty {
+            // STMOB-232: JWT-name берём ТОЛЬКО если это не сырой Matrix ID — иначе
+            // name=userID (юзеры без profile display name) затеняет настоящее имя
+            // из Matrix-массива. Это и была регрессия (@dp.bondar:... вместо имени).
+            if let name = participant.name, !name.isEmpty, !name.hasPrefix("@") {
                 return name
             }
             if let match = participants.first(where: { $0.userID == identity }),
@@ -614,6 +621,9 @@ private struct GroupCallLayout: View {
             }
             if let match = participants.first(where: { $0.userID.hasPrefix(identity) }),
                let name = match.displayName, !name.isEmpty {
+                return name
+            }
+            if let name = participant.name, !name.isEmpty {
                 return name
             }
             return identity
