@@ -356,18 +356,18 @@ private struct ActiveSpeakerMiniView: View {
     /// Доступ к Matrix participants array → красивое отображаемое имя
     /// вместо сырого identity вида `@user:server:DEVICEID`.
     private func resolveSpeakerName(for participant: RemoteParticipant, identity: String) -> String {
-        if let name = participant.name, !name.isEmpty { return name }
-        if let match = participants.first(where: { $0.userID == identity }),
-           let name = match.displayName, !name.isEmpty { return name }
-        if let match = participants.first(where: { identity.hasPrefix($0.userID) }),
-           let name = match.displayName, !name.isEmpty { return name }
-        if let match = participants.first(where: { $0.userID.hasPrefix(identity) }),
-           let name = match.displayName, !name.isEmpty { return name }
-        if let lastColon = identity.lastIndex(of: ":") {
-            let after = identity[identity.index(after: lastColon)...]
-            if !after.isEmpty { return String(after) }
-        }
-        return identity
+        let raw: String = {
+            if let name = participant.name, !name.isEmpty { return name }
+            if let match = participants.first(where: { $0.userID == identity }),
+               let name = match.displayName, !name.isEmpty { return name }
+            if let match = participants.first(where: { identity.hasPrefix($0.userID) }),
+               let name = match.displayName, !name.isEmpty { return name }
+            if let match = participants.first(where: { $0.userID.hasPrefix(identity) }),
+               let name = match.displayName, !name.isEmpty { return name }
+            return identity
+        }()
+        // STMOB-232: сырой Matrix ID → localpart.
+        return prettifyParticipantName(raw)
     }
 
     private func findAvatarURL(for identity: String) -> URL? {
@@ -600,27 +600,28 @@ private struct GroupCallLayout: View {
     /// 4) полный identity. Гарантирует что под тайлом всегда есть имя,
     /// даже если LiveKit ещё не получил metadata от широгателя.
     private func resolveDisplayName(for participant: RemoteParticipant, identity: String) -> String {
-        if let name = participant.name, !name.isEmpty {
-            return name
-        }
-        if let match = participants.first(where: { $0.userID == identity }),
-           let name = match.displayName, !name.isEmpty {
-            return name
-        }
-        if let match = participants.first(where: { identity.hasPrefix($0.userID) }),
-           let name = match.displayName, !name.isEmpty {
-            return name
-        }
-        if let match = participants.first(where: { $0.userID.hasPrefix(identity) }),
-           let name = match.displayName, !name.isEmpty {
-            return name
-        }
-        // Fallback: identity суффикс (после последнего ":") или полный identity.
-        if let lastColon = identity.lastIndex(of: ":") {
-            let after = identity[identity.index(after: lastColon)...]
-            if !after.isEmpty { return String(after) }
-        }
-        return identity
+        let raw: String = {
+            if let name = participant.name, !name.isEmpty {
+                return name
+            }
+            if let match = participants.first(where: { $0.userID == identity }),
+               let name = match.displayName, !name.isEmpty {
+                return name
+            }
+            if let match = participants.first(where: { identity.hasPrefix($0.userID) }),
+               let name = match.displayName, !name.isEmpty {
+                return name
+            }
+            if let match = participants.first(where: { $0.userID.hasPrefix(identity) }),
+               let name = match.displayName, !name.isEmpty {
+                return name
+            }
+            return identity
+        }()
+        // STMOB-232: если имя оказалось сырым Matrix ID — показываем localpart
+        // (раньше fallback брал суффикс после ПОСЛЕДНЕГО ":" = server, что неверно;
+        // а JWT name юзеров без display name = полный @user:server).
+        return prettifyParticipantName(raw)
     }
 
     /// Match LiveKit identity to Matrix participant.
@@ -1318,6 +1319,16 @@ private struct LandscapeScreenShareLayout: View {
 }
 
 // MARK: - Helpers
+
+/// STMOB-232: если имя — сырой Matrix ID (`@localpart:server[:device]`), показываем
+/// `localpart`. Юзеры без выставленного profile display name (dp.bondar, Троцкий)
+/// приходят в LiveKit JWT с `name = @user:server` и отображались у собеседников как
+/// `@dp.bondar:stalk.implica.ru`. Прячем сырой ID и из JWT-name, и из Matrix displayName.
+private func prettifyParticipantName(_ name: String) -> String {
+    guard name.hasPrefix("@"), let colon = name.firstIndex(of: ":") else { return name }
+    let localpart = name[name.index(after: name.startIndex)..<colon]
+    return localpart.isEmpty ? name : String(localpart)
+}
 
 private func initials(from name: String) -> String {
     let components = name.split(separator: " ")
