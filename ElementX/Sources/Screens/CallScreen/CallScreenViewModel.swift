@@ -113,12 +113,19 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         // Сбрасываем состояние записи от предыдущего звонка
         recordingService?.forceReset()
 
-        // sTalk: Pass access token to recording service for Authorization header
+        // sTalk: Pass access token to recording service for Authorization header.
+        // STMOB-231: даём провайдер свежего токена + refresher вместо одноразового
+        // кэша — MAS ротирует access_token каждые 15 мин, статичный токен протухал
+        // → recording-api 401 при старте записи. Provider тянет текущий токен из SDK
+        // на каждый запрос, refresher форсит ротацию + retry (паттерн PresenceService).
         if let concreteRecording = recordingService as? RecordingService {
             if case .roomCall(_, let clientProxy, _, _, _, _) = configuration.kind,
-               let concreteProxy = clientProxy as? ClientProxy,
-               let token = try? concreteProxy.matrixAccessToken() {
-                concreteRecording.updateAccessToken(token)
+               let concreteProxy = clientProxy as? ClientProxy {
+                concreteRecording.tokenProvider = { [weak concreteProxy] in try? concreteProxy?.matrixAccessToken() }
+                concreteRecording.tokenRefresher = { [weak concreteProxy] in await concreteProxy?.forceTokenRefresh() }
+                if let token = try? concreteProxy.matrixAccessToken() {
+                    concreteRecording.updateAccessToken(token)
+                }
             }
         }
 

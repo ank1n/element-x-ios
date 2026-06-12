@@ -43,6 +43,21 @@ class RecordingService: RecordingServiceProtocol {
     private let requestTimeout: TimeInterval = 15.0
     private var accessToken: String?
 
+    // STMOB-231: свежий Matrix access token на КАЖДЫЙ запрос + refresh на 401.
+    /// Раньше токен кэшировался один раз (updateAccessToken при создании экрана
+    /// звонка). MAS ротирует access_token каждые 15 мин (ttl=900s) — к моменту
+    /// нажатия «Запись» кэш протухал → recording-api отдавал HTTP 401
+    /// («Server error: HTTP 401»). Провайдер тянет текущий токен из SDK на каждый
+    /// запрос; refresher форсит ротацию SDK и даёт один retry. Тот же паттерн,
+    /// что в PresenceService (STMOB-132) и pusher retry (STMOB-212).
+    var tokenProvider: (() -> String?)?
+    var tokenRefresher: (() async -> Void)?
+
+    /// Текущий токен: свежий из provider, иначе кэшированный fallback.
+    private var currentToken: String? {
+        tokenProvider?() ?? accessToken
+    }
+
     private let stateSubject = CurrentValueSubject<RecordingState, Never>(.idle)
 
     var statePublisher: AnyPublisher<RecordingState, Never> {
@@ -225,8 +240,8 @@ class RecordingService: RecordingServiceProtocol {
             }
             var request = URLRequest(url: url)
             request.httpMethod = "GET"
-            if let accessToken {
-                request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            if let token = currentToken {
+                request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             }
             request.timeoutInterval = requestTimeout
 
@@ -311,19 +326,31 @@ class RecordingService: RecordingServiceProtocol {
 
     private func post<T: Encodable, R: Decodable>(endpoint: String, body: T) async throws -> R {
         let url = baseURL.appendingPathComponent(endpoint)
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        if let accessToken {
-            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        let bodyData = try JSONEncoder().encode(body)
+
+        // STMOB-231: один запрос с текущим токеном; если 401 (токен ротировался
+        // на MAS) — forceTokenRefresh + ровно один retry со свежим токеном.
+        func attempt(refreshFirst: Bool) async throws -> (Data, HTTPURLResponse) {
+            if refreshFirst { await tokenRefresher?() }
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            if let token = currentToken {
+                request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            }
+            request.timeoutInterval = requestTimeout
+            request.httpBody = bodyData
+            let (data, response) = try await urlSession.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw RecordingError.invalidResponse
+            }
+            return (data, httpResponse)
         }
-        request.timeoutInterval = requestTimeout
-        request.httpBody = try JSONEncoder().encode(body)
 
-        let (data, response) = try await urlSession.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw RecordingError.invalidResponse
+        var (data, httpResponse) = try await attempt(refreshFirst: false)
+        if httpResponse.statusCode == 401 {
+            MXLog.warning("Recording: HTTP 401 on \(endpoint) → forceTokenRefresh + retry")
+            (data, httpResponse) = try await attempt(refreshFirst: true)
         }
 
         guard httpResponse.statusCode == 200 else {
@@ -340,8 +367,8 @@ class RecordingService: RecordingServiceProtocol {
         let url = baseURL.appendingPathComponent(endpoint)
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        if let accessToken {
-            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        if let token = currentToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         request.timeoutInterval = requestTimeout
 
