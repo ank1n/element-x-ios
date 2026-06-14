@@ -247,12 +247,19 @@ final class LiveKitRoomManager: ObservableObject {
         configureAudioSession(speakerByDefault: speakerByDefault)
 
         let connectOptions = ConnectOptions(autoSubscribe: true)
-        let roomOptions = RoomOptions(defaultCameraCaptureOptions: CameraCaptureOptions(dimensions: .h1080_169),
+        // STMOB-164: снижение нагрева. adaptiveStream — мелкие/невидимые тайлы
+        // получают низкое разрешение или паузятся (меньше декода+рендера+SFrame
+        // decrypt). dynacast — не слать simulcast-слои, которые никто не смотрит.
+        // Камера 720p вместо 1080p, fps 24, битрейт 2 Mbps, audio DTX (не слать
+        // в тишине) — меньше энкод/радио, на телефоне в сетке незаметно.
+        let roomOptions = RoomOptions(defaultCameraCaptureOptions: CameraCaptureOptions(dimensions: .h720_169),
                                       defaultAudioCaptureOptions: AudioCaptureOptions(),
-                                      defaultVideoPublishOptions: VideoPublishOptions(encoding: VideoEncoding(maxBitrate: 3_000_000, maxFps: 30),
+                                      defaultVideoPublishOptions: VideoPublishOptions(encoding: VideoEncoding(maxBitrate: 2_000_000, maxFps: 24),
                                                                                       simulcast: true),
                                       defaultAudioPublishOptions: AudioPublishOptions(encoding: AudioEncoding(maxBitrate: 48000),
-                                                                                      dtx: false))
+                                                                                      dtx: true),
+                                      adaptiveStream: true,
+                                      dynacast: true)
 
         try await room.connect(url: baseURL, token: token, connectOptions: connectOptions, roomOptions: roomOptions)
         MXLog.info("sTalk LiveKit: Connected to room \(room.name ?? "unknown")")
@@ -277,12 +284,15 @@ final class LiveKitRoomManager: ObservableObject {
 
         let connectOptions = ConnectOptions(autoSubscribe: true // Subscribe immediately — SFrame handles decrypt when keys arrive
         )
-        let roomOptions = RoomOptions(defaultCameraCaptureOptions: CameraCaptureOptions(dimensions: .h1080_169),
+        // STMOB-164: см. комментарий в connect() — adaptiveStream/dynacast + 720p/24/2Mbps/DTX для снижения нагрева.
+        let roomOptions = RoomOptions(defaultCameraCaptureOptions: CameraCaptureOptions(dimensions: .h720_169),
                                       defaultAudioCaptureOptions: AudioCaptureOptions(),
-                                      defaultVideoPublishOptions: VideoPublishOptions(encoding: VideoEncoding(maxBitrate: 3_000_000, maxFps: 30),
+                                      defaultVideoPublishOptions: VideoPublishOptions(encoding: VideoEncoding(maxBitrate: 2_000_000, maxFps: 24),
                                                                                       simulcast: true),
                                       defaultAudioPublishOptions: AudioPublishOptions(encoding: AudioEncoding(maxBitrate: 48000),
-                                                                                      dtx: false),
+                                                                                      dtx: true),
+                                      adaptiveStream: true,
+                                      dynacast: true,
                                       encryptionOptions: encryptionOptions)
 
         try await room.connect(url: baseURL, token: token, connectOptions: connectOptions, roomOptions: roomOptions)
