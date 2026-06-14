@@ -403,6 +403,10 @@ private struct GroupCallLayout: View {
     let isLocalAudioMuted: Bool
     let participants: [CallParticipantInfo]
     let mediaProvider: MediaProviderProtocol?
+    // STMOB-218: landscape — портретная раскладка (VStack + reserve снизу +
+    // «1 крупный сверху») в широкой-низкой геометрии ломается и переобрезает
+    // видео. В landscape используем ровный grid с .fit-тайлами.
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     var body: some View {
         GeometryReader { geometry in
@@ -410,8 +414,9 @@ private struct GroupCallLayout: View {
             let screenShares = items.filter(\.isScreenShare)
             let regularItems = items.filter { !$0.isScreenShare }
             let hasScreenShare = !screenShares.isEmpty
-            let layout = gridLayout(for: regularItems.count)
-            let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: layout.columns)
+            let isLandscape = verticalSizeClass == .compact
+            let columnCount = isLandscape ? landscapeColumns(for: regularItems.count) : gridLayout(for: regularItems.count).columns
+            let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: columnCount)
             let spacing: CGFloat = 4
 
             ScrollView {
@@ -424,19 +429,21 @@ private struct GroupCallLayout: View {
                     }
 
                     // STMOB-119 build 144: 3 уч. = 1 крупный сверху + 2 в ряд снизу
-                    // (без пустой ячейки 2x2). При наличии screen share выше —
-                    // отдаём regularItems в обычный grid (compact squares).
-                    if regularItems.count == 3, !hasScreenShare {
+                    // (без пустой ячейки 2x2). В landscape — обычный grid (портретный
+                    // «1 крупный сверху» в широкой геометрии выглядит растянутым).
+                    if regularItems.count == 3, !hasScreenShare, !isLandscape {
                         threeParticipantsLayout(items: regularItems, geometry: geometry, spacing: spacing)
                     } else {
                         // Regular participants grid
                         LazyVGrid(columns: columns, spacing: spacing) {
                             ForEach(regularItems) { item in
                                 ParticipantTile(item: item, mediaProvider: mediaProvider)
-                                    .aspectRatio(hasScreenShare
-                                        ? 1.0
-                                        : tileAspectRatio(for: regularItems.count, columns: layout.columns, geometry: geometry),
-                                        contentMode: .fill)
+                                    .aspectRatio(tileAspect(hasScreenShare: hasScreenShare,
+                                                            isLandscape: isLandscape,
+                                                            count: regularItems.count,
+                                                            columns: columnCount,
+                                                            geometry: geometry),
+                                                 contentMode: .fill)
                                     .clipped()
                             }
                         }
@@ -444,9 +451,27 @@ private struct GroupCallLayout: View {
                 }
                 .padding(spacing)
             }
-            .scrollDisabled(!layout.scrollable && !hasScreenShare)
+            .scrollDisabled(isLandscape ? false : (!gridLayout(for: regularItems.count).scrollable && !hasScreenShare))
         }
         .background(Color.black)
+    }
+
+    /// STMOB-218: число колонок в landscape — широкая геометрия, тайлы в ряд.
+    private func landscapeColumns(for count: Int) -> Int {
+        switch count {
+        case 0, 1: return 1
+        case 2: return 2
+        case 3, 4: return count // один ряд портретных тайлов
+        case 5, 6: return 3
+        default: return 4
+        }
+    }
+
+    /// Aspect для тайла: в landscape ~портрет (3:4) под .fit видео, иначе старая логика.
+    private func tileAspect(hasScreenShare: Bool, isLandscape: Bool, count: Int, columns: Int, geometry: GeometryProxy) -> CGFloat {
+        if isLandscape { return 3.0 / 4.0 }
+        if hasScreenShare { return 1.0 }
+        return tileAspectRatio(for: count, columns: columns, geometry: geometry)
     }
 
     /// STMOB-119 build 144: 3 участника = 1 крупный сверху + 2 маленьких снизу
@@ -696,14 +721,19 @@ private struct ParticipantItem: Identifiable {
 private struct ParticipantTile: View {
     let item: ParticipantItem
     let mediaProvider: MediaProviderProtocol?
+    // STMOB-218: в landscape (verticalSizeClass == .compact) видео рендерим в
+    // .fit — .fill переобрезает портретный видеопоток в широкую плитку и даёт
+    // «растягивание»/гигантский зум лица. .fit сохраняет нормальные пропорции.
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             // Video or avatar placeholder
             if let track = item.videoTrack, !item.isVideoMuted {
+                let isLandscape = verticalSizeClass == .compact
                 NativeCallVideoView(track: track,
                                     mirror: item.isLocal && !item.isScreenShare,
-                                    contentMode: item.isScreenShare ? .fit : .fill)
+                                    contentMode: (item.isScreenShare || isLandscape) ? .fit : .fill)
             } else {
                 // Camera off — show user's avatar
                 Color(white: 0.1)
