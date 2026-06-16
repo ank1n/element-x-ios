@@ -57,7 +57,12 @@ struct Meeting: Identifiable, Equatable, Codable {
         meetingCode = try c.decodeIfPresent(String.self, forKey: .meetingCode)
         location = try c.decodeIfPresent(String.self, forKey: .location) ?? ""
         startTime = try c.decode(Date.self, forKey: .startTime)
-        endTime = try c.decode(Date.self, forKey: .endTime)
+        // STMOB-236: indefinite meetings come back with end_time = null. The model
+        // keeps endTime non-optional (used in ~10 UI sites), so fall back to
+        // startTime — a single null otherwise threw and broke the ENTIRE list
+        // (e.g. @tymbay: 396 meetings, one indefinite → whole calendar empty).
+        // Indefinite display is driven by the isIndefinite flag, not endTime.
+        endTime = try c.decodeIfPresent(Date.self, forKey: .endTime) ?? startTime
         isIndefinite = try c.decodeIfPresent(Bool.self, forKey: .isIndefinite) ?? false
         accessLevel = try c.decodeIfPresent(String.self, forKey: .accessLevel) ?? "private"
         recordingAccess = try c.decodeIfPresent(String.self, forKey: .recordingAccess)
