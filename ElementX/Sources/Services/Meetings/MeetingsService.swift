@@ -276,6 +276,7 @@ class MeetingsService {
         guard let url = URL(string: urlStr) else { throw URLError(.badURL) }
 
         os_log(.default, log: meetingsLog, "fetchMeetingsList: GET %{public}@", urlStr)
+        DiagLog.write("Meetings", "GET \(urlStr)")
 
         // Retry on 401 — token may be expired, SDK refreshes in background
         var data: Data!
@@ -292,12 +293,14 @@ class MeetingsService {
 
             if statusCode == 401, attempt < 2 {
                 os_log(.default, log: meetingsLog, "fetchMeetingsList: 401 — forcing SDK token refresh...")
+                DiagLog.write("Meetings", "GET /api/meetings → HTTP 401, forcing token refresh + retry")
                 await forceTokenRefresh?()
                 continue
             }
             break
         }
         os_log(.default, log: meetingsLog, "fetchMeetingsList: HTTP %d, %d bytes", statusCode, data.count)
+        DiagLog.write("Meetings", "GET /api/meetings → HTTP \(statusCode), \(data.count)B")
 
         if statusCode != 200 {
             if let body = String(data: data.prefix(500), encoding: .utf8) {
@@ -308,6 +311,7 @@ class MeetingsService {
         do {
             let meetings = try Self.decoder.decode(MeetingsListResponse.self, from: data).meetings
             os_log(.default, log: meetingsLog, "fetchMeetingsList: decoded %d meetings", meetings.count)
+            DiagLog.write("Meetings", "decoded \(meetings.count) meetings")
             return meetings
         } catch {
             // Try to decode first meeting individually to find exact field
@@ -327,6 +331,7 @@ class MeetingsService {
             }
             let preview = String(data: data.prefix(500), encoding: .utf8) ?? "binary"
             os_log(.error, log: meetingsLog, "fetchMeetingsList: decode error: %{public}@\nPreview: %{public}@", String(describing: error), preview)
+            DiagLog.write("Meetings", "decode error: \(String(describing: error))")
             throw error
         }
     }
@@ -412,17 +417,38 @@ class MeetingsService {
     private func apiRequest(_ method: String, path: String, body: Data? = nil) async throws -> Data {
         guard let url = URL(string: "\(homeserver)\(path)") else { throw URLError(.badURL) }
 
-        let token = try currentAccessToken()
-        var request = URLRequest(url: url)
-        request.httpMethod = method
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 15
-        request.httpBody = body
+        // STMOB: retry once on 401 — OIDC access token may be stale (SDK refreshes
+        // it in background for sync, but this custom endpoint can still hit an
+        // expired snapshot). fetchMeetingsList already does this; create/update
+        // went through here WITHOUT a refresh, so a stale token killed them
+        // permanently. DiagLog so the tester diag dump shows the actual status.
+        var data = Data()
+        var statusCode = -1
+        for attempt in 1...2 {
+            let token = try currentAccessToken()
+            var request = URLRequest(url: url)
+            request.httpMethod = method
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.timeoutInterval = 15
+            request.httpBody = body
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
-            os_log(.error, log: meetingsLog, "%{public}@ %{public}@ => HTTP %d", method, path, (response as? HTTPURLResponse)?.statusCode ?? -1)
+            let (respData, response) = try await URLSession.shared.data(for: request)
+            data = respData
+            statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+
+            if statusCode == 401, attempt < 2 {
+                DiagLog.write("Meetings", "\(method) \(path) → HTTP 401, forcing token refresh + retry")
+                os_log(.default, log: meetingsLog, "%{public}@ %{public}@ => 401, refreshing token", method, path)
+                await forceTokenRefresh?()
+                continue
+            }
+            break
+        }
+
+        DiagLog.write("Meetings", "\(method) \(path) → HTTP \(statusCode), \(data.count)B")
+        guard (200...299).contains(statusCode) else {
+            os_log(.error, log: meetingsLog, "%{public}@ %{public}@ => HTTP %d", method, path, statusCode)
             throw URLError(.badServerResponse)
         }
         return data
