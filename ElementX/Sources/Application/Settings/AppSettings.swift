@@ -275,16 +275,20 @@ final class AppSettings {
     /// The redirect URL used for OIDC. Server redirects HTTPS → custom scheme for Personal Team compatibility.
     private(set) var oidcRedirectURL: URL = "https://stalk.implica.ru/oidc/login"
     
-    /// STMOB-202: OIDC config with a redirect_uri derived from the chosen homeserver,
-    /// so login works on any server (not only stalk.implica.ru). Server redirects
-    /// HTTPS → custom scheme. Falls back to the default redirect when no server is given.
+    /// STMOB-202/237: OIDC config with a redirect_uri derived from the chosen homeserver,
+    /// so login works on any server (not only stalk.implica.ru). Falls back to the default
+    /// redirect when no server is given.
     func oidcConfiguration(for homeserverAddress: String? = nil) -> OIDCConfiguration {
-        // stalk.implica.ru has a static client registration with an HTTPS redirect_uri
-        // (STMOB-186). Other servers use dynamic registration, for which MAS requires a
-        // native custom-scheme redirect_uri — an HTTPS one is rejected as invalid_redirect_uri.
+        // stalk.implica.ru has a static client registration (STMOB-186) with the HTTPS
+        // redirect_uri below. Other servers use dynamic client registration (DCR); the MAS
+        // DCR endpoint REQUIRES an HTTPS redirect_uri and rejects a custom scheme with
+        // 400 invalid_redirect_uri (verified on mas-stalk:v4 — STMOB-237; the earlier claim
+        // that a custom scheme was required was wrong). The server then 302-bounces the HTTPS
+        // callback to ru.implica.stalk://oidc/callback, which the app catches via its custom
+        // URL scheme (see OIDCAuthenticationPresenter / rewritingCustomSchemeToHTTPS).
         let redirectURI: URL = if let homeserverAddress, !homeserverAddress.isEmpty,
                                   homeserverAddress != "stalk.implica.ru" {
-            URL(string: "ru.implica.stalk:/oidc/callback") ?? oidcRedirectURL
+            URL(string: "https://\(homeserverAddress)/oidc/callback") ?? oidcRedirectURL
         } else {
             oidcRedirectURL
         }
