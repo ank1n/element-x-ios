@@ -122,7 +122,11 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
 
     private func fetchWidgetsFromAPI() async throws -> [WidgetItem] {
         let baseURL = serverBaseURL
-        let urlString = "\(baseURL)/apps-api/apps"
+        // STMOB-243 / STALK-459: unified apps registry filters by platform via ?client=.
+        // Server falls back to full set when the param is absent, so this is additive and
+        // safe for already-shipped builds. Visible effect only once STMOB-220 client-side
+        // filter is lifted (Phase 1b) and the server resolves Keycloak roles.
+        let urlString = "\(baseURL)/apps-api/apps?client=ios"
         MXLog.info("sTalk: Fetching apps from \(urlString)")
 
         guard let url = URL(string: urlString) else {
