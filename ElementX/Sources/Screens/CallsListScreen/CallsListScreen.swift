@@ -83,15 +83,7 @@ struct CallsListScreen: View {
 
     @ToolbarContentBuilder
     private var classicToolbar: some ToolbarContent {
-        ToolbarItem(placement: .principal) {
-            Picker("", selection: $selectedFilter) {
-                ForEach(CallFilter.allCases, id: \.self) { filter in
-                    Text(filter.title).tag(filter)
-                }
-            }
-            .pickerStyle(.segmented)
-            .frame(maxWidth: 220)
-        }
+        // Filter moved under the search bar (see classicContent); toolbar keeps only the new-call action.
         ToolbarItem(placement: .primaryAction) {
             Button {
                 context.send(viewAction: .startNewCall)
@@ -106,25 +98,38 @@ struct CallsListScreen: View {
     private var classicContent: some View {
         GeometryReader { geometry in
             ScrollView {
-                LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
-                    // Call history + past meetings (no upcoming meetings — this is call history, not calendar)
-                    if context.viewState.isLoading {
-                        classicLoadingCells
-                    } else if groupedHistory.isEmpty {
-                        classicEmptyStateView(minHeight: geometry.size.height)
-                    } else {
-                        ForEach(groupedHistory, id: \.title) { group in
-                            Section {
-                                ForEach(group.items) { item in
-                                    switch item {
-                                    case .call(let call):
-                                        classicCallCell(call)
-                                    case .meeting(let meeting):
-                                        classicMeetingCell(meeting)
+                VStack(spacing: 0) {
+                    // Calls filter — placed under the search bar (classic theme), matching the cosmos layout
+                    Picker("", selection: $selectedFilter) {
+                        ForEach(CallFilter.allCases, id: \.self) { filter in
+                            Text(filter.title).tag(filter)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 4)
+
+                    LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                        // Call history + past meetings (no upcoming meetings — this is call history, not calendar)
+                        if context.viewState.isLoading {
+                            classicLoadingCells
+                        } else if groupedHistory.isEmpty {
+                            classicEmptyStateView(minHeight: geometry.size.height)
+                        } else {
+                            ForEach(groupedHistory, id: \.title) { group in
+                                Section {
+                                    ForEach(group.items) { item in
+                                        switch item {
+                                        case .call(let call):
+                                            classicCallCell(call)
+                                        case .meeting(let meeting):
+                                            classicMeetingCell(meeting)
+                                        }
                                     }
+                                } header: {
+                                    classicDateSectionHeader(group.title)
                                 }
-                            } header: {
-                                classicDateSectionHeader(group.title)
                             }
                         }
                     }
