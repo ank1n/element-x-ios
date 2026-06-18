@@ -292,12 +292,24 @@ final class AppSettings {
         } else {
             oidcRedirectURL
         }
+        // STMOB-245: the MAS DCR endpoint requires client_uri AND logo_uri/tos_uri/policy_uri to
+        // all share the same host as the redirect_uri. These were hardcoded to stalk.implica.ru,
+        // so DCR on any other homeserver (e.g. stalk.implica.uz) was rejected first with
+        // "missing client_uri" and then "tos_uri/logo_uri/policy_uri not on the same host as the
+        // client_uri". Android/Web work because they register with matching-domain URIs. Build all
+        // OIDC metadata URIs on the chosen homeserver host for non-default servers.
+        let isCustomServer = (homeserverAddress.map { !$0.isEmpty && $0 != "stalk.implica.ru" }) ?? false
+        let oidcHost = isCustomServer ? (homeserverAddress ?? "stalk.implica.ru") : "stalk.implica.ru"
+        let clientURI = isCustomServer ? (URL(string: "https://\(oidcHost)") ?? websiteURL) : websiteURL
+        let logoURI = isCustomServer ? (URL(string: "https://\(oidcHost)/mobile-icon.png") ?? logoURL) : logoURL
+        let tosURI = isCustomServer ? (URL(string: "https://\(oidcHost)") ?? acceptableUseURL) : acceptableUseURL
+        let policyURI = isCustomServer ? (URL(string: "https://\(oidcHost)") ?? privacyURL) : privacyURL
         return OIDCConfiguration(clientName: InfoPlistReader.main.bundleDisplayName,
                                  redirectURI: redirectURI,
-                                 clientURI: websiteURL,
-                                 logoURI: logoURL,
-                                 tosURI: acceptableUseURL,
-                                 policyURI: privacyURL,
+                                 clientURI: clientURI,
+                                 logoURI: logoURI,
+                                 tosURI: tosURI,
+                                 policyURI: policyURI,
                                  staticRegistrations: oidcStaticRegistrations.mapKeys { $0.absoluteString })
     }
     
