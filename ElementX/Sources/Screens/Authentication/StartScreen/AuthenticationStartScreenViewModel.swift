@@ -38,10 +38,13 @@ class AuthenticationStartScreenViewModel: AuthenticationStartScreenViewModelType
         
         let isQRCodeScanningSupported = !ProcessInfo.processInfo.isiOSAppOnMac
 
-        // STMOB-243: default the top server capsule to the last successfully-used server (the
-        // most recent entry in the saved accounts list, sorted by lastUsedAt). If there are no
-        // saved accounts the capsule stays empty and shows "Add server".
-        let lastUsedServer = SavedAccountsStore().getAll().first?.serverURL
+        // STMOB-243: surface the servers the user has actually signed into (saved accounts,
+        // sorted by lastUsedAt). The most recent one pre-fills the capsule, and all of them are
+        // merged into the picker below (deduplicated with the configured default). Without this
+        // the picker only ever showed the hardcoded stalk.implica.ru, so e.g. stalk.implica.uz
+        // vanished after relaunch and the capsule could drift out of sync with the list.
+        let savedServers = SavedAccountsStore().getAll().map(\.serverURL)
+        let lastUsedServer = savedServers.first
 
         let initialViewState = if !appSettings.allowOtherAccountProviders {
             // We don't show the create account button when custom providers are disallowed.
@@ -65,7 +68,13 @@ class AuthenticationStartScreenViewModel: AuthenticationStartScreenViewModelType
         }
         
         super.init(initialViewState: initialViewState)
-        state.accountProviders = appSettings.accountProviders
+        // Merge saved-account servers into the picker, deduplicated with the configured default,
+        // so every server the user has signed into (e.g. stalk.implica.uz) stays listed.
+        var providers = appSettings.accountProviders
+        for server in savedServers where !providers.contains(server) {
+            providers.append(server)
+        }
+        state.accountProviders = providers
     }
 
     override func process(viewAction: AuthenticationStartScreenViewAction) {
