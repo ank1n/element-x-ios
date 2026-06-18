@@ -1728,3 +1728,5 @@
 "stalk_call_background_blur_hint" = "Размывает фон при видеозвонке";
 "stalk_call_noise_suppression" = "Шумоподавление";
 "stalk_call_noise_suppression_hint" = "Убирает фоновые шумы при звонке";
+"stalk_roomlist_filter_meetings" = "Встречи";
+"stalk_roomlist_filter_meetings_empty" = "Нет встреч";

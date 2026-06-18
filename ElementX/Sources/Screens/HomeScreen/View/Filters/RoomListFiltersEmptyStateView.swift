@@ -22,6 +22,8 @@ struct RoomListFiltersEmptyStateView: View {
                 return L10n.screenRoomlistFilterRoomsEmptyStateTitle
             case .favourites:
                 return L10n.screenRoomlistFilterFavouritesEmptyStateTitle
+            case .meetings:
+                return NSLocalizedString("stalk_roomlist_filter_meetings_empty", tableName: "Localizable", value: "Нет встреч", comment: "Meetings filter empty state title")
             case .invites:
                 return L10n.screenRoomlistFilterInvitesEmptyStateTitle
             case .lowPriority:

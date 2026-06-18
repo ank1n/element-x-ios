@@ -1813,3 +1813,5 @@
 "stalk_settings_language_restart_title" = "Restart required";
 "stalk_settings_language_restart_ok" = "Got it";
 "stalk_settings_language_restart_message" = "The interface language will change after you restart the app.";
+"stalk_roomlist_filter_meetings" = "Meetings";
+"stalk_roomlist_filter_meetings_empty" = "No meetings";

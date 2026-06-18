@@ -20,9 +20,10 @@ enum RoomListFilter: Int, CaseIterable, Identifiable {
     case people
     case rooms
     case favourites
+    case meetings
     case invites
     case lowPriority
-    
+
     static var availableFilters: [RoomListFilter] {
         RoomListFilter.allCases
     }
@@ -37,6 +38,8 @@ enum RoomListFilter: Int, CaseIterable, Identifiable {
             return L10n.screenRoomlistFilterUnreads
         case .favourites:
             return L10n.screenRoomlistFilterFavourites
+        case .meetings:
+            return NSLocalizedString("stalk_roomlist_filter_meetings", tableName: "Localizable", value: "Встречи", comment: "Room list filter: meetings")
         case .invites:
             return L10n.screenRoomlistFilterInvites
         case .lowPriority:
@@ -47,17 +50,20 @@ enum RoomListFilter: Int, CaseIterable, Identifiable {
     var incompatibleFilters: [RoomListFilter] {
         switch self {
         case .people:
-            return [.rooms, .invites]
+            return [.rooms, .invites, .meetings]
         case .rooms:
-            return [.people, .invites]
+            return [.people, .invites, .meetings]
         case .unreads:
-            return [.invites]
+            return [.invites, .meetings]
         case .favourites:
-            return [.invites, .lowPriority]
+            return [.invites, .lowPriority, .meetings]
+        case .meetings:
+            // Meetings is a standalone view (only meeting rooms), mutually exclusive with all others.
+            return [.unreads, .people, .rooms, .favourites, .invites, .lowPriority]
         case .invites:
-            return [.rooms, .people, .unreads, .favourites, .lowPriority]
+            return [.rooms, .people, .unreads, .favourites, .lowPriority, .meetings]
         case .lowPriority:
-            return [.favourites, .invites]
+            return [.favourites, .invites, .meetings]
         }
     }
     
@@ -76,6 +82,11 @@ enum RoomListFilter: Int, CaseIterable, Identifiable {
         case .lowPriority:
             // Note: When not activated, the setFilter method automatically applies the .nonLowPriority filter.
             return .all(filters: [.lowPriority, .joined])
+        case .meetings:
+            // No SDK-level filter for meeting rooms (the io.stalk.meeting marker isn't exposed to the
+            // room list). Pass all joined rooms through here; the narrowing to meeting rooms happens
+            // client-side in HomeScreenViewModel using the meetings-api room IDs.
+            return .all(filters: [.joined])
         }
     }
 }

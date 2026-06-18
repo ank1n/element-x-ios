@@ -25,6 +25,28 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
     private lazy var messageSearchService = MessageSearchService(homeserverURL: userSession.clientProxy.homeserver,
                                                                  accessTokenProvider: { [weak self] in try self?.userSession.clientProxy.matrixAccessToken() ?? "" })
 
+    /// STMOB-244: room IDs of the user's meetings (from meetings-api). Meeting rooms carry the
+    /// `io.stalk.meeting` state marker and are hidden from the main Chats list, surfaced only under
+    /// the dedicated "Meetings" filter — mirroring the web client. The rust SDK doesn't expose the
+    /// marker on the room list, so meetings-api (`GET /api/meetings`, full set incl. past) is the
+    /// source of truth instead.
+    private var meetingRoomIDs: Set<String> = []
+    private lazy var meetingsService: MeetingsService = {
+        let homeserver = userSession.clientProxy.homeserver
+        let withScheme = homeserver.hasPrefix("http") ? homeserver : "https://\(homeserver)"
+        let baseURL: String
+        if let url = URL(string: withScheme), let scheme = url.scheme, let host = url.host {
+            baseURL = "\(scheme)://\(host)"
+        } else {
+            baseURL = withScheme
+        }
+        let clientProxy = userSession.clientProxy
+        let concreteProxy = clientProxy as? ClientProxy
+        return MeetingsService(homeserver: baseURL,
+                               accessTokenProvider: { try clientProxy.matrixAccessToken() },
+                               forceTokenRefresh: { await concreteProxy?.forceTokenRefresh() })
+    }()
+
     private var messageSearchTask: Task<Void, Never>?
     
     private var actionsSubject: PassthroughSubject<HomeScreenViewModelAction, Never> = .init()
@@ -137,6 +159,7 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
 
         setupRoomListSubscriptions()
         setupArchiveSubscription()
+        setupMeetingRoomIDsRefresh()
 
         updateRooms()
 
@@ -374,6 +397,35 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
             .store(in: &cancellables)
     }
 
+    /// STMOB-244: keep `meetingRoomIDs` fresh from meetings-api so meeting rooms stay hidden from
+    /// the main Chats list. Refreshed on launch and on a light interval (meetings change rarely).
+    private func setupMeetingRoomIDsRefresh() {
+        refreshMeetingRoomIDs()
+        Timer.publish(every: 120, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in self?.refreshMeetingRoomIDs() }
+            .store(in: &cancellables)
+    }
+
+    private func refreshMeetingRoomIDs() {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let meetings = try await meetingsService.fetchMeetingsList()
+                // matrix_room_id is null for meetings whose room hasn't been created yet (lazy on
+                // first join) — skip those, there's nothing to hide.
+                let ids = Set(meetings.compactMap(\.matrixRoomId).filter { !$0.isEmpty })
+                await MainActor.run {
+                    guard ids != self.meetingRoomIDs else { return }
+                    self.meetingRoomIDs = ids
+                    self.updateRooms()
+                }
+            } catch {
+                MXLog.warning("sTalk STMOB-244: failed loading meeting room IDs for Chats filter: \(error)")
+            }
+        }
+    }
+
     private func updateRoomListMode(with roomSummaryProviderState: RoomSummaryProviderState) {
         let isLoadingData = !roomSummaryProviderState.isLoaded
         let hasNoRooms = roomSummaryProviderState.isLoaded && roomSummaryProviderState.totalNumberOfRooms == 0
@@ -415,8 +467,24 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
         
         var rooms = [HomeScreenRoom]()
         let seenInvites = appSettings.seenInvites
-        
+
+        // STMOB-244: meeting rooms are hidden from the main Chats list and only shown under the
+        // dedicated "Meetings" filter (mirrors the web client). Skip the filtering while searching
+        // so search can still find meeting rooms.
+        let meetingsFilterActive = state.bindings.filtersState.isFilterActive(.meetings)
+        // When the Meetings filter is active always apply it (shows only meeting rooms, possibly
+        // empty). Otherwise only bother filtering when there are meeting rooms to hide.
+        let applyMeetingFilter = !state.bindings.isSearchFieldFocused && (meetingsFilterActive || !meetingRoomIDs.isEmpty)
+
         for summary in roomSummaryProvider.roomListPublisher.value {
+            if applyMeetingFilter {
+                let isMeetingRoom = meetingRoomIDs.contains(summary.id)
+                if meetingsFilterActive {
+                    if !isMeetingRoom { continue }
+                } else if isMeetingRoom {
+                    continue
+                }
+            }
             let room = HomeScreenRoom(summary: summary,
                                       hideUnreadMessagesBadge: appSettings.hideUnreadMessagesBadge,
                                       seenInvites: seenInvites)
