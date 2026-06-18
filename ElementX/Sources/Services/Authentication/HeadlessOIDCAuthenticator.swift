@@ -321,7 +321,13 @@ final class HeadlessOIDCAuthenticator {
             urlString.contains("\(homeserver)/oidc/callback") ||
             urlString.contains("stalk.implica.ru/oidc/login") ||
             urlString.contains("stalk.implica.ru/oidc/callback") ||
-            urlString.hasPrefix("ru.implica.stalk://")
+            // STMOB-245: match the custom scheme regardless of slash count. On non-.ru servers
+            // (e.g. stalk.implica.uz) the final redirect arrives as `ru.implica.stalk:/oidc/callback`
+            // (single slash, no authority) instead of `ru.implica.stalk://oidc/callback`. The old
+            // `hasPrefix("ru.implica.stalk://")` missed the single-slash form, so the authenticator
+            // tried to URLSession-fetch the custom-scheme URL → NSURLErrorUnsupportedURL (-1002,
+            // "URL не поддерживается") and login failed on every server other than stalk.implica.ru.
+            urlString.hasPrefix("ru.implica.stalk:")
     }
 
     private func extractCallbackURL(from response: HTTPURLResponse) -> URL? {
