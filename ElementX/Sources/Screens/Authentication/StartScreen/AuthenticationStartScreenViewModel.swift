@@ -37,7 +37,12 @@ class AuthenticationStartScreenViewModel: AuthenticationStartScreenViewModelType
         canReportProblem = isBugReportServiceEnabled
         
         let isQRCodeScanningSupported = !ProcessInfo.processInfo.isiOSAppOnMac
-        
+
+        // STMOB-243: default the top server capsule to the last successfully-used server (the
+        // most recent entry in the saved accounts list, sorted by lastUsedAt). If there are no
+        // saved accounts the capsule stays empty and shows "Add server".
+        let lastUsedServer = SavedAccountsStore().getAll().first?.serverURL
+
         let initialViewState = if !appSettings.allowOtherAccountProviders {
             // We don't show the create account button when custom providers are disallowed.
             // The assumption here being that if you're running a custom app, your users will already be created.
@@ -53,7 +58,7 @@ class AuthenticationStartScreenViewModel: AuthenticationStartScreenViewModelType
                                                hideBrandChrome: appSettings.hideBrandChrome)
         } else {
             // The default configuration.
-            AuthenticationStartScreenViewState(serverName: nil,
+            AuthenticationStartScreenViewState(serverName: lastUsedServer,
                                                showCreateAccountButton: appSettings.showCreateAccountButton,
                                                showQRCodeLoginButton: isQRCodeScanningSupported,
                                                hideBrandChrome: appSettings.hideBrandChrome)
