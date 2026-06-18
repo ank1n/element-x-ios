@@ -762,7 +762,12 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         guard let userSession else {
             fatalError("User session not setup")
         }
-        
+
+        // STMOB-246: re-point the recording service at the session's own homeserver. sTalk
+        // deployments share the same paths and only differ by domain, so recording-api must
+        // follow the logged-in server (e.g. stalk.implica.uz) instead of the hardcoded default.
+        ServiceLocator.shared.setupRecordingService(homeserver: userSession.clientProxy.homeserver)
+
         let flowParameters = CommonFlowParameters(userSession: userSession,
                                                   bugReportService: bugReportService,
                                                   elementCallService: elementCallService,

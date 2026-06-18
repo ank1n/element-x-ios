@@ -37,10 +37,24 @@ class ServiceLocator {
         self.recordingService = recordingService
     }
 
-    /// Creates and registers the recording service using the current app settings
-    func setupRecordingService() {
+    /// Creates and registers the recording service.
+    ///
+    /// STMOB-246: recording-api lives on the session's own homeserver. When a `homeserver` is
+    /// provided (after login) the base URL is derived from it so recording works on any server
+    /// (stalk.implica.uz / arbitrary) instead of the hardcoded recording-api setting. Falls back
+    /// to the configured `recordingAPIBaseURL` when called at launch with no session.
+    func setupRecordingService(homeserver: String? = nil) {
         guard let settings else { return }
-        let service = RecordingService(baseURL: settings.recordingAPIBaseURL)
+        let baseURL: URL
+        if let homeserver,
+           let url = URL(string: homeserver.hasPrefix("http") ? homeserver : "https://\(homeserver)"),
+           let scheme = url.scheme, let host = url.host,
+           let derived = URL(string: "\(scheme)://\(host)") {
+            baseURL = derived
+        } else {
+            baseURL = settings.recordingAPIBaseURL
+        }
+        let service = RecordingService(baseURL: baseURL)
         register(recordingService: service)
     }
 

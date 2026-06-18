@@ -68,17 +68,20 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
             .store(in: &widgetsCancellables)
     }
 
-    /// Base URL for apps-api (same server as recording-api)
+    /// Base URL for apps-api — derived from the session's own homeserver.
     private var serverBaseURL: String {
-        // Use the same domain as recording-api (from AppSettings)
-        let recordingBase = ServiceLocator.shared.settings?.recordingAPIBaseURL
-        if let base = recordingBase {
-            return base.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        }
-        // Fallback: extract from homeserver
+        // STMOB-246: apps-api lives on the logged-in homeserver, so derive the base from the
+        // current session (not a hardcoded recording-api URL). This lets the Apps tab work on
+        // any server — stalk.implica.uz or an arbitrary Matrix homeserver — instead of always
+        // hitting stalk.implica.ru with the wrong token (-1011). Falls back to the configured
+        // recording-api base, then the default, only if the homeserver can't be parsed.
         let homeserver = userSession.clientProxy.homeserver
-        if let url = URL(string: homeserver), let scheme = url.scheme, let host = url.host {
+        let normalized = homeserver.hasPrefix("http") ? homeserver : "https://\(homeserver)"
+        if let url = URL(string: normalized), let scheme = url.scheme, let host = url.host {
             return "\(scheme)://\(host)"
+        }
+        if let base = ServiceLocator.shared.settings?.recordingAPIBaseURL {
+            return base.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         }
         return "https://stalk.implica.ru"
     }
@@ -114,8 +117,10 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
                 MXLog.info("sTalk: Updated \(widgets.count) widgets from server")
             } catch {
                 MXLog.error("sTalk: Failed to fetch widgets: \(error)")
-                // Keep loading state if no cached data — retry on next refresh
-                self.state.isLoading = self.state.widgets.isEmpty
+                // STMOB-246: graceful degrade. apps-api may be absent on a non-sTalk homeserver
+                // (404 / -1011), so never sit on an infinite spinner — drop the loading state and
+                // show whatever we have (cache) or the empty state instead of erroring.
+                self.state.isLoading = false
             }
         }
     }

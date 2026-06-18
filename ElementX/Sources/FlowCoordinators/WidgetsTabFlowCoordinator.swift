@@ -111,13 +111,19 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
                 MXLog.error("sTalk: Missing apiURL for meetings-calendar")
                 return
             }
-            // apiURL is like "https://stalk.implica.ru/api/meetings"
-            // MeetingsService needs just the base: "https://stalk.implica.ru"
+            _ = apiURL // presence of the widget gates availability; the host comes from the session below
+            // STMOB-246: meetings-api lives on the session's own homeserver. The widget's apiUrl
+            // returned by apps-api can be hardcoded to stalk.implica.ru server-side, so using it
+            // made iOS hit .ru with the session's (e.g. .uz) token -> 401 -> -1011. Derive the base
+            // from the logged-in homeserver instead so meetings load on any sTalk domain. Path stays
+            // identical (/api/meetings) since every sTalk deployment shares the same structure.
+            let homeserver = userSession.clientProxy.homeserver
+            let normalizedHS = homeserver.hasPrefix("http") ? homeserver : "https://\(homeserver)"
             let baseURL: String
-            if let range = apiURL.range(of: "/api/") {
-                baseURL = String(apiURL[apiURL.startIndex..<range.lowerBound])
+            if let url = URL(string: normalizedHS), let scheme = url.scheme, let host = url.host {
+                baseURL = "\(scheme)://\(host)"
             } else {
-                baseURL = apiURL
+                baseURL = normalizedHS
             }
             // Pass a closure so each API call gets a fresh OIDC token
             let clientProxy = userSession.clientProxy
