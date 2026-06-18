@@ -12,10 +12,11 @@ typealias NativeLoginScreenViewModelType = StateStoreViewModel<NativeLoginScreen
 struct NativeLoginScreen: View {
     @ObservedObject var context: NativeLoginScreenViewModelType.Context
     @FocusState private var focusedField: Field?
-    @AppStorage("stalk_design_theme") private var designTheme = "cosmos"
-
+    /// The login form is always presented in the cosmos style, even when the user has selected the
+    /// classic design. The classic login variant rendered as a bare grey form (looked broken /
+    /// jarring when switching to classic), so we keep a single polished login presentation.
     private var isCosmos: Bool {
-        designTheme == "cosmos"
+        true
     }
 
     private let accentBlue = StalkTheme.accent
