@@ -35,7 +35,11 @@ class ServerSelectionScreenViewModel: ServerSelectionScreenViewModelType, Server
         // STMOB-217: pre-fill the default provider (stalk.implica.ru) for the login
         // flow so the manual sign-in fallback is one tap (Continue → credentials);
         // the field stays editable for any other Matrix server.
-        let defaultAddress = authenticationFlow == .login ? (appSettings.accountProviders.first ?? "") : ""
+        // STMOB-243: prefer the most recently used server (top of the saved accounts list,
+        // sorted by lastUsedAt) so a returning user gets their last server pre-filled instead
+        // of always the hardcoded default. Falls back to the configured provider when empty.
+        let lastUsedServer = SavedAccountsStore().getAll().first?.serverURL
+        let defaultAddress = authenticationFlow == .login ? (lastUsedServer ?? appSettings.accountProviders.first ?? "") : ""
         let bindings = ServerSelectionScreenBindings(homeserverAddress: defaultAddress)
         let placeholder = authenticationFlow == .register ? "matrix.org" : L10n.commonServerUrl
         // STMOB-217: this screen is reached for login via the QR "no other device"

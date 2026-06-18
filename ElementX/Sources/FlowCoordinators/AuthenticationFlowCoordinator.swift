@@ -219,8 +219,18 @@ class AuthenticationFlowCoordinator: FlowCoordinatorProtocol {
 
         stateMachine.addRoutes(event: .signedIn, transitions: [.qrCodeLoginScreen => .complete,
                                                                .oidcAuthentication => .complete]) { [weak self] context in
+            guard let self else { return }
             guard let userSession = context.userInfo as? UserSessionProtocol else { fatalError("The user session wasn't included in the context") }
-            self?.userHasSignedIn(userSession: userSession)
+            // STMOB-244: persist the account for OIDC and QR logins too — native password
+            // login already saves it (see NativeLoginScreenCoordinator handler). Without this,
+            // OIDC sign-ins (e.g. stalk.implica.ru via Keycloak) were never stored, so the
+            // SavedAccountsScreen stayed empty and the server wasn't suggested on next login.
+            let savedAccount = SavedAccount(serverURL: authenticationService.homeserver.value.address,
+                                            userId: userSession.clientProxy.userID,
+                                            displayName: nil,
+                                            lastUsedAt: Date())
+            savedAccountsStore.save(savedAccount)
+            userHasSignedIn(userSession: userSession)
         }
 
         // Logging
