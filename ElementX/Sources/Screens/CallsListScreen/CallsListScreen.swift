@@ -52,7 +52,8 @@ struct CallsListScreen: View {
                 classicContent
             }
         }
-        .navigationTitle(isCosmos ? SL10n.tabCalls : "")
+        // Show the "Calls" title in both themes — classic was missing it (Chats/Apps show it too).
+        .navigationTitle(SL10n.tabCalls)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
@@ -99,16 +100,20 @@ struct CallsListScreen: View {
         GeometryReader { geometry in
             ScrollView {
                 VStack(spacing: 0) {
-                    // Calls filter — placed under the search bar (classic theme), matching the cosmos layout
-                    Picker("", selection: $selectedFilter) {
-                        ForEach(CallFilter.allCases, id: \.self) { filter in
-                            Text(filter.title).tag(filter)
+                    // Calls filter — horizontal chips (GenericFilterView), matching the Chats/Apps
+                    // classic filter style. Previously a segmented Picker, which looked out of place
+                    // versus the underline chips every other classic tab uses.
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(CallFilter.allCases, id: \.self) { filter in
+                                GenericFilterView(title: filter.title,
+                                                  isActive: Binding(get: { selectedFilter == filter },
+                                                                    set: { if $0 { selectedFilter = filter } }))
+                            }
                         }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
                     }
-                    .pickerStyle(.segmented)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                    .padding(.bottom, 4)
 
                     LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
                         // Call history + past meetings (no upcoming meetings — this is call history, not calendar)

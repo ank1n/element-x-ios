@@ -49,7 +49,10 @@ struct WidgetsListScreen: View {
                 }
             } else {
                 classicContent
-                    .background(Color(UIColor.systemGroupedBackground).ignoresSafeArea())
+                    // Match the other classic tabs (Chats/Calls) which sit on the flat canvas
+                    // instead of the grey grouped background — Apps was the only screen using
+                    // systemGroupedBackground, which made it look like iOS Settings.
+                    .background(Color.compound.bgCanvasDefault.ignoresSafeArea())
             }
         }
         .navigationTitle(SL10n.tabApps)
