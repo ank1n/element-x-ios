@@ -13,6 +13,10 @@ import SwiftUI
 struct HomeScreenContent: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var isArchiveRevealed = false
+    /// Guards the manual contentOffset compensation while hiding the archive row, so the
+    /// adjustment fires exactly once instead of fighting the active scroll gesture (which made
+    /// the list jitter and only hide after several tries on device).
+    @State private var isAdjustingArchiveOffset = false
     @AppStorage("stalk_design_theme") private var designTheme = "cosmos"
 
     @ObservedObject var context: HomeScreenViewModel.Context
@@ -311,9 +315,11 @@ struct HomeScreenContent: View {
                 ZStack {
                     Circle()
                         .fill(Color.blue.opacity(0.12))
-                        .frame(width: 52, height: 52)
+                        // Match the chat cell avatar size (40pt on iOS 26) so the archive row
+                        // isn't taller/bigger than the chat rows.
+                        .frame(width: 40, height: 40)
                     Image(systemName: "archivebox.fill")
-                        .font(.system(size: 22))
+                        .font(.system(size: 17))
                         .foregroundColor(.blue)
                 }
 
@@ -332,11 +338,22 @@ struct HomeScreenContent: View {
 
                 Spacer()
             }
+            // Reserve the same height as a chat cell (which has a 2-line message preview) so the
+            // single-line archive row isn't shorter than the chat rows.
+            .frame(minHeight: isCosmos ? 58 : 0)
             .padding(.horizontal, 16)
-            .padding(.vertical, isCosmos ? 8 : 12)
+            .padding(.vertical, isCosmos ? 4 : 12)
             .background(isCosmos ? Color(UIColor.systemBackground) : Color.compound.bgCanvasDefault)
-            .cornerRadius(isCosmos ? 12 : 0)
-            .padding(.horizontal, isCosmos ? 8 : 0)
+            // Match the chat rooms card exactly (cornerRadius 14 + horizontal inset 12) so the
+            // archive card isn't wider than the chat card.
+            .cornerRadius(isCosmos ? 14 : 0)
+            .overlay {
+                if isCosmos {
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(Color.black.opacity(0.06), lineWidth: 0.5)
+                }
+            }
+            .padding(.horizontal, isCosmos ? 12 : 0)
             .padding(.vertical, isCosmos ? 2 : 0)
         }
     }
@@ -384,6 +401,7 @@ struct HomeScreenContent: View {
     private func checkOverscrollForArchive() {
         guard context.viewState.archiveRoomCount > 0,
               context.viewState.roomListMode == .rooms,
+              !isAdjustingArchiveOffset,
               let scrollView = scrollViewAdapter.scrollView else { return }
         let topInset = scrollView.adjustedContentInset.top
         let offset = scrollView.contentOffset.y + topInset
@@ -396,13 +414,19 @@ struct HomeScreenContent: View {
                 }
             }
         } else {
-            // Scrolled up past archive row height (76pt) → hide it
+            // Scrolled up past archive row height (76pt) → hide it.
+            // The contentOffset compensation keeps the visible rooms from jumping, but it fires
+            // inside didScroll, so without a guard it re-triggers on the gesture's momentum and
+            // jitters. isAdjustingArchiveOffset ensures it runs once per hide.
             if offset > 80 {
-                // Compensate content shift so visible rooms don't jump
+                isAdjustingArchiveOffset = true
                 scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: scrollView.contentOffset.y - 76),
                                             animated: false)
                 withAnimation(.easeOut(duration: 0.25)) {
                     isArchiveRevealed = false
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    isAdjustingArchiveOffset = false
                 }
             }
         }
