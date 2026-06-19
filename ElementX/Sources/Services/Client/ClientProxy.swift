@@ -450,7 +450,19 @@ class ClientProxy: ClientProxyProtocol {
     func stopSync() {
         stopSync(completion: nil)
     }
-    
+
+    func forceRefresh() async {
+        MXLog.info("sTalk: force refresh — restarting sync service")
+        // Stop the sync service and wait for it to actually stop before restarting, so the
+        // sliding-sync connection is fully re-established and pulls fresh data from the server.
+        await withCheckedContinuation { continuation in
+            stopSync { continuation.resume() }
+        }
+        startSync()
+        // Give the restarted sync a moment to fetch the first batch before we drop the spinner.
+        try? await Task.sleep(for: .seconds(1))
+    }
+
     func stopSync(completion: (() -> Void)?) {
         MXLog.info("Stopping sync")
         

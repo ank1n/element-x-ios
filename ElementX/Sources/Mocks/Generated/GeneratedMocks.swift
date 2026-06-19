@@ -2600,6 +2600,41 @@ class ClientProxyMock: ClientProxyProtocol, @unchecked Sendable {
         stopSyncCompletionCallsCount += 1
         stopSyncCompletionClosure?(completion)
     }
+    //MARK: - forceRefresh
+
+    var forceRefreshUnderlyingCallsCount = 0
+    var forceRefreshCallsCount: Int {
+        get {
+            if Thread.isMainThread {
+                return forceRefreshUnderlyingCallsCount
+            } else {
+                var returnValue: Int? = nil
+                DispatchQueue.main.sync {
+                    returnValue = forceRefreshUnderlyingCallsCount
+                }
+
+                return returnValue!
+            }
+        }
+        set {
+            if Thread.isMainThread {
+                forceRefreshUnderlyingCallsCount = newValue
+            } else {
+                DispatchQueue.main.sync {
+                    forceRefreshUnderlyingCallsCount = newValue
+                }
+            }
+        }
+    }
+    var forceRefreshCalled: Bool {
+        return forceRefreshCallsCount > 0
+    }
+    var forceRefreshClosure: (() async -> Void)?
+
+    func forceRefresh() async {
+        forceRefreshCallsCount += 1
+        await forceRefreshClosure?()
+    }
     //MARK: - expireSyncSessions
 
     var expireSyncSessionsUnderlyingCallsCount = 0

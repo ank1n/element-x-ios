@@ -37,6 +37,9 @@ struct HomeScreen: View {
         
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            refreshButton
+        }
         ToolbarItem(placement: .primaryAction) {
             if #available(iOS 26, *) {
                 newRoomButton
@@ -44,6 +47,26 @@ struct HomeScreen: View {
                 newRoomButton
                     .buttonStyle(.compound(.super, size: .toolbarIcon))
             }
+        }
+    }
+
+    @ViewBuilder
+    private var refreshButton: some View {
+        switch context.viewState.roomListMode {
+        case .empty, .rooms:
+            Button {
+                context.send(viewAction: .forceRefresh)
+            } label: {
+                if context.viewState.isRefreshing {
+                    ProgressView()
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                }
+            }
+            .disabled(context.viewState.isRefreshing)
+            .accessibilityLabel(NSLocalizedString("stalk_chats_refresh", tableName: "Localizable", value: "Обновить", comment: "Chat list refresh button"))
+        default:
+            EmptyView()
         }
     }
     

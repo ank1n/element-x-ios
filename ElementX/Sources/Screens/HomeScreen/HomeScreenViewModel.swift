@@ -298,6 +298,16 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
         case .clearRecentSearches:
             appSettings.recentSearchQueries = []
             state.recentSearchQueries = []
+        case .forceRefresh:
+            guard !state.isRefreshing else { return }
+            state.isRefreshing = true
+            Task { [weak self] in
+                await self?.userSession.clientProxy.forceRefresh()
+                await MainActor.run {
+                    self?.refreshMeetingRoomIDs()
+                    self?.state.isRefreshing = false
+                }
+            }
         }
     }
     

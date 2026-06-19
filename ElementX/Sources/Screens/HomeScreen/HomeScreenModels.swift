@@ -59,6 +59,10 @@ enum HomeScreenViewAction {
 
     case selectRecentSearch(query: String)
     case clearRecentSearches
+
+    /// STMOB: force a fresh sync with the server (restart the sync service). Surfaced as a
+    /// manual refresh button so the user can pull new data when the list looks stale/stuck.
+    case forceRefresh
 }
 
 enum HomeScreenRoomListMode: CustomStringConvertible {
@@ -125,6 +129,9 @@ struct HomeScreenViewState: BindableState {
 
     var archiveRoomCount = 0
     var archivePreviewText = ""
+
+    /// True while a manual force-refresh (sync restart) is in flight — drives the toolbar spinner.
+    var isRefreshing = false
 
     /// STMOB-103 build 120: presence для DM-собеседников.
     /// Ключ — userID собеседника DM-комнаты (room.dmUserID).

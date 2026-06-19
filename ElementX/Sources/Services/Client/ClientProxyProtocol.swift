@@ -175,9 +175,13 @@ protocol ClientProxyProtocol: AnyObject {
     func startSync()
 
     func stopSync()
-    
+
     func stopSync(completion: (() -> Void)?) // Hopefully this will become async once we get SE-0371.
-    
+
+    /// Forces a fresh sync by stopping and restarting the sync service, then waiting briefly for
+    /// new data. Used by the manual refresh button when the room list looks stale/stuck.
+    func forceRefresh() async
+
     func expireSyncSessions() async
         
     func accountURL(action: AccountManagementAction) async -> URL?

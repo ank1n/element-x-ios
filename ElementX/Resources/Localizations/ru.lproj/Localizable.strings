@@ -1730,3 +1730,4 @@
 "stalk_call_noise_suppression_hint" = "Убирает фоновые шумы при звонке";
 "stalk_roomlist_filter_meetings" = "Встречи";
 "stalk_roomlist_filter_meetings_empty" = "Нет встреч";
+"stalk_chats_refresh" = "Обновить";
