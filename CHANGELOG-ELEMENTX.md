@@ -2977,5 +2977,24 @@ Combine subscription `liveKitRoomManager.$remoteParticipants` в `NativeCallSess
 
 ---
 
+### 65. ✅ STMOB-246 — E2EE key parser: gate handleEncryptionKeys к toWidget
+
+**Дата**: 2026-06-23
+**Коммиты**: `8512cc064`
+
+#### Описание:
+NSE-лог prod (build 98) показал 6× `E2EE handleEncryptionKeys EXTRACT FAILED`. Диагноз: не баг шифрования — приложение прогоняло СВОИ исходящие `fromWidget` (native-key-* `send_to_device` с `messages.*.*.keys{}`, native-roomkey-* `send_event` без `sender`) через входящий парсер → `participantId` пустой → FAILED. Реальные удалённые ключи приходят как `toWidget` (`content.keys[]` + `sender`) и парсятся ок (`incoming key DECODED`).
+
+#### Изменение:
+- `handleWidgetMessage`: обработка `encryption_keys` только при `message.api == "toWidget"`. Свои исходящие больше не парсим. Поведение шифрования НЕ меняется — чистка лог-шума (no-op).
+
+#### Файлы:
+- `ios/ElementX/Sources/Services/NativeCall/NativeCallSession.swift`
+
+#### Связано (отдельная работа, ждёт спеку Molly STALK-505):
+Единый формат ключей Web/iOS/Android/Guest — приём обоих входящих shape'ов (`toWidget send_event` + `send_to_device` dual-channel), адресность recipients (не `"*"`), re-advertise на reconnect, index-rekey. Согласовано в #ops с Molly/Andy.
+
+---
+
 **Дата создания**: 2026-01-28
-**Последнее обновление**: 2026-05-28
+**Последнее обновление**: 2026-06-23
