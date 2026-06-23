@@ -1272,8 +1272,14 @@ final class NativeCallSession: ObservableObject {
             }
         }
 
-        // Also check any direction for encryption_keys
-        if messageString.contains("encryption_keys") {
+        // E2EE keys: parse ONLY incoming (toWidget) messages.
+        // STMOB-246: previously this fired for ANY direction, so our OWN outgoing
+        // fromWidget relays (native-key-* send_to_device with messages.*.* shape, and
+        // native-roomkey-* send_event without a `sender`) were re-fed into the incoming
+        // parser → 6× "EXTRACT FAILED" noise per NSE log. Those are our own sends, not
+        // remote keys; real remote keys arrive as toWidget send_event (content.keys[] +
+        // sender) and still parse. Gating to toWidget removes the noise, no behaviour change.
+        if message.api == "toWidget", messageString.contains("encryption_keys") {
             MXLog.info("sTalk NativeCall E2EE RAW: \(messageString.prefix(500))")
             // STMOB-152 build 176: DiagLog для incoming E2EE keys.
             // Помогает Molly верифицировать что её server-side fan-out
