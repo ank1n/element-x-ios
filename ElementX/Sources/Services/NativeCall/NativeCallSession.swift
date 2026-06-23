@@ -752,9 +752,17 @@ final class NativeCallSession: ObservableObject {
         // Re-send E2EE key — to_device events may have been lost during the
         // long-poll gap. Build 41/42 did full reconnect here and created cascading loops;
         // build 44 trials .quickReconnect (ICE restart on live transports, no teardown).
+        //
+        // STMOB-246: re-advertise the SAME key (no rotation) on network change, to match
+        // the other re-advertise triggers (foreground / reconnect / JOIN) and Molly/Andy's
+        // canon (resend local key by index, not rotate). sendOurEncryptionKey() regenerated
+        // a NEW random key on every Wi-Fi↔LTE flip → index-0 churn: peers overwrote slot 0,
+        // in-flight frames under the old key-0 briefly failed to decrypt. rebroadcast keeps
+        // the same key/index → no disruption. (Sending stays "*"-wildcard for now; addressed
+        // recipients are the separate targeting change validated on STALK-506.)
         if isEncrypted, ourEncryptionKey != nil {
-            os_log(.info, log: callLog, "Resending E2EE key after network change")
-            await sendOurEncryptionKey()
+            os_log(.info, log: callLog, "Re-advertising SAME E2EE key after network change")
+            await rebroadcastCurrentEncryptionKey()
         }
 
         if Self.kEnableQuickReconnectOnNetworkChange {
