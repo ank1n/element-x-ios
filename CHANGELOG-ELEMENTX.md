@@ -2996,5 +2996,22 @@ NSE-лог prod (build 98) показал 6× `E2EE handleEncryptionKeys EXTRACT
 
 ---
 
+### 66. ✅ STMOB-246 — re-advertise того же ключа на смене сети (без ротации)
+
+**Дата**: 2026-06-23
+**Коммиты**: `fc82e07fc`
+
+#### Описание:
+`handleNetworkPathChange` на каждом Wi-Fi↔LTE вызывал `sendOurEncryptionKey()` — РЕ-генерация нового random ключа (всё на index 0). Пиры перезаписывали slot 0, in-flight кадры под старым ключом-0 кратко не расшифровывались (глитч на смене сети).
+
+#### Изменение:
+- network-change → `rebroadcastCurrentEncryptionKey()` (тот же ключ/index, без ротации) — как остальные re-advertise триггеры (foreground/reconnect/JOIN) и канон Molly/Andy (resend по index, не ротация).
+- Отправка пока остаётся `"*"`-wildcard; адресные recipients — отдельная targeting-правка, валидируется на STALK-506.
+
+#### Файлы:
+- `ios/ElementX/Sources/Services/NativeCall/NativeCallSession.swift`
+
+---
+
 **Дата создания**: 2026-01-28
 **Последнее обновление**: 2026-06-23
