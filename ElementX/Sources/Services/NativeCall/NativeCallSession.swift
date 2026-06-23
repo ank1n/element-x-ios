@@ -589,6 +589,53 @@ final class NativeCallSession: ObservableObject {
     private var ourEncryptionKey: String? // base64
     private var ourEncryptionKeyRaw: Data? // raw 16 bytes
 
+    /// STMOB-246: build an ADDRESSED send_to_device payload (messages:{user:{device:content}})
+    /// targeting only the active call participants (incl. egress — it must decrypt for recording),
+    /// instead of the wildcard messages:{"*":{"*":…}} broadcast that leaked the key into every
+    /// device_inbox of every room member (~182 stray keys per Molly's misty analysis). Recipients =
+    /// current LiveKit remoteParticipants (identity "@user:server:DEVICE", split on the LAST ':').
+    /// Returns nil when there are no recipients (alone in the call) — caller then skips the to-device
+    /// send; the room-event channel still carries the key as interim fallback.
+    /// NOTE: keys shape kept as the current object form; canonical array shape + recipient source
+    /// are finalised per Molly's STALK-505 spec and validated on the STALK-506 stand before merge.
+    private func buildAddressedToDeviceMessage(key: String, requestIdPrefix: String, nowMs: Int) -> String? {
+        var messages: [String: [String: Any]] = [:]
+        for participant in liveKitRoomManager.remoteParticipants {
+            guard let identity = participant.identity?.stringValue,
+                  let lastColon = identity.lastIndex(of: ":") else { continue }
+            let recipientUser = String(identity[identity.startIndex..<lastColon])
+            let recipientDevice = String(identity[identity.index(after: lastColon)...])
+            guard recipientUser.hasPrefix("@"), !recipientDevice.isEmpty else { continue }
+            let content: [String: Any] = [
+                "keys": ["index": 0, "key": key],
+                "room_id": matrixRoomId,
+                "member": ["claimed_device_id": deviceId],
+                "session": ["call_id": "", "application": "m.call", "scope": "m.room"],
+                "sent_ts": nowMs
+            ]
+            messages[recipientUser, default: [:]][recipientDevice] = content
+        }
+        guard !messages.isEmpty else {
+            DiagLog.write("E2EE", "addressed to-device SKIP — no active recipients (alone in call)")
+            return nil
+        }
+        let envelope: [String: Any] = [
+            "api": "fromWidget",
+            "action": "send_to_device",
+            "widgetId": widgetDriver.widgetID,
+            "requestId": "\(requestIdPrefix)-\(UUID().uuidString)",
+            "data": ["type": "io.element.call.encryption_keys", "encrypted": true, "messages": messages]
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: envelope),
+              let json = String(data: data, encoding: .utf8) else {
+            DiagLog.write("E2EE", "addressed to-device BUILD FAILED — skip (room-event fallback carries key)")
+            return nil
+        }
+        let deviceCount = messages.values.reduce(0) { $0 + $1.count }
+        DiagLog.write("E2EE", "addressed to-device → \(messages.count) users / \(deviceCount) devices")
+        return json
+    }
+
     private func sendOurEncryptionKey() async {
         // Generate random 16-byte key (base64). Matches build-34 behavior: regenerate per call,
         // use setKey(string) — changing either broke web decryption (build 35 regression).
@@ -606,17 +653,16 @@ final class NativeCallSession: ObservableObject {
         os_log(.info, log: callLog, "E2EE key generated identity=%{public}@", ourIdentity)
 
         let widgetId = widgetDriver.widgetID
-        let roomId = matrixRoomId
         let devId = deviceId
         let driver = widgetDriver
         let nowMs = Int(Date().timeIntervalSince1970 * 1000)
 
-        // Send via Widget API send_to_device — with retry on transient failures.
-        let toDeviceMsg = """
-        {"api":"fromWidget","action":"send_to_device","widgetId":"\(widgetId)","requestId":"native-key-\(UUID().uuidString)","data":{"type":"io.element.call.encryption_keys","encrypted":true,"messages":{"*":{"*":{"keys":{"index":0,"key":"\(key)"},"room_id":"\(roomId)","member":{"claimed_device_id":"\(devId)"},"session":{"call_id":"","application":"m.call","scope":"m.room"},"sent_ts":\(nowMs)}}}}}
-        """
-        Task.detached {
-            await Self.sendWidgetMessageWithRetry(label: "send_to_device", message: toDeviceMsg, driver: driver)
+        // Send via Widget API send_to_device — ADDRESSED to active participants (STMOB-246),
+        // with retry on transient failures. nil = no recipients yet → skip (room-event carries it).
+        if let toDeviceMsg = buildAddressedToDeviceMessage(key: key, requestIdPrefix: "native-key", nowMs: nowMs) {
+            Task.detached {
+                await Self.sendWidgetMessageWithRetry(label: "send_to_device", message: toDeviceMsg, driver: driver)
+            }
         }
 
         // Send as room event — with retry. STMOB-246: gated; canon = to-device-only SEND.
@@ -651,7 +697,6 @@ final class NativeCallSession: ObservableObject {
         DiagLog.write("E2EE", "rebroadcast START key=\(key.prefix(8))… (state=\(sessionState))")
 
         let widgetId = widgetDriver.widgetID
-        let roomId = matrixRoomId
         let devId = deviceId
         let driver = widgetDriver
         let nowMs = Int(Date().timeIntervalSince1970 * 1000)
@@ -659,11 +704,11 @@ final class NativeCallSession: ObservableObject {
         MXLog.info("sTalk NativeCall E2EE: rebroadcast current key (no rotation)")
         os_log(.info, log: callLog, "E2EE rebroadcast current key")
 
-        let toDeviceMsg = """
-        {"api":"fromWidget","action":"send_to_device","widgetId":"\(widgetId)","requestId":"native-key-rb-\(UUID().uuidString)","data":{"type":"io.element.call.encryption_keys","encrypted":true,"messages":{"*":{"*":{"keys":{"index":0,"key":"\(key)"},"room_id":"\(roomId)","member":{"claimed_device_id":"\(devId)"},"session":{"call_id":"","application":"m.call","scope":"m.room"},"sent_ts":\(nowMs)}}}}}
-        """
-        Task.detached {
-            await Self.sendWidgetMessageWithRetry(label: "send_to_device(rb)", message: toDeviceMsg, driver: driver)
+        // STMOB-246: addressed to-device (active participants only) instead of "*" wildcard.
+        if let toDeviceMsg = buildAddressedToDeviceMessage(key: key, requestIdPrefix: "native-key-rb", nowMs: nowMs) {
+            Task.detached {
+                await Self.sendWidgetMessageWithRetry(label: "send_to_device(rb)", message: toDeviceMsg, driver: driver)
+            }
         }
 
         // STMOB-246: gated room-event SEND (canon = to-device-only).
