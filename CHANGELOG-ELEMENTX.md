@@ -3013,5 +3013,24 @@ NSE-лог prod (build 98) показал 6× `E2EE handleEncryptionKeys EXTRACT
 
 ---
 
+### 67. ✅ STMOB-246 — гейт room-event SEND ключа за флагом (канон to-device-only)
+
+**Дата**: 2026-06-24
+**Коммиты**: `a47f61201`
+
+#### Описание:
+Канон STALK-505 (согласован Web/iOS/Android, Molly): SEND ключа = только адресный to-device; room-event SEND депрекейтим у всех (room-event персистит ключ в стейте комнаты = слабая forward secrecy + заставляет Web флипаться в broadcast при любом room-event ключе). RECEIVE room-event ОСТАЁТСЯ (fallback для легаси-отправителей).
+
+#### Изменение:
+- Флаг `kSendKeyViaRoomEvent` (default `true` = no-op) гейтит наши исходящие `send_event`-ключи в `sendOurEncryptionKey` + `rebroadcastCurrentEncryptionKey`. Приём room-event не трогаем. Стенд STALK-506 флипает в `false` → проверка, что to-device-only расшифровывается всеми (Web/iOS/Android/гость) перед удалением.
+
+#### Файлы:
+- `ios/ElementX/Sources/Services/NativeCall/NativeCallSession.swift`
+
+#### Связано:
+STMOB-247 (membership-settled re-advertise — предусловие снятия room-event), ветка `stmob-246-e2ee-targeting` (адресность recipients), STALK-505 (канон/спека), STALK-506 (стенд).
+
+---
+
 **Дата создания**: 2026-01-28
-**Последнее обновление**: 2026-06-23
+**Последнее обновление**: 2026-06-24
