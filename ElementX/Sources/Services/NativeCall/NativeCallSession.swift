@@ -619,12 +619,14 @@ final class NativeCallSession: ObservableObject {
             await Self.sendWidgetMessageWithRetry(label: "send_to_device", message: toDeviceMsg, driver: driver)
         }
 
-        // Send as room event — with retry.
-        let roomEventMsg = """
-        {"api":"fromWidget","action":"send_event","widgetId":"\(widgetId)","requestId":"native-roomkey-\(UUID().uuidString)","data":{"type":"io.element.call.encryption_keys","content":{"keys":[{"index":0,"key":"\(key)"}],"device_id":"\(devId)","call_id":"","sent_ts":\(nowMs)}}}
-        """
-        Task.detached {
-            await Self.sendWidgetMessageWithRetry(label: "send_event", message: roomEventMsg, driver: driver)
+        // Send as room event — with retry. STMOB-246: gated; canon = to-device-only SEND.
+        if Self.kSendKeyViaRoomEvent {
+            let roomEventMsg = """
+            {"api":"fromWidget","action":"send_event","widgetId":"\(widgetId)","requestId":"native-roomkey-\(UUID().uuidString)","data":{"type":"io.element.call.encryption_keys","content":{"keys":[{"index":0,"key":"\(key)"}],"device_id":"\(devId)","call_id":"","sent_ts":\(nowMs)}}}
+            """
+            Task.detached {
+                await Self.sendWidgetMessageWithRetry(label: "send_event", message: roomEventMsg, driver: driver)
+            }
         }
 
         // Publish key to key-server so recording-api can decrypt
@@ -664,11 +666,14 @@ final class NativeCallSession: ObservableObject {
             await Self.sendWidgetMessageWithRetry(label: "send_to_device(rb)", message: toDeviceMsg, driver: driver)
         }
 
-        let roomEventMsg = """
-        {"api":"fromWidget","action":"send_event","widgetId":"\(widgetId)","requestId":"native-roomkey-rb-\(UUID().uuidString)","data":{"type":"io.element.call.encryption_keys","content":{"keys":[{"index":0,"key":"\(key)"}],"device_id":"\(devId)","call_id":"","sent_ts":\(nowMs)}}}
-        """
-        Task.detached {
-            await Self.sendWidgetMessageWithRetry(label: "send_event(rb)", message: roomEventMsg, driver: driver)
+        // STMOB-246: gated room-event SEND (canon = to-device-only).
+        if Self.kSendKeyViaRoomEvent {
+            let roomEventMsg = """
+            {"api":"fromWidget","action":"send_event","widgetId":"\(widgetId)","requestId":"native-roomkey-rb-\(UUID().uuidString)","data":{"type":"io.element.call.encryption_keys","content":{"keys":[{"index":0,"key":"\(key)"}],"device_id":"\(devId)","call_id":"","sent_ts":\(nowMs)}}}
+            """
+            Task.detached {
+                await Self.sendWidgetMessageWithRetry(label: "send_event(rb)", message: roomEventMsg, driver: driver)
+            }
         }
 
         // STMOB-101 v2: re-publish в KS на каждом rebroadcast — резерв против
@@ -772,6 +777,14 @@ final class NativeCallSession: ObservableObject {
 
     /// Build 44 experiment — toggle to fall back to previous build 43 behaviour.
     private static let kEnableQuickReconnectOnNetworkChange = true
+
+    /// STMOB-246 / STALK-505: gate the room-event channel for SENDING the E2EE key.
+    /// Canon = to-device-only SEND (room-event SEND deprecated — it persists key material in
+    /// room state, weak forward secrecy, and makes Web flip to broadcast). RECEIVE of room-event
+    /// stays on (fallback for legacy senders) — this flag ONLY affects our outgoing send_event.
+    /// Default TRUE keeps current behaviour (no-op); the STALK-506 stand flips it false to verify
+    /// to-device-only decrypts across Web/iOS/Android/guest before we remove room-event SEND.
+    private static let kSendKeyViaRoomEvent = true
 
     #if targetEnvironment(simulator)
     /// DEBUG: симулирует смену сети (wifi → cellular) без Mac WiFi toggle.
