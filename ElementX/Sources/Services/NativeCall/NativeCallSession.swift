@@ -80,6 +80,13 @@ final class NativeCallSession: ObservableObject {
     /// rebroadcast текущего encryption key — иначе он не сможет расшифровать
     /// audio после того как ratchet ушёл вперёд изначально розданного ключа.
     private var knownRemoteIdentities: Set<String> = []
+    /// STMOB-246/247: active MatrixRTC call membership device-set — canonical source for
+    /// E2EE key RECIPIENTS (addressed to-device) and the re-advertise trigger (membership-settled),
+    /// per STALK-505 (source = call.member memberships, NOT LiveKit presence). Egress is not a
+    /// call-member → naturally excluded. Key = "userId|deviceId", value = expiry epoch-ms
+    /// (0 = unknown expiry → treated active). Built from incoming call.member events; exact field
+    /// names validated on the STALK-506 stand. Excludes our own (userId|deviceId).
+    private var callMemberDeviceExpiry: [String: Double] = [:]
     /// STMOB-96 v2 / STMOB-101 v3: foreground observer to rebroadcast same key
     /// when app возвращается в foreground (на случай если новые participant'ы
     /// подключились пока iOS suspended app).
@@ -599,13 +606,11 @@ final class NativeCallSession: ObservableObject {
     /// NOTE: keys shape kept as the current object form; canonical array shape + recipient source
     /// are finalised per Molly's STALK-505 spec and validated on the STALK-506 stand before merge.
     private func buildAddressedToDeviceMessage(key: String, requestIdPrefix: String, nowMs: Int) -> String? {
+        // STMOB-246: recipients from call.member memberships (canon, STALK-505) — NOT LiveKit
+        // presence. Egress is not a call-member → naturally excluded (recording goes via Key Server).
         var messages: [String: [String: Any]] = [:]
-        for participant in liveKitRoomManager.remoteParticipants {
-            guard let identity = participant.identity?.stringValue,
-                  let lastColon = identity.lastIndex(of: ":") else { continue }
-            let recipientUser = String(identity[identity.startIndex..<lastColon])
-            let recipientDevice = String(identity[identity.index(after: lastColon)...])
-            guard recipientUser.hasPrefix("@"), !recipientDevice.isEmpty else { continue }
+        for recipient in activeMemberRecipients() {
+            guard recipient.user.hasPrefix("@"), !recipient.device.isEmpty else { continue }
             let content: [String: Any] = [
                 "keys": ["index": 0, "key": key],
                 "room_id": matrixRoomId,
@@ -613,7 +618,7 @@ final class NativeCallSession: ObservableObject {
                 "session": ["call_id": "", "application": "m.call", "scope": "m.room"],
                 "sent_ts": nowMs
             ]
-            messages[recipientUser, default: [:]][recipientDevice] = content
+            messages[recipient.user, default: [:]][recipient.device] = content
         }
         guard !messages.isEmpty else {
             DiagLog.write("E2EE", "addressed to-device SKIP — no active recipients (alone in call)")
@@ -1369,7 +1374,67 @@ final class NativeCallSession: ObservableObject {
         }
     }
 
+    /// STMOB-246/247: update the active call-membership device-set from an incoming call.member
+    /// state event, and re-advertise our key when a NEW device appears (membership-settled — robust
+    /// to fast re-join of the SAME device that the LiveKit identity-diff misses). Defensive field
+    /// parsing; exact shape validated on the STALK-506 stand.
+    private func updateCallMembers(from message: WidgetAPIMessage) {
+        guard let content = message.callMemberContent else { return }
+        let sender = (message.data?["sender"] as? String) ?? ""
+        guard sender.hasPrefix("@") else { return }
+        let nowMs = Date().timeIntervalSince1970 * 1000
+
+        let beforeForSender = Set(callMemberDeviceExpiry.keys.filter { $0.hasPrefix("\(sender)|") })
+
+        // A call.member event carries this user's current memberships. memberships[] (legacy) or a
+        // single-membership content (per-device model). Empty content {} → user left.
+        var rawMemberships = (content["memberships"] as? [[String: Any]]) ?? []
+        if rawMemberships.isEmpty, content["device_id"] != nil { rawMemberships = [content] }
+
+        var senderKeysNow = Set<String>()
+        for m in rawMemberships {
+            guard let device = m["device_id"] as? String, !device.isEmpty else { continue }
+            let expiry: Double = {
+                if let ts = (m["expires_ts"] as? Double) ?? (m["expires_ts"] as? Int).map(Double.init) { return ts }
+                let created = (m["created_ts"] as? Double) ?? (m["created_ts"] as? Int).map(Double.init)
+                let rel = (m["expires"] as? Double) ?? (m["expires"] as? Int).map(Double.init)
+                if let created, let rel { return created + rel }
+                return 0 // unknown expiry → treat active
+            }()
+            let key = "\(sender)|\(device)"
+            senderKeysNow.insert(key)
+            callMemberDeviceExpiry[key] = expiry
+        }
+        for stale in beforeForSender.subtracting(senderKeysNow) {
+            callMemberDeviceExpiry.removeValue(forKey: stale)
+        }
+        callMemberDeviceExpiry = callMemberDeviceExpiry.filter { $0.value == 0 || $0.value > nowMs }
+
+        let selfKey = "\(userId)|\(deviceId)"
+        DiagLog.write("E2EE", "call.member from \(sender): active recipients=\(callMemberDeviceExpiry.keys.filter { $0 != selfKey }.count)")
+
+        // STMOB-247: re-advertise on membership-settled (new device of any peer appeared).
+        let newDevices = senderKeysNow.subtracting(beforeForSender).filter { $0 != selfKey }
+        if !newDevices.isEmpty, sessionState == .connected, isEncrypted, ourEncryptionKey != nil {
+            DiagLog.write("E2EE", "membership-settled new=\(newDevices) → re-advertise key")
+            Task { [weak self] in await self?.rebroadcastCurrentEncryptionKey() }
+        }
+    }
+
+    /// Active call.member recipients (userId, deviceId) excluding self — source for addressed to-device.
+    private func activeMemberRecipients() -> [(user: String, device: String)] {
+        let nowMs = Date().timeIntervalSince1970 * 1000
+        let selfKey = "\(userId)|\(deviceId)"
+        return callMemberDeviceExpiry.compactMap { key, expiry -> (user: String, device: String)? in
+            guard key != selfKey, expiry == 0 || expiry > nowMs else { return nil }
+            let parts = key.split(separator: "|", maxSplits: 1).map(String.init)
+            guard parts.count == 2 else { return nil }
+            return (user: parts[0], device: parts[1])
+        }
+    }
+
     private func handleCallMemberEvent(_ message: WidgetAPIMessage) {
+        updateCallMembers(from: message)
         guard let content = message.callMemberContent else { return }
 
         // Extract LiveKit SFU URL from focus config
