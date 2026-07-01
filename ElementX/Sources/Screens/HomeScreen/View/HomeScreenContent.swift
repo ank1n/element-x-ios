@@ -12,11 +12,6 @@ import SwiftUI
 
 struct HomeScreenContent: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
-    @State private var isArchiveRevealed = false
-    /// Guards the manual contentOffset compensation while hiding the archive row, so the
-    /// adjustment fires exactly once instead of fighting the active scroll gesture (which made
-    /// the list jitter and only hide after several tries on device).
-    @State private var isAdjustingArchiveOffset = false
     @AppStorage("stalk_design_theme") private var designTheme = "cosmos"
 
     @ObservedObject var context: HomeScreenViewModel.Context
@@ -113,14 +108,6 @@ struct HomeScreenContent: View {
                 case .rooms:
                     LazyVStack(spacing: 0) {
                         Section {
-                            // Archive row — hidden by default, appears on pull-down (Telegram-style)
-                            if context.viewState.archiveRoomCount > 0,
-                               !context.viewState.bindings.isSearchFieldFocused,
-                               isArchiveRevealed {
-                                archiveRow
-                                    .transition(.move(edge: .top).combined(with: .opacity))
-                            }
-
                             if context.viewState.shouldShowEmptySearchState {
                                 VStack(spacing: 12) {
                                     Spacer().frame(height: 60)
@@ -160,9 +147,11 @@ struct HomeScreenContent: View {
                 guard scrollView != scrollViewAdapter.scrollView else { return }
                 scrollViewAdapter.scrollView = scrollView
             }
+            .refreshable {
+                await refreshRooms()
+            }
             .onReceive(scrollViewAdapter.didScroll) { _ in
                 updateVisibleRange()
-                checkOverscrollForArchive()
             }
             .onReceive(scrollViewAdapter.isScrolling) { _ in
                 updateVisibleRange()
@@ -217,14 +206,23 @@ struct HomeScreenContent: View {
                 }
             }
             .scrollDismissesKeyboard(.immediately)
-            .scrollBounceBehavior(context.viewState.roomListMode == .empty ? .basedOnSize : .automatic)
+            // .always so pull-to-refresh works even when the list is shorter than the screen.
+            .scrollBounceBehavior(context.viewState.roomListMode == .empty ? .basedOnSize : .always)
             .animation(.none, value: context.viewState.roomListMode)
             .animation(.none, value: context.viewState.visibleRooms)
-            .onChange(of: context.viewState.roomListMode) { _, newMode in
-                if newMode != .rooms {
-                    isArchiveRevealed = false
-                }
-            }
+        }
+    }
+
+    /// Pull-to-refresh: triggers the same sync restart as the old ⟳ button and keeps the native
+    /// refresh spinner on screen until the restart settles (safety-capped at ~8s).
+    private func refreshRooms() async {
+        context.send(viewAction: .forceRefresh)
+        // Give the view model a tick to flip isRefreshing = true before we start polling it.
+        try? await Task.sleep(for: .milliseconds(150))
+        var ticks = 0
+        while context.viewState.isRefreshing, ticks < 80 {
+            try? await Task.sleep(for: .milliseconds(100))
+            ticks += 1
         }
     }
     
@@ -304,59 +302,6 @@ struct HomeScreenContent: View {
         }
         .background(isCosmos ? Color.clear : Color.compound.bgCanvasDefault)
     }
-    
-    // MARK: - Archive Row
-
-    private var archiveRow: some View {
-        Button {
-            context.send(viewAction: .openArchive)
-        } label: {
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(Color.blue.opacity(0.12))
-                        // Match the chat cell avatar size (40pt on iOS 26) so the archive row
-                        // isn't taller/bigger than the chat rows.
-                        .frame(width: 40, height: 40)
-                    Image(systemName: "archivebox.fill")
-                        .font(.system(size: 17))
-                        .foregroundColor(.blue)
-                }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(SL10n.actionArchive)
-                        .font(.compound.bodyLGSemibold)
-                        .foregroundColor(.compound.textPrimary)
-
-                    if !context.viewState.archivePreviewText.isEmpty {
-                        Text(context.viewState.archivePreviewText)
-                            .font(.compound.bodySM)
-                            .foregroundColor(.compound.textSecondary)
-                            .lineLimit(1)
-                    }
-                }
-
-                Spacer()
-            }
-            // Reserve the same height as a chat cell (which has a 2-line message preview) so the
-            // single-line archive row isn't shorter than the chat rows.
-            .frame(minHeight: isCosmos ? 58 : 0)
-            .padding(.horizontal, 16)
-            .padding(.vertical, isCosmos ? 4 : 12)
-            .background(isCosmos ? Color(UIColor.systemBackground) : Color.compound.bgCanvasDefault)
-            // Match the chat rooms card exactly (cornerRadius 14 + horizontal inset 12) so the
-            // archive card isn't wider than the chat card.
-            .cornerRadius(isCosmos ? 14 : 0)
-            .overlay {
-                if isCosmos {
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(Color.black.opacity(0.06), lineWidth: 0.5)
-                }
-            }
-            .padding(.horizontal, isCosmos ? 12 : 0)
-            .padding(.vertical, isCosmos ? 2 : 0)
-        }
-    }
 
     // MARK: - Recent Searches
 
@@ -393,40 +338,6 @@ struct HomeScreenContent: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
-                }
-            }
-        }
-    }
-
-    private func checkOverscrollForArchive() {
-        guard context.viewState.archiveRoomCount > 0,
-              context.viewState.roomListMode == .rooms,
-              !isAdjustingArchiveOffset,
-              let scrollView = scrollViewAdapter.scrollView else { return }
-        let topInset = scrollView.adjustedContentInset.top
-        let offset = scrollView.contentOffset.y + topInset
-
-        if !isArchiveRevealed {
-            // Pull down past 60pt → reveal archive
-            if offset < -60 {
-                withAnimation(.easeOut(duration: 0.25)) {
-                    isArchiveRevealed = true
-                }
-            }
-        } else {
-            // Scrolled up past archive row height (76pt) → hide it.
-            // The contentOffset compensation keeps the visible rooms from jumping, but it fires
-            // inside didScroll, so without a guard it re-triggers on the gesture's momentum and
-            // jitters. isAdjustingArchiveOffset ensures it runs once per hide.
-            if offset > 80 {
-                isAdjustingArchiveOffset = true
-                scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: scrollView.contentOffset.y - 76),
-                                            animated: false)
-                withAnimation(.easeOut(duration: 0.25)) {
-                    isArchiveRevealed = false
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    isAdjustingArchiveOffset = false
                 }
             }
         }

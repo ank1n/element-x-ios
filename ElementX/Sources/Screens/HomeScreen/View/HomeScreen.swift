@@ -38,7 +38,7 @@ struct HomeScreen: View {
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
-            refreshButton
+            archiveButton
         }
         ToolbarItem(placement: .primaryAction) {
             if #available(iOS 26, *) {
@@ -50,21 +50,20 @@ struct HomeScreen: View {
         }
     }
 
+    /// Reload moved to pull-to-refresh on the room list (see HomeScreenContent.refreshRooms()).
+    /// The top-left slot now opens archived chats, shown only when there are archived rooms.
     @ViewBuilder
-    private var refreshButton: some View {
+    private var archiveButton: some View {
         switch context.viewState.roomListMode {
         case .empty, .rooms:
-            Button {
-                context.send(viewAction: .forceRefresh)
-            } label: {
-                if context.viewState.isRefreshing {
-                    ProgressView()
-                } else {
-                    Image(systemName: "arrow.clockwise")
+            if context.viewState.archiveRoomCount > 0 {
+                Button {
+                    context.send(viewAction: .openArchive)
+                } label: {
+                    Image(systemName: "archivebox")
                 }
+                .accessibilityLabel(SL10n.actionArchive)
             }
-            .disabled(context.viewState.isRefreshing)
-            .accessibilityLabel(NSLocalizedString("stalk_chats_refresh", tableName: "Localizable", value: "Обновить", comment: "Chat list refresh button"))
         default:
             EmptyView()
         }
