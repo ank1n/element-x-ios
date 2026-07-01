@@ -3032,5 +3032,29 @@ STMOB-247 (membership-settled re-advertise — предусловие сняти
 
 ---
 
+### 68. ✅ Chats — pull-to-refresh на списке чатов + архив иконкой в шапке
+
+**Дата**: 2026-07-02
+**Коммиты**: `f16465799`
+**Ветка**: `stmob-chats-pull-to-refresh` (от `develop`)
+
+#### Описание:
+Вернул стандартный iOS pull-to-refresh на список чатов. Протягивание вниз теперь запускает перезапуск sync (`forceRefresh`: stopSync→startSync) через `.refreshable`, вместо кнопки ⟳ в тулбаре. Прежний жест pull-down был занят показом архив-строки (Telegram-стиль) — архив перенесён в иконку `archivebox` в левом слоте шапки (показывается только при `archiveRoomCount > 0`), жест pull-down освобождён под refresh.
+
+#### Изменение:
+- **`HomeScreenContent.swift`**: добавлен `.refreshable { await refreshRooms() }` — `refreshRooms()` шлёт `.forceRefresh` и держит нативный spinner, опрашивая `viewState.isRefreshing` (кап ~8с), пока перезапуск sync не осядет. Удалены: `checkOverscrollForArchive()`, state `isArchiveRevealed`/`isAdjustingArchiveOffset`, инлайн `archiveRow` + вызов в `didScroll`, `onChange(roomListMode)` сброс. `scrollBounceBehavior` для `.rooms` → `.always` (чтобы pull работал на списке короче экрана).
+- **`HomeScreen.swift`**: `refreshButton` (⟳) заменён на `archiveButton` (`Image("archivebox")` → `.openArchive`), условие `archiveRoomCount > 0`.
+
+#### Проверено (симулятор, живая сессия stalk.implica.ru):
+- Pull-down → MXLog `force refresh — restarting sync service` → `Stopping sync` → sync `idle` → `running`. Нативный spinner отрабатывает (нужно удержанное протягивание, не резкий flick).
+- Архив-иконка в шапке — подтверждено визуально.
+- Офлайн (cut Wi-Fi): список рендерится из локального кеша rust-SDK + индикатор «Не в сети»; офлайн НЕ грузятся свежие сообщения / user-directory поиск / некешированные аватары. Примечание: на симуляторе NWPathMonitor не всегда ловит возврат сети после host-cut → `forceRefresh` гейтится на reachability (`ClientProxy.swift:414`), перезапуск app чинит; на реальном iPhone reachability возвращается за ~1-2с.
+
+#### Файлы:
+- `ios/ElementX/Sources/Screens/HomeScreen/View/HomeScreenContent.swift`
+- `ios/ElementX/Sources/Screens/HomeScreen/View/HomeScreen.swift`
+
+---
+
 **Дата создания**: 2026-01-28
-**Последнее обновление**: 2026-06-24
+**Последнее обновление**: 2026-07-02
