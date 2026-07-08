@@ -199,11 +199,12 @@ protocol ClientProxyProtocol: AnyObject {
     func createRoom(name: String,
                     topic: String?,
                     accessType: CreateRoomAccessType,
+                    isEncrypted: Bool,
                     isSpace: Bool,
                     userIDs: [String],
                     avatarURL: URL?,
                     aliasLocalPart: String?) async -> Result<String, ClientProxyError>
-    
+
     func joinRoom(_ roomID: String, via: [String]) async -> Result<Void, ClientProxyError>
     
     func joinRoomAlias(_ roomAlias: String) async -> Result<Void, ClientProxyError>

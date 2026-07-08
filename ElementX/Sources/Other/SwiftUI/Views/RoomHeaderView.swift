@@ -14,6 +14,8 @@ struct RoomHeaderView: View {
     let roomName: String
     var roomSubtitle: String?
     let roomAvatar: RoomAvatar
+    /// Encrypted room → pastel blue ring around the header avatar (matches the chat-list marker & Web).
+    var isEncrypted = false
     var dmRecipientVerificationState: UserIdentityVerificationState?
     /// STMOB-103 build 122: presence DM-собеседника. Telegram-style — точка
     /// на avatar + subtitle "в сети"/"был в сети X назад" под именем.
@@ -82,6 +84,12 @@ struct RoomHeaderView: View {
                         avatarSize: .room(on: .timeline),
                         mediaProvider: mediaProvider)
             .accessibilityIdentifier(A11yIdentifiers.roomScreen.avatar)
+            // Encrypted room → pastel blue ring (same marker as the chat list).
+            .overlay {
+                if isEncrypted {
+                    Circle().strokeBorder(Color(red: 0.55, green: 0.72, blue: 0.96), lineWidth: 2)
+                }
+            }
             // Build 122: зелёная/жёлтая/серая точка на avatar для DM
             .overlay(alignment: .bottomTrailing) {
                 if let presence = dmRecipientPresence {

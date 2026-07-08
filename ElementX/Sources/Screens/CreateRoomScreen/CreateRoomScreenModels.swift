@@ -71,6 +71,10 @@ struct CreateRoomScreenViewState: BindableState {
 struct CreateRoomScreenViewStateBindings {
     var roomTopic: String
     var selectedAccessType: CreateRoomAccessType
+    /// User-chosen encryption for the new room. Optional encryption (matches Web): default follows
+    /// the server's well-known `io.element.e2ee.default` (false → off on our servers). Only shown
+    /// for private rooms; public rooms are always unencrypted.
+    var isRoomEncrypted = false
     var showAttachmentConfirmationDialog = false
     
     /// Information describing the currently displayed alert.

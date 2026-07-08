@@ -180,6 +180,7 @@ struct RoomScreen: View {
         ToolbarItem(placement: .principal) {
             RoomHeaderView(roomName: context.viewState.roomTitle,
                            roomAvatar: context.viewState.roomAvatar,
+                           isEncrypted: context.viewState.isEncrypted,
                            dmRecipientVerificationState: context.viewState.dmRecipientVerificationState,
                            dmRecipientPresence: context.viewState.dmRecipientPresence,
                            mediaProvider: context.mediaProvider) {

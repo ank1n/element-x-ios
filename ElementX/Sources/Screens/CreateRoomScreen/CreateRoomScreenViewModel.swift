@@ -225,6 +225,7 @@ class CreateRoomScreenViewModel: CreateRoomScreenViewModelType, CreateRoomScreen
         switch await userSession.clientProxy.createRoom(name: state.roomName,
                                                         topic: state.bindings.roomTopic.isBlank ? nil : state.bindings.roomTopic,
                                                         accessType: state.bindings.selectedAccessType,
+                                                        isEncrypted: state.bindings.isRoomEncrypted,
                                                         isSpace: state.isSpace,
                                                         userIDs: [], // The invite users screen is shown next so we don't need to invite anyone right now.
                                                         avatarURL: avatarURL,

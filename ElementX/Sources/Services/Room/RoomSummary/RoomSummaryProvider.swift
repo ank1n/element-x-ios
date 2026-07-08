@@ -316,7 +316,8 @@ class RoomSummaryProvider: RoomSummaryProviderProtocol {
                            hasOngoingCall: roomInfo.hasRoomCall,
                            isMarkedUnread: roomInfo.isMarkedUnread,
                            isFavourite: roomInfo.isFavourite,
-                           isTombstoned: roomInfo.successorRoom != nil)
+                           isTombstoned: roomInfo.successorRoom != nil,
+                           isEncrypted: roomInfo.encryptionState == .encrypted)
     }
     
     private func buildDiff(from diff: RoomListEntriesUpdate, on rooms: [RoomSummary]) -> CollectionDifference<RoomSummary>? {

@@ -515,9 +515,12 @@ class ClientProxy: ClientProxyProtocol {
                 return .success(existingRoomID)
             }
 
+            // Optional encryption: DMs are NOT force-encrypted anymore — like Web they follow the
+            // server's e2ee default (io.element.e2ee.default:false on our servers → plaintext DM,
+            // user enables encryption manually). Previously hardcoded true, which diverged from Web.
             let parameters = CreateRoomParameters(name: nil,
                                                   topic: nil,
-                                                  isEncrypted: true,
+                                                  isEncrypted: false,
                                                   isDirect: true,
                                                   visibility: .private,
                                                   preset: .trustedPrivateChat,
@@ -538,6 +541,7 @@ class ClientProxy: ClientProxyProtocol {
     func createRoom(name: String,
                     topic: String?,
                     accessType: CreateRoomAccessType,
+                    isEncrypted: Bool,
                     isSpace: Bool,
                     userIDs: [String],
                     avatarURL: URL?,
@@ -557,9 +561,11 @@ class ClientProxy: ClientProxyProtocol {
                 }
             }
             
+            // Public rooms are never encrypted (matches Web); private/askToJoin use the caller's
+            // choice (the create-room encryption toggle).
             let parameters = CreateRoomParameters(name: name,
                                                   topic: topic,
-                                                  isEncrypted: accessType.isEncrypted,
+                                                  isEncrypted: accessType.isPrivate ? isEncrypted : false,
                                                   isDirect: false,
                                                   visibility: accessType.visibility,
                                                   preset: accessType.preset,

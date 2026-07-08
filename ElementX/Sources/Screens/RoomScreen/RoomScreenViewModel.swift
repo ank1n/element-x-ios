@@ -448,6 +448,7 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
     private func updateRoomInfo(_ roomInfo: RoomInfoProxyProtocol) {
         state.roomTitle = roomInfo.displayName ?? roomProxy.id
         state.roomAvatar = roomInfo.avatar
+        state.isEncrypted = roomInfo.isEncrypted
         state.hasOngoingCall = roomInfo.hasRoomCall
         state.hasSuccessor = roomInfo.successor != nil
         

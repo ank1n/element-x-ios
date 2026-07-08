@@ -1000,6 +1000,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
                 let result = await userSession.clientProxy.createRoom(name: roomName,
                                                                       topic: nil,
                                                                       accessType: .private,
+                                                                      isEncrypted: false, // call room follows optional-encryption default (unencrypted)
                                                                       isSpace: false,
                                                                       userIDs: matrixUserIDs,
                                                                       avatarURL: nil,

@@ -66,6 +66,13 @@ struct HomeScreenRoomCell: View {
                             mediaProvider: mediaProvider)
                 .dynamicTypeSize(dynamicTypeSize < .accessibility1 ? dynamicTypeSize : .accessibility1)
                 .accessibilityHidden(true)
+                // Encrypted room → blue avatar ring (matches Web's encrypted-room marking).
+                .overlay {
+                    if room.isEncrypted {
+                        // Pastel blue ring for encrypted rooms (matches Web's soft encrypted marker).
+                        Circle().strokeBorder(Color(red: 0.55, green: 0.72, blue: 0.96), lineWidth: 2)
+                    }
+                }
                 .overlay(alignment: .bottomTrailing) {
                     presenceDot
                 }

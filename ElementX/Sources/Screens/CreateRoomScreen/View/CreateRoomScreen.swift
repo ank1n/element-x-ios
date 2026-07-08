@@ -56,7 +56,9 @@ struct CreateRoomScreen: View {
                 roomSection
                 topicSection
                 roomAccessSection
-                if !context.selectedAccessType.isPrivate {
+                if context.selectedAccessType.isPrivate {
+                    encryptionSection
+                } else {
                     roomAliasSection
                 }
             }
@@ -210,6 +212,22 @@ struct CreateRoomScreen: View {
         }
     }
     
+    /// Optional encryption toggle — shown only for private rooms (public rooms are never
+    /// encrypted). Default follows the server (io.element.e2ee.default:false → off on our servers);
+    /// the user opts in. Sends the standard `m.room.encryption` state event, same as Web.
+    private var encryptionSection: some View {
+        Section {
+            Toggle(NSLocalizedString("stalk_create_room_encryption", tableName: "Localizable",
+                                     value: "Шифрование", comment: "Encryption toggle when creating a room"),
+                   isOn: $context.isRoomEncrypted)
+        } footer: {
+            Text(NSLocalizedString("stalk_create_room_encryption_footer", tableName: "Localizable",
+                                   value: "Сквозное шифрование сообщений и звонков. После создания отключить нельзя.",
+                                   comment: "Encryption toggle footer in create room"))
+                .compoundListSectionFooter()
+        }
+    }
+
     private var roomAliasSection: some View {
         Section {
             EditRoomAddressListRow(aliasLocalPart: aliasBinding,

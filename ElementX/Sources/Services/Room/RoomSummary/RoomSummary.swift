@@ -61,6 +61,9 @@ struct RoomSummary {
     let isMarkedUnread: Bool
     let isFavourite: Bool
     let isTombstoned: Bool
+    /// Whether the room has encryption enabled (m.room.encryption). Drives the encrypted-room
+    /// indicator (blue avatar ring) in the chat list. Default keeps existing constructors/mocks valid.
+    var isEncrypted = false
     
     var hasUnreadMessages: Bool {
         unreadMessagesCount > 0

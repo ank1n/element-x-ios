@@ -224,9 +224,13 @@ struct HomeScreenRoom: Identifiable, Equatable {
     let isDirect: Bool
     
     let isHighlighted: Bool
-    
+
     let isFavourite: Bool
-    
+
+    /// End-to-end encrypted room → shows the blue avatar ring in the list (matches Web). Default
+    /// keeps the mock initialiser valid.
+    var isEncrypted = false
+
     let timestamp: String?
     
     let lastMessage: AttributedString?
@@ -314,6 +318,7 @@ extension HomeScreenRoom {
                   isDirect: summary.isDirect,
                   isHighlighted: isHighlighted,
                   isFavourite: summary.isFavourite,
+                  isEncrypted: summary.isEncrypted,
                   timestamp: summary.lastMessageDate?.formattedMinimal(),
                   lastMessage: summary.lastMessage,
                   lastMessageState: summary.homeScreenLastMessageState,
