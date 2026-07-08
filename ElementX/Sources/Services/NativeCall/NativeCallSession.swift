@@ -48,9 +48,10 @@ final class NativeCallSession: ObservableObject {
 
     // MARK: - LiveKit Config
 
-    // TODO: Move to AppSettings or server config
-    private let livekitAPIKey = "APIe5e237fe719f"
-    private let livekitAPISecret = "6b0d7fe4c5b393c004bf813ae8dd428f70aef4896957fcb9b0ad58d37c353f96"
+    // LiveKit credentials are NOT hardcoded anymore: they are fetched per-call from the
+    // homeserver's own lk-jwt-service (POST {jwt.<domain>}/sfu/get) — the api key/secret is
+    // per-install, so embedding stalk.implica.ru's key only worked on .ru-shared infra and
+    // broke calls on independent installs (stalk.pics etc.). See fetchLiveKitCredentials().
 
     // MARK: - E2EE Key Management
 
@@ -92,6 +93,10 @@ final class NativeCallSession: ObservableObject {
     /// подключились пока iOS suspended app).
     private var foregroundObserver: NSObjectProtocol?
     private var livekitBaseURL: String?
+    /// Resolved per-domain lk-jwt-service base URL (e.g. https://jwt.stalk.pics) for THIS call,
+    /// taken from the homeserver's MSC4143 rtc_foci. Used both to fetch LiveKit creds (/sfu/get)
+    /// and to advertise our own foci_preferred so remote clients agree on the same focus.
+    private var resolvedJWTServiceURL: String?
 
     // MARK: - Internal
 
@@ -357,7 +362,7 @@ final class NativeCallSession: ObservableObject {
             "device_id": deviceId,
             "expires_ts": expiresTs,
             "foci_preferred": [
-                ["type": "livekit", "livekit_service_url": "https://livekit.stalk.implica.ru"]
+                ["type": "livekit", "livekit_service_url": resolvedJWTServiceURL ?? "https://jwt.\(homeserverHost)"]
             ],
             "membershipID": UUID().uuidString
         ]
@@ -387,23 +392,22 @@ final class NativeCallSession: ObservableObject {
     }
 
     private func connectWithGeneratedJWT() async {
-        let sfuURL = "wss://livekit.stalk.implica.ru"
-        let identity = "\(userId):\(deviceId)"
-
-        // Room name = base64(SHA256(matrixRoomID + "|m.call#ROOM")) — same as lk-jwt-service
-        guard let roomName = generateLiveKitRoomName() else {
-            MXLog.error("sTalk NativeCall: Failed to generate room name")
+        // LiveKit room name = the matrix room ID (the call's livekit_alias). Element Call web sends
+        // exactly this to /sfu/get, and the upstream lk-jwt-service uses `room` VERBATIM (never
+        // hashes — byte-identical image on every install, confirmed by Molly/STALK). So iOS and Web
+        // land in the SAME LiveKit room on ANY server. The old base64(SHA256(roomId|m.call#ROOM))
+        // hash is the meet-api guest scheme, NOT widget/room calls → it put us in a different room.
+        guard !matrixRoomId.isEmpty else {
+            MXLog.error("sTalk NativeCall: empty matrixRoomId")
             sessionState = .failed(NativeCallError.noCredentials)
             return
         }
+        let roomName = matrixRoomId
 
-        guard let jwt = generateLiveKitJWT(roomName: roomName, identity: identity) else {
-            MXLog.error("sTalk NativeCall: Failed to generate JWT")
-            sessionState = .failed(NativeCallError.noCredentials)
-            return
-        }
-
-        MXLog.info("sTalk NativeCall: Generated JWT for room=\(roomName), identity=\(identity)")
+        // Resolve THIS homeserver's per-domain lk-jwt-service (rtc_foci) up front so we advertise
+        // the correct focus in our own call.member and fetch creds from the right service.
+        let jwtService = await resolveLiveKitServiceURL()
+        resolvedJWTServiceURL = jwtService
 
         // Send MatrixRTC join via REST API so remote participants see us
         let joinEventID = await sendJoinViaREST()
@@ -431,7 +435,16 @@ final class NativeCallSession: ObservableObject {
         // Debug: read current state events to compare formats
         await debugReadCallMemberState()
 
-        await connectToLiveKit(url: sfuURL, token: jwt)
+        // Fetch LiveKit creds from the per-domain lk-jwt-service (correct SFU wss url + a valid JWT
+        // signed with THIS install's api secret). Replaces the old local generation with a
+        // hardcoded stalk.implica.ru key/SFU that broke calls on any other install.
+        guard let creds = await fetchLiveKitCredentials(jwtServiceURL: jwtService, roomName: roomName) else {
+            MXLog.error("sTalk NativeCall: Failed to fetch LiveKit credentials from \(jwtService)")
+            sessionState = .failed(NativeCallError.noCredentials)
+            return
+        }
+        MXLog.info("sTalk NativeCall: LiveKit creds room=\(roomName) identity=\(userId):\(deviceId) sfu=\(creds.url)")
+        await connectToLiveKit(url: creds.url, token: creds.jwt)
     }
 
     private func generateLiveKitRoomName() -> String? {
@@ -440,6 +453,87 @@ final class NativeCallSession: ObservableObject {
         let hash = SHA256.hash(data: Data(raw.utf8))
         return Data(hash).base64EncodedString()
             .replacingOccurrences(of: "=", with: "")
+    }
+
+    // MARK: - LiveKit auth (per-domain lk-jwt-service)
+
+    /// Bare host of the current homeserver (e.g. "stalk.pics"). Fallback keeps legacy behaviour.
+    private var homeserverHost: String {
+        URL(string: homeserverURL)?.host ?? "stalk.implica.ru"
+    }
+
+    /// Resolve the lk-jwt-service base URL for the current homeserver from its MSC4143
+    /// `org.matrix.msc4143.rtc_foci` well-known entry (what Web uses). Falls back to the
+    /// `jwt.<host>` convention. This is per-install: each domain (stalk.implica.ru / .uz /
+    /// stalk.pics / any client) has its OWN LiveKit service + api key/secret (Molly, STALK),
+    /// so the old hardcoded stalk.implica.ru URL + embedded key only worked on .ru-shared infra.
+    private func resolveLiveKitServiceURL() async -> String {
+        if let wellKnownURL = URL(string: "\(homeserverURL)/.well-known/matrix/client"),
+           let (data, _) = try? await URLSession.shared.data(from: wellKnownURL),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let foci = json["org.matrix.msc4143.rtc_foci"] as? [[String: Any]],
+           let url = foci.first(where: { ($0["type"] as? String) == "livekit" })?["livekit_service_url"] as? String,
+           !url.isEmpty {
+            return url
+        }
+        let fallback = "https://jwt.\(homeserverHost)"
+        MXLog.warning("sTalk NativeCall: rtc_foci not found in well-known, falling back to \(fallback)")
+        return fallback
+    }
+
+    /// Request a Matrix OpenID token — the lk-jwt-service validates it against the homeserver to
+    /// authenticate us, then mints a LiveKit JWT signed with THAT install's api secret.
+    private func requestOpenIDToken() async -> [String: Any]? {
+        let encodedUser = userId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? userId
+        guard let url = URL(string: "\(homeserverURL)/_matrix/client/v3/user/\(encodedUser)/openid/request_token") else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = Data("{}".utf8)
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let status = (response as? HTTPURLResponse)?.statusCode, (200..<300).contains(status),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            MXLog.error("sTalk NativeCall: failed to obtain Matrix OpenID token")
+            return nil
+        }
+        return json
+    }
+
+    /// Fetch LiveKit credentials from the per-domain lk-jwt-service (`POST {service}/sfu/get`),
+    /// exactly like Element Call web. Returns the ACTUAL SFU websocket url + a valid JWT.
+    /// `roomName` must match what other clients use (the hashed room name) so we land in the
+    /// same LiveKit room.
+    private func fetchLiveKitCredentials(jwtServiceURL: String, roomName: String) async -> (url: String, jwt: String)? {
+        guard let openIDToken = await requestOpenIDToken() else { return nil }
+        let base = jwtServiceURL.hasSuffix("/") ? String(jwtServiceURL.dropLast()) : jwtServiceURL
+        guard let url = URL(string: "\(base)/sfu/get") else { return nil }
+        let body: [String: Any] = [
+            "room": roomName,
+            "openid_token": openIDToken,
+            "device_id": deviceId
+        ]
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200..<300).contains(status),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let sfu = json["url"] as? String, let jwt = json["jwt"] as? String else {
+                let bodyStr = String(data: data, encoding: .utf8) ?? "?"
+                MXLog.error("sTalk NativeCall: /sfu/get failed \(status) body=\(bodyStr.prefix(200))")
+                return nil
+            }
+            MXLog.info("sTalk NativeCall: /sfu/get OK → sfu=\(sfu) service=\(base)")
+            return (sfu, jwt)
+        } catch {
+            MXLog.error("sTalk NativeCall: /sfu/get error: \(error)")
+            return nil
+        }
     }
 
     // MARK: - MatrixRTC Join via REST API
@@ -466,7 +560,7 @@ final class NativeCallSession: ObservableObject {
             "foci_preferred": [[
                 "type": "livekit",
                 "livekit_alias": matrixRoomId,
-                "livekit_service_url": "https://jwt.stalk.implica.ru"
+                "livekit_service_url": resolvedJWTServiceURL ?? "https://jwt.\(homeserverHost)"
             ]],
             "focus_active": [
                 "type": "livekit",
@@ -834,6 +928,10 @@ final class NativeCallSession: ObservableObject {
     /// stays on (fallback for legacy senders) — this flag ONLY affects our outgoing send_event.
     /// Default TRUE keeps current behaviour (no-op); the STALK-506 stand flips it false to verify
     /// to-device-only decrypts across Web/iOS/Android/guest before we remove room-event SEND.
+    /// STALK-506 stand run (2026-06-24): temporarily FALSE for a to-device-only experiment.
+    /// 2026-07-08: reverted to TRUE — current Web still consumes the room-event key; with SEND off
+    /// Web can't obtain our key → SFrame "maximum ratchet attempts exceeded" → no iOS video in
+    /// encrypted iOS↔web calls. to-device-only SEND stays gated on Molly's Web/Android/guest cross-test.
     private static let kSendKeyViaRoomEvent = true
 
     #if targetEnvironment(simulator)
@@ -880,7 +978,9 @@ final class NativeCallSession: ObservableObject {
         let encodedRoom = roomName.addingPercentEncoding(withAllowedCharacters: pathSegmentAllowed) ?? roomName
         let encodedIdentity = identity.addingPercentEncoding(withAllowedCharacters: pathSegmentAllowed) ?? identity
 
-        let keyServerURL = "https://stalk.implica.ru/api/keys/pp/\(encodedRoom)/\(encodedIdentity)"
+        // Per-domain: recording-api key-server lives on the same host as the homeserver.
+        // (X-Service-Key secret may also be per-install — pending confirmation from Molly.)
+        let keyServerURL = "https://\(homeserverHost)/api/keys/pp/\(encodedRoom)/\(encodedIdentity)"
         guard let url = URL(string: keyServerURL) else { return }
 
         // base64 → base64url-no-padding (per Molly's spec)
@@ -904,8 +1004,8 @@ final class NativeCallSession: ObservableObject {
             let (data, response) = try await URLSession.shared.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             if status >= 200, status < 300 {
-                DiagLog.write("E2EE", "KS publish[\(label)] OK \(status) room=\(roomName) identity=\(identity)")
-                MXLog.info("sTalk NativeCall E2EE: KS publish[\(label)] → \(status)")
+                DiagLog.write("E2EE", "KS publish[\(label)] OK \(status) host=\(homeserverHost) room=\(roomName) identity=\(identity)")
+                MXLog.info("sTalk NativeCall E2EE: KS publish[\(label)] → \(status) host=\(homeserverHost)")
             } else {
                 let bodyStr = String(data: data, encoding: .utf8) ?? "?"
                 DiagLog.write("E2EE", "KS publish[\(label)] FAIL \(status) body=\(bodyStr.prefix(200))")
@@ -1471,15 +1571,20 @@ final class NativeCallSession: ObservableObject {
         MXLog.info("sTalk NativeCall: LiveKit focus — URL=\(url), alias=\(roomAlias ?? "nil")")
         livekitBaseURL = url
 
-        // Generate JWT and connect
-        if !credentialsReceived, let roomName = roomAlias {
-            let identity = "\(userId):\(deviceId)"
-            guard let jwt = generateLiveKitJWT(roomName: roomName, identity: identity) else {
-                MXLog.error("sTalk NativeCall: Failed to generate JWT")
-                return
+        // `url` here is the lk-jwt-service advertised by the room's focus (per-domain). Fetch
+        // creds from it (correct SFU wss + valid per-install JWT) instead of generating locally.
+        if !credentialsReceived {
+            resolvedJWTServiceURL = url
+            // Room = the focus's livekit_alias (matrix roomId), same as Web sends to /sfu/get.
+            let roomName = roomAlias ?? matrixRoomId
+            Task {
+                guard let creds = await fetchLiveKitCredentials(jwtServiceURL: url, roomName: roomName) else {
+                    MXLog.error("sTalk NativeCall: Failed to fetch LiveKit creds from focus \(url)")
+                    return
+                }
+                MXLog.info("sTalk NativeCall: connecting via focus service \(url) → sfu=\(creds.url)")
+                await connectToLiveKit(url: creds.url, token: creds.jwt)
             }
-            MXLog.info("sTalk NativeCall: JWT generated for \(identity), connecting...")
-            Task { await connectToLiveKit(url: url, token: jwt) }
         }
     }
 
@@ -1656,60 +1761,6 @@ final class NativeCallSession: ObservableObject {
                 }
             }
         }
-    }
-
-    // MARK: - JWT Generation
-
-    private func generateLiveKitJWT(roomName: String, identity: String) -> String? {
-        let header: [String: Any] = ["alg": "HS256", "typ": "JWT"]
-        let now = Int(Date().timeIntervalSince1970)
-        // sTalk: STMOB-89 — set explicit `identity` claim alongside `sub`. Earlier
-        // LiveKit servers fell back to `sub`, but newer livekit-server-sdk reads
-        // the top-level `identity` claim for participant identity. If only `sub`
-        // is set the server may assign a fallback identity → mismatch with
-        // `/api/keys/pp/<room>/<userId:deviceId>` upload. Set both to the same
-        // string so JWT identity and key-publish identity are guaranteed equal.
-        // STMOB-232: в `name` шлём display name (а не сырой userId) — чтобы
-        // другие участники (web + iOS) видели «Dmitriy Bondar», а не
-        // @dp.bondar:stalk.implica.ru. Fallback на userId если имени нет.
-        let jwtName = (ownDisplayName?.isEmpty == false) ? ownDisplayName! : userId
-        let payload: [String: Any] = [
-            "iss": livekitAPIKey,
-            "sub": identity,
-            "identity": identity,
-            "name": jwtName,
-            "nbf": now,
-            "exp": now + 3600,
-            "video": [
-                "room": roomName,
-                "roomJoin": true,
-                "canPublish": true,
-                "canSubscribe": true
-            ]
-        ]
-
-        guard let headerData = try? JSONSerialization.data(withJSONObject: header),
-              let payloadData = try? JSONSerialization.data(withJSONObject: payload) else { return nil }
-
-        let headerB64 = headerData.base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
-        let payloadB64 = payloadData.base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
-
-        let signingInput = "\(headerB64).\(payloadB64)"
-        guard let keyData = livekitAPISecret.data(using: .utf8) else { return nil }
-        let key = SymmetricKey(data: keyData)
-        let signature = HMAC<SHA256>.authenticationCode(for: Data(signingInput.utf8), using: key)
-        let sigB64 = Data(signature).base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
-
-        return "\(headerB64).\(payloadB64).\(sigB64)"
     }
 }
 
