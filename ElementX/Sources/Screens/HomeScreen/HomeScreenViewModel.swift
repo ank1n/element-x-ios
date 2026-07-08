@@ -172,8 +172,10 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
         switch viewAction {
         case .selectRoom(let roomIdentifier):
             saveSearchQueryIfNeeded()
-            state.bindings.searchQuery = ""
-            state.bindings.isSearchFieldFocused = false
+            // Do NOT manually reset searchQuery / isSearchFieldFocused here: mutating those bindings
+            // synchronously cancels the programmatic room navigation (SwiftUI `.searchable` tears down
+            // its presentation context, dropping the push) — that's why tapping a search result did
+            // nothing. `.searchable` collapses on navigation on its own, exactly like upstream.
             actionsSubject.send(.presentRoom(roomIdentifier: roomIdentifier))
         case .showRoomDetails(let roomIdentifier):
             actionsSubject.send(.presentRoomDetails(roomIdentifier: roomIdentifier))
