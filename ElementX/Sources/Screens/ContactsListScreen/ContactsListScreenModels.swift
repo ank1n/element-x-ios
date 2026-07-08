@@ -39,6 +39,10 @@ struct ContactsListScreenViewState: BindableState {
     var searchQuery = ""
     var selectedFilter: ContactFilter = .all
 
+    /// Contact whose chat is currently being opened (async DM create) — drives a per-row spinner
+    /// so the tap gives immediate feedback during the ~1.5s network round-trip.
+    var openingContactID: String?
+
     // User info for avatar
     var userID = ""
     var userDisplayName: String?

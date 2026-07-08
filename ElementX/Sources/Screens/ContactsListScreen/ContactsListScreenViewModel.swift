@@ -21,6 +21,8 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
     private var contactsCancellables: Set<AnyCancellable> = []
     private var presenceService: PresenceService?
     private var orgProfileService: OrgProfileService?
+    /// Guards the async DM find-or-create path against repeated contact taps (duplicate opens).
+    private var isOpeningContact = false
 
     private static let favoritesKey = "ru.implica.stalk.favoriteContacts"
     private static let contactsCacheKeyPrefix = "ru.implica.stalk.cachedContacts."
@@ -78,17 +80,30 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
         // User Directory contact — find or create DM
         guard let matrixUserID = contact.matrixUserID else { return }
 
+        // Re-entrancy guard: creating a DM is async, so repeated taps while the request is in
+        // flight would otherwise fire multiple createDirectRoom calls (duplicate DMs / room opens).
+        guard !isOpeningContact else { return }
+        isOpeningContact = true
+        // Immediate feedback: opening a directory contact with no existing DM needs a network
+        // createDirectRoom (~1.5s). Without a visible spinner the tap feels dead and users tap
+        // repeatedly — surface a per-row spinner for the whole async path.
+        state.openingContactID = contact.id
+
         Task { [weak self] in
             guard let self else { return }
+            defer {
+                self.isOpeningContact = false
+                self.state.openingContactID = nil
+            }
 
-            // First try to find existing DM
+            // First try to find existing DM (fast, local m.direct lookup)
             if case .success(let existingRoomID) = userSession.clientProxy.directRoomForUserID(matrixUserID),
                let roomID = existingRoomID {
                 actionsSubject.send(.openChat(roomId: roomID))
                 return
             }
 
-            // Create new DM
+            // No existing DM — create it (network round-trip)
             let result = await userSession.clientProxy.createDirectRoom(with: matrixUserID,
                                                                         expectedRoomName: contact.displayName)
             switch result {

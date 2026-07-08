@@ -362,12 +362,12 @@ struct ContactsListScreen: View {
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                context.send(viewAction: .selectContact(contact))
-            }
 
             HStack(spacing: 6) {
+                if context.viewState.openingContactID == contact.id {
+                    ProgressView()
+                        .controlSize(.small)
+                }
                 if contact.isFavorite {
                     Image(systemName: "star.fill")
                         .font(.system(size: 12))
@@ -379,6 +379,13 @@ struct ContactsListScreen: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background(Color.compound.bgCanvasDefault)
+        // Whole-row tap target: the previous .onTapGesture sat only on the text VStack, leaving the
+        // avatar and trailing area dead — the first tap often missed, so users tapped repeatedly and
+        // opened the room several times. contentShape makes the full padded row reliably tappable.
+        .contentShape(Rectangle())
+        .onTapGesture {
+            context.send(viewAction: .selectContact(contact))
+        }
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(Color.compound.borderDisabled)
@@ -614,12 +621,12 @@ struct ContactsListScreen: View {
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                context.send(viewAction: .selectContact(contact))
-            }
 
             HStack(spacing: 6) {
+                if context.viewState.openingContactID == contact.id {
+                    ProgressView()
+                        .controlSize(.small)
+                }
                 if contact.isFavorite {
                     Image(systemName: "star.fill")
                         .font(.system(size: 12))
@@ -632,6 +639,11 @@ struct ContactsListScreen: View {
         .background(cardBg)
         .cornerRadius(14)
         .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
+        // Whole-card tap target (see classicContactCell): avatar/trailing were dead zones before.
+        .contentShape(Rectangle())
+        .onTapGesture {
+            context.send(viewAction: .selectContact(contact))
+        }
     }
 }
 

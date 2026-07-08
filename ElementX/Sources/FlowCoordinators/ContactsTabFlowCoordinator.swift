@@ -95,6 +95,12 @@ class ContactsTabFlowCoordinator: FlowCoordinatorProtocol {
     }
 
     private func openRoom(roomID: String) {
+        // A room flow from this tab is already active — ignore duplicate requests so we don't push
+        // several copies of the room onto the stack. Cleared to nil on .finished when the user leaves.
+        guard roomFlowCoordinator == nil else {
+            MXLog.info("[Contacts] Ignoring openRoom(\(roomID)) — a room flow is already active")
+            return
+        }
         let roomFlowCoordinator = RoomFlowCoordinator(roomID: roomID,
                                                       isChildFlow: true,
                                                       navigationStackCoordinator: navigationStackCoordinator,
