@@ -119,7 +119,18 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     private var endUnansweredCallTask: Task<Void, Never>?
     
     private var ongoingCallID: CallID? {
-        didSet { ongoingCallRoomIDSubject.send(ongoingCallID?.roomID) }
+        didSet {
+            ongoingCallRoomIDSubject.send(ongoingCallID?.roomID)
+            // Cross-process marker for the NSE: a call is active in this room for its whole duration.
+            // While it exists the NSE suppresses the encrypted call-signalling events (key ratchets)
+            // that would otherwise show as content-less "New message" banners. Cleared on hang-up.
+            if let oldRoomID = oldValue?.roomID, oldRoomID != ongoingCallID?.roomID {
+                Self.removeCallActiveMarker(roomID: oldRoomID)
+            }
+            if let roomID = ongoingCallID?.roomID {
+                Self.writeCallActiveMarker(roomID: roomID)
+            }
+        }
     }
     
     let ongoingCallRoomIDSubject = CurrentValueSubject<String?, Never>(nil)
@@ -644,6 +655,33 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         let url = dir.appending(component: safeKey)
         try? Data().write(to: url)
         DiagLog.write("VoIP", "  marker written for room=\(roomID)")
+    }
+
+    /// Cross-process marker directory + file URL for the "call is active in this room" flag the NSE
+    /// reads to suppress encrypted call-signalling banners. Mirrors the voip-handled marker layout.
+    private static func callActiveMarkerURL(roomID: String) -> URL? {
+        let groupID = InfoPlistReader.main.appGroupIdentifier
+        guard let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupID) else { return nil }
+        let dir = container.appending(component: "Library", directoryHint: .isDirectory)
+            .appending(component: "Caches", directoryHint: .isDirectory)
+            .appending(component: "call-active", directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let allowed = CharacterSet.alphanumerics.union(.init(charactersIn: "._-"))
+        let safeKey = roomID.unicodeScalars.map { allowed.contains($0) ? Character($0) : "_" }
+            .map(String.init).joined()
+        return dir.appending(component: safeKey)
+    }
+
+    private static func writeCallActiveMarker(roomID: String) {
+        guard let url = callActiveMarkerURL(roomID: roomID) else { return }
+        try? Data().write(to: url)
+        DiagLog.write("VoIP", "  call-active marker written for room=\(roomID)")
+    }
+
+    private static func removeCallActiveMarker(roomID: String) {
+        guard let url = callActiveMarkerURL(roomID: roomID) else { return }
+        try? FileManager.default.removeItem(at: url)
+        DiagLog.write("VoIP", "  call-active marker removed for room=\(roomID)")
     }
 
     /// Register VoIP pusher with the Matrix homeserver so Sygnal can send VoIP pushes

@@ -228,6 +228,29 @@ class NotificationHandler {
         }
         return -mtime.timeIntervalSinceNow < withinSeconds
     }
+
+    /// Cross-process marker written by the main app for the whole duration of an active call in a
+    /// room (see ElementCallService.writeCallActiveMarker). Unlike hasActiveRoomCall(), which relies
+    /// on the NSE's own (often stale) room-state sync, this reflects the main app's authoritative call
+    /// state. Bounded by a generous TTL so a marker left behind by a crash mid-call self-heals rather
+    /// than muting the room forever.
+    private func isCallActiveForRoom(_ roomID: String, ttlSeconds: TimeInterval = 6 * 3600) -> Bool {
+        let groupID = InfoPlistReader.main.appGroupIdentifier
+        guard let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupID) else { return false }
+        let allowed = CharacterSet.alphanumerics.union(.init(charactersIn: "._-"))
+        let safeKey = roomID.unicodeScalars.map { allowed.contains($0) ? Character($0) : "_" }
+            .map(String.init).joined()
+        let url = container
+            .appending(component: "Library", directoryHint: .isDirectory)
+            .appending(component: "Caches", directoryHint: .isDirectory)
+            .appending(component: "call-active", directoryHint: .isDirectory)
+            .appending(component: safeKey)
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let mtime = attrs[.modificationDate] as? Date else {
+            return false
+        }
+        return -mtime.timeIntervalSinceNow < ttlSeconds
+    }
     
     func handleTimeExpiration() {
         // Called just before the extension will be terminated by the system.
@@ -289,13 +312,22 @@ class NotificationHandler {
             os_log(.default, log: nseHandlerLog, "MessageLike content: %{public}@", String(describing: messageContent))
             switch messageContent {
             case .roomEncrypted:
-                // Suppress encrypted event в комнате с активным звонком:
-                // это обычно call E2EE ключи или signalling (io.element.call.*).
-                // На проде push rules на Synapse должны не слать их в regular pusher
-                // (слой 1), это safety net — слой 3 защиты от banner спама.
+                // Suppress an undecryptable encrypted event when a call is active in the room: these
+                // are almost always call E2EE keys / signalling (io.element.call.*), which the NSE
+                // can't decrypt and would otherwise show as a content-less "New message" banner — the
+                // spam seen throughout a call. On prod, Synapse push rules should keep them out of the
+                // regular pusher (layer 1); this is the layer-3 safety net.
+                //
+                // Prefer the main-app call-active marker over hasActiveRoomCall(): the latter reads the
+                // NSE's own room-state sync, which is frequently stale in the extension process (so it
+                // returned false during a live call and let the banners through). The marker reflects
+                // the app's authoritative state for the whole call. We deliberately do NOT blanket-drop
+                // all encrypted events — outside a call an undecryptable event may be a real message
+                // (this app has occasional E2EE key-desync), so it still surfaces.
                 let hasActiveCall = userSession.roomForIdentifier(itemProxy.roomID)?.hasActiveRoomCall() ?? false
-                NSEDiagLog.write("  encrypted event hasActiveRoomCall=\(hasActiveCall) room=\(itemProxy.roomID)")
-                if hasActiveCall {
+                let callMarker = isCallActiveForRoom(itemProxy.roomID)
+                NSEDiagLog.write("  encrypted event hasActiveRoomCall=\(hasActiveCall) callActiveMarker=\(callMarker) room=\(itemProxy.roomID)")
+                if hasActiveCall || callMarker {
                     os_log(.default, log: nseHandlerLog, "Encrypted event in active-call room %{public}@ — suppressing (likely call signalling)", itemProxy.roomID)
                     return .processedShouldDiscard
                 }
