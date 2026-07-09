@@ -31,6 +31,8 @@ class CallHistoryCoordinator {
 
     func setClientProxy(_ clientProxy: ClientProxyProtocol) {
         self.clientProxy = clientProxy
+        // Scope call history to this account so entries from other accounts/servers don't leak in.
+        localCallHistoryService.setUserID(clientProxy.userID)
     }
 
     private func setupSubscriptions() {

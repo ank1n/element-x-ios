@@ -46,6 +46,7 @@ struct LocalCallHistoryItem: Codable, Identifiable, Equatable {
 protocol LocalCallHistoryServiceProtocol: AnyObject {
     var callHistoryPublisher: AnyPublisher<[LocalCallHistoryItem], Never> { get }
 
+    func setUserID(_ userID: String)
     func startCall(roomID: String, direction: LocalCallHistoryItem.CallDirection) -> String
     func endCall(id: String, missed: Bool)
     func updateCallInfo(id: String, roomDisplayName: String?, participants: [String: String])
@@ -59,7 +60,19 @@ protocol LocalCallHistoryServiceProtocol: AnyObject {
 /// Local storage for call history using UserDefaults (simple implementation)
 /// For production, consider using Core Data or SQLite
 class LocalCallHistoryService: LocalCallHistoryServiceProtocol {
-    private let storageKey = "ru.implica.stalk.callHistory"
+    /// Per-user storage key so call history is scoped to the logged-in account (and therefore the
+    /// server too, since a Matrix userID includes the domain — @user:server). Without this the
+    /// history was one global list, mixing calls from every account/server the device ever used and
+    /// showing them all after login ("extra entries"). Falls back to the legacy key until a user is set.
+    private var currentUserID: String?
+    private let legacyStorageKey = "ru.implica.stalk.callHistory"
+    private var storageKey: String {
+        if let currentUserID {
+            return "\(legacyStorageKey).\(currentUserID)"
+        }
+        return legacyStorageKey
+    }
+
     private let userDefaults: UserDefaults
     private let maxHistoryItems = 100
 
@@ -76,6 +89,42 @@ class LocalCallHistoryService: LocalCallHistoryServiceProtocol {
     }
 
     // MARK: - Public Methods
+
+    /// Scope the history to a specific account. Called once the user session is available; reloads
+    /// from that account's store so entries from a previously logged-in account/server disappear.
+    func setUserID(_ userID: String) {
+        guard currentUserID != userID else { return }
+        currentUserID = userID
+        migrateLegacyHistoryIfNeeded(for: userID)
+        loadHistory()
+        notifyChange()
+    }
+
+    /// One-time move of the old global history into this account's scoped store, keeping only calls
+    /// whose room lives on the user's own server (userID domain). A real single-account user keeps
+    /// their history across the update; calls that belong to a different server are dropped. Runs
+    /// once per account (skipped once a scoped store exists). Note: the legacy log never recorded
+    /// which local account placed each call, so on a device where several accounts of the SAME server
+    /// were used, those calls can't be told apart and will appear for each such account — a rarely-hit
+    /// case that doesn't occur for normal single-account users.
+    private func migrateLegacyHistoryIfNeeded(for userID: String) {
+        guard userDefaults.data(forKey: storageKey) == nil,
+              let legacyData = userDefaults.data(forKey: legacyStorageKey),
+              let domain = userID.split(separator: ":").last.map(String.init) else {
+            return
+        }
+
+        do {
+            let legacy = try JSONDecoder().decode([LocalCallHistoryItem].self, from: legacyData)
+            let mine = legacy.filter { $0.roomID.hasSuffix(":\(domain)") }
+            guard !mine.isEmpty else { return }
+            let data = try JSONEncoder().encode(mine)
+            userDefaults.set(data, forKey: storageKey)
+            MXLog.info("📞 Migrated \(mine.count)/\(legacy.count) legacy calls into \(userID)'s history")
+        } catch {
+            MXLog.error("📞 Failed to migrate legacy call history: \(error)")
+        }
+    }
 
     func startCall(roomID: String, direction: LocalCallHistoryItem.CallDirection) -> String {
         let callID = UUID().uuidString
