@@ -118,17 +118,32 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     
     private var endUnansweredCallTask: Task<Void, Never>?
     
+    private var callActiveMarkerHeartbeatTask: Task<Void, Never>?
+
     private var ongoingCallID: CallID? {
         didSet {
             ongoingCallRoomIDSubject.send(ongoingCallID?.roomID)
-            // Cross-process marker for the NSE: a call is active in this room for its whole duration.
-            // While it exists the NSE suppresses the encrypted call-signalling events (key ratchets)
-            // that would otherwise show as content-less "New message" banners. Cleared on hang-up.
+            // Cross-process marker for the NSE: a call is active in this room. The NSE suppresses
+            // encrypted call-signalling events (key ratchets) for rooms whose marker is FRESH
+            // (short TTL, see NotificationHandler.isCallActiveForRoom), so the marker is written
+            // with a heartbeat during the call and refreshed ONE FINAL TIME on hang-up instead of
+            // being deleted: E2EE tails keep arriving for a minute or two after the call ended and
+            // were showing as content-less banners the moment the marker vanished. The final write
+            // buys exactly that grace window; a crashed call self-heals within the same short TTL.
+            callActiveMarkerHeartbeatTask?.cancel()
+            callActiveMarkerHeartbeatTask = nil
             if let oldRoomID = oldValue?.roomID, oldRoomID != ongoingCallID?.roomID {
-                Self.removeCallActiveMarker(roomID: oldRoomID)
+                Self.writeCallActiveMarker(roomID: oldRoomID, context: "grace (call ended)")
             }
             if let roomID = ongoingCallID?.roomID {
-                Self.writeCallActiveMarker(roomID: roomID)
+                Self.writeCallActiveMarker(roomID: roomID, context: "call started")
+                callActiveMarkerHeartbeatTask = Task {
+                    while !Task.isCancelled {
+                        try? await Task.sleep(for: .seconds(30))
+                        guard !Task.isCancelled else { break }
+                        Self.writeCallActiveMarker(roomID: roomID, context: "heartbeat")
+                    }
+                }
             }
         }
     }
@@ -710,16 +725,10 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         return dir.appending(component: safeKey)
     }
 
-    private static func writeCallActiveMarker(roomID: String) {
+    private static func writeCallActiveMarker(roomID: String, context: String) {
         guard let url = callActiveMarkerURL(roomID: roomID) else { return }
         try? Data().write(to: url)
-        DiagLog.write("VoIP", "  call-active marker written for room=\(roomID)")
-    }
-
-    private static func removeCallActiveMarker(roomID: String) {
-        guard let url = callActiveMarkerURL(roomID: roomID) else { return }
-        try? FileManager.default.removeItem(at: url)
-        DiagLog.write("VoIP", "  call-active marker removed for room=\(roomID)")
+        DiagLog.write("VoIP", "  call-active marker [\(context)] room=\(roomID)")
     }
 
     /// Register VoIP pusher with the Matrix homeserver so Sygnal can send VoIP pushes

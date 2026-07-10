@@ -229,12 +229,12 @@ class NotificationHandler {
         return -mtime.timeIntervalSinceNow < withinSeconds
     }
 
-    /// Cross-process marker written by the main app for the whole duration of an active call in a
-    /// room (see ElementCallService.writeCallActiveMarker). Unlike hasActiveRoomCall(), which relies
-    /// on the NSE's own (often stale) room-state sync, this reflects the main app's authoritative call
-    /// state. Bounded by a generous TTL so a marker left behind by a crash mid-call self-heals rather
-    /// than muting the room forever.
-    private func isCallActiveForRoom(_ roomID: String, ttlSeconds: TimeInterval = 6 * 3600) -> Bool {
+    /// Cross-process marker written by the main app during an active call (heartbeat every 30s) and
+    /// refreshed one final time on hang-up (see ElementCallService). The short TTL therefore means:
+    /// suppress while the call runs AND for ~2 minutes after it ends — E2EE signalling tails kept
+    /// arriving right after hang-up and showed as content-less banners. A crash mid-call self-heals
+    /// within the same window.
+    private func isCallActiveForRoom(_ roomID: String, ttlSeconds: TimeInterval = 120) -> Bool {
         let groupID = InfoPlistReader.main.appGroupIdentifier
         guard let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupID) else { return false }
         let allowed = CharacterSet.alphanumerics.union(.init(charactersIn: "._-"))
