@@ -542,11 +542,6 @@ final class LiveKitRoomManager: ObservableObject {
     }
 
     func setSpeaker(enabled: Bool) {
-        // Drive LiveKit's own route preference first so its automatic reconfigure won't snap the
-        // output back (see configureAudioSession) — then apply the override for an immediate switch.
-        #if !targetEnvironment(simulator)
-        AudioManager.shared.isSpeakerOutputPreferred = enabled
-        #endif
         let session = AVAudioSession.sharedInstance()
         do {
             if enabled {
@@ -637,14 +632,6 @@ final class LiveKitRoomManager: ObservableObject {
     /// - Parameter speakerByDefault: If true, route audio to speaker initially (for group calls).
     ///   If false, route to earpiece (for 1:1 calls, like Telegram).
     func configureAudioSession(speakerByDefault: Bool = false) {
-        // LiveKit's AudioSessionEngineObserver auto-configures the AVAudioSession from its own
-        // `isSpeakerOutputPreferred` flag (default TRUE = speaker). With automatic configuration on,
-        // it re-applies that preference whenever tracks/engine change and overrides a bare
-        // overrideOutputAudioPort — which is why 1:1 calls were stuck on speaker with no way to reach
-        // the earpiece. Set LiveKit's own preference so its reconfigure matches our intent.
-        #if !targetEnvironment(simulator)
-        AudioManager.shared.isSpeakerOutputPreferred = speakerByDefault
-        #endif
         let session = AVAudioSession.sharedInstance()
         do {
             var options: AVAudioSession.CategoryOptions = [.allowBluetoothHFP, .allowBluetoothA2DP]
