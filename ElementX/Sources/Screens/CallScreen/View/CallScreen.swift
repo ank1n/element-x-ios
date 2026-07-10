@@ -350,24 +350,38 @@ private struct CallControlButton: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            Button(action: action) {
-                Image(systemName: icon)
-                    .font(.system(size: 22))
-                    .foregroundColor(foregroundColor)
-                    .frame(width: 56, height: 56)
-                    .background(backgroundColor)
-                    .clipShape(Circle())
+            Group {
+                if let onLongPress {
+                    // Tap and long press must be MUTUALLY EXCLUSIVE. The previous
+                    // Button(action:) + .simultaneousGesture(LongPress) fired BOTH the tap action and
+                    // the long-press handler on a long press — so long-pressing the audio button both
+                    // opened the route picker AND toggled deafen (the sound cut out). ExclusiveGesture
+                    // runs the long press OR the tap, never both.
+                    iconView
+                        .contentShape(Circle())
+                        .gesture(ExclusiveGesture(LongPressGesture(minimumDuration: 0.4).onEnded { _ in
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                onLongPress()
+                            },
+                            TapGesture().onEnded { action() }))
+                } else {
+                    Button(action: action) { iconView }
+                }
             }
-            .simultaneousGesture(LongPressGesture(minimumDuration: 0.4).onEnded { _ in
-                guard let onLongPress else { return }
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                onLongPress()
-            })
 
             Text(label)
                 .font(.system(size: 11))
                 .foregroundColor(.white.opacity(0.85))
         }
+    }
+
+    private var iconView: some View {
+        Image(systemName: icon)
+            .font(.system(size: 22))
+            .foregroundColor(foregroundColor)
+            .frame(width: 56, height: 56)
+            .background(backgroundColor)
+            .clipShape(Circle())
     }
 
     private var backgroundColor: Color {
