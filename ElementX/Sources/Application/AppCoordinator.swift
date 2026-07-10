@@ -31,7 +31,10 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
 
     /// Common background task to continue long-running tasks in the background.
     private var backgroundTask: UIBackgroundTaskIdentifier?
-    
+    /// False until the first `applicationDidBecomeActive`, so the initial sync isn't interrupted;
+    /// later resumes do a clean sync restart to recover from a wedged sync service (STMOB-133).
+    private var hasBecomeActiveOnce = false
+
     private var userSessionMigrationsOldVersion: Version?
     private var userSession: UserSessionProtocol? {
         didSet {
@@ -1341,7 +1344,19 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
     private func applicationDidBecomeActive() {
         MXLog.info("Application did become active")
         endActiveBackgroundTask()
-        startSync()
+        // On a RESUME (not the first activation) do a clean sync restart. A plain startSync() is a
+        // no-op if the sync service was left wedged by a background stop that iOS suspended before it
+        // finished (STMOB-133): the service is neither fully stopped nor running, so start() does
+        // nothing and the app shows stale data until it's force-quit and reopened (which recreates
+        // the client). forceRefresh stops (idempotent when already stopped) then starts, resetting a
+        // wedged service — same effect as a relaunch. The first activation uses the normal startSync
+        // so the initial sync + loading observer are set up without being interrupted.
+        if hasBecomeActiveOnce, let clientProxy = userSession?.clientProxy {
+            Task { await clientProxy.forceRefresh() }
+        } else {
+            hasBecomeActiveOnce = true
+            startSync()
+        }
         // STMOB-103: возобновить online ping при возврате из background
         ownPresenceManager?.startOnline()
         // STMOB-123 build 159: resume shared presence polling — список userIDs
