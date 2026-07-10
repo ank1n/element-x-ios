@@ -125,13 +125,15 @@ class UserSessionStore: UserSessionStoreProtocol {
     private static let transientStoreEpoch = "sdk-26.06.03"
     private static let transientStoreEpochKey = "ru.implica.stalk.transientStoreEpoch"
 
-    private func wipeTransientStoresIfSDKChanged(_ sessionDirectories: SessionDirectories) {
-        let defaults = UserDefaults.standard
-        let storedEpoch = defaults.string(forKey: Self.transientStoreEpochKey)
-        guard storedEpoch != Self.transientStoreEpoch else { return }
+    /// Returns true when the stores were wiped — the caller must then also expire the sliding sync
+    /// sessions once the client is up. The epoch flag is only persisted after that succeeds, so a
+    /// crash in between simply retries on the next launch (the wipe is idempotent).
+    private func wipeTransientStoresIfSDKChanged(_ sessionDirectories: SessionDirectories) -> Bool {
+        let storedEpoch = UserDefaults.standard.string(forKey: Self.transientStoreEpochKey)
+        guard storedEpoch != Self.transientStoreEpoch else { return false }
         MXLog.info("SDK transient-store epoch changed (\(storedEpoch ?? "none") → \(Self.transientStoreEpoch)) — wiping state/event-cache stores")
         sessionDirectories.deleteTransientUserData()
-        defaults.set(Self.transientStoreEpoch, forKey: Self.transientStoreEpochKey)
+        return true
     }
 
     private func restorePreviousLogin(_ credentials: KeychainCredentials) async -> Result<ClientProxyProtocol, UserSessionStoreError> {
@@ -140,7 +142,7 @@ class UserSessionStore: UserSessionStoreProtocol {
             return .failure(.failedRestoringLogin)
         }
 
-        wipeTransientStoresIfSDKChanged(credentials.restorationToken.sessionDirectories)
+        let didWipeTransientStores = wipeTransientStoresIfSDKChanged(credentials.restorationToken.sessionDirectories)
 
         let homeserverURL = credentials.restorationToken.session.homeserverUrl
         await appHooks.remoteSettingsHook.loadCache(forHomeserver: homeserverURL, applyingTo: appSettings)
@@ -162,12 +164,23 @@ class UserSessionStore: UserSessionStoreProtocol {
         do {
             let client = try await builder.build()
             try await client.restoreSession(session: credentials.restorationToken.session)
-            
+
             MXLog.info("Set up session for user \(credentials.userID) at: \(credentials.restorationToken.sessionDirectories)")
-            
+
             Task(priority: .low) { await appHooks.remoteSettingsHook.updateCache(using: client) }
-            
-            return try await .success(setupProxyForClient(client))
+
+            let clientProxy = try await setupProxyForClient(client)
+
+            if didWipeTransientStores {
+                // The server still holds the old sliding sync position; without expiring it the sync
+                // resumes with deltas only and the freshly-wiped client never receives the full room
+                // list (empty chat list). Expire, then persist the epoch.
+                MXLog.info("Transient stores were wiped — expiring sliding sync sessions for a full resync")
+                await clientProxy.expireSyncSessions()
+                UserDefaults.standard.set(Self.transientStoreEpoch, forKey: Self.transientStoreEpochKey)
+            }
+
+            return .success(clientProxy)
         } catch UserSessionStoreError.failedSettingUpClientProxy(let error) {
             // If this has failed, there is likely something wrong with the creation of the sync service
             // There is nothing we can do, but at the same time we don't want the user to the get logged out
