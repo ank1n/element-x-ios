@@ -216,18 +216,19 @@ struct CallScreen: View {
                 context.send(viewAction: .toggleMute)
             }
 
-            // STMOB-219: speaker button repurposed — TAP toggles deafen (mute
-            // incoming audio without touching the mic), LONG PRESS opens the
-            // native audio-route picker (phone / speaker / AirPods / Bluetooth /
-            // wired) where loudspeaker vs earpiece is also chosen. No extra button.
+            // STMOB-219 / audio-route: TAP opens the native audio-route picker (phone / speaker /
+            // AirPods / Bluetooth / wired) — this is the reliable way to switch earpiece↔loudspeaker
+            // without muting (the system handles the route change alongside LiveKit's session).
+            // LONG PRESS toggles deafen (mute incoming audio without touching the mic). The icon still
+            // reflects the deafen state so a muted call is visible.
             CallControlButton(icon: context.viewState.isDeafened ? "speaker.slash.fill" : "speaker.wave.2.fill",
                               label: context.viewState.isDeafened ? SL10n.callSoundOn : SL10n.callSound,
                               isActive: !context.viewState.isDeafened,
                               onLongPress: {
-                                  context.send(viewAction: .showSpeakerPicker)
+                                  context.send(viewAction: .toggleDeafen)
                               },
                               action: {
-                                  context.send(viewAction: .toggleDeafen)
+                                  context.send(viewAction: .showSpeakerPicker)
                               })
                               .background(CallRoutePickerView(viewModelContext: context)
                                   .frame(width: 0, height: 0)
