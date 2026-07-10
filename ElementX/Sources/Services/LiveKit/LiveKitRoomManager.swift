@@ -261,6 +261,8 @@ final class LiveKitRoomManager: ObservableObject {
             blurIntent = defaults.bool(forKey: Self.backgroundBlurSettingKey)
             isBackgroundBlurEnabled = blurIntent
             MXLog.info("sTalk LiveKit: call settings — noiseSuppression=\(isNoiseSuppressed) backgroundBlur=\(blurIntent)")
+            // DiagLog — MXLog не попадает в nse-events выгрузку с устройства
+            DiagLog.write("Call", "settings: noiseSuppression=\(isNoiseSuppressed) backgroundBlur=\(blurIntent)")
         }
         return RoomOptions(defaultCameraCaptureOptions: Self.cameraCaptureOptions,
                            defaultAudioCaptureOptions: AudioCaptureOptions(noiseSuppression: isNoiseSuppressed,
@@ -439,6 +441,7 @@ final class LiveKitRoomManager: ObservableObject {
             let track = LocalVideoTrack.createCameraTrack(options: Self.cameraCaptureOptions, processor: processor)
             _ = try await room.localParticipant.publish(videoTrack: track)
             MXLog.info("sTalk LiveKit: Camera published with pre-attached background blur")
+            DiagLog.write("Call", "blur: camera published with PRE-ATTACHED processor")
         } else {
             try await room.localParticipant.setCamera(enabled: enabled)
             if enabled {
@@ -553,6 +556,7 @@ final class LiveKitRoomManager: ObservableObject {
     func setBackgroundBlur(enabled: Bool) {
         blurIntent = enabled
         isBackgroundBlurEnabled = enabled
+        DiagLog.write("Call", "blur toggle -> \(enabled)")
         #if targetEnvironment(simulator)
         MXLog.warning("sTalk LiveKit: Background blur is a no-op on the simulator (no camera)")
         #else
@@ -571,11 +575,15 @@ final class LiveKitRoomManager: ObservableObject {
                track.capturer.processor != nil {
                 track.capturer.processor = nil
                 MXLog.info("sTalk LiveKit: Background blur detached")
+                DiagLog.write("Call", "blur: detached")
             }
             blurProcessor = nil
             return
         }
-        guard let track = room.localParticipant.firstCameraPublication?.track as? LocalVideoTrack else { return }
+        guard let track = room.localParticipant.firstCameraPublication?.track as? LocalVideoTrack else {
+            DiagLog.write("Call", "blur: intent=on, но camera publication нет — аттач отложен")
+            return
+        }
         if let existing = blurProcessor, track.capturer.processor === existing {
             return // уже приаттачен к этому capturer'у
         }
@@ -586,6 +594,7 @@ final class LiveKitRoomManager: ObservableObject {
         blurProcessor = processor
         track.capturer.processor = processor
         MXLog.info("sTalk LiveKit: Background blur attached to camera capturer")
+        DiagLog.write("Call", "blur: attached to camera capturer (self-heal)")
         #endif
     }
 
