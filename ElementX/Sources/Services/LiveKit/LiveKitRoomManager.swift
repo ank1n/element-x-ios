@@ -27,11 +27,6 @@ final class LiveKitRoomManager: ObservableObject {
     @Published private(set) var localVideoTrack: VideoTrack?
     @Published private(set) var localParticipant: LocalParticipant?
 
-    /// STMOB-219: deafen — when true the playout volume of every remote audio
-    /// track is set to 0 (incoming sound off without touching the local mic).
-    /// Applied to participants who join while deafened via `didSubscribeTrack`.
-    @Published private(set) var isDeafened = false
-
     /// STMOB-163 build 180: remoteParticipants без egress / service bots.
     /// Фильтр через `participant.kind == .standard` — LiveKit protocol-level
     /// enum различает real users от bots (egress, ingress, sip, agent).
@@ -526,21 +521,6 @@ final class LiveKitRoomManager: ObservableObject {
         #endif
     }
 
-    /// Switch between speaker and earpiece
-    /// STMOB-219: mute/unmute incoming audio for all remote participants by
-    /// setting each remote audio track's playout volume. Does not affect the
-    /// local microphone. New joiners are handled in `didSubscribeTrack`.
-    func setDeafened(_ deafened: Bool) {
-        isDeafened = deafened
-        let volume: Double = deafened ? 0.0 : 1.0
-        for participant in room.remoteParticipants.values {
-            for publication in participant.audioTracks {
-                (publication.track as? RemoteAudioTrack)?.volume = volume
-            }
-        }
-        MXLog.info("sTalk LiveKit: Deafened \(deafened ? "ON (incoming audio muted)" : "OFF")")
-    }
-
     func setSpeaker(enabled: Bool) {
         // Route through LiveKit's own preference. It owns the AVAudioSession during a call and
         // switches the mode on its managed session (.videoChat = speaker / .voiceChat = earpiece).
@@ -806,11 +786,6 @@ extension LiveKitRoomManager: RoomDelegate {
         let identity = participant.identity?.stringValue ?? "?"
         Task { @MainActor in
             self.updateState()
-            // STMOB-219: if deafened, mute the just-subscribed remote audio track
-            // so participants who join during deafen stay silenced too.
-            if self.isDeafened, let audioTrack = publication.track as? RemoteAudioTrack {
-                audioTrack.volume = 0.0
-            }
             MXLog.info("sTalk LiveKit: Subscribed to track: \(pubKind) from \(identity)")
             // STMOB-114: видим в nse-events.log реально ли пришёл screen share track.
             DiagLog.write("Call", "track subscribed kind=\(pubKind) name=\(pubName) source=\(pubSource) isScreenShare=\(isScreenShare) from=\(identity)")

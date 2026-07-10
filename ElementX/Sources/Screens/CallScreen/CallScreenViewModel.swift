@@ -240,6 +240,12 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 Task { @MainActor in
                     self.state.isSpeakerOn = isSpeaker
                     UIDevice.current.isProximityMonitoringEnabled = isEarpiece
+                    // Keep LiveKit's route preference in sync with what the user picked in the
+                    // native route picker — otherwise the SDK's automatic audio-session
+                    // reconfiguration snaps the output back on the next engine change.
+                    if isSpeaker || isEarpiece {
+                        self.liveKitRoomManager.setSpeaker(enabled: isSpeaker)
+                    }
                 }
             }
             .store(in: &cancellables)
@@ -368,8 +374,6 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             Task { await startRecording() }
         case .toggleMute:
             Task { await toggleMute() }
-        case .toggleDeafen:
-            toggleDeafen()
         case .toggleVideo:
             Task { await toggleVideo() }
         case .showSpeakerPicker:
@@ -703,8 +707,10 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
 
         // Step 1: Connect to SFU (critical — if this fails, we can't proceed)
         do {
-            // 1:1 calls → earpiece (like Telegram), group calls → speaker
-            let useSpeaker = !state.isDirect
+            // Default = SPEAKER for every call (the shipped 26.04.06 behaviour users know).
+            // The earpiece-by-default experiment for 1:1 read as "no sound at all" on device —
+            // switching to the earpiece is done explicitly via the route picker.
+            let useSpeaker = true
             try await liveKitRoomManager.connect(wsURL: wsURL, token: token, speakerByDefault: useSpeaker)
             state.isSpeakerOn = useSpeaker
             MXLog.info("sTalk LiveKit: Native connection established")
@@ -839,15 +845,6 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
 
         // Also notify Widget API for MatrixRTC state sync
         await setAudioEnabled(!newMuted)
-    }
-
-    /// STMOB-219: deafen — mute/unmute all incoming audio (does not touch the mic).
-    private func toggleDeafen() {
-        let newDeafened = !state.isDeafened
-        state.isDeafened = newDeafened
-        liveKitRoomManager.setDeafened(newDeafened)
-        MXLog.info("sTalk: Deafen toggled to \(newDeafened ? "ON" : "OFF")")
-        DiagLog.write("CallUI", "toggleDeafen tap: state.isDeafened → \(newDeafened), callStatus=\(state.callStatus)")
     }
 
     /// Resigns the app-wide first responder. Used when the call returns to fullscreen: a keyboard

@@ -170,12 +170,11 @@ struct CallScreen: View {
     // sTalk: Native call control buttons
     var callControlButtons: some View {
         HStack(spacing: context.viewState.isDirect ? 20 : 14) {
-            // STMOB-122 build 143: Hand raise + Screen share объединены в Menu (•••).
-            // Build 220: меню показывается и в 1:1 — сюда переехал deafen (выключение входящего
-            // звука): двойное назначение кнопки «Звук» (тап/долгий тап) стабильно путало и
-            // случайно мьютило собеседника.
-            Menu {
-                if !context.viewState.isDirect {
+            // STMOB-122 build 143: Hand raise + Screen share объединены в Menu (•••). Group only.
+            // Build 221: deafen (выключение входящего звука) УДАЛЁН полностью по решению dp —
+            // функция дважды приводила к «нет звука» (случайные жесты, потом залипание) и не нужна.
+            if !context.viewState.isDirect {
+                Menu {
                     Button {
                         context.send(viewAction: .toggleHandRaise)
                     } label: {
@@ -188,29 +187,19 @@ struct CallScreen: View {
                         Label(context.viewState.isScreenSharing ? NSLocalizedString("stalk_call_stop_sharing", tableName: "Localizable", value: "Остановить шаринг", comment: "Stop screen sharing in call") : SL10n.callScreenShare,
                               systemImage: context.viewState.isScreenSharing ? "rectangle.inset.filled.and.person.filled" : "rectangle.on.rectangle")
                     }
-                }
-                Button {
-                    context.send(viewAction: .toggleDeafen)
                 } label: {
-                    Label(context.viewState.isDeafened
-                        ? NSLocalizedString("stalk_call_undeafen", tableName: "Localizable", value: "Включить входящий звук", comment: "Unmute incoming audio in call")
-                        : NSLocalizedString("stalk_call_deafen", tableName: "Localizable", value: "Выключить входящий звук", comment: "Mute incoming audio in call"),
-                        systemImage: context.viewState.isDeafened ? "speaker.wave.2.fill" : "speaker.slash.fill")
-                }
-            } label: {
-                let isActive = context.viewState.isHandRaised || context.viewState.isScreenSharing || context.viewState.isDeafened
-                VStack(spacing: 6) {
-                    Image(systemName: context.viewState.isDeafened ? "speaker.slash.fill" : "ellipsis")
-                        .font(.system(size: 22))
-                        .foregroundColor(isActive ? Color(red: 0.1, green: 0.1, blue: 0.1) : .white)
-                        .frame(width: 56, height: 56)
-                        .background(isActive ? .white.opacity(0.9) : .white.opacity(0.15))
-                        .clipShape(Circle())
-                    Text(context.viewState.isDeafened
-                        ? NSLocalizedString("stalk_call_sound_off", tableName: "Localizable", value: "Звук выкл", comment: "Incoming audio muted indicator")
-                        : NSLocalizedString("stalk_call_more", tableName: "Localizable", value: "Ещё", comment: "More actions in call"))
-                        .font(.system(size: 11))
-                        .foregroundColor(.white.opacity(0.85))
+                    let isActive = context.viewState.isHandRaised || context.viewState.isScreenSharing
+                    VStack(spacing: 6) {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 22))
+                            .foregroundColor(isActive ? Color(red: 0.1, green: 0.1, blue: 0.1) : .white)
+                            .frame(width: 56, height: 56)
+                            .background(isActive ? .white.opacity(0.9) : .white.opacity(0.15))
+                            .clipShape(Circle())
+                        Text(NSLocalizedString("stalk_call_more", tableName: "Localizable", value: "Ещё", comment: "More actions in call"))
+                            .font(.system(size: 11))
+                            .foregroundColor(.white.opacity(0.85))
+                    }
                 }
             }
 
@@ -351,9 +340,9 @@ private struct CallControlButton: View {
     var style: Style = .normal
     let action: () -> Void
 
-    // Single-action buttons only. The tap/long-press dual assignment (deafen vs route picker) was
-    // removed in build 220: it fired unpredictably around the gesture threshold and users
-    // accidentally muted incoming audio. Deafen moved to the ••• menu.
+    /// Single-action buttons only. The tap/long-press dual assignment (deafen vs route picker) was
+    /// removed in build 220: it fired unpredictably around the gesture threshold and users
+    /// accidentally muted incoming audio. Deafen moved to the ••• menu.
     var body: some View {
         VStack(spacing: 6) {
             Button(action: action) { iconView }
