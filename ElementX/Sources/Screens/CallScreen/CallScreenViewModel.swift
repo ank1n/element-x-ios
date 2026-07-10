@@ -240,12 +240,11 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 Task { @MainActor in
                     self.state.isSpeakerOn = isSpeaker
                     UIDevice.current.isProximityMonitoringEnabled = isEarpiece
-                    // Keep LiveKit's route preference in sync with what the user picked in the
-                    // native route picker — otherwise the SDK's automatic audio-session
-                    // reconfiguration snaps the output back on the next engine change.
-                    if isSpeaker || isEarpiece {
-                        self.liveKitRoomManager.setSpeaker(enabled: isSpeaker)
-                    }
+                    // NOTE: do NOT feed route changes back into LiveKit's isSpeakerOutputPreferred.
+                    // Doing so (build 221) made every transient route notification trigger a mid-call
+                    // audio-session reconfigure inside LiveKit — the session ended up dead ("Нет
+                    // аудио" in the route picker, no sound at all). The preference is set once at
+                    // connect; the picker performs pure system routing on top.
                 }
             }
             .store(in: &cancellables)
