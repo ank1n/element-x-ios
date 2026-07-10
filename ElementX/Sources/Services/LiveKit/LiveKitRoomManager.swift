@@ -542,17 +542,17 @@ final class LiveKitRoomManager: ObservableObject {
     }
 
     func setSpeaker(enabled: Bool) {
-        let session = AVAudioSession.sharedInstance()
-        do {
-            if enabled {
-                try session.overrideOutputAudioPort(.speaker)
-            } else {
-                try session.overrideOutputAudioPort(.none)
-            }
-            MXLog.info("sTalk LiveKit: Speaker \(enabled ? "enabled" : "disabled")")
-        } catch {
-            MXLog.error("sTalk LiveKit: Failed to set speaker: \(error)")
-        }
+        // Route through LiveKit's own preference. It owns the AVAudioSession during a call and
+        // switches the mode on its managed session (.videoChat = speaker / .voiceChat = earpiece).
+        // Do NOT also call overrideOutputAudioPort here: mixing a manual port override with LiveKit's
+        // mid-call reconfigure dropped the audio entirely (the muting regression). Setting only the
+        // preference lets LiveKit switch cleanly and the route sticks (it won't snap back to speaker).
+        #if targetEnvironment(simulator)
+        MXLog.warning("sTalk LiveKit: speaker toggle is a no-op on the simulator")
+        #else
+        AudioManager.shared.isSpeakerOutputPreferred = enabled
+        MXLog.info("sTalk LiveKit: Speaker \(enabled ? "ON (speaker)" : "OFF (earpiece)") via isSpeakerOutputPreferred")
+        #endif
     }
 
     // MARK: - Simulator Fake Tracks
@@ -632,6 +632,13 @@ final class LiveKitRoomManager: ObservableObject {
     /// - Parameter speakerByDefault: If true, route audio to speaker initially (for group calls).
     ///   If false, route to earpiece (for 1:1 calls, like Telegram).
     func configureAudioSession(speakerByDefault: Bool = false) {
+        // The initial route is governed by LiveKit's isSpeakerOutputPreferred: once its audio engine
+        // starts it reconfigures the session from this flag (.videoChat = speaker for group calls,
+        // .voiceChat = earpiece for 1:1), overriding any category/port we set here. So set the flag —
+        // that's what actually makes 1:1 default to the earpiece instead of the loudspeaker.
+        #if !targetEnvironment(simulator)
+        AudioManager.shared.isSpeakerOutputPreferred = speakerByDefault
+        #endif
         let session = AVAudioSession.sharedInstance()
         do {
             var options: AVAudioSession.CategoryOptions = [.allowBluetoothHFP, .allowBluetoothA2DP]
@@ -644,14 +651,6 @@ final class LiveKitRoomManager: ObservableObject {
             try session.setPreferredIOBufferDuration(0.005) // 5ms — reduces crackling
             try session.setPreferredSampleRate(48000)
             try session.setActive(true, options: .notifyOthersOnDeactivation)
-
-            // Explicitly set output route
-            if speakerByDefault {
-                try session.overrideOutputAudioPort(.speaker)
-            } else {
-                try session.overrideOutputAudioPort(.none) // earpiece
-            }
-
             MXLog.info("sTalk LiveKit: Audio session configured — speaker=\(speakerByDefault)")
         } catch {
             MXLog.error("sTalk LiveKit: Failed to configure audio session: \(error)")
