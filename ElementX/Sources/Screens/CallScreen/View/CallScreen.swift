@@ -170,10 +170,12 @@ struct CallScreen: View {
     // sTalk: Native call control buttons
     var callControlButtons: some View {
         HStack(spacing: context.viewState.isDirect ? 20 : 14) {
-            // STMOB-122 build 143: Hand raise + Screen share объединены в Menu
-            // (•••) — экономит место в нижней панели. Group call only.
-            if !context.viewState.isDirect {
-                Menu {
+            // STMOB-122 build 143: Hand raise + Screen share объединены в Menu (•••).
+            // Build 220: меню показывается и в 1:1 — сюда переехал deafen (выключение входящего
+            // звука): двойное назначение кнопки «Звук» (тап/долгий тап) стабильно путало и
+            // случайно мьютило собеседника.
+            Menu {
+                if !context.viewState.isDirect {
                     Button {
                         context.send(viewAction: .toggleHandRaise)
                     } label: {
@@ -186,19 +188,29 @@ struct CallScreen: View {
                         Label(context.viewState.isScreenSharing ? NSLocalizedString("stalk_call_stop_sharing", tableName: "Localizable", value: "Остановить шаринг", comment: "Stop screen sharing in call") : SL10n.callScreenShare,
                               systemImage: context.viewState.isScreenSharing ? "rectangle.inset.filled.and.person.filled" : "rectangle.on.rectangle")
                     }
+                }
+                Button {
+                    context.send(viewAction: .toggleDeafen)
                 } label: {
-                    let isActive = context.viewState.isHandRaised || context.viewState.isScreenSharing
-                    VStack(spacing: 6) {
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 22))
-                            .foregroundColor(isActive ? Color(red: 0.1, green: 0.1, blue: 0.1) : .white)
-                            .frame(width: 56, height: 56)
-                            .background(isActive ? .white.opacity(0.9) : .white.opacity(0.15))
-                            .clipShape(Circle())
-                        Text(NSLocalizedString("stalk_call_more", tableName: "Localizable", value: "Ещё", comment: "More actions in call"))
-                            .font(.system(size: 11))
-                            .foregroundColor(.white.opacity(0.85))
-                    }
+                    Label(context.viewState.isDeafened
+                        ? NSLocalizedString("stalk_call_undeafen", tableName: "Localizable", value: "Включить входящий звук", comment: "Unmute incoming audio in call")
+                        : NSLocalizedString("stalk_call_deafen", tableName: "Localizable", value: "Выключить входящий звук", comment: "Mute incoming audio in call"),
+                        systemImage: context.viewState.isDeafened ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                }
+            } label: {
+                let isActive = context.viewState.isHandRaised || context.viewState.isScreenSharing || context.viewState.isDeafened
+                VStack(spacing: 6) {
+                    Image(systemName: context.viewState.isDeafened ? "speaker.slash.fill" : "ellipsis")
+                        .font(.system(size: 22))
+                        .foregroundColor(isActive ? Color(red: 0.1, green: 0.1, blue: 0.1) : .white)
+                        .frame(width: 56, height: 56)
+                        .background(isActive ? .white.opacity(0.9) : .white.opacity(0.15))
+                        .clipShape(Circle())
+                    Text(context.viewState.isDeafened
+                        ? NSLocalizedString("stalk_call_sound_off", tableName: "Localizable", value: "Звук выкл", comment: "Incoming audio muted indicator")
+                        : NSLocalizedString("stalk_call_more", tableName: "Localizable", value: "Ещё", comment: "More actions in call"))
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.85))
                 }
             }
 
@@ -216,23 +228,18 @@ struct CallScreen: View {
                 context.send(viewAction: .toggleMute)
             }
 
-            // STMOB-219 / audio-route: TAP opens the native audio-route picker (phone / speaker /
-            // AirPods / Bluetooth / wired) — this is the reliable way to switch earpiece↔loudspeaker
-            // without muting (the system handles the route change alongside LiveKit's session).
-            // LONG PRESS toggles deafen (mute incoming audio without touching the mic). The icon still
-            // reflects the deafen state so a muted call is visible.
-            CallControlButton(icon: context.viewState.isDeafened ? "speaker.slash.fill" : "speaker.wave.2.fill",
-                              label: context.viewState.isDeafened ? SL10n.callSoundOn : SL10n.callSound,
-                              isActive: !context.viewState.isDeafened,
-                              onLongPress: {
-                                  context.send(viewAction: .toggleDeafen)
-                              },
-                              action: {
-                                  context.send(viewAction: .showSpeakerPicker)
-                              })
-                              .background(CallRoutePickerView(viewModelContext: context)
-                                  .frame(width: 0, height: 0)
-                                  .accessibilityHidden(true))
+            // Audio route: a SINGLE action — tap opens the native audio-route picker (phone /
+            // speaker / AirPods / Bluetooth / wired). No gestures: the previous tap/long-press dual
+            // assignment (deafen vs picker) fired unpredictably around the threshold and users
+            // accidentally muted the other side. Deafen now lives in the ••• menu.
+            CallControlButton(icon: "speaker.wave.2.fill",
+                              label: SL10n.callSound,
+                              isActive: true) {
+                context.send(viewAction: .showSpeakerPicker)
+            }
+            .background(CallRoutePickerView(viewModelContext: context)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true))
 
             // End call
             CallControlButton(icon: "phone.down.fill",
@@ -342,32 +349,14 @@ private struct CallControlButton: View {
     let label: String
     var isActive = true
     var style: Style = .normal
-    /// STMOB-219: optional secondary action on long press (used by the speaker
-    /// button to open the system audio-route picker without a separate button).
-    /// Declared before `action` so the trailing-closure call sites still bind to `action`.
-    var onLongPress: (() -> Void)?
     let action: () -> Void
 
+    // Single-action buttons only. The tap/long-press dual assignment (deafen vs route picker) was
+    // removed in build 220: it fired unpredictably around the gesture threshold and users
+    // accidentally muted incoming audio. Deafen moved to the ••• menu.
     var body: some View {
         VStack(spacing: 6) {
-            Group {
-                if let onLongPress {
-                    // Tap and long press must be MUTUALLY EXCLUSIVE. The previous
-                    // Button(action:) + .simultaneousGesture(LongPress) fired BOTH the tap action and
-                    // the long-press handler on a long press — so long-pressing the audio button both
-                    // opened the route picker AND toggled deafen (the sound cut out). ExclusiveGesture
-                    // runs the long press OR the tap, never both.
-                    iconView
-                        .contentShape(Circle())
-                        .gesture(ExclusiveGesture(LongPressGesture(minimumDuration: 0.4).onEnded { _ in
-                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                onLongPress()
-                            },
-                            TapGesture().onEnded { action() }))
-                } else {
-                    Button(action: action) { iconView }
-                }
-            }
+            Button(action: action) { iconView }
 
             Text(label)
                 .font(.system(size: 11))
