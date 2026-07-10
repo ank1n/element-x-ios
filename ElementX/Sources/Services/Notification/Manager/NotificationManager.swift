@@ -249,7 +249,9 @@ final class NotificationManager: NSObject, NotificationManagerProtocol {
     private func setPusher(with deviceToken: Data, clientProxy: ClientProxyProtocol, isRetry: Bool = false) async -> Bool {
         let pushkey = deviceToken.base64EncodedString()
         let appId = appSettings.pusherAppID
-        let gateway = appSettings.pushGatewayNotifyEndpoint.absoluteString
+        // Multi-domain: the push gateway lives on the user's own server (uz/pics run their own
+        // Sygnal) — registering the misty gateway there breaks their pushes (STMOB-153).
+        let gateway = appSettings.pushGatewayNotifyEndpoint(forHomeserver: clientProxy.homeserver).absoluteString
         os_log(.info, log: pushLog, "setPusher: pushkey=%{public}@, appId=%{public}@, gateway=%{public}@", pushkey, appId, gateway)
 
         do {

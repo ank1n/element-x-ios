@@ -332,7 +332,23 @@ final class AppSettings {
     var pushGatewayNotifyEndpoint: URL {
         pushGatewayBaseURL.appending(path: "_matrix/push/v1/notify")
     }
-    
+
+    /// STMOB-153 / multi-domain: push gateway derived from the user's homeserver — same path,
+    /// domain follows the server, like every other sTalk endpoint. The hardcoded default sent
+    /// uz/pics pushes through misty's Sygnal, whose event lookup misses for foreign servers
+    /// (fail-open garbage). Accepts either a full URL ("https://stalk.pics") or a bare host;
+    /// falls back to the legacy misty gateway when no address is available.
+    func pushGatewayNotifyEndpoint(forHomeserver homeserver: String?) -> URL {
+        let host: String? = homeserver.flatMap { raw in
+            if let url = URL(string: raw), let urlHost = url.host { return urlHost }
+            return raw.isEmpty ? nil : raw
+        }
+        guard let host, let url = URL(string: "https://\(host)/_matrix/push/v1/notify") else {
+            return pushGatewayNotifyEndpoint
+        }
+        return url
+    }
+
     @UserPreference(key: UserDefaultsKeys.enableNotifications, defaultValue: true, storageType: .userDefaults(store))
     var enableNotifications
 

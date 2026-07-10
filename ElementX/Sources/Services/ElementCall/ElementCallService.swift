@@ -692,7 +692,8 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
             return
         }
 
-        let pushGatewayURL = ServiceLocator.shared.settings.pushGatewayNotifyEndpoint.absoluteString
+        // Multi-domain: VoIP pushes must go through the user's own server's Sygnal (STMOB-153).
+        let pushGatewayURL = ServiceLocator.shared.settings.pushGatewayNotifyEndpoint(forHomeserver: clientProxy.homeserver).absoluteString
         let appID = InfoPlistReader.main.baseBundleIdentifier + ".voip"
         let pushkey = token.base64EncodedString()
         os_log(.info, log: pushLog, "registerVoIPPusher: pushkey=%{public}@, appID=%{public}@, gateway=%{public}@", pushkey, appID, pushGatewayURL)
