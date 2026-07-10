@@ -828,7 +828,8 @@ class ClientProxy: ClientProxyProtocol {
                                    appDisplayName: configuration.appDisplayName,
                                    deviceDisplayName: configuration.deviceDisplayName,
                                    profileTag: configuration.profileTag,
-                                   lang: configuration.lang)
+                                   lang: configuration.lang,
+                                   append: false)
     }
 
     func deletePusher(pushkey: String, appId: String) async throws {
@@ -1391,9 +1392,15 @@ private final class ClientDelegateWrapper: ClientDelegate {
         MXLog.error("Received authentication error, softlogout=\(isSoftLogout)")
         authErrorCallback(isSoftLogout)
     }
-    
+
     func didRefreshTokens() {
         MXLog.info("Delegating session updates to the ClientSessionDelegate.")
+    }
+
+    /// SDK 26.06.03: new ClientDelegate requirement — the SDK reports background task failures
+    /// (panics/errors/early termination). Log-only here; STMOB-133 diagnostics benefit from these.
+    func onBackgroundTaskErrorReport(taskName: String, error: MatrixRustSDK.BackgroundTaskFailureReason) {
+        MXLog.error("SDK background task '\(taskName)' failed: \(error)")
     }
 }
 
@@ -1421,8 +1428,7 @@ private struct ClientProxyServices {
          notificationSettings: NotificationSettingsProxyProtocol,
          appSettings: AppSettings) async throws {
         let syncService = try await client
-            .syncService()
-            .withCrossProcessLock()
+            .syncService() // SDK 26.06.03: cross-process lock moved to ClientBuilder.crossProcessLockConfig
             .withOfflineMode()
             .withSharePos(enable: true)
             .finish()

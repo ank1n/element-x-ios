@@ -10472,7 +10472,7 @@
 			repositoryURL = "https://github.com/element-hq/matrix-rust-components-swift";
 			requirement = {
 				kind = exactVersion;
-				version = 26.1.13;
+				version = 26.06.03;
 			};
 		};
 		790021EEADDA82DC4267B701 /* XCRemoteSwiftPackageReference "Version" */ = {

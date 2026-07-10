@@ -16,7 +16,7 @@ import UIKit
 /// (identifier-for-vendor — стабильный per-app per-physical-device).
 ///
 /// Зачем: Element X iOS при каждом login через MAS получал новый
-/// Matrix device_id, потому что в `urlForOidc` мы передавали `deviceId: nil`.
+/// Matrix device_id, потому что в `urlForOauth` мы передавали `deviceId: nil`.
 /// Synapse создавал свежий device для каждой сессии. После logout/login
 /// циклов в `devices` table накапливалось 12+ stale device_id на один
 /// физический iPhone. Каждый device создавал свой APNS pusher → 11+ stale
@@ -129,8 +129,8 @@ class AuthenticationService: AuthenticationServiceProtocol {
             let client = try await makeClient(homeserverAddress: homeserverAddress)
             let loginDetails = await client.homeserverLoginDetails()
             
-            homeserver.loginMode = if loginDetails.supportsOidcLogin() {
-                .oidc(supportsCreatePrompt: loginDetails.supportedOidcPrompts().contains(.create))
+            homeserver.loginMode = if loginDetails.supportsOauthLogin() {
+                .oidc(supportsCreatePrompt: loginDetails.supportedOauthPrompts().contains(.create))
             } else if loginDetails.supportsPasswordLogin() {
                 .password
             } else {
@@ -166,9 +166,9 @@ class AuthenticationService: AuthenticationServiceProtocol {
         guard let client else { return .failure(.oidcError(.urlFailure)) }
         do {
             // The create prompt is broken: https://github.com/element-hq/matrix-authentication-service/issues/3429
-            // let prompt: OidcPrompt = flow == .register ? .create : .consent
+            // let prompt: OAuthPrompt = flow == .register ? .create : .consent
             // Use .login prompt to force re-authentication when forceLogin is true
-            let prompt: OidcPrompt = forceLogin ? .login : .consent
+            let prompt: OAuthPrompt = forceLogin ? .login : .consent
             // STMOB-98: переиспользуем Matrix device_id если он сохранён для
             // текущего IDFV. MAS примет parameter и Synapse вернёт тот же
             // device_id, не создавая новый. Это убирает накопление stale
@@ -177,11 +177,11 @@ class AuthenticationService: AuthenticationServiceProtocol {
             // сгенерирует свежий device_id который мы сохраним после callback.
             let storedDeviceID = MatrixDeviceIDKeychain.savedDeviceID()
             DiagLog.write("STMOB98", "urlForOIDCLogin reuse deviceID=\(storedDeviceID ?? "nil")")
-            let oidcData = try await client.urlForOidc(oidcConfiguration: appSettings.oidcConfiguration(for: homeserverSubject.value.address).rustValue,
-                                                       prompt: prompt,
-                                                       loginHint: loginHint,
-                                                       deviceId: storedDeviceID,
-                                                       additionalScopes: nil)
+            let oidcData = try await client.urlForOauth(oauthConfiguration: appSettings.oidcConfiguration(for: homeserverSubject.value.address).rustValue,
+                                                        prompt: prompt,
+                                                        loginHint: loginHint,
+                                                        deviceId: storedDeviceID,
+                                                        additionalScopes: nil)
             return .success(OIDCAuthorizationDataProxy(underlyingData: oidcData))
         } catch {
             MXLog.error("Failed to get URL for OIDC login: \(error)")
@@ -192,13 +192,13 @@ class AuthenticationService: AuthenticationServiceProtocol {
     func abortOIDCLogin(data: OIDCAuthorizationDataProxy) async {
         guard let client else { return }
         MXLog.info("Aborting OIDC login.")
-        await client.abortOidcAuth(authorizationData: data.underlyingData)
+        await client.abortOauthAuth(authorizationData: data.underlyingData)
     }
     
     func loginWithOIDCCallback(_ callbackURL: URL) async -> Result<UserSessionProtocol, AuthenticationServiceError> {
         guard let client else { return .failure(.failedLoggingIn) }
         do {
-            try await client.loginWithOidcCallback(callbackUrl: callbackURL.absoluteString)
+            try await client.loginWithOauthCallback(callbackUrl: callbackURL.absoluteString)
             // STMOB-98: persist actual device_id from session. На первом login
             // (когда передавали deviceId=nil) Synapse вернул свежий, нужно
             // сохранить чтобы следующий login переиспользовал. На повторном
@@ -208,7 +208,7 @@ class AuthenticationService: AuthenticationServiceProtocol {
                 MatrixDeviceIDKeychain.save(deviceID: session.deviceId)
             }
             return await userSession(for: client)
-        } catch OidcError.Cancelled {
+        } catch OAuthError.Cancelled {
             return .failure(.oidcError(.userCancellation))
         } catch {
             MXLog.error("Login with OIDC failed: \(error)")
@@ -280,7 +280,7 @@ class AuthenticationService: AuthenticationServiceProtocol {
         Task {
             do {
                 let client = try await makeClient(homeserverAddress: scannedServerName)
-                let qrCodeHandler = client.newLoginWithQrCodeHandler(oidcConfiguration: appSettings.oidcConfiguration(for: scannedServerName).rustValue)
+                let qrCodeHandler = client.newLoginWithQrCodeHandler(oauthConfiguration: appSettings.oidcConfiguration(for: scannedServerName).rustValue)
                 try await qrCodeHandler.scan(qrCodeData: qrData, progressListener: listener)
                 
                 switch await userSession(for: client) {
@@ -359,7 +359,7 @@ private extension HumanQrLoginError {
             .qrCodeError(.deviceNotSupported)
         case .OtherDeviceNotSignedIn:
             .qrCodeError(.deviceNotSignedIn)
-        case .Unknown, .NotFound, .OidcMetadataInvalid, .CheckCodeAlreadySent, .CheckCodeCannotBeSent:
+        case .Unknown, .NotFound, .OAuthMetadataInvalid, .CheckCodeAlreadySent, .CheckCodeCannotBeSent, .UnsupportedQrCodeType:
             .qrCodeError(.unknown)
         }
     }

@@ -190,12 +190,16 @@ extension LinkNewDeviceService.LinkDesktopProgress: CustomStringConvertible {
 
 private extension QRCodeLoginError {
     init(rustError: HumanQrGrantLoginError) {
+        // SDK 26.06.03: UnableToCreateDevice was removed; ConnectionInsecure / Expired / Cancelled /
+        // DeviceNotFound / OtherDeviceAlreadySignedIn / UnsupportedQrCodeType are new — mapped onto
+        // our existing app-side cases.
         self = switch rustError {
-        case .InvalidCheckCode:
+        case .InvalidCheckCode, .ConnectionInsecure:
             .connectionInsecure
-        case .UnsupportedProtocol:
+        case .UnsupportedProtocol, .UnsupportedQrCodeType:
             .linkingNotSupported
-        case .Unknown, .NotFound, .MissingSecretsBackup, .DeviceIdAlreadyInUse, .UnableToCreateDevice:
+        case .Unknown, .NotFound, .MissingSecretsBackup, .DeviceIdAlreadyInUse,
+             .DeviceNotFound, .OtherDeviceAlreadySignedIn, .Cancelled, .Expired:
             .unknown
         }
     }

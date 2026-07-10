@@ -17,10 +17,11 @@ extension ClientSDKMock {
         var serverAddress = "matrix.org"
         var homeserverURL = "https://matrix-client.matrix.org"
         var slidingSyncVersion = SlidingSyncVersion.native
-        var oidcLoginURL: String? = "https://account.matrix.org/authorize"
-        var supportsOIDCCreatePrompt = true
+        var oAuthLoginURL: String? = "https://account.matrix.org/authorize"
+        var supportsOAuthCreatePrompt = true
         var supportsPasswordLogin = true
         var elementWellKnown: String?
+        var tileServerMapStyleURL: String?
         var validCredentials = (username: "alice", password: "12345678")
         
         // MARK: Session
@@ -31,13 +32,13 @@ extension ClientSDKMock {
                               userId: "@alice:matrix.org",
                               deviceId: UUID().uuidString,
                               homeserverUrl: "https://matrix-client.matrix.org",
-                              oidcData: nil,
+                              oauthData: nil,
                               slidingSyncVersion: .native)
     }
     
     enum MockError: Error { case generic }
     
-    convenience init(configuration: Configuration) {
+    convenience init(_ configuration: Configuration) {
         self.init()
         
         homeserverLoginDetailsReturnValue = HomeserverLoginDetailsSDKMock(configuration: configuration)
@@ -45,11 +46,16 @@ extension ClientSDKMock {
         userIdServerNameThrowableError = MockError.generic
         serverReturnValue = "https://\(configuration.serverAddress)"
         homeserverReturnValue = configuration.homeserverURL
-        urlForOidcOidcConfigurationPromptLoginHintDeviceIdAdditionalScopesReturnValue = OAuthAuthorizationDataSDKMock(configuration: configuration)
-        loginUsernamePasswordInitialDeviceNameDeviceIdClosure = { username, password, _, _ in
+        urlForOauthOauthConfigurationPromptLoginHintDeviceIdAdditionalScopesReturnValue = OAuthAuthorizationDataSDKMock(configuration: configuration)
+        loginUsernamePasswordInitialDeviceNameDeviceIdClosure = { [weak self] username, password, _, _ in
             guard username == configuration.validCredentials.username,
                   password == configuration.validCredentials.password else {
                 throw MockError.generic // use the matrix error
+            }
+            if username.hasPrefix("@"), username.contains(":") {
+                self?.userIdReturnValue = username
+            } else {
+                self?.userIdReturnValue = "@\(username):\(configuration.serverAddress)"
             }
         }
         
@@ -63,6 +69,7 @@ extension ClientSDKMock {
                 throw MockError.generic
             }
         }
+        tileServerReturnValue = configuration.tileServerMapStyleURL.map { TileServerInfo(mapStyleUrl: $0) }
     }
 }
 
@@ -72,8 +79,8 @@ extension HomeserverLoginDetailsSDKMock {
         
         slidingSyncVersionReturnValue = configuration.slidingSyncVersion
         supportsPasswordLoginReturnValue = configuration.supportsPasswordLogin
-        supportsOidcLoginReturnValue = configuration.oidcLoginURL != nil
-        supportedOidcPromptsReturnValue = switch (configuration.oidcLoginURL, configuration.supportsOIDCCreatePrompt) {
+        supportsOauthLoginReturnValue = configuration.oAuthLoginURL != nil
+        supportedOauthPromptsReturnValue = switch (configuration.oAuthLoginURL, configuration.supportsOAuthCreatePrompt) {
         case (.none, _): []
         case (.some, true): [.consent, .create]
         case (.some, false): [.consent]
@@ -86,6 +93,6 @@ extension OAuthAuthorizationDataSDKMock {
     convenience init(configuration: ClientSDKMock.Configuration) {
         self.init()
         
-        loginUrlReturnValue = configuration.oidcLoginURL
+        loginUrlReturnValue = configuration.oAuthLoginURL
     }
 }

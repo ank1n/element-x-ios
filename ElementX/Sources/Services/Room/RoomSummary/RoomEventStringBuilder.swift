@@ -60,6 +60,9 @@ struct RoomEventStringBuilder {
                 default: L10n.commonWaitingForDecryptionKey
                 }
                 return prefix(errorMessage, with: displayName, isOutgoing: isOutgoing)
+            case .liveLocation:
+                // SDK 26.06.03 exposes live-location shares; sTalk shows them as a shared location.
+                return prefix(L10n.commonSharedLocation, with: displayName, isOutgoing: isOutgoing)
             case .other:
                 return nil // We shouldn't receive these without asking for custom event types.
             }

@@ -15,10 +15,10 @@ class LeaveSpaceViewModel: LeaveSpaceViewModelType {
     var actions: AnyPublisher<LeaveSpaceViewModelAction, Never> {
         actionsSubject.eraseToAnyPublisher()
     }
-
+    
     private let userIndicatorController: UserIndicatorControllerProtocol
     private let mediaProvider: MediaProviderProtocol
-
+    
     init(spaceName: String, canEditRolesAndPermissions: Bool, leaveHandle: LeaveSpaceHandleProxy, userIndicatorController: UserIndicatorControllerProtocol, mediaProvider: MediaProviderProtocol) {
         self.userIndicatorController = userIndicatorController
         self.mediaProvider = mediaProvider
@@ -41,6 +41,8 @@ class LeaveSpaceViewModel: LeaveSpaceViewModelType {
             withTransaction(\.disablesAnimations, true) { // The button is adding an unwanted animation.
                 state.leaveHandle.toggleRoom(roomID: roomID)
             }
+        case .transferOwnership:
+            actionsSubject.send(.presentTransferOwnership)
         }
     }
     
@@ -59,7 +61,7 @@ class LeaveSpaceViewModel: LeaveSpaceViewModelType {
     private static var leavingIndicatorID: String {
         "\(Self.self)-Leaving"
     }
-
+    
     private static var failureIndicatorID: String {
         "\(Self.self)-Failure"
     }
@@ -77,8 +79,7 @@ class LeaveSpaceViewModel: LeaveSpaceViewModelType {
     private func showFailureIndicator() {
         userIndicatorController.submitIndicator(UserIndicator(id: Self.failureIndicatorID,
                                                               type: .toast,
-                                                              title: L10n.errorUnknown,
-                                                              iconName: "xmark"))
+                                                              title: L10n.errorUnknown))
     }
 }
 

@@ -224,6 +224,11 @@ class SpaceScreenViewModel: SpaceScreenViewModelType, SpaceScreenViewModelProtoc
             case .didLeaveSpace:
                 state.bindings.leaveSpaceViewModel = nil
                 actionsSubject.send(.leftSpace)
+            case .presentTransferOwnership:
+                // New in the upstream LeaveSpace flow (leaving as the last owner). sTalk has no
+                // transfer-ownership plumbing in the spaces flow yet — just dismiss the sheet.
+                state.bindings.leaveSpaceViewModel = nil
+                MXLog.warning("Transfer ownership requested from LeaveSpace — not supported in the spaces flow yet.")
             }
         }
         .store(in: &cancellables)

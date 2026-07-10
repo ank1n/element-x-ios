@@ -187,8 +187,10 @@ extension SDKListener: KnockRequestsListener where T == [KnockRequest] {
 
 // MARK: TimelineProxy
 
-extension SDKListener: PaginationStatusListener where T == RoomPaginationStatus {
-    func onUpdate(status: RoomPaginationStatus) {
+/// Explicitly qualified: the SDK's PaginationStatus (26.06.03 rename of RoomPaginationStatus)
+/// clashes with our app-side PaginationStatus enum in TimelineItemProviderProtocol.
+extension SDKListener: PaginationStatusListener where T == MatrixRustSDK.PaginationStatus {
+    func onUpdate(status: MatrixRustSDK.PaginationStatus) {
         onUpdateClosure(status)
     }
 }

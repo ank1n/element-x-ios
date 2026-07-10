@@ -230,6 +230,11 @@ class RoomDetailsScreenViewModel: RoomDetailsScreenViewModelType, RoomDetailsScr
                 case .didLeaveSpace:
                     state.bindings.leaveSpaceViewModel = nil
                     actionsSubject.send(.leftRoom)
+                case .presentTransferOwnership:
+                    // New in the upstream LeaveSpace flow (leaving as the last owner). sTalk has no
+                    // transfer-ownership plumbing here yet — just dismiss the sheet.
+                    state.bindings.leaveSpaceViewModel = nil
+                    MXLog.warning("Transfer ownership requested from LeaveSpace — not supported here yet.")
                 }
             }
             .store(in: &cancellables)

@@ -42,14 +42,18 @@ enum Tracing {
             Tracing.filePrefix
         }
         
-        // Keep a minimum of 1 week of log files. In reality it will be longer
-        // as the app is unlikely to be running continuously.
-        let maxFiles: UInt64 = 24 * 7
-        
         // Log everything on integration tests to check whether
         // the logs contain any sensitive data. See `integration-tests.yml`
         let level: LogLevel = ProcessInfo.isRunningIntegrationTests ? .trace : logLevel
-        
+
+        // SDK 26.06.03: FileConfiguration switched from maxFiles to size+age based rotation and
+        // sentryDsn became a structured SentryConfig.
+        let sentryConfig = sentryURL.map { url in
+            SentryConfig(dsn: url.absoluteString,
+                         appVersion: InfoPlistReader.main.bundleShortVersionString,
+                         appPlatform: "ios")
+        }
+
         return .init(logLevel: level.rustLogLevel,
                      traceLogPacks: traceLogPacks.map(\.rustLogPack),
                      extraTargets: [currentTarget],
@@ -57,8 +61,10 @@ enum Tracing {
                      writeToFiles: .init(path: logsDirectory.path(percentEncoded: false),
                                          filePrefix: fileName,
                                          fileSuffix: fileExtension,
-                                         maxFiles: maxFiles),
-                     sentryDsn: sentryURL?.absoluteString)
+                                         // Total compressed size needs to stay under CloudFlare's 50Mb request cap.
+                                         maxTotalSizeBytes: 100 * 1024 * 1024, // 100Mb
+                                         maxAgeSeconds: 7 * 24 * 60 * 60), // One week
+                     sentryConfig: sentryConfig)
     }
     
     /// A list of all log file URLs, sorted chronologically.

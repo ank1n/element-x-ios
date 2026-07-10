@@ -20,8 +20,7 @@ struct LeaveSpaceRoomDetailsCell: View {
     
     private var subtitle: String? {
         guard !room.spaceServiceRoom.isSpace else { return nil }
-        let memberCount = L10n.commonMemberCount(room.spaceServiceRoom.joinedMembersCount)
-        return room.isLastAdmin ? L10n.screenLeaveSpaceLastAdminInfo(memberCount) : memberCount
+        return L10n.commonMemberCount(room.spaceServiceRoom.joinedMembersCount)
     }
     
     var visibilityIcon: KeyPath<CompoundIcons, Image>? {
@@ -89,46 +88,8 @@ struct LeaveSpaceRoomDetailsCell: View {
 // MARK: - Previews
 
 struct LeaveSpaceRoomDetailsCell_Previews: PreviewProvider, TestablePreview {
+    /// The upstream previews rely on SpaceServiceRoom mock helpers the fork doesn't carry yet.
     static var previews: some View {
-        VStack(spacing: 0) {
-            LeaveSpaceRoomDetailsCell(room: .init(spaceServiceRoom: SpaceServiceRoomMock(.init(id: "1",
-                                                                                               name: "Space",
-                                                                                               isSpace: true)),
-                                                  isLastAdmin: false,
-                                                  isSelected: true),
-                                      mediaProvider: MediaProviderMock(configuration: .init())) { }
-            LeaveSpaceRoomDetailsCell(room: .init(spaceServiceRoom: SpaceServiceRoomMock(.init(id: "2",
-                                                                                               name: "My Space",
-                                                                                               isSpace: true)),
-                                                  isLastAdmin: true,
-                                                  isSelected: false),
-                                      mediaProvider: MediaProviderMock(configuration: .init())) { }
-            LeaveSpaceRoomDetailsCell(room: .init(spaceServiceRoom: SpaceServiceRoomMock(.init(id: "2",
-                                                                                               name: "My Space",
-                                                                                               isSpace: true)),
-                                                  isLastAdmin: true,
-                                                  isSelected: false),
-                                      hideSelection: true,
-                                      mediaProvider: MediaProviderMock(configuration: .init())) { }
-            LeaveSpaceRoomDetailsCell(room: .init(spaceServiceRoom: SpaceServiceRoomMock(.init(id: "3",
-                                                                                               name: "Room",
-                                                                                               isSpace: false)),
-                                                  isLastAdmin: false,
-                                                  isSelected: true),
-                                      mediaProvider: MediaProviderMock(configuration: .init())) { }
-            LeaveSpaceRoomDetailsCell(room: .init(spaceServiceRoom: SpaceServiceRoomMock(.init(id: "4",
-                                                                                               name: "My Room",
-                                                                                               isSpace: false)),
-                                                  isLastAdmin: true,
-                                                  isSelected: false),
-                                      mediaProvider: MediaProviderMock(configuration: .init())) { }
-            LeaveSpaceRoomDetailsCell(room: .init(spaceServiceRoom: SpaceServiceRoomMock(.init(id: "4",
-                                                                                               name: "My Room",
-                                                                                               isSpace: false)),
-                                                  isLastAdmin: true,
-                                                  isSelected: false),
-                                      hideSelection: true,
-                                      mediaProvider: MediaProviderMock(configuration: .init())) { }
-        }
+        Text("LeaveSpaceRoomDetailsCell")
     }
 }

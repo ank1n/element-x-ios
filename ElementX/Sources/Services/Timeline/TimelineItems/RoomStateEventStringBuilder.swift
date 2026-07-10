@@ -88,6 +88,14 @@ struct RoomStateEventStringBuilder {
         }
     }
     
+    /// Chat-list preview for the SDK 26.06.03 `.remoteInvite` latest-event case.
+    func buildInvitedYouString(_ senderDisplayName: String) -> String {
+        String(format: NSLocalizedString("state_event_room_invite_you",
+                                         tableName: "Localizable",
+                                         comment: "Chat list preview when someone invited you"),
+               senderDisplayName)
+    }
+
     func buildProfileChangeString(displayName: String?, previousDisplayName: String?,
                                   avatarURLString: String?, previousAvatarURLString: String?,
                                   member: String, memberIsYou: Bool) -> String? {
@@ -202,7 +210,7 @@ struct RoomStateEventStringBuilder {
             break
         case .policyRuleRoom, .policyRuleServer, .policyRuleUser: // No strings available.
             break
-        case .roomAliases, .roomCanonicalAlias: // Doesn't provide the alias.
+        case .roomCanonicalAlias: // Doesn't provide the alias. (.roomAliases removed in SDK 26.06.03)
             break
         case .roomGuestAccess, .roomHistoryVisibility: // Doesn't provide information about the change.
             break

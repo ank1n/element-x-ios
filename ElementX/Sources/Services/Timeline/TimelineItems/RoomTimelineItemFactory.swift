@@ -41,6 +41,8 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
                 return buildRedactedTimelineItem(eventItemProxy, messageLikeContent, isOutgoing)
             case .unableToDecrypt(let encryptedMessage):
                 return buildEncryptedTimelineItem(eventItemProxy, messageLikeContent, encryptedMessage, isOutgoing)
+            case .liveLocation:
+                return nil // SDK 26.06.03 exposes live-location shares; sTalk has no live-location UI.
             case .other:
                 return nil // We shouldn't receive these without asking for custom event types.
             }

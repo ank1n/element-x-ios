@@ -14409,6 +14409,11 @@ class RoomMemberProxyMock: RoomMemberProxyProtocol, @unchecked Sendable {
         set(value) { underlyingPowerLevel = value }
     }
     var underlyingPowerLevel: RoomPowerLevel!
+    var isServiceMember: Bool {
+        get { return underlyingIsServiceMember }
+        set(value) { underlyingIsServiceMember = value }
+    }
+    var underlyingIsServiceMember: Bool!
 
 }
 class RoomMembershipDetailsProxyMock: RoomMembershipDetailsProxyProtocol, @unchecked Sendable {

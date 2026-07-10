@@ -90,12 +90,11 @@ class RoomSummaryProvider: RoomSummaryProviderProtocol {
         self.roomList = roomList
         
         do {
-            listUpdatesSubscriptionResult = roomList.entriesWithDynamicAdaptersWith(pageSize: UInt32(roomListPageSize),
-                                                                                    enableLatestEventSorter: true,
-                                                                                    listener: SDKListener { [weak self] updates in
-                                                                                        guard let self else { return }
-                                                                                        diffsPublisher.send(updates)
-                                                                                    })
+            listUpdatesSubscriptionResult = roomList.entriesWithDynamicAdapters(pageSize: UInt32(roomListPageSize),
+                                                                                listener: SDKListener { [weak self] updates in
+                                                                                    guard let self else { return }
+                                                                                    diffsPublisher.send(updates)
+                                                                                })
             
             // Forces the listener above to be called with the current state
             setFilter(.all(filters: []))
@@ -277,6 +276,16 @@ class RoomSummaryProvider: RoomSummaryProviderProtocol {
                 let sender = TimelineItemSender(senderID: senderID, senderProfile: profile)
                 attributedLastMessage = eventStringBuilder.buildAttributedString(for: content, sender: sender, isOutgoing: isOwn)
                 lastMessageDate = Date(timeIntervalSince1970: TimeInterval(timestamp / 1000))
+            case .remoteInvite(let timestamp, let senderID, let profile):
+                // SDK 26.06.03: invites surface as a dedicated latest-event case.
+                lastMessageDate = Date(timeIntervalSince1970: TimeInterval(timestamp / 1000))
+
+                if let senderID {
+                    let sender = TimelineItemSender(senderID: senderID, senderProfile: profile)
+                    let senderDisplayName = sender.displayName ?? sender.id
+                    let invitedYouString = eventStringBuilder.stateEventStringBuilder.buildInvitedYouString(senderDisplayName)
+                    attributedLastMessage = AttributedString(invitedYouString)
+                }
             case .none:
                 break
             }

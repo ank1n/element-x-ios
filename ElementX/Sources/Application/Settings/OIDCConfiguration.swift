@@ -22,14 +22,16 @@ struct OIDCConfiguration {
 import MatrixRustSDK
 
 extension OIDCConfiguration {
-    var rustValue: OidcConfiguration {
-        OidcConfiguration(clientName: clientName,
-                          redirectUri: redirectURI.absoluteString,
-                          clientUri: clientURI.absoluteString,
-                          logoUri: logoURI.absoluteString,
-                          tosUri: tosURI.absoluteString,
-                          policyUri: policyURI.absoluteString,
-                          staticRegistrations: staticRegistrations)
+    /// SDK 26.06.03: the FFI type was renamed OidcConfiguration → OAuthConfiguration (same fields).
+    /// We keep the app-side OIDCConfiguration name — the whole fork references it.
+    var rustValue: MatrixRustSDK.OAuthConfiguration {
+        MatrixRustSDK.OAuthConfiguration(clientName: clientName,
+                                         redirectUri: redirectURI.absoluteString,
+                                         clientUri: clientURI.absoluteString,
+                                         logoUri: logoURI.absoluteString,
+                                         tosUri: tosURI.absoluteString,
+                                         policyUri: policyURI.absoluteString,
+                                         staticRegistrations: staticRegistrations)
     }
 }
 #endif

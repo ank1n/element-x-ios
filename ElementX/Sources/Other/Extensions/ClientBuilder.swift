@@ -21,16 +21,19 @@ extension ClientBuilder {
                             requestTimeout: UInt64? = 30000,
                             maxRequestRetryTime: UInt64? = nil,
                             threadsEnabled: Bool) -> ClientBuilder {
+        // SDK 26.06.03: crossProcessStoreLocksHolderName + enableOidcRefreshLock were replaced by a
+        // single crossProcessLockConfig (the reworked cross-process store-lock handling — the area
+        // behind the 0xDEAD10CC background kills, STMOB-133).
         var builder = ClientBuilder()
-            .crossProcessStoreLocksHolderName(holderName: InfoPlistReader.main.bundleIdentifier)
-            .enableOidcRefreshLock()
+            .crossProcessLockConfig(crossProcessLockConfig: .multiProcess(holderName: InfoPlistReader.main.bundleIdentifier))
             .setSessionDelegate(sessionDelegate: sessionDelegate)
             .userAgent(userAgent: UserAgentBuilder.makeASCIIUserAgent())
             .threadsEnabled(enabled: threadsEnabled, threadSubscriptions: threadsEnabled)
-            .requestConfig(config: .init(retryLimit: 0,
+            .requestConfig(config: .init(retryLimit: 3, // Must be non-zero for the SDK to retry API calls when rate-limited.
                                          timeout: requestTimeout,
                                          maxConcurrentRequests: nil,
                                          maxRetryTime: maxRequestRetryTime))
+            .dmRoomDefinition(dmRoomDefinition: .twoMembers)
         
         builder = switch slidingSync {
         case .restored: builder

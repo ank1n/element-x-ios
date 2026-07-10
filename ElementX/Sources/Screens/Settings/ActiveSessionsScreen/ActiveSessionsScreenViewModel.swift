@@ -194,7 +194,7 @@ class ActiveSessionsScreenViewModel: ActiveSessionsScreenViewModelType, ActiveSe
         //
         // Если MAS URL не доступен (deployment не на MAS) — fallback на
         // прямой DELETE с {"auth":{}}.
-        if let masURL = await clientProxy.accountURL(action: .sessionEnd(deviceId: deviceID)) {
+        if let masURL = await clientProxy.accountURL(action: .deviceDelete(deviceId: deviceID)) {
             actionsSubject.send(.openMASURL(masURL))
             return
         }
