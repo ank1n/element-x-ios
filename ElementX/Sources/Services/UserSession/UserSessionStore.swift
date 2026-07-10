@@ -118,12 +118,30 @@ class UserSessionStore: UserSessionStoreProtocol {
                            voiceMessageMediaManager: voiceMessageMediaManager)
     }
     
+    /// Bump when a matrix-rust-sdk upgrade changes the transient store schemas. On mismatch the
+    /// state + event-cache stores are wiped once (crypto store untouched) and rebuilt from the
+    /// server — an in-place upgrade otherwise leaves an incompatible event cache behind
+    /// (FOREIGN KEY failures on pagination → chats show no messages after updating the app).
+    private static let transientStoreEpoch = "sdk-26.06.03"
+    private static let transientStoreEpochKey = "ru.implica.stalk.transientStoreEpoch"
+
+    private func wipeTransientStoresIfSDKChanged(_ sessionDirectories: SessionDirectories) {
+        let defaults = UserDefaults.standard
+        let storedEpoch = defaults.string(forKey: Self.transientStoreEpochKey)
+        guard storedEpoch != Self.transientStoreEpoch else { return }
+        MXLog.info("SDK transient-store epoch changed (\(storedEpoch ?? "none") → \(Self.transientStoreEpoch)) — wiping state/event-cache stores")
+        sessionDirectories.deleteTransientUserData()
+        defaults.set(Self.transientStoreEpoch, forKey: Self.transientStoreEpochKey)
+    }
+
     private func restorePreviousLogin(_ credentials: KeychainCredentials) async -> Result<ClientProxyProtocol, UserSessionStoreError> {
         guard credentials.restorationToken.sessionDirectories.isNonTransientUserDataValid() else {
             MXLog.error("Failed restoring login, missing non-transient user data")
             return .failure(.failedRestoringLogin)
         }
-        
+
+        wipeTransientStoresIfSDKChanged(credentials.restorationToken.sessionDirectories)
+
         let homeserverURL = credentials.restorationToken.session.homeserverUrl
         await appHooks.remoteSettingsHook.loadCache(forHomeserver: homeserverURL, applyingTo: appSettings)
         
