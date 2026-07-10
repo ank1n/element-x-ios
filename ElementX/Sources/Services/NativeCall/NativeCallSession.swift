@@ -1160,23 +1160,66 @@ final class NativeCallSession: ObservableObject {
     /// кроме себя. По нему решаем: мы инициатор (звоним) или просто заходим в
     /// идущую встречу (НЕ звоним — иначе CallKit-пуш «входящий» прилетает тем,
     /// кто уже в звонке, напр. с веба, и «Ответить» не срабатывает — они уже там).
+    ///
+    /// Hardened (Molly/STALK-572 joiner-re-ring): the original check both missed real members and
+    /// counted phantom ones —
+    ///  - only matched `org.matrix.msc3401.call.member`, not the stable `m.call.member`
+    ///    (both occur on the wire, see handleSendEvent);
+    ///  - treated ANY non-empty content as active, so a legacy leave (`{"memberships": []}`)
+    ///    or an expired membership blocked the ring for every later call in the room;
+    ///  - a single failed /state request fell open to "nobody in call" → joiner re-ring.
+    /// Parsing now mirrors updateCallMembers (legacy memberships[] + flat per-device content,
+    /// expiry via expires_ts / created_ts+expires) and the request retries once.
     private func fetchActiveCallMemberUserIDs() async -> Set<String> {
         let encodedRoom = matrixRoomId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? matrixRoomId
         let url = "\(homeserverURL)/_matrix/client/v3/rooms/\(encodedRoom)/state"
-        var request = URLRequest(url: URL(string: url)!)
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        var result: Set<String> = []
-        guard let (data, _) = try? await URLSession.shared.data(for: request),
-              let events = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-            return result
+
+        var events: [[String: Any]]?
+        for attempt in 1...2 {
+            var request = URLRequest(url: URL(string: url)!)
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            if let (data, _) = try? await URLSession.shared.data(for: request),
+               let parsed = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+                events = parsed
+                break
+            }
+            MXLog.warning("sTalk NativeCall: /state fetch attempt \(attempt) failed (ring guard)")
+            if attempt == 1 { try? await Task.sleep(for: .milliseconds(500)) }
         }
+        guard let events else {
+            DiagLog.write("Call", "ring guard: /state unavailable after retry — assuming initiator")
+            return []
+        }
+
+        let callMemberTypes: Set = ["org.matrix.msc3401.call.member", "m.call.member", "m.rtc.member"]
+        let nowMs = Date().timeIntervalSince1970 * 1000
+        var result: Set<String> = []
+
         for event in events {
-            guard let type = event["type"] as? String, type == "org.matrix.msc3401.call.member" else { continue }
-            // Пустой content = участник вышел; непустой = активное членство.
+            guard let type = event["type"] as? String, callMemberTypes.contains(type),
+                  let sender = event["sender"] as? String, sender != userId else { continue }
             let content = event["content"] as? [String: Any] ?? [:]
-            guard !content.isEmpty else { continue }
-            // sender = юзер, выставивший membership (state_key device-scoped в MSC4143).
-            if let sender = event["sender"] as? String, sender != userId {
+            guard !content.isEmpty else { continue } // empty content = left
+
+            // Legacy: memberships[] (empty array = left). Per-device flat content: the content
+            // itself is the single membership (has device_id).
+            var memberships = (content["memberships"] as? [[String: Any]]) ?? []
+            if memberships.isEmpty, content["device_id"] != nil { memberships = [content] }
+            guard !memberships.isEmpty else { continue }
+
+            let originServerTs = (event["origin_server_ts"] as? Double) ?? (event["origin_server_ts"] as? Int).map(Double.init)
+            let hasActiveMembership = memberships.contains { membership in
+                if let expiresTs = (membership["expires_ts"] as? Double) ?? (membership["expires_ts"] as? Int).map(Double.init) {
+                    return expiresTs > nowMs
+                }
+                let createdTs = (membership["created_ts"] as? Double) ?? (membership["created_ts"] as? Int).map(Double.init) ?? originServerTs
+                if let createdTs,
+                   let expires = (membership["expires"] as? Double) ?? (membership["expires"] as? Int).map(Double.init) {
+                    return createdTs + expires > nowMs
+                }
+                return true // no expiry info — assume active
+            }
+            if hasActiveMembership {
                 result.insert(sender)
             }
         }
