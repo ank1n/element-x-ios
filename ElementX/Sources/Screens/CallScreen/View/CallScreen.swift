@@ -170,11 +170,12 @@ struct CallScreen: View {
     // sTalk: Native call control buttons
     var callControlButtons: some View {
         HStack(spacing: context.viewState.isDirect ? 20 : 14) {
-            // STMOB-122 build 143: Hand raise + Screen share объединены в Menu (•••). Group only.
+            // STMOB-122 build 143: Hand raise + Screen share объединены в Menu (•••), group only.
             // Build 221: deafen (выключение входящего звука) УДАЛЁН полностью по решению dp —
             // функция дважды приводила к «нет звука» (случайные жесты, потом залипание) и не нужна.
-            if !context.viewState.isDirect {
-                Menu {
+            // Меню теперь и в 1:1 — там живёт размытие фона (в группах + рука/шаринг).
+            Menu {
+                if !context.viewState.isDirect {
                     Button {
                         context.send(viewAction: .toggleHandRaise)
                     } label: {
@@ -187,19 +188,23 @@ struct CallScreen: View {
                         Label(context.viewState.isScreenSharing ? NSLocalizedString("stalk_call_stop_sharing", tableName: "Localizable", value: "Остановить шаринг", comment: "Stop screen sharing in call") : SL10n.callScreenShare,
                               systemImage: context.viewState.isScreenSharing ? "rectangle.inset.filled.and.person.filled" : "rectangle.on.rectangle")
                     }
-                } label: {
-                    let isActive = context.viewState.isHandRaised || context.viewState.isScreenSharing
-                    VStack(spacing: 6) {
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 22))
-                            .foregroundColor(isActive ? Color(red: 0.1, green: 0.1, blue: 0.1) : .white)
-                            .frame(width: 56, height: 56)
-                            .background(isActive ? .white.opacity(0.9) : .white.opacity(0.15))
-                            .clipShape(Circle())
-                        Text(NSLocalizedString("stalk_call_more", tableName: "Localizable", value: "Ещё", comment: "More actions in call"))
-                            .font(.system(size: 11))
-                            .foregroundColor(.white.opacity(0.85))
-                    }
+                }
+                Toggle(isOn: Binding(get: { context.viewState.isBackgroundBlurEnabled },
+                                     set: { _ in context.send(viewAction: .toggleBackgroundBlur) })) {
+                    Label(SL10n.callBackgroundBlur, systemImage: "person.and.background.dotted")
+                }
+            } label: {
+                let isActive = context.viewState.isHandRaised || context.viewState.isScreenSharing || context.viewState.isBackgroundBlurEnabled
+                VStack(spacing: 6) {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 22))
+                        .foregroundColor(isActive ? Color(red: 0.1, green: 0.1, blue: 0.1) : .white)
+                        .frame(width: 56, height: 56)
+                        .background(isActive ? .white.opacity(0.9) : .white.opacity(0.15))
+                        .clipShape(Circle())
+                    Text(NSLocalizedString("stalk_call_more", tableName: "Localizable", value: "Ещё", comment: "More actions in call"))
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.85))
                 }
             }
 

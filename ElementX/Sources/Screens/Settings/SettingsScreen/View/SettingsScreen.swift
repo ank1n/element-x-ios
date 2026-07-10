@@ -446,7 +446,8 @@ struct SettingsScreen: View {
     // MARK: - Calls Settings
 
     @AppStorage("stalk_background_blur_enabled") private var backgroundBlurEnabled = false
-    @AppStorage("stalk_noise_suppression_enabled") private var noiseSuppressionEnabled = true
+    /// NS строго opt-in: дефолт «вкл» менял бы обработку микрофона всем против shipped-звука
+    @AppStorage("stalk_noise_suppression_enabled") private var noiseSuppressionEnabled = false
     // Native calls always enabled — no toggle needed
 
     private var callsSettingsSection: some View {

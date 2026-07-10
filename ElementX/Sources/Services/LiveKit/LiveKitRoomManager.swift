@@ -131,6 +131,15 @@ final class LiveKitRoomManager: ObservableObject {
         guard connectionState == .connected || connectionState == .reconnecting else { return }
         // Remember if camera was actively publishing — need to re-enable on return.
         wasCameraEnabledBeforeBackground = room.localParticipant.videoTracks.first?.track != nil
+        // Блюр: CIContext на Metal не должен рендерить в фоне (GPU work in background
+        // = command-buffer abort в момент транзишена). Отцепляем процессор; foreground
+        // setCamera(true) ре-аттачит по интенту (blurIntent не трогаем).
+        if blurProcessor != nil,
+           let track = room.localParticipant.firstCameraPublication?.track as? LocalVideoTrack {
+            track.capturer.processor = nil
+            blurProcessor = nil
+            MXLog.info("sTalk LiveKit: Background blur detached for backgrounding")
+        }
 
         // Ask iOS to keep us alive while the WS is active. Without this, iOS freezes
         // the socket and LiveKit server times us out.
@@ -216,6 +225,50 @@ final class LiveKitRoomManager: ObservableObject {
         os_log(.info, log: livekitLog, "AudioSession route change: %{public}@", reasonStr)
     }
 
+    // MARK: - Room options (настройки звонка из Settings)
+
+    /// Ключи Settings-тумблеров (секция «Звонки», SettingsScreen @AppStorage).
+    private static let noiseSuppressionSettingKey = "stalk_noise_suppression_enabled"
+    private static let backgroundBlurSettingKey = "stalk_background_blur_enabled"
+
+    /// Камера 720p — единые опции для room defaults и ручного publish с pre-attached блюром.
+    private static let cameraCaptureOptions = CameraCaptureOptions(dimensions: .h720_169)
+
+    /// Прочитаны ли настройки звонка для ТЕКУЩЕГО звонка. makeRoomOptions зовётся
+    /// и из attemptAutoReconnect — без гарда повторное чтение UserDefaults затирало бы
+    /// in-call выбор юзера (блюр из меню •••) посреди звонка.
+    private var hasReadCallSettings = false
+
+    /// STMOB-164 параметры (adaptiveStream/dynacast + 720p/24fps/2Mbps/DTX — снижение
+    /// нагрева) + шумодав из настроек. WebRTC APM NS+highpass работают ПОВЕРХ Apple VPIO
+    /// (VPIO всегда даёт AEC+AGC+базовый NS); EC/AGC в APM не включаем — дубль с VPIO
+    /// портит звук. Mid-call смена NS требует republish трека, поэтому семантика
+    /// настройки — «применяется со следующего звонка».
+    /// Заодно читает blur-интент: тумблер в настройках = блюр по умолчанию для звонка.
+    private func makeRoomOptions(encryptionOptions: EncryptionOptions? = nil) -> RoomOptions {
+        if !hasReadCallSettings {
+            hasReadCallSettings = true
+            let defaults = UserDefaults.standard
+            // NS строго opt-in (дефолт ВЫКЛ): дефолт «вкл» молча менял бы обработку
+            // микрофона ВСЕМ юзерам против shipped 26.04.06/07 (двойной шумодав
+            // APM+VPIO может «замыливать» голос) — только явный выбор в настройках.
+            isNoiseSuppressed = defaults.bool(forKey: Self.noiseSuppressionSettingKey)
+            blurIntent = defaults.bool(forKey: Self.backgroundBlurSettingKey)
+            isBackgroundBlurEnabled = blurIntent
+            MXLog.info("sTalk LiveKit: call settings — noiseSuppression=\(isNoiseSuppressed) backgroundBlur=\(blurIntent)")
+        }
+        return RoomOptions(defaultCameraCaptureOptions: Self.cameraCaptureOptions,
+                           defaultAudioCaptureOptions: AudioCaptureOptions(noiseSuppression: isNoiseSuppressed,
+                                                                           highpassFilter: isNoiseSuppressed),
+                           defaultVideoPublishOptions: VideoPublishOptions(encoding: VideoEncoding(maxBitrate: 2_000_000, maxFps: 24),
+                                                                           simulcast: true),
+                           defaultAudioPublishOptions: AudioPublishOptions(encoding: AudioEncoding(maxBitrate: 48000),
+                                                                           dtx: true),
+                           adaptiveStream: true,
+                           dynacast: true,
+                           encryptionOptions: encryptionOptions)
+    }
+
     // MARK: - Public API
 
     /// Connect to LiveKit SFU using intercepted credentials.
@@ -247,14 +300,7 @@ final class LiveKitRoomManager: ObservableObject {
         // decrypt). dynacast — не слать simulcast-слои, которые никто не смотрит.
         // Камера 720p вместо 1080p, fps 24, битрейт 2 Mbps, audio DTX (не слать
         // в тишине) — меньше энкод/радио, на телефоне в сетке незаметно.
-        let roomOptions = RoomOptions(defaultCameraCaptureOptions: CameraCaptureOptions(dimensions: .h720_169),
-                                      defaultAudioCaptureOptions: AudioCaptureOptions(),
-                                      defaultVideoPublishOptions: VideoPublishOptions(encoding: VideoEncoding(maxBitrate: 2_000_000, maxFps: 24),
-                                                                                      simulcast: true),
-                                      defaultAudioPublishOptions: AudioPublishOptions(encoding: AudioEncoding(maxBitrate: 48000),
-                                                                                      dtx: true),
-                                      adaptiveStream: true,
-                                      dynacast: true)
+        let roomOptions = makeRoomOptions()
 
         try await room.connect(url: baseURL, token: token, connectOptions: connectOptions, roomOptions: roomOptions)
         MXLog.info("sTalk LiveKit: Connected to room \(room.name ?? "unknown")")
@@ -280,15 +326,7 @@ final class LiveKitRoomManager: ObservableObject {
         let connectOptions = ConnectOptions(autoSubscribe: true // Subscribe immediately — SFrame handles decrypt when keys arrive
         )
         // STMOB-164: см. комментарий в connect() — adaptiveStream/dynacast + 720p/24/2Mbps/DTX для снижения нагрева.
-        let roomOptions = RoomOptions(defaultCameraCaptureOptions: CameraCaptureOptions(dimensions: .h720_169),
-                                      defaultAudioCaptureOptions: AudioCaptureOptions(),
-                                      defaultVideoPublishOptions: VideoPublishOptions(encoding: VideoEncoding(maxBitrate: 2_000_000, maxFps: 24),
-                                                                                      simulcast: true),
-                                      defaultAudioPublishOptions: AudioPublishOptions(encoding: AudioEncoding(maxBitrate: 48000),
-                                                                                      dtx: true),
-                                      adaptiveStream: true,
-                                      dynacast: true,
-                                      encryptionOptions: encryptionOptions)
+        let roomOptions = makeRoomOptions(encryptionOptions: encryptionOptions)
 
         try await room.connect(url: baseURL, token: token, connectOptions: connectOptions, roomOptions: roomOptions)
         MXLog.info("sTalk LiveKit: Connected with E2EE to room \(room.name ?? "unknown")")
@@ -310,6 +348,8 @@ final class LiveKitRoomManager: ObservableObject {
         reconnectToken = nil
         savedKeyProvider = nil
         reconnectAttempt = 0
+        hasReadCallSettings = false
+        blurProcessor = nil
         #if canImport(UIKit)
         if backgroundTaskID != .invalid {
             UIApplication.shared.endBackgroundTask(backgroundTaskID)
@@ -384,7 +424,22 @@ final class LiveKitRoomManager: ObservableObject {
             try await publishSimulatorVideoTrack()
         }
         #else
-        try await room.localParticipant.setCamera(enabled: enabled)
+        // Блюр при СВЕЖЕМ publish: аттач после setCamera оставляет первые кадры
+        // (~1-7 @ 24fps) неблюренными в эфире — SDK начинает слать до возврата
+        // publish. При активном интенте и отсутствии publication создаём трек
+        // с уже привязанным процессором; unmute-путь безопасен (capturer жив).
+        if enabled, blurIntent, room.localParticipant.firstCameraPublication == nil {
+            let processor = BackgroundBlurVideoProcessor()
+            blurProcessor = processor
+            let track = LocalVideoTrack.createCameraTrack(options: Self.cameraCaptureOptions, processor: processor)
+            _ = try await room.localParticipant.publish(videoTrack: track)
+            MXLog.info("sTalk LiveKit: Camera published with pre-attached background blur")
+        } else {
+            try await room.localParticipant.setCamera(enabled: enabled)
+            if enabled {
+                applyBlurIfNeeded()
+            }
+        }
         #endif
         updateState()
     }
@@ -478,46 +533,54 @@ final class LiveKitRoomManager: ObservableObject {
         #endif
     }
 
+    /// Strong-ссылка на процессор: SDK держит `capturer.processor` weak,
+    /// без неё блюр молча отвалится после первого прохода autorelease.
     private var blurProcessor: BackgroundBlurVideoProcessor?
 
-    /// Toggle background blur on camera video
-    func setBackgroundBlur(enabled: Bool) {
-        #if targetEnvironment(simulator)
-        MXLog.warning("sTalk LiveKit: Background blur not available on simulator")
-        #else
-        guard let videoTrack = room.localParticipant.videoTracks.first?.track as? LocalVideoTrack else {
-            MXLog.warning("sTalk LiveKit: No local video track for background blur")
-            return
-        }
+    /// Желаемое состояние блюра — отдельно от факта attach. Камера-трек
+    /// пересоздаётся (toggle камеры, foreground re-enable, reconnect), и каждый
+    /// новый CameraCapturer рождается с processor=nil — интент переживает
+    /// пересоздание, attach самовосстанавливается в applyBlurIfNeeded().
+    private var blurIntent = false
 
-        if enabled {
-            let processor = BackgroundBlurVideoProcessor()
-            blurProcessor = processor
-            videoTrack.capturer.processor = processor
-            MXLog.info("sTalk LiveKit: Background blur enabled")
-        } else {
-            videoTrack.capturer.processor = nil
-            blurProcessor = nil
-            MXLog.info("sTalk LiveKit: Background blur disabled")
-        }
+    /// Toggle background blur on camera video.
+    /// Если камеры сейчас нет — интент сохраняется и применится при её включении.
+    func setBackgroundBlur(enabled: Bool) {
+        blurIntent = enabled
         isBackgroundBlurEnabled = enabled
+        #if targetEnvironment(simulator)
+        MXLog.warning("sTalk LiveKit: Background blur is a no-op on the simulator (no camera)")
+        #else
+        applyBlurIfNeeded()
         #endif
     }
 
-    /// Toggle enhanced noise suppression
-    func setNoiseSuppression(enabled: Bool) {
-        #if targetEnvironment(simulator)
-        MXLog.warning("sTalk LiveKit: Noise suppression not available on simulator")
-        #else
-        let audioManager = AudioManager.shared
-        if enabled {
-            audioManager.isVoiceProcessingBypassed = false
-            MXLog.info("sTalk LiveKit: Enhanced noise suppression enabled")
-        } else {
-            // Voice processing is on by default on iOS — bypassing disables it
-            MXLog.info("sTalk LiveKit: Standard noise suppression")
+    /// Attach/detach блюр-процессора на текущий камера-трек (self-healing).
+    /// Вызывается из setCamera(true), didPublishTrack и setBackgroundBlur —
+    /// one-shot attach терялся при каждом пересоздании CameraCapturer.
+    /// Только камера (firstCameraPublication) — screen-share не блюрим.
+    private func applyBlurIfNeeded() {
+        #if !targetEnvironment(simulator)
+        guard blurIntent else {
+            if let track = room.localParticipant.firstCameraPublication?.track as? LocalVideoTrack,
+               track.capturer.processor != nil {
+                track.capturer.processor = nil
+                MXLog.info("sTalk LiveKit: Background blur detached")
+            }
+            blurProcessor = nil
+            return
         }
-        isNoiseSuppressed = enabled
+        guard let track = room.localParticipant.firstCameraPublication?.track as? LocalVideoTrack else { return }
+        if let existing = blurProcessor, track.capturer.processor === existing {
+            return // уже приаттачен к этому capturer'у
+        }
+        // Свежий процессор на каждый новый capturer: у SDK per-capturer serial queue,
+        // а процессор не потокобезопасен — шаринг одного инстанса между поколениями
+        // capturer'а = гонка на CIFilter/кешах в момент пересоздания publication.
+        let processor = BackgroundBlurVideoProcessor()
+        blurProcessor = processor
+        track.capturer.processor = processor
+        MXLog.info("sTalk LiveKit: Background blur attached to camera capturer")
         #endif
     }
 
@@ -858,6 +921,11 @@ extension LiveKitRoomManager: RoomDelegate {
             let encType = "\(publication.encryptionType)"
             DiagLog.write("E2EE_DEBUG", "didPublishTrack kind=\(pubKind) sid=\(pubSid) encryptionType=\(encType)")
             MXLog.info("sTalk LiveKit: Published local track: \(publication.kind) encryption=\(publication.encryptionType)")
+            // Блюр: свежий publish камеры = свежий CameraCapturer с processor=nil
+            // (в т.ч. republish внутри SDK при full reconnect) — ре-аттач по интенту.
+            if publication.source == .camera {
+                self.applyBlurIfNeeded()
+            }
         }
     }
 }

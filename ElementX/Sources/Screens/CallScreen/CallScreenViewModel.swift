@@ -162,6 +162,11 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                                                          mediaProvider: mediaProvider,
                                                          isVideoEnabled: startWithVideoEnabled))
 
+        // Блюр-тумблер в меню ••• доступен и ДО connect — засеваем из настроек,
+        // чтобы не показывать «выкл» при включённой настройке (менеджер прочитает
+        // тот же ключ в makeRoomOptions при connect).
+        state.isBackgroundBlurEnabled = UserDefaults.standard.bool(forKey: "stalk_background_blur_enabled")
+
         MXLog.info("sTalk CallScreenVM init: startWithVideoEnabled=\(startWithVideoEnabled), isDirect=\(isDirect), participants=\(callParticipantsCount), room=\(roomDisplayName ?? "nil")")
 
         elementCallService.actions
@@ -512,6 +517,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                             case .connected:
                                 self.state.liveKitRoomManager = self.liveKitRoomManager
                                 self.state.wasConnected = true
+                                // Блюр-интент из настроек прочитан менеджером при connect — синк в UI
+                                self.state.isBackgroundBlurEnabled = self.liveKitRoomManager.isBackgroundBlurEnabled
                                 // STMOB-80: header «Вызов...» застревал — нужен явный
                                 // переход в connected + старт таймера. Раньше зависело
                                 // только от MatrixRTC infoPublisher, который опаздывал.
@@ -721,6 +728,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         // Connection succeeded — expose room manager to UI
         state.liveKitRoomManager = liveKitRoomManager
         state.wasConnected = true
+        // Блюр-интент из настроек прочитан менеджером при connect — синк в UI
+        state.isBackgroundBlurEnabled = liveKitRoomManager.isBackgroundBlurEnabled
 
         // Ring notification is now sent by NativeCallSession.sendCallNotification()
         // immediately after sendJoinViaREST(), with proper user_ids and m.relates_to.

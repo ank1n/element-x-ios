@@ -1725,9 +1725,9 @@
 "stalk_dnd_to" = "До";
 "stalk_dnd_enabled" = "Включено";
 "stalk_call_background_blur" = "Размытие фона";
-"stalk_call_background_blur_hint" = "Размывает фон при видеозвонке";
+"stalk_call_background_blur_hint" = "Размывает фон при видеозвонке. Можно переключить в меню ••• во время звонка";
 "stalk_call_noise_suppression" = "Шумоподавление";
-"stalk_call_noise_suppression_hint" = "Убирает фоновые шумы при звонке";
+"stalk_call_noise_suppression_hint" = "Убирает фоновые шумы при звонке. Применяется со следующего звонка";
 "stalk_roomlist_filter_meetings" = "Встречи";
 "stalk_roomlist_filter_meetings_empty" = "Нет встреч";
 "stalk_chats_refresh" = "Обновить";

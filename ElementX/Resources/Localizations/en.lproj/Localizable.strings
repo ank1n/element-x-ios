@@ -1727,9 +1727,9 @@
 "stalk_dnd_to" = "To";
 "stalk_dnd_enabled" = "Enabled";
 "stalk_call_background_blur" = "Background blur";
-"stalk_call_background_blur_hint" = "Blurs background during video calls";
+"stalk_call_background_blur_hint" = "Blurs background during video calls. Can be toggled from the ••• menu during a call";
 "stalk_call_noise_suppression" = "Noise suppression";
-"stalk_call_noise_suppression_hint" = "Removes background noise during calls";
+"stalk_call_noise_suppression_hint" = "Removes background noise during calls. Takes effect on the next call";
 
 /* sTalk STMOB-183: English translations for previously hardcoded strings */
 "stalk_auth_add_server" = "Add server";
