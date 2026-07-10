@@ -340,6 +340,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         case .pictureInPictureWillStop:
             isMinimized = false
             state.isMinimized = false
+            // Same keyboard-overlap glitch as .restoreFromMinimized (see below) — system PiP restore.
+            dismissKeyboard()
             actionsSubject.send(.pictureInPictureStopped)
         case .endCall:
             stalkLog(">>> .endCall viewAction received, isEndingCall=\(isEndingCall)")
@@ -385,6 +387,10 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         case .restoreFromMinimized:
             isMinimized = false
             state.isMinimized = false
+            // If the user was typing in a chat beneath the mini call window, the keyboard stays up
+            // when the call goes fullscreen again and overlaps the restored call UI. Resign whatever
+            // is first responder app-wide before restoring (the composer draft is preserved).
+            dismissKeyboard()
             actionsSubject.send(.pictureInPictureStopped)
         case .toggleLayoutMode:
             // STMOB-113: ручной toggle Grid ↔ Speaker. Override побеждает auto-логику
@@ -842,6 +848,12 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         liveKitRoomManager.setDeafened(newDeafened)
         MXLog.info("sTalk: Deafen toggled to \(newDeafened ? "ON" : "OFF")")
         DiagLog.write("CallUI", "toggleDeafen tap: state.isDeafened → \(newDeafened), callStatus=\(state.callStatus)")
+    }
+
+    /// Resigns the app-wide first responder. Used when the call returns to fullscreen: a keyboard
+    /// opened in the chat beneath the mini call window would otherwise stay up over the call UI.
+    private func dismissKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 
     private func toggleSpeaker() {
