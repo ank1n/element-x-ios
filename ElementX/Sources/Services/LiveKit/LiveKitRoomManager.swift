@@ -130,7 +130,12 @@ final class LiveKitRoomManager: ObservableObject {
     @objc private func appDidEnterBackground() {
         guard connectionState == .connected || connectionState == .reconnecting else { return }
         // Remember if camera was actively publishing — need to re-enable on return.
-        wasCameraEnabledBeforeBackground = room.localParticipant.videoTracks.first?.track != nil
+        // Именно КАМЕРА и именно НЕ muted: setCamera(false) на устройстве только мьютит
+        // publication (track остаётся != nil), а videoTracks.first может быть screen-share.
+        // Старый чек «track != nil» после сворачивания сам ВКЛЮЧАЛ камеру, которую юзер
+        // выключил (privacy).
+        wasCameraEnabledBeforeBackground = room.localParticipant.firstCameraPublication
+            .map { $0.track != nil && !$0.isMuted } ?? false
         // Блюр: CIContext на Metal не должен рендерить в фоне (GPU work in background
         // = command-buffer abort в момент транзишена). Отцепляем процессор; foreground
         // setCamera(true) ре-аттачит по интенту (blurIntent не трогаем).
