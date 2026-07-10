@@ -408,15 +408,19 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         // STMOB-99: donate INStartCallIntent с avatar до reportNewIncomingCall.
         // CallKit fullscreen подхватит INPerson.image для отображения аватарки.
         // Source приоритет: pre-cached в App Group (Layer A) →
-        // initials placeholder через Avatars.generatePlaceholderAvatarImageData (Layer B).
-        // Без этого CallKit показывает только имя без аватарки (пустое серое).
+        // initials placeholder через Avatars.generatePlaceholderAvatarImageData (Layer B) →
+        // STMOB-253: асинхронный fetch реального аватара по sender_avatar_url из VoIP-payload
+        // (Layer C — пушкин кладёт mxc, тумбнейл отдаётся публично; после fetch — re-donate
+        // + кеш в App Group, чтобы следующий звонок был Layer A).
         // Hop on MainActor — Avatars helper isolated; donation выполнится
         // параллельно с reportNewIncomingCall, не блокирует CallKit deadline.
+        let senderAvatarMXC = dict["sender_avatar_url"] as? String
         Task { @MainActor in
             Self.donateIncomingCallIntent(senderMXID: senderMXID,
                                           callerName: callerName,
                                           roomID: roomID,
-                                          hasVideo: true)
+                                          hasVideo: true,
+                                          avatarMXC: senderAvatarMXC)
         }
 
         let update = CXCallUpdate()
@@ -481,10 +485,12 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     private static func donateIncomingCallIntent(senderMXID: String?,
                                                  callerName: String,
                                                  roomID: String,
-                                                 hasVideo: Bool) {
+                                                 hasVideo: Bool,
+                                                 avatarMXC: String? = nil) {
         let personID = senderMXID ?? roomID
 
         let avatarData: Data?
+        var usedPlaceholder = false
         if let senderMXID, let cached = AppGroupAvatarCache.readAvatar(for: senderMXID) {
             avatarData = cached
             DiagLog.write("VoIP", "  intent donate: cached avatar for \(senderMXID)")
@@ -492,7 +498,28 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
             avatarData = Avatars.generatePlaceholderAvatarImageData(name: callerName,
                                                                     id: personID,
                                                                     size: CGSize(width: 100, height: 100))
+            usedPlaceholder = true
             DiagLog.write("VoIP", "  intent donate: placeholder avatar for \(personID)")
+        }
+
+        // STMOB-253: the placeholder donation goes out immediately (CallKit deadline), then the real
+        // avatar is fetched from the mxc in the VoIP payload and the intent is re-donated with it.
+        // The thumbnail is served publicly from the media's own homeserver (multi-domain safe and
+        // works on cold start, before any client session exists). Cached for the next call (Layer A).
+        if usedPlaceholder, let senderMXID, let avatarMXC, let thumbnailURL = Self.mxcThumbnailURL(avatarMXC) {
+            Task {
+                guard let (data, response) = try? await URLSession.shared.data(from: thumbnailURL),
+                      (response as? HTTPURLResponse)?.statusCode == 200, !data.isEmpty else {
+                    DiagLog.write("VoIP", "  intent donate: avatar fetch failed for \(senderMXID)")
+                    return
+                }
+                AppGroupAvatarCache.saveAvatar(data, for: senderMXID)
+                DiagLog.write("VoIP", "  intent donate: fetched avatar (\(data.count)B) → re-donate for \(senderMXID)")
+                await Self.donateIncomingCallIntent(senderMXID: senderMXID,
+                                                    callerName: callerName,
+                                                    roomID: roomID,
+                                                    hasVideo: hasVideo)
+            }
         }
 
         let image = if let data = avatarData {
@@ -535,6 +562,17 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
                 MXLog.error("STMOB-99: donate INStartCallIntent failed: \(error)")
             }
         }
+    }
+
+    /// STMOB-253: mxc://server/mediaID → public thumbnail URL on the media's OWN homeserver.
+    /// Using the mxc host (not the session's) is multi-domain correct and works on cold start,
+    /// before any client session is restored.
+    private static func mxcThumbnailURL(_ mxc: String) -> URL? {
+        guard mxc.hasPrefix("mxc://") else { return nil }
+        let path = mxc.dropFirst("mxc://".count)
+        let parts = path.split(separator: "/", maxSplits: 1)
+        guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
+        return URL(string: "https://\(parts[0])/_matrix/media/v3/thumbnail/\(parts[0])/\(parts[1])?width=192&height=192&method=crop")
     }
 
     /// Report a fake incoming call and immediately cancel it to satisfy iOS VoIP push requirement.
