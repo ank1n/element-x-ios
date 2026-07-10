@@ -7,9 +7,12 @@
 
 import AVFoundation
 import Combine
+import CoreImage.CIFilterBuiltins
 import LiveKit
+import Metal
 import os.log
 import SwiftUI
+import Vision
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -436,7 +439,7 @@ final class LiveKitRoomManager: ObservableObject {
         // publish. При активном интенте и отсутствии publication создаём трек
         // с уже привязанным процессором; unmute-путь безопасен (capturer жив).
         if enabled, blurIntent, room.localParticipant.firstCameraPublication == nil {
-            let processor = BackgroundBlurVideoProcessor()
+            let processor = StalkBackgroundBlurProcessor()
             blurProcessor = processor
             let track = LocalVideoTrack.createCameraTrack(options: Self.cameraCaptureOptions, processor: processor)
             _ = try await room.localParticipant.publish(videoTrack: track)
@@ -543,7 +546,7 @@ final class LiveKitRoomManager: ObservableObject {
 
     /// Strong-ссылка на процессор: SDK держит `capturer.processor` weak,
     /// без неё блюр молча отвалится после первого прохода autorelease.
-    private var blurProcessor: BackgroundBlurVideoProcessor?
+    private var blurProcessor: StalkBackgroundBlurProcessor?
 
     /// Желаемое состояние блюра — отдельно от факта attach. Камера-трек
     /// пересоздаётся (toggle камеры, foreground re-enable, reconnect), и каждый
@@ -590,7 +593,7 @@ final class LiveKitRoomManager: ObservableObject {
         // Свежий процессор на каждый новый capturer: у SDK per-capturer serial queue,
         // а процессор не потокобезопасен — шаринг одного инстанса между поколениями
         // capturer'а = гонка на CIFilter/кешах в момент пересоздания publication.
-        let processor = BackgroundBlurVideoProcessor()
+        let processor = StalkBackgroundBlurProcessor()
         blurProcessor = processor
         track.capturer.processor = processor
         MXLog.info("sTalk LiveKit: Background blur attached to camera capturer")
@@ -940,6 +943,201 @@ extension LiveKitRoomManager: RoomDelegate {
             if publication.source == .camera {
                 self.applyBlurIfNeeded()
             }
+        }
+    }
+}
+
+// MARK: - Stalk Background Blur Processor
+
+/// Свой блюр-процессор вместо SDK'шного `BackgroundBlurVideoProcessor` — у того три
+/// фатальных для нас дефекта (найдены разбором «блюр не видно» на build 225):
+///  1. радиус захардкожен на 3 (~4px на 720p) — в мини-превью неотличим от обычного видео;
+///  2. Vision получает кадр без ориентации — в портрете человек «на боку», маска слабая/пустая;
+///  3. все ошибки глотаются молча (нет маски → кадр уходит как есть, навсегда, без логов).
+/// Здесь: радиус 12, ориентация из frame.rotation, DiagLog-статистика стадий.
+///
+/// Не потокобезопасен — SDK зовёт process(frame:) на serial processingQueue capturer'а;
+/// на каждый новый capturer менеджер создаёт свежий инстанс.
+final class StalkBackgroundBlurProcessor: NSObject, LiveKit.VideoProcessor {
+    private let downscaleFactor: CGFloat = 2 // даунскейл перед блюром (перф), апскейл перед блендом
+    private let blurRadius: Float = 12
+    private let relativeSize: CGFloat = 1080 // параметры калиброваны под HD, экстраполируются
+
+    private var frameCount = 0
+    private let segmentationFrameInterval = 3 // сегментация каждый 3-й кадр (перф)
+
+    private let segmentationRequest = VNGeneratePersonSegmentationRequest()
+    private let segmentationRequestHandler = VNSequenceRequestHandler()
+    private let segmentationQueue = DispatchQueue(label: "ru.implica.stalk.blur.segmentation", qos: .default, autoreleaseFrequency: .workItem)
+
+    private let ciContext: CIContext
+    private let blurFilter = CIFilter.gaussianBlur()
+    private let blendFilter = CIFilter.blendWithMask()
+
+    private var cachedMaskImage: CIImage?
+    private var cachedPixelBuffer: CVPixelBuffer?
+    private var cachedPixelBufferSize: CGSize?
+
+    // Диагностика (видна в nse-events). Счётчики пишутся с двух очередей — под локом.
+    private let statsLock = NSLock()
+    private var statProcessed = 0
+    private var statNoMask = 0
+    private var statSegErrors = 0
+    private var statMasks = 0
+    private var loggedFirstMask = false
+
+    override init() {
+        if let device = MTLCreateSystemDefaultDevice() {
+            ciContext = CIContext(mtlDevice: device)
+        } else {
+            ciContext = CIContext(options: [.useSoftwareRenderer: true])
+        }
+        super.init()
+        segmentationRequest.qualityLevel = .balanced
+        DiagLog.write("Call", "blur processor created (radius=\(blurRadius), orientation-aware)")
+    }
+
+    // MARK: VideoProcessor
+
+    func process(frame: VideoFrame) -> VideoFrame? {
+        frameCount += 1
+        let processed: Int = statsLock.withLock {
+            statProcessed += 1
+            return statProcessed
+        }
+        if processed % 90 == 0 {
+            let (noMask, errs, masks) = statsLock.withLock { (statNoMask, statSegErrors, statMasks) }
+            DiagLog.write("Call", "blur stats: frames=\(processed) masks=\(masks) noMaskFrames=\(noMask) segErrors=\(errs)")
+        }
+
+        guard let inputBuffer = frame.toCVPixelBuffer() else {
+            statsLock.withLock { statNoMask += 1 }
+            return frame
+        }
+        let cropRect = CGRect(x: 0, y: 0, width: Int(frame.dimensions.width), height: Int(frame.dimensions.height))
+        var inputImage = CIImage(cvPixelBuffer: inputBuffer)
+        if inputImage.extent != cropRect {
+            inputImage = inputImage.cropped(to: cropRect)
+        }
+        let inputDimensions = inputImage.extent.size
+
+        cacheMask(inputBuffer: inputBuffer, inputDimensions: inputDimensions, rotation: frame.rotation)
+        guard let maskImage = cachedMaskImage else {
+            statsLock.withLock { statNoMask += 1 }
+            return frame
+        }
+
+        // Blur
+        let downscaleTransform = getDownscaleTransform(relativeTo: inputDimensions)
+        let downscaledImage = inputImage.transformed(by: downscaleTransform, highQualityDownsample: false)
+        blurFilter.inputImage = downscaledImage.clampedToExtent()
+        blurFilter.radius = blurRadius
+        guard let blurredImage = blurFilter.outputImage else { return frame }
+        let upscaledBlurredImage = blurredImage.transformed(by: downscaleTransform.inverted(), highQualityDownsample: false)
+
+        // Blend: маска = человек (белое) остаётся резким, фон — размытый
+        blendFilter.inputImage = inputImage
+        blendFilter.backgroundImage = upscaledBlurredImage
+        blendFilter.maskImage = maskImage
+        guard let outputImage = blendFilter.outputImage else { return frame }
+
+        guard let outputBuffer = getOutputBuffer(of: inputDimensions) else { return frame }
+        ciContext.render(outputImage, to: outputBuffer)
+
+        return VideoFrame(dimensions: frame.dimensions,
+                          rotation: frame.rotation,
+                          timeStampNs: frame.timeStampNs,
+                          buffer: CVPixelVideoBuffer(pixelBuffer: outputBuffer))
+    }
+
+    // MARK: Segmentation
+
+    private func cacheMask(inputBuffer: CVPixelBuffer, inputDimensions: CGSize, rotation: VideoRotation) {
+        guard frameCount % segmentationFrameInterval == 0 else { return }
+
+        struct PixelBufferHolder: @unchecked Sendable {
+            let buffer: CVPixelBuffer
+        }
+        let holder = PixelBufferHolder(buffer: inputBuffer)
+        let orientation = Self.cgOrientation(for: rotation)
+
+        segmentationQueue.async { [weak self] in
+            guard let self else { return }
+            do {
+                // Ориентация ОБЯЗАТЕЛЬНА: без неё в портрете Vision видит человека «на боку»
+                try segmentationRequestHandler.perform([segmentationRequest], on: holder.buffer, orientation: orientation)
+            } catch {
+                let errs: Int = statsLock.withLock {
+                    self.statSegErrors += 1
+                    return self.statSegErrors
+                }
+                if errs <= 3 || errs % 30 == 0 {
+                    DiagLog.write("Call", "blur: segmentation error #\(errs): \(error.localizedDescription)")
+                }
+                return
+            }
+            guard let maskPixelBuffer = segmentationRequest.results?.first?.pixelBuffer else { return }
+
+            var maskImage = CIImage(cvPixelBuffer: maskPixelBuffer)
+            // Vision с orientation может вернуть маску в повёрнутом пространстве —
+            // если аспект транспонирован относительно входа, доворачиваем обратно.
+            let transposed = (maskImage.extent.width > maskImage.extent.height) != (inputDimensions.width > inputDimensions.height)
+            if transposed {
+                maskImage = maskImage.oriented(Self.inverse(of: orientation))
+            }
+            let scaleX = inputDimensions.width / maskImage.extent.width
+            let scaleY = inputDimensions.height / maskImage.extent.height
+
+            let shouldLogFirst: Bool = statsLock.withLock {
+                self.statMasks += 1
+                if !self.loggedFirstMask {
+                    self.loggedFirstMask = true
+                    return true
+                }
+                return false
+            }
+            if shouldLogFirst {
+                DiagLog.write("Call", "blur: FIRST person mask (mask=\(Int(maskImage.extent.width))x\(Int(maskImage.extent.height)) input=\(Int(inputDimensions.width))x\(Int(inputDimensions.height)) rot=\(rotation) transposed=\(transposed))")
+            }
+            cachedMaskImage = maskImage.transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
+        }
+    }
+
+    // MARK: Helpers
+
+    private func getDownscaleTransform(relativeTo size: CGSize) -> CGAffineTransform {
+        let sizeFactor = min(size.width, size.height) / relativeSize
+        // Не апскейлим входы меньше эталона
+        let scale = 1 / (downscaleFactor * sizeFactor)
+        return scale < 1 ? CGAffineTransform(scaleX: scale, y: scale) : .identity
+    }
+
+    private func getOutputBuffer(of size: CGSize) -> CVPixelBuffer? {
+        if cachedPixelBufferSize != size {
+            var pixelBuffer: CVPixelBuffer?
+            let attrs: [CFString: Any] = [kCVPixelBufferMetalCompatibilityKey: true,
+                                          kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary]
+            CVPixelBufferCreate(kCFAllocatorDefault, Int(size.width), Int(size.height), kCVPixelFormatType_32BGRA, attrs as CFDictionary, &pixelBuffer)
+            cachedPixelBuffer = pixelBuffer
+            cachedPixelBufferSize = size
+        }
+        return cachedPixelBuffer
+    }
+
+    private static func cgOrientation(for rotation: VideoRotation) -> CGImagePropertyOrientation {
+        switch rotation {
+        case ._0: .up
+        case ._90: .right
+        case ._180: .down
+        case ._270: .left
+        }
+    }
+
+    private static func inverse(of orientation: CGImagePropertyOrientation) -> CGImagePropertyOrientation {
+        switch orientation {
+        case .right: .left
+        case .left: .right
+        default: orientation
         }
     }
 }
