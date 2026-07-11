@@ -1078,7 +1078,9 @@ final class StalkBackgroundBlurProcessor: NSObject, LiveKit.VideoProcessor {
         let cropRect = CGRect(x: 0, y: 0, width: Int(frame.dimensions.width), height: Int(frame.dimensions.height))
         var inputImage = CIImage(cvPixelBuffer: inputBuffer)
         if inputImage.extent != cropRect {
-            inputImage = inputImage.cropped(to: cropRect)
+            // Буфер камеры может быть крупнее frame.dimensions — центр-кроп до целевого
+            // аспекта + SCALE (голый cropped(to:) вырезал бы кусок = зум в эфире)
+            inputImage = inputImage.croppedAndScaled(to: cropRect)
         }
         let inputDimensions = inputImage.extent.size
 

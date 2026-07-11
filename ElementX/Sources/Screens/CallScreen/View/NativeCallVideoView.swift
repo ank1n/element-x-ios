@@ -103,6 +103,47 @@ struct NativeCallGridView: View {
     }
 }
 
+// MARK: - Aspect-aware fullscreen video
+
+/// Следит за dimensions трека через TrackDelegate (приходят асинхронно с первым кадром).
+private final class TrackDimensionsObserver: NSObject, ObservableObject, TrackDelegate {
+    @Published var dimensions: Dimensions?
+
+    init(track: VideoTrack) {
+        super.init()
+        dimensions = track.dimensions
+        track.add(delegate: self)
+    }
+
+    nonisolated func track(_ track: VideoTrack, didUpdateDimensions dimensions: Dimensions?) {
+        Task { @MainActor in
+            self.dimensions = dimensions
+        }
+    }
+}
+
+/// Полноэкранный рендер удалённого трека с contentMode по аспекту САМОГО ТРЕКА.
+/// Корень «зума и мыла в 1:1 при норме в группе» (репорт dp): фуллскрин в 1:1
+/// ЗАПОЛНЯЛ портретный экран горизонтальным видео с веба (16:9) — кроп боков до
+/// узкой центральной полосы = зум, а её растяжка = «упавшее качество»; в группе
+/// те же кадры живут в тайлах без кропа. Горизонтальный трек теперь вписывается
+/// (.fit, letterbox), портретный (другой телефон) — заполняет экран как раньше.
+/// При смене трека пересоздавать через .id(track.sid) — observer держит трек с init.
+private struct AspectAwareRemoteVideoView: View {
+    let track: VideoTrack
+    @StateObject private var observer: TrackDimensionsObserver
+
+    init(track: VideoTrack) {
+        self.track = track
+        _observer = StateObject(wrappedValue: TrackDimensionsObserver(track: track))
+    }
+
+    var body: some View {
+        let isTrackLandscape = observer.dimensions.map { $0.width > $0.height } ?? false
+        NativeCallVideoView(track: track, contentMode: isTrackLandscape ? .fit : .fill)
+    }
+}
+
 // MARK: - 1:1 Direct Call Layout
 
 /// Fullscreen remote video with a draggable self-view PiP in the corner.
@@ -115,9 +156,10 @@ private struct DirectCallLayout: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Remote video — fullscreen
+                // Remote video — fullscreen, contentMode по аспекту трека (зум-фикс 1:1)
                 if let remoteTrack = firstRemoteVideoTrack {
-                    NativeCallVideoView(track: remoteTrack)
+                    AspectAwareRemoteVideoView(track: remoteTrack)
+                        .id(remoteTrack.sid?.stringValue ?? remoteTrack.name)
                         .ignoresSafeArea()
                 } else {
                     // No remote video — show placeholder with name/initials
