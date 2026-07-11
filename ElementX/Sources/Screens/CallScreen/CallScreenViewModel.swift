@@ -390,9 +390,19 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             Task { await toggleHandRaise() }
         case .toggleScreenShare:
             Task { await toggleScreenShare() }
-        case .setCallBackground(let mode):
-            liveKitRoomManager.setCallBackground(mode)
-            state.callBackgroundMode = mode
+        case .toggleCallBackground:
+            // В звонке только вкл/выкл: режим (интенсивность/обои) настраивается в Настройках
+            let newMode: CallBackgroundMode
+            if state.callBackgroundMode != .off {
+                newMode = .off
+            } else {
+                let defaults = UserDefaults.standard
+                let configured = defaults.string(forKey: "stalk_call_background_mode").flatMap(CallBackgroundMode.init(rawValue:))
+                let last = defaults.string(forKey: "stalk_call_background_last").flatMap(CallBackgroundMode.init(rawValue:))
+                newMode = [configured, last].compactMap { $0 }.first { $0 != .off } ?? .blurMedium
+            }
+            liveKitRoomManager.setCallBackground(newMode)
+            state.callBackgroundMode = newMode
         case .handRaiseStateChanged(let raised):
             state.isHandRaised = raised
         case .restoreFromMinimized:

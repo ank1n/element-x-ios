@@ -189,16 +189,8 @@ struct CallScreen: View {
                               systemImage: context.viewState.isScreenSharing ? "rectangle.inset.filled.and.person.filled" : "rectangle.on.rectangle")
                     }
                 }
-                Menu {
-                    Picker("", selection: Binding(get: { context.viewState.callBackgroundMode },
-                                                  set: { context.send(viewAction: .setCallBackground($0)) })) {
-                        Text(SL10n.callBgOff).tag(CallBackgroundMode.off)
-                        Text(SL10n.callBgBlurLight).tag(CallBackgroundMode.blurLight)
-                        Text(SL10n.callBgBlurMedium).tag(CallBackgroundMode.blurMedium)
-                        Text(SL10n.callBgBlurStrong).tag(CallBackgroundMode.blurStrong)
-                        Text(SL10n.callBgWallpaper).tag(CallBackgroundMode.wallpaper)
-                    }
-                } label: {
+                Toggle(isOn: Binding(get: { context.viewState.callBackgroundMode != .off },
+                                     set: { _ in context.send(viewAction: .toggleCallBackground) })) {
                     Label(SL10n.callBackground, systemImage: "person.and.background.dotted")
                 }
             } label: {

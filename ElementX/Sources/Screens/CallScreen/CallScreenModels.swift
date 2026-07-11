@@ -138,7 +138,7 @@ enum CallScreenViewAction {
     case toggleSpeaker
     case toggleHandRaise
     case toggleScreenShare
-    case setCallBackground(CallBackgroundMode)
+    case toggleCallBackground
     case handRaiseStateChanged(raised: Bool)
     /// sTalk: Restore from minimized mini-window to fullscreen
     case restoreFromMinimized
