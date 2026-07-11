@@ -452,15 +452,22 @@ struct SettingsScreen: View {
     @AppStorage("stalk_noise_suppression_enabled") private var noiseSuppressionEnabled = false
     // Native calls always enabled — no toggle needed
 
+    /// Свич вкл/выкл: off ↔ последний выбранный режим (дефолт — среднее размытие)
+    private var callBackgroundEnabledBinding: Binding<Bool> {
+        Binding(get: { callBackgroundMode != "off" },
+                set: { isOn in
+                    if isOn {
+                        callBackgroundMode = UserDefaults.standard.string(forKey: "stalk_call_background_last") ?? "blur_medium"
+                    } else {
+                        UserDefaults.standard.set(callBackgroundMode, forKey: "stalk_call_background_last")
+                        callBackgroundMode = "off"
+                    }
+                })
+    }
+
     private var callsSettingsSection: some View {
         Section(header: Text(SL10n.tabCalls)) {
-            Picker(selection: $callBackgroundMode) {
-                Text(SL10n.callBgOff).tag("off")
-                Text(SL10n.callBgBlurLight).tag("blur_light")
-                Text(SL10n.callBgBlurMedium).tag("blur_medium")
-                Text(SL10n.callBgBlurStrong).tag("blur_strong")
-                Text(SL10n.callBgWallpaper).tag("wallpaper")
-            } label: {
+            Toggle(isOn: callBackgroundEnabledBinding) {
                 Label {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(SL10n.callBackground)
@@ -475,22 +482,15 @@ struct SettingsScreen: View {
             }
             .tint(StalkTheme.accent)
 
-            if callBackgroundMode == "wallpaper" {
+            if callBackgroundMode != "off" {
+                // Одна лента карточек: 3 интенсивности размытия + 6 обоев
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
+                        blurCard(mode: "blur_light", title: SL10n.callBgLightShort, radius: 2)
+                        blurCard(mode: "blur_medium", title: SL10n.callBgMediumShort, radius: 4.5)
+                        blurCard(mode: "blur_strong", title: SL10n.callBgStrongShort, radius: 8)
                         ForEach(1..<7) { index in
-                            Image("call_wallpaper_\(index)")
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: 56, height: 96)
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .stroke(callWallpaperIndex == index ? StalkTheme.accent : .clear, lineWidth: 3)
-                                }
-                                .onTapGesture {
-                                    callWallpaperIndex = index
-                                }
+                            wallpaperCard(index: index)
                         }
                     }
                     .padding(.vertical, 4)
@@ -512,6 +512,63 @@ struct SettingsScreen: View {
             }
             .tint(StalkTheme.accent)
         }
+    }
+
+    /// Карточка интенсивности размытия: мини-сценка «человек чёткий, фон мылится»
+    private func blurCard(mode: String, title: String, radius: CGFloat) -> some View {
+        let isSelected = callBackgroundMode == mode
+        return ZStack(alignment: .bottom) {
+            ZStack {
+                LinearGradient(colors: [Color(red: 0.45, green: 0.5, blue: 0.75), Color(red: 0.25, green: 0.28, blue: 0.45)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+                Circle().fill(.white.opacity(0.65)).frame(width: 16, height: 16).offset(x: -16, y: -30)
+                Circle().fill(.yellow.opacity(0.55)).frame(width: 11, height: 11).offset(x: 16, y: -14)
+                Circle().fill(.white.opacity(0.45)).frame(width: 9, height: 9).offset(x: 10, y: 12)
+            }
+            .blur(radius: radius)
+
+            Image(systemName: "person.fill")
+                .font(.system(size: 34))
+                .foregroundColor(.white.opacity(0.95))
+                .offset(y: 6)
+
+            Text(title)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundColor(.white)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(Capsule().fill(.black.opacity(0.45)))
+                .padding(.bottom, 5)
+        }
+        .frame(width: 64, height: 96)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(isSelected ? StalkTheme.accent : .clear, lineWidth: 3)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            callBackgroundMode = mode
+        }
+    }
+
+    /// Карточка обоев (ассеты в namespace `images/`)
+    private func wallpaperCard(index: Int) -> some View {
+        let isSelected = callBackgroundMode == "wallpaper" && callWallpaperIndex == index
+        return Image("images/call_wallpaper_\(index)")
+            .resizable()
+            .aspectRatio(contentMode: .fill)
+            .frame(width: 64, height: 96)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(isSelected ? StalkTheme.accent : .clear, lineWidth: 3)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                callWallpaperIndex = index
+                callBackgroundMode = "wallpaper"
+            }
     }
 
     private var appearanceSection: some View {

@@ -1733,6 +1733,9 @@
 "stalk_call_bg_blur_medium" = "Medium blur";
 "stalk_call_bg_blur_strong" = "Strong blur";
 "stalk_call_bg_wallpaper" = "Wallpaper";
+"stalk_call_bg_light_short" = "Light";
+"stalk_call_bg_medium_short" = "Medium";
+"stalk_call_bg_strong_short" = "Strong";
 "stalk_call_background_blur" = "Background blur";
 "stalk_call_background_blur_hint" = "Blurs background during video calls. Can be toggled from the ••• menu during a call";
 "stalk_call_noise_suppression" = "Noise suppression";

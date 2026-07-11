@@ -1731,6 +1731,9 @@
 "stalk_call_bg_blur_medium" = "Среднее размытие";
 "stalk_call_bg_blur_strong" = "Сильное размытие";
 "stalk_call_bg_wallpaper" = "Обои";
+"stalk_call_bg_light_short" = "Лёгкое";
+"stalk_call_bg_medium_short" = "Среднее";
+"stalk_call_bg_strong_short" = "Сильное";
 "stalk_call_background_blur" = "Размытие фона";
 "stalk_call_background_blur_hint" = "Размывает фон при видеозвонке. Можно переключить в меню ••• во время звонка";
 "stalk_call_noise_suppression" = "Шумоподавление";

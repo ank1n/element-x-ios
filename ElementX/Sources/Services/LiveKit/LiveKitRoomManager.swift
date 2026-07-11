@@ -599,7 +599,7 @@ final class LiveKitRoomManager: ObservableObject {
         case .wallpaper:
             let stored = UserDefaults.standard.integer(forKey: Self.wallpaperIndexSettingKey)
             let index = (1...6).contains(stored) ? stored : 1
-            guard let uiImage = UIImage(named: "call_wallpaper_\(index)"),
+            guard let uiImage = UIImage(named: "images/call_wallpaper_\(index)"),
                   let ciImage = CIImage(image: uiImage) else {
                 DiagLog.write("Call", "blur: wallpaper \(index) FAILED to load — fallback to blur")
                 return StalkBackgroundBlurProcessor(background: .blur(radius: 12))
