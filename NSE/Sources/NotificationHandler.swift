@@ -163,15 +163,18 @@ class NotificationHandler {
         // следующий push decrypted. Pattern: Synapse "холодный" через 25 мин
         // idle, первый retrieve >10s.
         //
-        // 20s даёт больший margin на cold-start. Ring-event hang всё равно
-        // перехватит handleTimeExpiration перед Apple kill на 30s (10s buffer).
+        // 26.04.08: bump 20s → 27s. dp лог 120 (17:33:26): бурст из 3 сообщений
+        // в одной комнате — первый fetch не уложился в 20s (второй в том же
+        // процессе скачался за 2s), DISCARD-заглушка видна юзеру как пустой пуш.
+        // Бюджет NSE ~30s от didReceive; 27s оставляет ~3s на финализацию,
+        // ring-event hang всё равно перехватит handleTimeExpiration.
         // Upstream Element X не имеет этого timeout вообще.
         let item: NotificationItemProxyProtocol? = await withTaskGroup(of: NotificationItemProxyProtocol?.self) { group in
             group.addTask { [weak self] in
                 await self?.userSession.notificationItemProxy(roomID: roomID, eventID: eventID)
             }
             group.addTask {
-                try? await Task.sleep(nanoseconds: 20_000_000_000)
+                try? await Task.sleep(nanoseconds: 27_000_000_000)
                 return nil
             }
             let first = await group.next() ?? nil
@@ -181,8 +184,11 @@ class NotificationHandler {
 
         guard let notificationItemProxy = item else {
             MXLog.error("\(tag) Failed retrieving notification item (or timeout)")
-            NSEDiagLog.write("  → failed/timeout retrieving notification item (>20s), DISCARD")
-            discardNotification()
+            NSEDiagLog.write("  → failed/timeout retrieving notification item (>27s), SHOW GENERIC")
+            // Не пустышка: событие существует, но не скачалось в бюджет NSE.
+            // Показываем «Новое сообщение» — тап откроет приложение с реальным
+            // содержимым. Пустой «sTalk/Уведомление» юзеры читают как баг.
+            showGenericMessageNotification()
             return
         }
 
@@ -269,6 +275,17 @@ class NotificationHandler {
     private func discardNotification() {
         MXLog.info("\(tag) Discarding notification")
         contentHandler(Self.makePassiveContent())
+    }
+
+    /// Fetch-таймаут: событие есть, но не скачалось в бюджет NSE. Показываем
+    /// осмысленное «Новое сообщение» (тап откроет приложение) вместо пустой
+    /// passive-заглушки, которую юзеры читают как баг.
+    private func showGenericMessageNotification() {
+        let content = UNMutableNotificationContent()
+        let isRussian = Locale.preferredLanguages.first?.hasPrefix("ru") ?? false
+        content.body = isRussian ? "Новое сообщение" : "New message"
+        content.sound = .default
+        contentHandler(content)
     }
 
     // sTalk: STMOB-94 — iOS NSE не может полностью отменить уведомление,
