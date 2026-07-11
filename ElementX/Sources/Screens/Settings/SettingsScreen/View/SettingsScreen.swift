@@ -489,7 +489,7 @@ struct SettingsScreen: View {
                         blurCard(mode: "blur_light", title: SL10n.callBgLightShort, radius: 2)
                         blurCard(mode: "blur_medium", title: SL10n.callBgMediumShort, radius: 4.5)
                         blurCard(mode: "blur_strong", title: SL10n.callBgStrongShort, radius: 8)
-                        ForEach(1..<7) { index in
+                        ForEach(1..<9) { index in
                             wallpaperCard(index: index)
                         }
                     }

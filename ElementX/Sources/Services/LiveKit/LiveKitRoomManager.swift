@@ -21,7 +21,7 @@ private let livekitLog = OSLog(subsystem: "ru.implica.stalk", category: "LiveKit
 
 /// Режим фона в звонке: выкл / три интенсивности размытия / обои.
 /// rawValue хранится в UserDefaults (`stalk_call_background_mode`),
-/// выбранные обои — индекс 1...6 в `stalk_call_wallpaper_index`.
+/// выбранные обои — индекс 1...8 в `stalk_call_wallpaper_index`.
 enum CallBackgroundMode: String, CaseIterable {
     case off
     case blurLight = "blur_light"
@@ -598,7 +598,7 @@ final class LiveKitRoomManager: ObservableObject {
             return StalkBackgroundBlurProcessor(background: .blur(radius: 22))
         case .wallpaper:
             let stored = UserDefaults.standard.integer(forKey: Self.wallpaperIndexSettingKey)
-            let index = (1...6).contains(stored) ? stored : 1
+            let index = (1...8).contains(stored) ? stored : 1
             guard let uiImage = UIImage(named: "images/call_wallpaper_\(index)"),
                   let ciImage = CIImage(image: uiImage) else {
                 DiagLog.write("Call", "blur: wallpaper \(index) FAILED to load — fallback to blur")
