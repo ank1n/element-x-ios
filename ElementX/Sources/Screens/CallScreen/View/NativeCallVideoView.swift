@@ -496,7 +496,9 @@ private struct GroupCallLayout: View {
                 }
                 .padding(spacing)
             }
-            .scrollDisabled(isLandscape ? false : (!gridLayout(for: regularItems.count).scrollable && !hasScreenShare))
+            // Landscape: аспект тайлов считается из геометрии → ряды всегда влезают,
+            // скролл не нужен (он и давал «уехавшую вниз» сетку)
+            .scrollDisabled(isLandscape ? !hasScreenShare : (!gridLayout(for: regularItems.count).scrollable && !hasScreenShare))
         }
         .background(Color.black)
     }
@@ -512,9 +514,19 @@ private struct GroupCallLayout: View {
         }
     }
 
-    /// Aspect для тайла: в landscape ~портрет (3:4) под .fit видео, иначе старая логика.
+    /// Aspect для тайла. В landscape — из геометрии, чтобы ряды ВЛЕЗАЛИ по высоте:
+    /// прежний хардкод 3:4 (портрет) при корректной ориентации кадров переполнял
+    /// экран по вертикали — сетка уезжала в скролл, «тайлы слишком низко» (dp).
     private func tileAspect(hasScreenShare: Bool, isLandscape: Bool, count: Int, columns: Int, geometry: GeometryProxy) -> CGFloat {
-        if isLandscape { return 3.0 / 4.0 }
+        if isLandscape {
+            let cols = max(columns, 1)
+            let rows = max(1, Int(ceil(Double(max(count, 1)) / Double(cols))))
+            let spacing: CGFloat = 4
+            let colWidth = (geometry.size.width - CGFloat(cols + 1) * spacing) / CGFloat(cols)
+            let rowHeight = (geometry.size.height - CGFloat(rows + 1) * spacing) / CGFloat(rows)
+            guard rowHeight > 0, colWidth > 0 else { return 4.0 / 3.0 }
+            return colWidth / rowHeight
+        }
         if hasScreenShare { return 1.0 }
         return tileAspectRatio(for: count, columns: columns, geometry: geometry)
     }
