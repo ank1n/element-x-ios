@@ -1027,6 +1027,9 @@ final class StalkBackgroundBlurProcessor: NSObject, LiveKit.VideoProcessor {
     private let ciContext: CIContext
     private let blurFilter = CIFilter.gaussianBlur()
     private let blendFilter = CIFilter.blendWithMask()
+    /// Отдельный инстанс для растушёвки маски: живёт на segmentationQueue,
+    /// blurFilter — на processingQueue, CIFilter не потокобезопасен.
+    private let maskFeatherFilter = CIFilter.gaussianBlur()
 
     private var cachedMaskImage: CIImage?
     private var cachedPixelBuffer: CVPixelBuffer?
@@ -1048,8 +1051,11 @@ final class StalkBackgroundBlurProcessor: NSObject, LiveKit.VideoProcessor {
             ciContext = CIContext(options: [.useSoftwareRenderer: true])
         }
         super.init()
-        segmentationRequest.qualityLevel = .balanced
-        DiagLog.write("Call", "background processor created (\(background.descriptionForLog), orientation-aware)")
+        // .accurate: маска 1024×768 вместо 512×384 у .balanced — на растяжке до 720p
+        // .balanced давала грубый «ореол» по контуру головы (жалоба dp на качество).
+        // Считается каждый 3-й кадр асинхронно — A-серия чипов тянет.
+        segmentationRequest.qualityLevel = .accurate
+        DiagLog.write("Call", "background processor created (\(background.descriptionForLog), orientation-aware, accurate)")
     }
 
     // MARK: VideoProcessor
@@ -1161,7 +1167,13 @@ final class StalkBackgroundBlurProcessor: NSObject, LiveKit.VideoProcessor {
             if shouldLogFirst {
                 DiagLog.write("Call", "blur: FIRST person mask (mask=\(Int(maskImage.extent.width))x\(Int(maskImage.extent.height)) input=\(Int(inputDimensions.width))x\(Int(inputDimensions.height)) rot=\(rotation) transposed=\(transposed))")
             }
-            cachedMaskImage = maskImage.transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
+            // Растушёвка края маски: убирает жёсткий «вырезанный» контур после апскейла
+            let scaledMask = maskImage.transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
+            maskFeatherFilter.inputImage = scaledMask.clampedToExtent()
+            maskFeatherFilter.radius = 2.5
+            let feathered = maskFeatherFilter.outputImage?
+                .cropped(to: CGRect(origin: .zero, size: inputDimensions))
+            cachedMaskImage = feathered ?? scaledMask
         }
     }
 
