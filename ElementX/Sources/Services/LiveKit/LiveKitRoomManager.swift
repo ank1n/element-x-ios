@@ -159,11 +159,12 @@ final class LiveKitRoomManager: ObservableObject {
         // Блюр: CIContext на Metal не должен рендерить в фоне (GPU work in background
         // = command-buffer abort в момент транзишена). Отцепляем процессор; foreground
         // setCamera(true) ре-аттачит по интенту (blurIntent не трогаем).
-        if blurProcessor != nil,
+        if blurProcessor != nil || orientationProcessor != nil,
            let track = room.localParticipant.firstCameraPublication?.track as? LocalVideoTrack {
             track.capturer.processor = nil
             blurProcessor = nil
-            MXLog.info("sTalk LiveKit: Background blur detached for backgrounding")
+            orientationProcessor = nil
+            MXLog.info("sTalk LiveKit: video processor detached for backgrounding")
         }
 
         // Ask iOS to keep us alive while the WS is active. Without this, iOS freezes
@@ -384,6 +385,7 @@ final class LiveKitRoomManager: ObservableObject {
         reconnectAttempt = 0
         hasReadCallSettings = false
         blurProcessor = nil
+        orientationProcessor = nil
         #if canImport(UIKit)
         if backgroundTaskID != .invalid {
             UIApplication.shared.endBackgroundTask(backgroundTaskID)
@@ -462,12 +464,22 @@ final class LiveKitRoomManager: ObservableObject {
         // (~1-7 @ 24fps) необработанными в эфире — SDK начинает слать до возврата
         // publish. При активном режиме и отсутствии publication создаём трек
         // с уже привязанным процессором; unmute-путь безопасен (capturer жив).
-        if enabled, callBackgroundMode != .off, room.localParticipant.firstCameraPublication == nil,
-           let processor = makeBackgroundProcessor() {
-            blurProcessor = processor
+        if enabled, room.localParticipant.firstCameraPublication == nil {
+            // Свежий publish всегда с процессором: фон (блюр/обои) или, если фон
+            // выключен, штамп ориентации (rotation-метаданные — см. DeviceOrientationTracker)
+            let processor: LiveKit.VideoProcessor
+            if let blur = makeBackgroundProcessor() {
+                blurProcessor = blur
+                processor = blur
+            } else {
+                let stamp = StalkOrientationProcessor()
+                orientationProcessor = stamp
+                processor = stamp
+            }
             let track = LocalVideoTrack.createCameraTrack(options: Self.cameraCaptureOptions, processor: processor)
             _ = try await room.localParticipant.publish(videoTrack: track)
-            MXLog.info("sTalk LiveKit: Camera published with pre-attached background processor")
+            DeviceOrientationTracker.shared.setFrontCamera(Self.cameraCaptureOptions.position != .back)
+            MXLog.info("sTalk LiveKit: Camera published with pre-attached processor")
             DiagLog.write("Call", "blur: camera published with PRE-ATTACHED processor")
         } else {
             try await room.localParticipant.setCamera(enabled: enabled)
@@ -495,6 +507,7 @@ final class LiveKitRoomManager: ObservableObject {
             return
         }
         let result = try await source.switchCameraPosition()
+        DeviceOrientationTracker.shared.setFrontCamera(source.options.position == .front)
         MXLog.info("sTalk LiveKit: Camera switched, result=\(result)")
         #endif
     }
@@ -575,6 +588,8 @@ final class LiveKitRoomManager: ObservableObject {
     /// камера-трека (toggle камеры, foreground re-enable, reconnect), attach
     /// самовосстанавливается в applyBlurIfNeeded().
     private var blurProcessor: StalkBackgroundBlurProcessor?
+    /// Штамп-процессор ориентации (фон выключен): правит rotation-метаданные кадров
+    private var orientationProcessor: StalkOrientationProcessor?
 
     /// Смена режима фона (выкл / блюр ×3 / обои) — вживую из меню ••• звонка.
     /// Если камеры сейчас нет — режим сохраняется и применится при её включении.
@@ -621,13 +636,18 @@ final class LiveKitRoomManager: ObservableObject {
     private func applyBlurIfNeeded() {
         #if !targetEnvironment(simulator)
         guard callBackgroundMode != .off else {
-            if let track = room.localParticipant.firstCameraPublication?.track as? LocalVideoTrack,
-               track.capturer.processor != nil {
-                track.capturer.processor = nil
-                MXLog.info("sTalk LiveKit: call background detached")
-                DiagLog.write("Call", "blur: detached")
-            }
             blurProcessor = nil
+            // Фон выключен — но штамп ориентации нужен всегда (иначе landscape «боком»)
+            if let track = room.localParticipant.firstCameraPublication?.track as? LocalVideoTrack {
+                if let existing = orientationProcessor, track.capturer.processor === existing {
+                    return
+                }
+                let stamp = StalkOrientationProcessor()
+                orientationProcessor = stamp
+                track.capturer.processor = stamp
+                MXLog.info("sTalk LiveKit: call background off — orientation stamp attached")
+                DiagLog.write("Call", "blur: detached (orientation stamp attached)")
+            }
             return
         }
         guard let track = room.localParticipant.firstCameraPublication?.track as? LocalVideoTrack else {
@@ -994,6 +1014,73 @@ extension LiveKitRoomManager: RoomDelegate {
     }
 }
 
+// MARK: - Device Orientation → Video Rotation
+
+/// Трекер ориентации устройства для штамповки rotation кадров камеры.
+/// WebRTC-капчер (m144) фактически НЕ перештамповывает rotation при повороте
+/// телефона (проверено на устройстве, build 235) — свой PiP, удалённые вьюхи
+/// и веб получали картинку «боком». Обновляется на main по уведомлениям,
+/// читается с видео-очередей под локом.
+final class DeviceOrientationTracker {
+    static let shared = DeviceOrientationTracker()
+
+    private let lock = NSLock()
+    private var current: UIDeviceOrientation = .portrait
+    private var frontCamera = true
+
+    private init() {
+        UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+        NotificationCenter.default.addObserver(self, selector: #selector(update),
+                                               name: UIDevice.orientationDidChangeNotification, object: nil)
+        update()
+    }
+
+    @objc private func update() {
+        let orientation = UIDevice.current.orientation
+        // faceUp/faceDown/unknown — держим последнюю валидную (как WebRTC)
+        guard orientation == .portrait || orientation == .portraitUpsideDown
+            || orientation == .landscapeLeft || orientation == .landscapeRight else { return }
+        lock.lock()
+        current = orientation
+        lock.unlock()
+    }
+
+    /// Позиция активной камеры — важна для landscape-мэппинга
+    func setFrontCamera(_ front: Bool) {
+        lock.lock()
+        frontCamera = front
+        lock.unlock()
+    }
+
+    /// Классический мэппинг RTCCameraVideoCapturer (device orientation → rotation)
+    var videoRotation: VideoRotation {
+        lock.lock()
+        let (orientation, front) = (current, frontCamera)
+        lock.unlock()
+        switch orientation {
+        case .portrait: return ._90
+        case .portraitUpsideDown: return ._270
+        case .landscapeLeft: return front ? ._180 : ._0
+        case .landscapeRight: return front ? ._0 : ._180
+        default: return ._90
+        }
+    }
+}
+
+/// Процессор-«штамп»: правит ТОЛЬКО rotation-метаданные кадра по фактической
+/// ориентации устройства, пиксели не трогает. Attach'ится когда фон (блюр/обои)
+/// выключен — чтобы landscape работал и без фона.
+final class StalkOrientationProcessor: NSObject, LiveKit.VideoProcessor {
+    func process(frame: VideoFrame) -> VideoFrame? {
+        let rotation = DeviceOrientationTracker.shared.videoRotation
+        guard rotation != frame.rotation else { return frame }
+        return VideoFrame(dimensions: frame.dimensions,
+                          rotation: rotation,
+                          timeStampNs: frame.timeStampNs,
+                          buffer: frame.buffer)
+    }
+}
+
 // MARK: - Stalk Background Blur Processor
 
 /// Свой блюр-процессор вместо SDK'шного `BackgroundBlurVideoProcessor` — у того три
@@ -1067,6 +1154,16 @@ final class StalkBackgroundBlurProcessor: NSObject, LiveKit.VideoProcessor {
     // MARK: VideoProcessor
 
     func process(frame: VideoFrame) -> VideoFrame? {
+        // Ориентация из трекера: rotation от капчера может врать (см. DeviceOrientationTracker).
+        // ВСЕ выходы из process — со штампованным rotation, включая ранние.
+        let effectiveRotation = DeviceOrientationTracker.shared.videoRotation
+        func passthrough() -> VideoFrame {
+            guard effectiveRotation != frame.rotation else { return frame }
+            return VideoFrame(dimensions: frame.dimensions,
+                              rotation: effectiveRotation,
+                              timeStampNs: frame.timeStampNs,
+                              buffer: frame.buffer)
+        }
         frameCount += 1
         let processed: Int = statsLock.withLock {
             statProcessed += 1
@@ -1079,7 +1176,7 @@ final class StalkBackgroundBlurProcessor: NSObject, LiveKit.VideoProcessor {
 
         guard let inputBuffer = frame.toCVPixelBuffer() else {
             statsLock.withLock { statNoMask += 1 }
-            return frame
+            return passthrough()
         }
         let cropRect = CGRect(x: 0, y: 0, width: Int(frame.dimensions.width), height: Int(frame.dimensions.height))
         var inputImage = CIImage(cvPixelBuffer: inputBuffer)
@@ -1090,10 +1187,10 @@ final class StalkBackgroundBlurProcessor: NSObject, LiveKit.VideoProcessor {
         }
         let inputDimensions = inputImage.extent.size
 
-        cacheMask(inputBuffer: inputBuffer, inputDimensions: inputDimensions, rotation: frame.rotation)
+        cacheMask(inputBuffer: inputBuffer, inputDimensions: inputDimensions, rotation: effectiveRotation)
         guard let maskImage = cachedMaskImage else {
             statsLock.withLock { statNoMask += 1 }
-            return frame
+            return passthrough()
         }
 
         // Фон: размытый кадр или обои (в буферном пространстве)
@@ -1104,10 +1201,10 @@ final class StalkBackgroundBlurProcessor: NSObject, LiveKit.VideoProcessor {
             let downscaledImage = inputImage.transformed(by: downscaleTransform, highQualityDownsample: false)
             blurFilter.inputImage = downscaledImage.clampedToExtent()
             blurFilter.radius = radius
-            guard let blurredImage = blurFilter.outputImage else { return frame }
+            guard let blurredImage = blurFilter.outputImage else { return passthrough() }
             backgroundImage = blurredImage.transformed(by: downscaleTransform.inverted(), highQualityDownsample: false)
         case .image:
-            guard let wallpaper = wallpaperImage(for: inputDimensions, rotation: frame.rotation) else { return frame }
+            guard let wallpaper = wallpaperImage(for: inputDimensions, rotation: effectiveRotation) else { return passthrough() }
             backgroundImage = wallpaper
         }
 
@@ -1115,13 +1212,13 @@ final class StalkBackgroundBlurProcessor: NSObject, LiveKit.VideoProcessor {
         blendFilter.inputImage = inputImage
         blendFilter.backgroundImage = backgroundImage
         blendFilter.maskImage = maskImage
-        guard let outputImage = blendFilter.outputImage else { return frame }
+        guard let outputImage = blendFilter.outputImage else { return passthrough() }
 
-        guard let outputBuffer = getOutputBuffer(of: inputDimensions) else { return frame }
+        guard let outputBuffer = getOutputBuffer(of: inputDimensions) else { return passthrough() }
         ciContext.render(outputImage, to: outputBuffer)
 
         return VideoFrame(dimensions: frame.dimensions,
-                          rotation: frame.rotation,
+                          rotation: effectiveRotation,
                           timeStampNs: frame.timeStampNs,
                           buffer: CVPixelVideoBuffer(pixelBuffer: outputBuffer))
     }
