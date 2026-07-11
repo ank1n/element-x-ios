@@ -115,7 +115,15 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
             Task { await observeIncomingCall() }
         }
     }
-    
+
+    /// Есть ли входящий звонок в обработке (CallKit показан/отвечен, но сессия ещё
+    /// не стала ongoing). В этом окне НЕЛЬЗЯ стопать sync: ответ через CallKit на
+    /// убитом приложении делает app inactive → resign-хендлер гасил sync → звонку
+    /// не приезжали widget-события/ключи → вечный «connecting» (лог dp 121, 17:44).
+    var hasIncomingCall: Bool {
+        incomingCallID != nil
+    }
+
     private var endUnansweredCallTask: Task<Void, Never>?
     
     private var callActiveMarkerHeartbeatTask: Task<Void, Never>?

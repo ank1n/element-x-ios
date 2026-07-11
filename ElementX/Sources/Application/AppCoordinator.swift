@@ -1255,15 +1255,20 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         // которые могут держать sqlite/file lock при background suspend.
         // Если crash повторится — увидим что было active в последний момент.
         let activeCallRoomID = elementCallService.ongoingCallRoomIDPublisher.value
+        // Входящий звонок в обработке: CallKit-ответ на убитом приложении делает app
+        // inactive ДО того как сессия звонка станет ongoing — в этом окне гасить
+        // sync/audio нельзя (звонок не установится: нет widget-событий/ключей).
+        let hasIncomingCall = (elementCallService as? ElementCallService)?.hasIncomingCall ?? false
+        let callInFlight = activeCallRoomID != nil || hasIncomingCall
         let bgTaskActive = backgroundTask != nil
         let audioActive = AVAudioSession.sharedInstance().isOtherAudioPlaying
-        DiagLog.write("AppLifecycle", "willResignActive: activeCall=\(activeCallRoomID ?? "nil") bgTask=\(bgTaskActive) otherAudio=\(audioActive)")
+        DiagLog.write("AppLifecycle", "willResignActive: activeCall=\(activeCallRoomID ?? "nil") incoming=\(hasIncomingCall) bgTask=\(bgTaskActive) otherAudio=\(audioActive)")
 
         // STMOB-133 build 158: если нет активного звонка — deactivate audio
         // session. AVAudioSession active в background может держать lock
         // (RUNNINGBOARD 0xDEAD10CC). Активный звонок имеет CallKit/Voip
         // background mode, audio session нужен — не трогаем.
-        if activeCallRoomID == nil {
+        if !callInFlight {
             do {
                 try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
                 DiagLog.write("AppLifecycle", "  AudioSession deactivated (no active call)")
@@ -1279,7 +1284,14 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         // Теперь begin background task + сразу stopSync + ждём completion +
         // end background task. Даёт SDK максимум background time для graceful
         // shutdown crypto store + sliding sync (обычно <5 сек).
-        immediateStopSyncOnBackground()
+        // При звонке (ongoing ИЛИ incoming) sync НЕ стопаем: CallKit держит app
+        // живым (suspend не будет → 0xDEAD10CC не грозит), а звонку нужны
+        // widget-события/ключи через sync.
+        if !callInFlight {
+            immediateStopSyncOnBackground()
+        } else {
+            DiagLog.write("AppLifecycle", "  skip stopSync — call in flight")
+        }
         scheduleBackgroundAppRefresh()
         // STMOB-103: idle на background (жёлтый dot + "был X назад" на web)
         ownPresenceManager?.setBackground()
