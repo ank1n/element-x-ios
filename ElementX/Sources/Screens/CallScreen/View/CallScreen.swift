@@ -189,12 +189,20 @@ struct CallScreen: View {
                               systemImage: context.viewState.isScreenSharing ? "rectangle.inset.filled.and.person.filled" : "rectangle.on.rectangle")
                     }
                 }
-                Toggle(isOn: Binding(get: { context.viewState.isBackgroundBlurEnabled },
-                                     set: { _ in context.send(viewAction: .toggleBackgroundBlur) })) {
-                    Label(SL10n.callBackgroundBlur, systemImage: "person.and.background.dotted")
+                Menu {
+                    Picker("", selection: Binding(get: { context.viewState.callBackgroundMode },
+                                                  set: { context.send(viewAction: .setCallBackground($0)) })) {
+                        Text(SL10n.callBgOff).tag(CallBackgroundMode.off)
+                        Text(SL10n.callBgBlurLight).tag(CallBackgroundMode.blurLight)
+                        Text(SL10n.callBgBlurMedium).tag(CallBackgroundMode.blurMedium)
+                        Text(SL10n.callBgBlurStrong).tag(CallBackgroundMode.blurStrong)
+                        Text(SL10n.callBgWallpaper).tag(CallBackgroundMode.wallpaper)
+                    }
+                } label: {
+                    Label(SL10n.callBackground, systemImage: "person.and.background.dotted")
                 }
             } label: {
-                let isActive = context.viewState.isHandRaised || context.viewState.isScreenSharing || context.viewState.isBackgroundBlurEnabled
+                let isActive = context.viewState.isHandRaised || context.viewState.isScreenSharing || context.viewState.callBackgroundMode != .off
                 VStack(spacing: 6) {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 22))

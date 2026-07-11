@@ -19,6 +19,17 @@ import UIKit
 
 private let livekitLog = OSLog(subsystem: "ru.implica.stalk", category: "LiveKit")
 
+/// Режим фона в звонке: выкл / три интенсивности размытия / обои.
+/// rawValue хранится в UserDefaults (`stalk_call_background_mode`),
+/// выбранные обои — индекс 1...6 в `stalk_call_wallpaper_index`.
+enum CallBackgroundMode: String, CaseIterable {
+    case off
+    case blurLight = "blur_light"
+    case blurMedium = "blur_medium"
+    case blurStrong = "blur_strong"
+    case wallpaper
+}
+
 /// sTalk: Manages a native LiveKit room connection using credentials intercepted from Element Call's WebSocket.
 /// Provides published state for SwiftUI views to render native video tracks.
 @MainActor
@@ -237,7 +248,9 @@ final class LiveKitRoomManager: ObservableObject {
 
     /// Ключи Settings-тумблеров (секция «Звонки», SettingsScreen @AppStorage).
     private static let noiseSuppressionSettingKey = "stalk_noise_suppression_enabled"
-    private static let backgroundBlurSettingKey = "stalk_background_blur_enabled"
+    private static let backgroundBlurSettingKey = "stalk_background_blur_enabled" // legacy-тумблер (до 26.04.08)
+    private static let backgroundModeSettingKey = "stalk_call_background_mode"
+    private static let wallpaperIndexSettingKey = "stalk_call_wallpaper_index"
 
     /// Камера 720p — единые опции для room defaults и ручного publish с pre-attached блюром.
     private static let cameraCaptureOptions = CameraCaptureOptions(dimensions: .h720_169)
@@ -261,11 +274,16 @@ final class LiveKitRoomManager: ObservableObject {
             // микрофона ВСЕМ юзерам против shipped 26.04.06/07 (двойной шумодав
             // APM+VPIO может «замыливать» голос) — только явный выбор в настройках.
             isNoiseSuppressed = defaults.bool(forKey: Self.noiseSuppressionSettingKey)
-            blurIntent = defaults.bool(forKey: Self.backgroundBlurSettingKey)
-            isBackgroundBlurEnabled = blurIntent
-            MXLog.info("sTalk LiveKit: call settings — noiseSuppression=\(isNoiseSuppressed) backgroundBlur=\(blurIntent)")
+            // Режим фона: новый ключ, миграция со старого bool-тумблера (true → среднее размытие)
+            if let mode = defaults.string(forKey: Self.backgroundModeSettingKey).flatMap(CallBackgroundMode.init(rawValue:)) {
+                callBackgroundMode = mode
+            } else {
+                callBackgroundMode = defaults.bool(forKey: Self.backgroundBlurSettingKey) ? .blurMedium : .off
+                defaults.set(callBackgroundMode.rawValue, forKey: Self.backgroundModeSettingKey)
+            }
+            MXLog.info("sTalk LiveKit: call settings — noiseSuppression=\(isNoiseSuppressed) background=\(callBackgroundMode.rawValue)")
             // DiagLog — MXLog не попадает в nse-events выгрузку с устройства
-            DiagLog.write("Call", "settings: noiseSuppression=\(isNoiseSuppressed) backgroundBlur=\(blurIntent)")
+            DiagLog.write("Call", "settings: noiseSuppression=\(isNoiseSuppressed) background=\(callBackgroundMode.rawValue) wallpaper=\(UserDefaults.standard.integer(forKey: Self.wallpaperIndexSettingKey))")
         }
         return RoomOptions(defaultCameraCaptureOptions: Self.cameraCaptureOptions,
                            defaultAudioCaptureOptions: AudioCaptureOptions(noiseSuppression: isNoiseSuppressed,
@@ -434,16 +452,16 @@ final class LiveKitRoomManager: ObservableObject {
             try await publishSimulatorVideoTrack()
         }
         #else
-        // Блюр при СВЕЖЕМ publish: аттач после setCamera оставляет первые кадры
-        // (~1-7 @ 24fps) неблюренными в эфире — SDK начинает слать до возврата
-        // publish. При активном интенте и отсутствии publication создаём трек
+        // Фон при СВЕЖЕМ publish: аттач после setCamera оставляет первые кадры
+        // (~1-7 @ 24fps) необработанными в эфире — SDK начинает слать до возврата
+        // publish. При активном режиме и отсутствии publication создаём трек
         // с уже привязанным процессором; unmute-путь безопасен (capturer жив).
-        if enabled, blurIntent, room.localParticipant.firstCameraPublication == nil {
-            let processor = StalkBackgroundBlurProcessor()
+        if enabled, callBackgroundMode != .off, room.localParticipant.firstCameraPublication == nil,
+           let processor = makeBackgroundProcessor() {
             blurProcessor = processor
             let track = LocalVideoTrack.createCameraTrack(options: Self.cameraCaptureOptions, processor: processor)
             _ = try await room.localParticipant.publish(videoTrack: track)
-            MXLog.info("sTalk LiveKit: Camera published with pre-attached background blur")
+            MXLog.info("sTalk LiveKit: Camera published with pre-attached background processor")
             DiagLog.write("Call", "blur: camera published with PRE-ATTACHED processor")
         } else {
             try await room.localParticipant.setCamera(enabled: enabled)
@@ -528,8 +546,9 @@ final class LiveKitRoomManager: ObservableObject {
     /// Toggle screen sharing
     @Published private(set) var isScreenSharing = false
 
-    /// Toggle background blur
-    @Published private(set) var isBackgroundBlurEnabled = false
+    /// Текущий режим фона звонка (выкл / блюр ×3 / обои). Читается из настроек при
+    /// connect, меняется вживую из меню ••• через setCallBackground(_:).
+    @Published private(set) var callBackgroundMode: CallBackgroundMode = .off
 
     /// Toggle noise suppression (enhanced)
     @Published private(set) var isNoiseSuppressed = false
@@ -545,46 +564,68 @@ final class LiveKitRoomManager: ObservableObject {
     }
 
     /// Strong-ссылка на процессор: SDK держит `capturer.processor` weak,
-    /// без неё блюр молча отвалится после первого прохода autorelease.
+    /// без неё фон молча отвалится после первого прохода autorelease.
+    /// Режим-интент живёт в callBackgroundMode — он переживает пересоздание
+    /// камера-трека (toggle камеры, foreground re-enable, reconnect), attach
+    /// самовосстанавливается в applyBlurIfNeeded().
     private var blurProcessor: StalkBackgroundBlurProcessor?
 
-    /// Желаемое состояние блюра — отдельно от факта attach. Камера-трек
-    /// пересоздаётся (toggle камеры, foreground re-enable, reconnect), и каждый
-    /// новый CameraCapturer рождается с processor=nil — интент переживает
-    /// пересоздание, attach самовосстанавливается в applyBlurIfNeeded().
-    private var blurIntent = false
-
-    /// Toggle background blur on camera video.
-    /// Если камеры сейчас нет — интент сохраняется и применится при её включении.
-    func setBackgroundBlur(enabled: Bool) {
-        blurIntent = enabled
-        isBackgroundBlurEnabled = enabled
-        DiagLog.write("Call", "blur toggle -> \(enabled)")
+    /// Смена режима фона (выкл / блюр ×3 / обои) — вживую из меню ••• звонка.
+    /// Если камеры сейчас нет — режим сохраняется и применится при её включении.
+    func setCallBackground(_ mode: CallBackgroundMode) {
+        callBackgroundMode = mode
+        DiagLog.write("Call", "background toggle -> \(mode.rawValue)")
         #if targetEnvironment(simulator)
-        MXLog.warning("sTalk LiveKit: Background blur is a no-op on the simulator (no camera)")
+        MXLog.warning("sTalk LiveKit: call background is a no-op on the simulator (no camera)")
         #else
+        // Смена режима = новый процессор (у него зашит background в init)
+        blurProcessor = nil
         applyBlurIfNeeded()
         #endif
     }
 
-    /// Attach/detach блюр-процессора на текущий камера-трек (self-healing).
-    /// Вызывается из setCamera(true), didPublishTrack и setBackgroundBlur —
+    /// Процессор под текущий режим. Обои: индекс из настроек, ассеты call_wallpaper_1..6;
+    /// при сбое загрузки — фолбэк на среднее размытие (лучше, чем молча без фона).
+    private func makeBackgroundProcessor() -> StalkBackgroundBlurProcessor? {
+        switch callBackgroundMode {
+        case .off:
+            return nil
+        case .blurLight:
+            return StalkBackgroundBlurProcessor(background: .blur(radius: 7))
+        case .blurMedium:
+            return StalkBackgroundBlurProcessor(background: .blur(radius: 12))
+        case .blurStrong:
+            return StalkBackgroundBlurProcessor(background: .blur(radius: 22))
+        case .wallpaper:
+            let stored = UserDefaults.standard.integer(forKey: Self.wallpaperIndexSettingKey)
+            let index = (1...6).contains(stored) ? stored : 1
+            guard let uiImage = UIImage(named: "call_wallpaper_\(index)"),
+                  let ciImage = CIImage(image: uiImage) else {
+                DiagLog.write("Call", "blur: wallpaper \(index) FAILED to load — fallback to blur")
+                return StalkBackgroundBlurProcessor(background: .blur(radius: 12))
+            }
+            return StalkBackgroundBlurProcessor(background: .image(ciImage))
+        }
+    }
+
+    /// Attach/detach фон-процессора на текущий камера-трек (self-healing).
+    /// Вызывается из setCamera(true), didPublishTrack и setCallBackground —
     /// one-shot attach терялся при каждом пересоздании CameraCapturer.
-    /// Только камера (firstCameraPublication) — screen-share не блюрим.
+    /// Только камера (firstCameraPublication) — screen-share не трогаем.
     private func applyBlurIfNeeded() {
         #if !targetEnvironment(simulator)
-        guard blurIntent else {
+        guard callBackgroundMode != .off else {
             if let track = room.localParticipant.firstCameraPublication?.track as? LocalVideoTrack,
                track.capturer.processor != nil {
                 track.capturer.processor = nil
-                MXLog.info("sTalk LiveKit: Background blur detached")
+                MXLog.info("sTalk LiveKit: call background detached")
                 DiagLog.write("Call", "blur: detached")
             }
             blurProcessor = nil
             return
         }
         guard let track = room.localParticipant.firstCameraPublication?.track as? LocalVideoTrack else {
-            DiagLog.write("Call", "blur: intent=on, но camera publication нет — аттач отложен")
+            DiagLog.write("Call", "blur: mode=\(callBackgroundMode.rawValue), но camera publication нет — аттач отложен")
             return
         }
         if let existing = blurProcessor, track.capturer.processor === existing {
@@ -593,11 +634,11 @@ final class LiveKitRoomManager: ObservableObject {
         // Свежий процессор на каждый новый capturer: у SDK per-capturer serial queue,
         // а процессор не потокобезопасен — шаринг одного инстанса между поколениями
         // capturer'а = гонка на CIFilter/кешах в момент пересоздания publication.
-        let processor = StalkBackgroundBlurProcessor()
+        guard let processor = makeBackgroundProcessor() else { return }
         blurProcessor = processor
         track.capturer.processor = processor
-        MXLog.info("sTalk LiveKit: Background blur attached to camera capturer")
-        DiagLog.write("Call", "blur: attached to camera capturer (self-heal)")
+        MXLog.info("sTalk LiveKit: call background attached to camera capturer")
+        DiagLog.write("Call", "blur: attached to camera capturer (self-heal, \(callBackgroundMode.rawValue))")
         #endif
     }
 
@@ -959,8 +1000,21 @@ extension LiveKitRoomManager: RoomDelegate {
 /// Не потокобезопасен — SDK зовёт process(frame:) на serial processingQueue capturer'а;
 /// на каждый новый capturer менеджер создаёт свежий инстанс.
 final class StalkBackgroundBlurProcessor: NSObject, LiveKit.VideoProcessor {
+    /// Чем заменяем фон: размытие заданного радиуса или статичные обои.
+    enum Background {
+        case blur(radius: Float)
+        case image(CIImage)
+
+        var descriptionForLog: String {
+            switch self {
+            case .blur(let radius): "blur(radius=\(radius))"
+            case .image: "wallpaper"
+            }
+        }
+    }
+
+    private let background: Background
     private let downscaleFactor: CGFloat = 2 // даунскейл перед блюром (перф), апскейл перед блендом
-    private let blurRadius: Float = 12
     private let relativeSize: CGFloat = 1080 // параметры калиброваны под HD, экстраполируются
 
     private var frameCount = 0
@@ -986,7 +1040,8 @@ final class StalkBackgroundBlurProcessor: NSObject, LiveKit.VideoProcessor {
     private var statMasks = 0
     private var loggedFirstMask = false
 
-    override init() {
+    init(background: Background) {
+        self.background = background
         if let device = MTLCreateSystemDefaultDevice() {
             ciContext = CIContext(mtlDevice: device)
         } else {
@@ -994,7 +1049,7 @@ final class StalkBackgroundBlurProcessor: NSObject, LiveKit.VideoProcessor {
         }
         super.init()
         segmentationRequest.qualityLevel = .balanced
-        DiagLog.write("Call", "blur processor created (radius=\(blurRadius), orientation-aware)")
+        DiagLog.write("Call", "background processor created (\(background.descriptionForLog), orientation-aware)")
     }
 
     // MARK: VideoProcessor
@@ -1027,17 +1082,24 @@ final class StalkBackgroundBlurProcessor: NSObject, LiveKit.VideoProcessor {
             return frame
         }
 
-        // Blur
-        let downscaleTransform = getDownscaleTransform(relativeTo: inputDimensions)
-        let downscaledImage = inputImage.transformed(by: downscaleTransform, highQualityDownsample: false)
-        blurFilter.inputImage = downscaledImage.clampedToExtent()
-        blurFilter.radius = blurRadius
-        guard let blurredImage = blurFilter.outputImage else { return frame }
-        let upscaledBlurredImage = blurredImage.transformed(by: downscaleTransform.inverted(), highQualityDownsample: false)
+        // Фон: размытый кадр или обои (в буферном пространстве)
+        let backgroundImage: CIImage
+        switch background {
+        case .blur(let radius):
+            let downscaleTransform = getDownscaleTransform(relativeTo: inputDimensions)
+            let downscaledImage = inputImage.transformed(by: downscaleTransform, highQualityDownsample: false)
+            blurFilter.inputImage = downscaledImage.clampedToExtent()
+            blurFilter.radius = radius
+            guard let blurredImage = blurFilter.outputImage else { return frame }
+            backgroundImage = blurredImage.transformed(by: downscaleTransform.inverted(), highQualityDownsample: false)
+        case .image:
+            guard let wallpaper = wallpaperImage(for: inputDimensions, rotation: frame.rotation) else { return frame }
+            backgroundImage = wallpaper
+        }
 
-        // Blend: маска = человек (белое) остаётся резким, фон — размытый
+        // Blend: маска = человек (белое) остаётся резким, фон подменяется
         blendFilter.inputImage = inputImage
-        blendFilter.backgroundImage = upscaledBlurredImage
+        blendFilter.backgroundImage = backgroundImage
         blendFilter.maskImage = maskImage
         guard let outputImage = blendFilter.outputImage else { return frame }
 
@@ -1101,6 +1163,40 @@ final class StalkBackgroundBlurProcessor: NSObject, LiveKit.VideoProcessor {
             }
             cachedMaskImage = maskImage.transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
         }
+    }
+
+    // MARK: Wallpaper
+
+    private var cachedWallpaper: CIImage?
+    private var cachedWallpaperKey: String?
+
+    /// Обои в буферном пространстве кадра: дисплей поворачивает буфер на frame.rotation,
+    /// поэтому «выпрямленные для юзера» обои кладём в буфер повернутыми в обратную
+    /// сторону + aspect-fill по размеру кадра. Кешируется на (размер, поворот).
+    private func wallpaperImage(for size: CGSize, rotation: VideoRotation) -> CIImage? {
+        let key = "\(Int(size.width))x\(Int(size.height))@\(rotation)"
+        if cachedWallpaperKey == key, let cachedWallpaper {
+            return cachedWallpaper
+        }
+        guard case .image(let original) = background else { return nil }
+
+        var image = original
+        let orientation = Self.cgOrientation(for: rotation)
+        if orientation != .up {
+            image = image.oriented(Self.inverse(of: orientation))
+        }
+        let scale = max(size.width / image.extent.width, size.height / image.extent.height)
+        image = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        // Центрируем и кропим до размера кадра
+        let dx = image.extent.origin.x + (image.extent.width - size.width) / 2
+        let dy = image.extent.origin.y + (image.extent.height - size.height) / 2
+        image = image.transformed(by: CGAffineTransform(translationX: -dx, y: -dy))
+            .cropped(to: CGRect(origin: .zero, size: size))
+
+        cachedWallpaper = image
+        cachedWallpaperKey = key
+        DiagLog.write("Call", "blur: wallpaper prepared for \(key)")
+        return image
     }
 
     // MARK: Helpers

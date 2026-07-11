@@ -1724,6 +1724,13 @@
 "stalk_dnd_from" = "С";
 "stalk_dnd_to" = "До";
 "stalk_dnd_enabled" = "Включено";
+"stalk_call_background" = "Фон в звонке";
+"stalk_call_background_hint" = "Размытие или обои вместо фона. Меняется и в звонке через меню •••";
+"stalk_call_bg_off" = "Выкл";
+"stalk_call_bg_blur_light" = "Лёгкое размытие";
+"stalk_call_bg_blur_medium" = "Среднее размытие";
+"stalk_call_bg_blur_strong" = "Сильное размытие";
+"stalk_call_bg_wallpaper" = "Обои";
 "stalk_call_background_blur" = "Размытие фона";
 "stalk_call_background_blur_hint" = "Размывает фон при видеозвонке. Можно переключить в меню ••• во время звонка";
 "stalk_call_noise_suppression" = "Шумоподавление";

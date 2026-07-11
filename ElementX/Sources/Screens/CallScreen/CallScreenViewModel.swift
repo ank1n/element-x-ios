@@ -165,7 +165,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         // Блюр-тумблер в меню ••• доступен и ДО connect — засеваем из настроек,
         // чтобы не показывать «выкл» при включённой настройке (менеджер прочитает
         // тот же ключ в makeRoomOptions при connect).
-        state.isBackgroundBlurEnabled = UserDefaults.standard.bool(forKey: "stalk_background_blur_enabled")
+        state.callBackgroundMode = UserDefaults.standard.string(forKey: "stalk_call_background_mode")
+            .flatMap(CallBackgroundMode.init(rawValue:))
+            ?? (UserDefaults.standard.bool(forKey: "stalk_background_blur_enabled") ? .blurMedium : .off)
 
         MXLog.info("sTalk CallScreenVM init: startWithVideoEnabled=\(startWithVideoEnabled), isDirect=\(isDirect), participants=\(callParticipantsCount), room=\(roomDisplayName ?? "nil")")
 
@@ -388,8 +390,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             Task { await toggleHandRaise() }
         case .toggleScreenShare:
             Task { await toggleScreenShare() }
-        case .toggleBackgroundBlur:
-            toggleBackgroundBlur()
+        case .setCallBackground(let mode):
+            liveKitRoomManager.setCallBackground(mode)
+            state.callBackgroundMode = mode
         case .handRaiseStateChanged(let raised):
             state.isHandRaised = raised
         case .restoreFromMinimized:
@@ -518,7 +521,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                                 self.state.liveKitRoomManager = self.liveKitRoomManager
                                 self.state.wasConnected = true
                                 // Блюр-интент из настроек прочитан менеджером при connect — синк в UI
-                                self.state.isBackgroundBlurEnabled = self.liveKitRoomManager.isBackgroundBlurEnabled
+                                self.state.callBackgroundMode = self.liveKitRoomManager.callBackgroundMode
                                 // STMOB-80: header «Вызов...» застревал — нужен явный
                                 // переход в connected + старт таймера. Раньше зависело
                                 // только от MatrixRTC infoPublisher, который опаздывал.
@@ -729,7 +732,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         state.liveKitRoomManager = liveKitRoomManager
         state.wasConnected = true
         // Блюр-интент из настроек прочитан менеджером при connect — синк в UI
-        state.isBackgroundBlurEnabled = liveKitRoomManager.isBackgroundBlurEnabled
+        state.callBackgroundMode = liveKitRoomManager.callBackgroundMode
 
         // Ring notification is now sent by NativeCallSession.sendCallNotification()
         // immediately after sendJoinViaREST(), with proper user_ids and m.relates_to.
@@ -1175,12 +1178,6 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         } catch {
             MXLog.error("sTalk: Failed to toggle screen share: \(error)")
         }
-    }
-
-    private func toggleBackgroundBlur() {
-        let newValue = !state.isBackgroundBlurEnabled
-        liveKitRoomManager.setBackgroundBlur(enabled: newValue)
-        state.isBackgroundBlurEnabled = newValue
     }
 
     // MARK: - Recording

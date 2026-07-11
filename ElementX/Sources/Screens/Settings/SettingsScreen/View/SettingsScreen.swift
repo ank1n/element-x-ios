@@ -445,18 +445,26 @@ struct SettingsScreen: View {
 
     // MARK: - Calls Settings
 
-    @AppStorage("stalk_background_blur_enabled") private var backgroundBlurEnabled = false
+    /// Режим фона в звонке: off / blur_light / blur_medium / blur_strong / wallpaper
+    @AppStorage("stalk_call_background_mode") private var callBackgroundMode = "off"
+    @AppStorage("stalk_call_wallpaper_index") private var callWallpaperIndex = 1
     /// NS строго opt-in: дефолт «вкл» менял бы обработку микрофона всем против shipped-звука
     @AppStorage("stalk_noise_suppression_enabled") private var noiseSuppressionEnabled = false
     // Native calls always enabled — no toggle needed
 
     private var callsSettingsSection: some View {
         Section(header: Text(SL10n.tabCalls)) {
-            Toggle(isOn: $backgroundBlurEnabled) {
+            Picker(selection: $callBackgroundMode) {
+                Text(SL10n.callBgOff).tag("off")
+                Text(SL10n.callBgBlurLight).tag("blur_light")
+                Text(SL10n.callBgBlurMedium).tag("blur_medium")
+                Text(SL10n.callBgBlurStrong).tag("blur_strong")
+                Text(SL10n.callBgWallpaper).tag("wallpaper")
+            } label: {
                 Label {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(SL10n.callBackgroundBlur)
-                        Text(SL10n.callBackgroundBlurHint)
+                        Text(SL10n.callBackground)
+                        Text(SL10n.callBackgroundHint)
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
                     }
@@ -466,6 +474,28 @@ struct SettingsScreen: View {
                 }
             }
             .tint(StalkTheme.accent)
+
+            if callBackgroundMode == "wallpaper" {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(1..<7) { index in
+                            Image("call_wallpaper_\(index)")
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 56, height: 96)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .stroke(callWallpaperIndex == index ? StalkTheme.accent : .clear, lineWidth: 3)
+                                }
+                                .onTapGesture {
+                                    callWallpaperIndex = index
+                                }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
 
             Toggle(isOn: $noiseSuppressionEnabled) {
                 Label {

@@ -52,7 +52,7 @@ struct CallScreenViewState: BindableState {
     var isSpeakerOn = false
     var isHandRaised = false
     var isScreenSharing = false
-    var isBackgroundBlurEnabled = false
+    var callBackgroundMode: CallBackgroundMode = .off
     var wasConnected = false
     /// sTalk: Whether the call is shown as a mini floating window
     var isMinimized = false
@@ -138,7 +138,7 @@ enum CallScreenViewAction {
     case toggleSpeaker
     case toggleHandRaise
     case toggleScreenShare
-    case toggleBackgroundBlur
+    case setCallBackground(CallBackgroundMode)
     case handRaiseStateChanged(raised: Bool)
     /// sTalk: Restore from minimized mini-window to fullscreen
     case restoreFromMinimized

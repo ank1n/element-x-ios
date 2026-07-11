@@ -1726,6 +1726,13 @@
 "stalk_dnd_from" = "From";
 "stalk_dnd_to" = "To";
 "stalk_dnd_enabled" = "Enabled";
+"stalk_call_background" = "Call background";
+"stalk_call_background_hint" = "Blur or wallpaper instead of your background. Can also be changed in-call via the ••• menu";
+"stalk_call_bg_off" = "Off";
+"stalk_call_bg_blur_light" = "Light blur";
+"stalk_call_bg_blur_medium" = "Medium blur";
+"stalk_call_bg_blur_strong" = "Strong blur";
+"stalk_call_bg_wallpaper" = "Wallpaper";
 "stalk_call_background_blur" = "Background blur";
 "stalk_call_background_blur_hint" = "Blurs background during video calls. Can be toggled from the ••• menu during a call";
 "stalk_call_noise_suppression" = "Noise suppression";

@@ -294,6 +294,13 @@ enum SL10n {
 
     // MARK: - Call Settings
 
+    static let callBackground = NSLocalizedString("stalk_call_background", tableName: "Localizable", value: "Фон в звонке", comment: "Call background picker")
+    static let callBackgroundHint = NSLocalizedString("stalk_call_background_hint", tableName: "Localizable", value: "Размытие или обои вместо фона. Меняется и в звонке через меню •••", comment: "Call background description")
+    static let callBgOff = NSLocalizedString("stalk_call_bg_off", tableName: "Localizable", value: "Выкл", comment: "Call background off")
+    static let callBgBlurLight = NSLocalizedString("stalk_call_bg_blur_light", tableName: "Localizable", value: "Лёгкое размытие", comment: "Light blur")
+    static let callBgBlurMedium = NSLocalizedString("stalk_call_bg_blur_medium", tableName: "Localizable", value: "Среднее размытие", comment: "Medium blur")
+    static let callBgBlurStrong = NSLocalizedString("stalk_call_bg_blur_strong", tableName: "Localizable", value: "Сильное размытие", comment: "Strong blur")
+    static let callBgWallpaper = NSLocalizedString("stalk_call_bg_wallpaper", tableName: "Localizable", value: "Обои", comment: "Wallpaper background")
     static let callBackgroundBlur = NSLocalizedString("stalk_call_background_blur", tableName: "Localizable", value: "Размытие фона", comment: "Background blur toggle")
     static let callBackgroundBlurHint = NSLocalizedString("stalk_call_background_blur_hint", tableName: "Localizable", value: "Размывает фон при видеозвонке. Можно переключить в меню ••• во время звонка", comment: "Background blur description")
     static let callNoiseSuppression = NSLocalizedString("stalk_call_noise_suppression", tableName: "Localizable", value: "Шумоподавление", comment: "Noise suppression toggle")
