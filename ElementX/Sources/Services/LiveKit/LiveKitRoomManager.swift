@@ -121,6 +121,12 @@ final class LiveKitRoomManager: ObservableObject {
     private func registerLifecycleObservers() {
         let center = NotificationCenter.default
         #if canImport(UIKit)
+        // Landscape-фикс: WebRTC RTCCameraVideoCapturer штампует rotation кадров
+        // по UIDevice.orientation, но SwiftUI-приложение само НЕ генерирует
+        // device-orientation уведомления (UI вращается через interfaceOrientation).
+        // Без этого поворот телефона не менял rotation кадров — своё превью и
+        // картинка у собеседника лежали «на боку» (репорт dp, IMG_5171).
+        UIDevice.current.beginGeneratingDeviceOrientationNotifications()
         center.addObserver(self,
                            selector: #selector(appDidEnterBackground),
                            name: UIApplication.didEnterBackgroundNotification,

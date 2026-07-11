@@ -152,6 +152,8 @@ private struct DirectCallLayout: View {
     var isMinimized = false
     @State private var selfViewOffset: CGSize = .zero
     @State private var selfViewCorner: PipCorner = .bottomRight
+    // Landscape: PiP-бокс переворачивается вместе с камерой (120×160 ↔ 160×120)
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     var body: some View {
         GeometryReader { geometry in
@@ -228,8 +230,9 @@ private struct DirectCallLayout: View {
 
     @ViewBuilder
     private func selfViewPip(track: VideoTrack, in geometry: GeometryProxy) -> some View {
-        let pipWidth: CGFloat = 120
-        let pipHeight: CGFloat = 160
+        let isLandscapeUI = verticalSizeClass == .compact
+        let pipWidth: CGFloat = isLandscapeUI ? 160 : 120
+        let pipHeight: CGFloat = isLandscapeUI ? 120 : 160
         let padding: CGFloat = 12
         let safeArea = geometry.safeAreaInsets
 
