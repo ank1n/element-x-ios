@@ -1224,6 +1224,12 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
                                                selector: #selector(applicationDidBecomeActive),
                                                name: UIApplication.didBecomeActiveNotification,
                                                object: nil)
+        // STMOB-254: отложенный стоп синка — на РЕАЛЬНЫЙ уход в фон (didEnterBackground),
+        // а не на каждый resign active (шторка/переключатель/CallKit-шит)
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(applicationDidEnterBackground),
+                                               name: UIApplication.didEnterBackgroundNotification,
+                                               object: nil)
 
         NotificationCenter.default.addObserver(self,
                                                selector: #selector(applicationWillTerminate),
@@ -1277,22 +1283,18 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
             }
         }
 
-        // STMOB-133 build 173: НЕМЕДЛЕННЫЙ stopSync вместо scheduleDelayedSyncStop.
-        // Раньше stopSync вызывался только в expirationHandler через 30 сек —
-        // SDK всё это время продолжал writes в sqlite → когда iOS suspended до
-        // expiration, sqlite lock оставался → kill 0xDEAD10CC.
-        // Теперь begin background task + сразу stopSync + ждём completion +
-        // end background task. Даёт SDK максимум background time для graceful
-        // shutdown crypto store + sliding sync (обычно <5 сек).
-        // При звонке (ongoing ИЛИ incoming) sync НЕ стопаем: CallKit держит app
-        // живым (suspend не будет → 0xDEAD10CC не грозит), а звонку нужны
-        // widget-события/ключи через sync.
-        if !callInFlight {
-            immediateStopSyncOnBackground()
-        } else {
-            DiagLog.write("AppLifecycle", "  skip stopSync — call in flight")
-        }
-        scheduleBackgroundAppRefresh()
+        // STMOB-254 build 240: immediateStopSync на resign УБРАН — возврат к
+        // upstream-модели (та же, что у Element X на SDK 26.06.03):
+        // 1) на 26.06.03 `syncService.stop()` ВИСНЕТ (8 таймаутов >26с за сессию
+        //    dp 12.07, ни одного чистого завершения) — iOS усыплял процесс посреди
+        //    shutdown стора с локом → 0xDEAD10CC ВЕРНУЛСЯ (дамп 13:41, build 237);
+        // 2) сам агрессивный стоп больше не нужен: crossProcessLockConfig
+        //    (.multiProcess) в новом SDK координирует лок между app и NSE;
+        // 3) resign active — слишком широкий триггер (шторка, переключатель,
+        //    CallKit-шит): стоп на нём ломал и установку звонка (лог 121).
+        // Отложенный стоп остаётся ТОЛЬКО на expiration background task при
+        // реальном уходе в фон — см. applicationDidEnterBackground.
+        DiagLog.write("AppLifecycle", "  resign: sync НЕ стопаем (STMOB-254, upstream-модель)")
         // STMOB-103: idle на background (жёлтый dot + "был X назад" на web)
         ownPresenceManager?.setBackground()
         // STMOB-123 build 159: pause shared presence polling в background.
@@ -1308,6 +1310,25 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         DiagLog.flush()
     }
     
+    /// STMOB-254: реальный уход в фон. Синк продолжает жить на background task
+    /// (~25-30с) и стопается ТОЛЬКО при его истечении — upstream-модель.
+    @objc
+    private func applicationDidEnterBackground() {
+        MXLog.info("Application did enter background")
+        let activeCallRoomID = elementCallService.ongoingCallRoomIDPublisher.value
+        let hasIncomingCall = (elementCallService as? ElementCallService)?.hasIncomingCall ?? false
+        DiagLog.write("AppLifecycle", "didEnterBackground: activeCall=\(activeCallRoomID ?? "nil") incoming=\(hasIncomingCall)")
+        // При звонке CallKit держит процесс живым — ни стоп, ни bg task не нужны,
+        // а синк обязан жить (widget-события/ключи).
+        if activeCallRoomID == nil, !hasIncomingCall {
+            scheduleDelayedSyncStop()
+        } else {
+            DiagLog.write("AppLifecycle", "  skip delayed sync stop — call in flight")
+        }
+        scheduleBackgroundAppRefresh()
+        DiagLog.flush()
+    }
+
     private func scheduleDelayedSyncStop() {
         guard backgroundTask == nil else {
             return
@@ -1315,43 +1336,23 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
 
         backgroundTask = appMediator.beginBackgroundTask {
             MXLog.info("Background task is about to expire.")
+            DiagLog.write("AppLifecycle", "bg task expiring → delayed stopSync")
 
             // We're intentionally strongly retaining self here to an EXC_BAD_ACCESS
             // `backgroundTask` will be eventually released in `endActiveBackgroundTask`
             // https://sentry.tools.element.io/organizations/element/issues/4477794/events/9cfd04e4d045440f87498809cf718de5/
             self.stopSync(isBackgroundTask: true) {
+                DiagLog.write("AppLifecycle", "delayed stopSync DONE")
                 self.endActiveBackgroundTask()
             }
         }
     }
 
     /// STMOB-133 build 173: вызывает stopSync СРАЗУ при resign active вместо
-    /// ожидания background task expiration. Освобождает sqlite lock до того
-    /// как iOS suspend'ит process → предотвращает 0xDEAD10CC RUNNINGBOARD kill.
-    private func immediateStopSyncOnBackground() {
-        guard backgroundTask == nil else { return }
-
-        let startTime = Date()
-        DiagLog.write("AppLifecycle", "immediateStopSync START")
-
-        backgroundTask = appMediator.beginBackgroundTask {
-            MXLog.warning("STMOB-133: immediate stopSync did not finish in background time")
-            DiagLog.write("AppLifecycle", "immediateStopSync TIMEOUT — forcing endBackgroundTask")
-            self.endActiveBackgroundTask()
-        }
-
-        // Запускаем stopSync СРАЗУ с completion callback который end'ит
-        // background task как только SDK освободит ресурсы.
-        stopSync(isBackgroundTask: true) {
-            let elapsed = Date().timeIntervalSince(startTime)
-            DiagLog.write("AppLifecycle", "immediateStopSync DONE in \(String(format: "%.2f", elapsed))s")
-            self.endActiveBackgroundTask()
-        }
-    }
-    
     @objc
     private func applicationDidBecomeActive() {
         MXLog.info("Application did become active")
+        DiagLog.write("AppLifecycle", "didBecomeActive: bgTask=\(backgroundTask != nil)")
         endActiveBackgroundTask()
         startSync()
         // STMOB-103: возобновить online ping при возврате из background
