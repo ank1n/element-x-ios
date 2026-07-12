@@ -262,7 +262,16 @@ class NotificationHandler {
         // Called just before the extension will be terminated by the system.
         // Use this as an opportunity to deliver your "best attempt" at modified content
         MXLog.info("\(tag) Extension time will expire")
-        deliverNotification()
+        NSEDiagLog.write("  → NSE time expired")
+        // Наш payload = eventIdOnly: если контент к этому моменту не собран,
+        // сырой contentHandler даст ПУСТОЙ баннер (dp лог 124, 12:00) — отдаём
+        // «Новое сообщение», как и на fetch-таймауте.
+        if notificationContent.title.isEmpty, notificationContent.body.isEmpty {
+            NSEDiagLog.write("  → content empty at expiration, SHOW GENERIC")
+            showGenericMessageNotification()
+        } else {
+            deliverNotification()
+        }
     }
     
     // MARK: - Private
