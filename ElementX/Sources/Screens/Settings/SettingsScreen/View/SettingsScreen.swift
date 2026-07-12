@@ -638,21 +638,18 @@ struct SettingsScreen: View {
             // STMOB-111: NSE diag log — только если включены developer options
             // (toggle 7 тапами по версии в самом низу Settings).
             if context.viewState.showDeveloperOptions, let nseLogURL = nseDiagLogURL() {
-                ListRow(kind: .custom {
-                    ShareLink(item: nseLogURL) {
-                        HStack(spacing: 16) {
-                            CompoundIcon(\.shareIos)
-                                .foregroundStyle(.compound.iconPrimary)
-                            Text("Share NSE diagnostic log")
-                                .foregroundStyle(.compound.textPrimary)
-                            Spacer()
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                        .contentShape(Rectangle())
+                // STALK-586: та же строка в едином sTalk-стиле (была последним
+                // compound-монохромом в настройках)
+                ShareLink(item: nseLogURL) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "square.and.arrow.up")
+                            .foregroundColor(.blue)
+                            .frame(width: 24)
+                        Text(NSLocalizedString("stalk_share_nse_log", tableName: "Localizable", value: "Поделиться логом диагностики", comment: "Share NSE diagnostic log"))
+                            .foregroundColor(.primary)
+                        Spacer()
                     }
-                    .buttonStyle(.plain)
-                })
+                }
             }
             
             // sTalk: hidden Analytics (не показываем тогглы аналитики пользователю —
