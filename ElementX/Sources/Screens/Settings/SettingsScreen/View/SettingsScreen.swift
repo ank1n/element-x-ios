@@ -139,6 +139,31 @@ struct SettingsScreen: View {
         }
     }
 
+    /// STALK-586: единый sTalk-стиль строки настроек (цветная SF-иконка, текст,
+    /// шеврон) — вместо смеси Compound ListRow (серые монохромные) и наших секций.
+    private func stalkSettingsRow(title: String,
+                                  systemImage: String,
+                                  color: Color,
+                                  isDestructive: Bool = false,
+                                  showsChevron: Bool = true,
+                                  action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: systemImage)
+                    .foregroundColor(isDestructive ? .red : color)
+                    .frame(width: 24)
+                Text(title)
+                    .foregroundColor(isDestructive ? .red : .primary)
+                Spacer()
+                if showsChevron {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(Color(UIColor.tertiaryLabel))
+                }
+            }
+        }
+    }
+
     private var userSection: some View {
         Section {
             if isCosmos {
@@ -265,19 +290,19 @@ struct SettingsScreen: View {
     
     private var manageMyAppSection: some View {
         Section(header: Text(SL10n.settingsAccount)) {
-            ListRow(label: .default(title: L10n.screenNotificationSettingsTitle,
-                                    icon: \.notifications),
-                    kind: .navigationLink {
-                        context.send(viewAction: .notifications)
-                    })
-                    .accessibilityIdentifier(A11yIdentifiers.settingsScreen.notifications)
+            stalkSettingsRow(title: L10n.screenNotificationSettingsTitle,
+                             systemImage: "bell.badge.fill",
+                             color: .red) {
+                context.send(viewAction: .notifications)
+            }
+            .accessibilityIdentifier(A11yIdentifiers.settingsScreen.notifications)
             
-            ListRow(label: .default(title: L10n.commonScreenLock,
-                                    icon: \.lock),
-                    kind: .navigationLink {
-                        context.send(viewAction: .appLock)
-                    })
-                    .accessibilityIdentifier(A11yIdentifiers.settingsScreen.screenLock)
+            stalkSettingsRow(title: L10n.commonScreenLock,
+                             systemImage: "lock.fill",
+                             color: .teal) {
+                context.send(viewAction: .appLock)
+            }
+            .accessibilityIdentifier(A11yIdentifiers.settingsScreen.screenLock)
             
             // sTalk: hide encryption settings entry — StalkAutoE2EE manages
             // recovery+backup automatically. Exposing UI lets user reset
@@ -291,44 +316,44 @@ struct SettingsScreen: View {
     private var manageAccountSection: some View {
         Section(header: Text(SL10n.settingsPrivacy)) {
             if context.viewState.showLinkNewDeviceButton {
-                ListRow(label: .default(title: L10n.commonLinkNewDevice,
-                                        icon: \.devices),
-                        kind: .navigationLink {
-                            context.send(viewAction: .linkNewDevice)
-                        })
+                stalkSettingsRow(title: L10n.commonLinkNewDevice,
+                                 systemImage: "qrcode",
+                                 color: .green) {
+                    context.send(viewAction: .linkNewDevice)
+                }
             }
             
             if let url = context.viewState.accountProfileURL {
-                ListRow(label: .default(title: L10n.actionManageAccount,
-                                        icon: \.userProfile),
-                        kind: .button {
-                            context.send(viewAction: .manageAccount(url: url))
-                        })
-                        .accessibilityIdentifier(A11yIdentifiers.settingsScreen.account)
+                stalkSettingsRow(title: L10n.actionManageAccount,
+                                 systemImage: "person.crop.circle.fill",
+                                 color: accentBlue) {
+                    context.send(viewAction: .manageAccount(url: url))
+                }
+                .accessibilityIdentifier(A11yIdentifiers.settingsScreen.account)
             }
             
             if let url = context.viewState.accountSessionsListURL {
-                ListRow(label: .default(title: L10n.actionManageDevices,
-                                        icon: \.devices),
-                        kind: .button {
-                            context.send(viewAction: .manageAccount(url: url))
-                        })
+                stalkSettingsRow(title: L10n.actionManageDevices,
+                                 systemImage: "laptopcomputer.and.iphone",
+                                 color: .indigo) {
+                    context.send(viewAction: .manageAccount(url: url))
+                }
             }
 
             // sTalk: STMOB-87 — нативный экран активных сессий (parity с web)
-            ListRow(label: .default(title: NSLocalizedString("stalk_sessions_title", tableName: "Localizable", value: "Активные сессии", comment: "Active sessions screen title"),
-                                    icon: \.devices),
-                    kind: .navigationLink {
-                        context.send(viewAction: .activeSessions)
-                    })
+            stalkSettingsRow(title: NSLocalizedString("stalk_sessions_title", tableName: "Localizable", value: "Активные сессии", comment: "Active sessions screen title"),
+                             systemImage: "shield.lefthalf.filled",
+                             color: .mint) {
+                context.send(viewAction: .activeSessions)
+            }
 
             if context.viewState.showBlockedUsers {
-                ListRow(label: .default(title: L10n.commonBlockedUsers,
-                                        icon: \.block),
-                        kind: .navigationLink {
-                            context.send(viewAction: .blockedUsers)
-                        })
-                        .accessibilityIdentifier(A11yIdentifiers.settingsScreen.blockedUsers)
+                stalkSettingsRow(title: L10n.commonBlockedUsers,
+                                 systemImage: "hand.raised.fill",
+                                 color: .orange) {
+                    context.send(viewAction: .blockedUsers)
+                }
+                .accessibilityIdentifier(A11yIdentifiers.settingsScreen.blockedUsers)
             }
         }
     }
@@ -589,12 +614,12 @@ struct SettingsScreen: View {
 
     private var generalSection: some View {
         Section(header: Text(SL10n.settingsSupport)) {
-            ListRow(label: .default(title: L10n.commonAdvancedSettings,
-                                    icon: \.settings),
-                    kind: .navigationLink {
-                        context.send(viewAction: .advancedSettings)
-                    })
-                    .accessibilityIdentifier(A11yIdentifiers.settingsScreen.advancedSettings)
+            stalkSettingsRow(title: L10n.commonAdvancedSettings,
+                             systemImage: "gearshape.2.fill",
+                             color: .gray) {
+                context.send(viewAction: .advancedSettings)
+            }
+            .accessibilityIdentifier(A11yIdentifiers.settingsScreen.advancedSettings)
             
             // sTalk: hidden Labs (опасные эксперимент-флаги для пользователей).
             // sTalk: hidden About (STMOB-94) — Legal Information ссылки сейчас все ведут на
@@ -602,12 +627,12 @@ struct SettingsScreen: View {
             // реальные Privacy Policy / Terms / Copyright.
 
             if context.viewState.isBugReportServiceEnabled {
-                ListRow(label: .default(title: L10n.commonReportAProblem,
-                                        icon: \.chatProblem),
-                        kind: .navigationLink {
-                            context.send(viewAction: .reportBug)
-                        })
-                        .accessibilityIdentifier(A11yIdentifiers.settingsScreen.reportBug)
+                stalkSettingsRow(title: L10n.commonReportAProblem,
+                                 systemImage: "exclamationmark.bubble.fill",
+                                 color: .orange) {
+                    context.send(viewAction: .reportBug)
+                }
+                .accessibilityIdentifier(A11yIdentifiers.settingsScreen.reportBug)
             }
 
             // STMOB-111: NSE diag log — только если включены developer options
@@ -637,31 +662,32 @@ struct SettingsScreen: View {
     
     private var storageSection: some View {
         Section(header: Text(SL10n.settingsStorage)) {
-            ListRow(label: .default(title: SL10n.settingsCacheAndData,
-                                    icon: \.host),
-                    kind: .navigationLink {
-                        context.send(viewAction: .cacheAndStorage)
-                    })
+            stalkSettingsRow(title: SL10n.settingsCacheAndData,
+                             systemImage: "internaldrive.fill",
+                             color: .blue) {
+                context.send(viewAction: .cacheAndStorage)
+            }
         }
     }
 
     private var signOutSection: some View {
         Section {
-            ListRow(label: .action(title: L10n.screenSignoutPreferenceItem,
-                                   icon: \.signOut,
-                                   role: .destructive),
-                    kind: .button {
-                        context.send(viewAction: .logout)
-                    })
-                    .accessibilityIdentifier(A11yIdentifiers.settingsScreen.logout)
+            stalkSettingsRow(title: L10n.screenSignoutPreferenceItem,
+                             systemImage: "rectangle.portrait.and.arrow.right",
+                             color: .red,
+                             isDestructive: true,
+                             showsChevron: false) {
+                context.send(viewAction: .logout)
+            }
+            .accessibilityIdentifier(A11yIdentifiers.settingsScreen.logout)
             
             if context.viewState.showAccountDeactivation {
-                ListRow(label: .action(title: L10n.actionDeactivateAccount,
-                                       icon: \.warning,
-                                       role: .destructive),
-                        kind: .navigationLink {
-                            context.send(viewAction: .deactivateAccount)
-                        })
+                stalkSettingsRow(title: L10n.actionDeactivateAccount,
+                                 systemImage: "person.crop.circle.badge.xmark",
+                                 color: .red,
+                                 isDestructive: true) {
+                    context.send(viewAction: .deactivateAccount)
+                }
             }
         } footer: {
             if !context.viewState.showDeveloperOptions {
@@ -672,12 +698,12 @@ struct SettingsScreen: View {
     
     private var developerOptionsSection: some View {
         Section {
-            ListRow(label: .default(title: L10n.commonDeveloperOptions,
-                                    icon: \.code),
-                    kind: .navigationLink {
-                        context.send(viewAction: .developerOptions)
-                    })
-                    .accessibilityIdentifier(A11yIdentifiers.settingsScreen.developerOptions)
+            stalkSettingsRow(title: L10n.commonDeveloperOptions,
+                             systemImage: "hammer.fill",
+                             color: .gray) {
+                context.send(viewAction: .developerOptions)
+            }
+            .accessibilityIdentifier(A11yIdentifiers.settingsScreen.developerOptions)
         } footer: {
             versionSection
         }
