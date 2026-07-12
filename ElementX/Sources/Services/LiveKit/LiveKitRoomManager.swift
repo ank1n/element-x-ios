@@ -1113,7 +1113,9 @@ final class StalkBackgroundBlurProcessor: NSObject, LiveKit.VideoProcessor {
     private let relativeSize: CGFloat = 1080 // параметры калиброваны под HD, экстраполируются
 
     private var frameCount = 0
-    private let segmentationFrameInterval = 4 // сегментация каждый 4-й кадр (перф/нагрев)
+    /// Каждый 2-й кадр: у Apple маска трекается на каждом кадре — наше «вырезание
+    /// отстаёт от изображения» (dp) было интервалом 3-4. Латентность ~83мс.
+    private let segmentationFrameInterval = 2
 
     private let segmentationRequest = VNGeneratePersonSegmentationRequest()
     private let segmentationRequestHandler = VNSequenceRequestHandler()
@@ -1146,10 +1148,11 @@ final class StalkBackgroundBlurProcessor: NSObject, LiveKit.VideoProcessor {
             ciContext = CIContext(options: [.useSoftwareRenderer: true])
         }
         super.init()
-        // .accurate: маска 1024×768 вместо 512×384 у .balanced — на растяжке до 720p
-        // .balanced давала грубый «ореол» по контуру головы (жалоба dp на качество).
-        // Считается каждый 3-й кадр асинхронно — A-серия чипов тянет.
-        segmentationRequest.qualityLevel = .accurate
+        // .balanced (512×384): в 4 раза дешевле .accurate за прогон → можно считать
+        // каждый 2-й кадр (свежая маска важнее пиксельной точности — отставание
+        // выреза от движения заметнее ореола, dp 12.07). Край сглаживает
+        // maskFeatherFilter; суммарная Vision-нагрузка НИЖЕ, чем accurate/3.
+        segmentationRequest.qualityLevel = .balanced
         DiagLog.write("Call", "background processor created (\(background.descriptionForLog), orientation-aware, accurate)")
     }
 
@@ -1278,7 +1281,7 @@ final class StalkBackgroundBlurProcessor: NSObject, LiveKit.VideoProcessor {
             // Растушёвка края маски: убирает жёсткий «вырезанный» контур после апскейла
             let scaledMask = maskImage.transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
             maskFeatherFilter.inputImage = scaledMask.clampedToExtent()
-            maskFeatherFilter.radius = 2.5
+            maskFeatherFilter.radius = 3
             let feathered = maskFeatherFilter.outputImage?
                 .cropped(to: CGRect(origin: .zero, size: inputDimensions))
             cachedMaskImage = feathered ?? scaledMask
