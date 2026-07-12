@@ -260,7 +260,9 @@ final class LiveKitRoomManager: ObservableObject {
     private static let wallpaperIndexSettingKey = "stalk_call_wallpaper_index"
 
     /// Камера 720p — единые опции для room defaults и ручного publish с pre-attached блюром.
-    private static let cameraCaptureOptions = CameraCaptureOptions(dimensions: .h720_169)
+    /// fps=24: дефолт капчера 30, а публикуем максимум 24 — лишние 20% кадров
+    /// впустую грели GPU/Vision в фон-процессоре (жалоба dp на нагрев 12.07)
+    private static let cameraCaptureOptions = CameraCaptureOptions(dimensions: .h720_169, fps: 24)
 
     /// Прочитаны ли настройки звонка для ТЕКУЩЕГО звонка. makeRoomOptions зовётся
     /// и из attemptAutoReconnect — без гарда повторное чтение UserDefaults затирало бы
@@ -1111,7 +1113,7 @@ final class StalkBackgroundBlurProcessor: NSObject, LiveKit.VideoProcessor {
     private let relativeSize: CGFloat = 1080 // параметры калиброваны под HD, экстраполируются
 
     private var frameCount = 0
-    private let segmentationFrameInterval = 3 // сегментация каждый 3-й кадр (перф)
+    private let segmentationFrameInterval = 4 // сегментация каждый 4-й кадр (перф/нагрев)
 
     private let segmentationRequest = VNGeneratePersonSegmentationRequest()
     private let segmentationRequestHandler = VNSequenceRequestHandler()
@@ -1252,10 +1254,11 @@ final class StalkBackgroundBlurProcessor: NSObject, LiveKit.VideoProcessor {
             guard let maskPixelBuffer = segmentationRequest.results?.first?.pixelBuffer else { return }
 
             var maskImage = CIImage(cvPixelBuffer: maskPixelBuffer)
-            // Vision с orientation может вернуть маску в повёрнутом пространстве —
-            // если аспект транспонирован относительно входа, доворачиваем обратно.
-            let transposed = (maskImage.extent.width > maskImage.extent.height) != (inputDimensions.width > inputDimensions.height)
-            if transposed {
+            // Vision с orientation возвращает маску в ПОВЁРНУТОМ (oriented) пространстве —
+            // ВСЕГДА доворачиваем обратно в буферное. Прежняя эвристика по смене пропорций
+            // ловила только 90°/270°; 180° в landscape проходил мимо → «вырезание
+            // вверх ногами» (dp, 12.07).
+            if orientation != .up {
                 maskImage = maskImage.oriented(Self.inverse(of: orientation))
             }
             let scaleX = inputDimensions.width / maskImage.extent.width
@@ -1270,7 +1273,7 @@ final class StalkBackgroundBlurProcessor: NSObject, LiveKit.VideoProcessor {
                 return false
             }
             if shouldLogFirst {
-                DiagLog.write("Call", "blur: FIRST person mask (mask=\(Int(maskImage.extent.width))x\(Int(maskImage.extent.height)) input=\(Int(inputDimensions.width))x\(Int(inputDimensions.height)) rot=\(rotation) transposed=\(transposed))")
+                DiagLog.write("Call", "blur: FIRST person mask (mask=\(Int(maskImage.extent.width))x\(Int(maskImage.extent.height)) input=\(Int(inputDimensions.width))x\(Int(inputDimensions.height)) rot=\(rotation) orient=\(orientation.rawValue))")
             }
             // Растушёвка края маски: убирает жёсткий «вырезанный» контур после апскейла
             let scaledMask = maskImage.transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))

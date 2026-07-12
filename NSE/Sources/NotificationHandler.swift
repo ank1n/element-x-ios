@@ -184,7 +184,15 @@ class NotificationHandler {
 
         guard let notificationItemProxy = item else {
             MXLog.error("\(tag) Failed retrieving notification item (or timeout)")
-            NSEDiagLog.write("  → failed/timeout retrieving notification item (>27s), SHOW GENERIC")
+            // В звонке/грации (2 мин после) нескачавшееся событие = E2EE-хвост
+            // звонка/записи — тихо гасим, НЕ показываем generic (dp лог 126:
+            // «Новое сообщение» через 2.5с после hangup со включённой записью).
+            if isCallActiveForRoom(roomID) {
+                NSEDiagLog.write("  → fetch failed + call-active marker, DISCARD (call tail)")
+                discardNotification()
+                return
+            }
+            NSEDiagLog.write("  → failed/timeout retrieving notification item, SHOW GENERIC")
             // Не пустышка: событие существует, но не скачалось в бюджет NSE.
             // Показываем «Новое сообщение» — тап откроет приложение с реальным
             // содержимым. Пустой «sTalk/Уведомление» юзеры читают как баг.

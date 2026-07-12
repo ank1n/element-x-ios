@@ -394,13 +394,23 @@ private struct CallRoutePickerView: UIViewRepresentable {
     let viewModelContext: CallScreenViewModel.Context
 
     func makeUIView(context: Context) -> AVRoutePickerView {
-        let picker = AVRoutePickerView(frame: .zero)
-        picker.isHidden = true
+        // НЕ isHidden: на hidden-вью internal-кнопка может игнорировать sendActions
+        // (dp 12.07: «кнопка динамик не нажималась»). Прячем прозрачностью.
+        let picker = AVRoutePickerView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
+        picker.alpha = 0.02
         picker.isUserInteractionEnabled = false
 
         DispatchQueue.main.async { // Avoid `Publishing changes from within view update` warnings
             viewModelContext.showSpeakerPickerHandler = { [weak picker] in
-                guard let button = picker?.subviews.first(where: { $0 is UIButton }) as? UIButton else { return }
+                guard let picker else {
+                    DiagLog.write("CallUI", "speaker picker tap: picker=nil (deallocated)")
+                    return
+                }
+                guard let button = picker.subviews.first(where: { $0 is UIButton }) as? UIButton else {
+                    DiagLog.write("CallUI", "speaker picker tap: internal UIButton NOT FOUND (subviews=\(picker.subviews.map { String(describing: type(of: $0)) }))")
+                    return
+                }
+                DiagLog.write("CallUI", "speaker picker tap: sendActions")
                 button.sendActions(for: .touchUpInside)
             }
         }
