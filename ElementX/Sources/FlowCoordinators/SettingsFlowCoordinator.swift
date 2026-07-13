@@ -332,9 +332,19 @@ class SettingsFlowCoordinator: FlowCoordinatorProtocol {
     // MARK: OIDC Account Management
     
     private var accountSettingsPresenter: OIDCAccountSettingsPresenter?
+    private var stalkAccountPresenter: StalkAccountWebViewPresenter?
     private func presentAccountManagementURL(_ url: URL, continuation: OIDCAccountSettingsPresenter.Continuation? = nil) {
-        // Note to anyone in the future if you come back here to make this open in Safari instead of a WAS.
-        // As of iOS 16, there is an issue on the simulator with accessing the cookie but it works on a device. 🤷‍♂️
+        // STALK-585: просмотр аккаунт-страниц (без OIDC-callback) — через WKWebView
+        // с инжектом SSO-кук headless-логина, иначе MAS просит логин заново.
+        // Флоу с continuation (link device / reset) ждут OIDC-редирект — им
+        // остаётся ASWebAuthenticationSession.
+        guard let continuation else {
+            let presenter = StalkAccountWebViewPresenter(accountURL: url,
+                                                         presentationAnchor: flowParameters.windowManager.mainWindow)
+            stalkAccountPresenter = presenter
+            presenter.start()
+            return
+        }
         accountSettingsPresenter = OIDCAccountSettingsPresenter(accountURL: url,
                                                                 presentationAnchor: flowParameters.windowManager.mainWindow,
                                                                 appSettings: flowParameters.appSettings,

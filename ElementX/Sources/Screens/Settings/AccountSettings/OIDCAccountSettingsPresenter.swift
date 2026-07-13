@@ -7,6 +7,60 @@
 //
 
 import AuthenticationServices
+import WebKit
+
+// MARK: - sTalk: аккаунт-страницы с инжектом SSO-кук (STALK-585)
+
+/// STALK-585: «Управление аккаунтом/устройствами» просило логин заново.
+/// Наш вход headless (HeadlessOIDCAuthenticator) — SSO-куки Keycloak/MAS живут
+/// в `HTTPCookieStorage.shared` и НЕ видны ни ASWebAuthenticationSession
+/// (Safari-куки), ни свежему WKWebView. Этот презентер открывает страницу в
+/// WKWebView, предварительно скопировав туда куки из shared-хранилища —
+/// пользователь попадает на страницу уже залогиненным. Если SSO-сессия
+/// протухла — MAS честно покажет форму входа (прежнее поведение).
+@MainActor
+final class StalkAccountWebViewPresenter: NSObject {
+    private let accountURL: URL
+    private let presentationAnchor: UIWindow
+
+    init(accountURL: URL, presentationAnchor: UIWindow) {
+        self.accountURL = accountURL
+        self.presentationAnchor = presentationAnchor
+        super.init()
+    }
+
+    func start() {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        let viewController = UIViewController()
+        viewController.view = webView
+        viewController.navigationItem.title = accountURL.host
+        let navigationController = UINavigationController(rootViewController: viewController)
+        viewController.navigationItem.rightBarButtonItem = UIBarButtonItem(systemItem: .done,
+                                                                           primaryAction: UIAction { [weak navigationController] _ in
+                                                                               navigationController?.dismiss(animated: true)
+                                                                           })
+
+        let cookies = HTTPCookieStorage.shared.cookies ?? []
+        DiagLog.write("Settings", "account webview: injecting \(cookies.count) cookies for \(accountURL.host ?? "?")")
+
+        Task {
+            let store = configuration.websiteDataStore.httpCookieStore
+            for cookie in cookies {
+                await store.setCookie(cookie)
+            }
+            webView.load(URLRequest(url: accountURL))
+        }
+
+        var presenter = presentationAnchor.rootViewController
+        while let presented = presenter?.presentedViewController {
+            presenter = presented
+        }
+        presenter?.present(navigationController, animated: true)
+    }
+}
 
 /// Presents a web authentication session that will display the user's account settings page.
 ///
