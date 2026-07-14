@@ -456,21 +456,57 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
 
         // Safety net: вызывается координатором при удалении.
         Task {
-            // Очистить MatrixRTC state event через REST API
-            if case .roomCall(let roomProxy, let clientProxy, _, _, _, _) = configuration.kind {
-                await sendLeaveCallStateEventViaREST(roomProxy: roomProxy, clientProxy: clientProxy)
-            }
-            await sendDirectlyToWidgetDriver(.hangup)
-            await sendDirectlyToWidgetDriver(.close)
-
-            if liveKitRoomManager.connectionState != .disconnected {
-                await liveKitRoomManager.disconnect()
-            }
+            await performStopCleanup()
         }
 
         // Teardown immediately (как upstream — вне Task)
         elementCallService.tearDownCallSession()
         UIDevice.current.isProximityMonitoringEnabled = false
+    }
+
+    /// Подмена звонка вторым: тот же останов, но с ОЖИДАНИЕМ полного disconnect
+    /// (bounded 8s) — иначе старый LiveKit-менеджер живёт параллельно с новым:
+    /// зомби-аудио, драка за аудио-сессию, SFU кикает дубль identity (лог dp 128).
+    func stopAndWaitCleanup() async {
+        stopSyncParts()
+        elementCallService.tearDownCallSession()
+        UIDevice.current.isProximityMonitoringEnabled = false
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await self.performStopCleanup() }
+            group.addTask { try? await Task.sleep(for: .seconds(8)) }
+            await group.next()
+            group.cancelAll()
+        }
+        DiagLog.write("Call", "stopAndWaitCleanup DONE (LiveKit=\(liveKitRoomManager.connectionState))")
+    }
+
+    /// Синхронные части stop() (таймеры/стейт) — общие для stop и stopAndWaitCleanup.
+    private func stopSyncParts() {
+        callTimerTask = nil
+        recordingPollingTask?.cancel()
+        recordingPollingTask = nil
+        state.layoutOverride = nil
+        state.pinnedParticipantSID = nil
+        UIApplication.shared.isIdleTimerDisabled = false
+    }
+
+    private func performStopCleanup() async {
+        // Очистить MatrixRTC state event через REST API
+        if case .roomCall(let roomProxy, let clientProxy, _, _, _, _) = configuration.kind {
+            await sendLeaveCallStateEventViaREST(roomProxy: roomProxy, clientProxy: clientProxy)
+        }
+        await sendDirectlyToWidgetDriver(.hangup)
+        await sendDirectlyToWidgetDriver(.close)
+
+        // NativeCallSession.stop() сам отключает LiveKit-менеджер + гасит
+        // таймеры (rebroadcast) и наблюдателей; без сессии — прямой disconnect
+        let sessionToStop = nativeCallSession
+        nativeCallSession = nil
+        if let sessionToStop {
+            await sessionToStop.stop()
+        } else if liveKitRoomManager.connectionState != .disconnected {
+            await liveKitRoomManager.disconnect()
+        }
     }
     
     // MARK: - Private

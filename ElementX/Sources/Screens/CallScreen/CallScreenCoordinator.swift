@@ -116,6 +116,13 @@ final class CallScreenCoordinator: CoordinatorProtocol {
         orientationManager.setOrientation(.portrait)
         orientationManager.lockOrientation(.portrait)
     }
+
+    /// Подмена звонка вторым: останов с ожиданием полного disconnect LiveKit.
+    func stopAndWait() async {
+        await viewModel.stopAndWaitCleanup()
+        orientationManager.setOrientation(.portrait)
+        orientationManager.lockOrientation(.portrait)
+    }
         
     func toPresentable() -> AnyView {
         AnyView(CallScreen(context: viewModel.context))

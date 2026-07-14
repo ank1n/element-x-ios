@@ -592,6 +592,10 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
     }
     
     private var callScreenPictureInPictureController: AVPictureInPictureController?
+    /// Подписки ТЕКУЩЕГО call-экрана. Отдельно от общих cancellables: sink
+    /// захватывает координатор сильно — в общем наборе прошлые звонки
+    /// утекали навсегда (лог dp 128: зомби-аудио старого звонка).
+    private var callScreenCancellables = Set<AnyCancellable>()
     private var minimizedCallTimer: Timer?
 
     private func startMinimizedCallTimer(coordinator: CallScreenCoordinator) {
@@ -613,6 +617,26 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         guard flowParameters.ongoingCallRoomIDPublisher.value != configuration.callRoomID else {
             MXLog.info("Returning to existing call.")
             callScreenPictureInPictureController?.stopPictureInPicture()
+            return
+        }
+
+        // STMOB (лог dp 128): второй звонок при живом первом. Старый координатор
+        // надо ЖЁСТКО остановить и ДОЖДАТЬСЯ полного disconnect LiveKit (bounded 8s),
+        // иначе два менеджера живут параллельно: зомби-аудио старого звонка,
+        // драка за аудио-сессию, SFU кикает дубль identity → флаппинг обоих.
+        if let existingCall = navigationTabCoordinator.overlayCoordinator as? CallScreenCoordinator {
+            DiagLog.write("Call", "presentCallScreen: REPLACING live call — stop old, await disconnect")
+            callScreenPictureInPictureController = nil
+            navigationTabCoordinator.minimizedCallDisplayName = nil
+            navigationTabCoordinator.restoreCallHandler = nil
+            stopMinimizedCallTimer()
+            navigationTabCoordinator.setOverlayCoordinator(nil)
+            Task { [weak self] in
+                await existingCall.stopAndWait()
+                guard let self else { return }
+                DiagLog.write("Call", "presentCallScreen: old call stopped — presenting new")
+                self.presentCallScreen(configuration: configuration, startWithVideoEnabled: startWithVideoEnabled)
+            }
             return
         }
         
@@ -651,6 +675,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
             }
         }
 
+        callScreenCancellables.removeAll()
         let callScreenCoordinator = CallScreenCoordinator(parameters: .init(elementCallService: flowParameters.elementCallService,
                                                                             configuration: configuration,
                                                                             allowPictureInPicture: true,
@@ -704,10 +729,11 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                     self.navigationTabCoordinator.restoreCallHandler = nil
                     self.stopMinimizedCallTimer()
                     navigationTabCoordinator.setOverlayCoordinator(nil)
+                    self.callScreenCancellables.removeAll()
                 }
             }
-            .store(in: &cancellables)
-        
+            .store(in: &callScreenCancellables)
+
         navigationTabCoordinator.setOverlayCoordinator(callScreenCoordinator, animated: true)
         
         flowParameters.analytics.track(screen: .RoomCall)

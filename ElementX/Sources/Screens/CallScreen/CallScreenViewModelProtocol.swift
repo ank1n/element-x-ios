@@ -14,4 +14,7 @@ protocol CallScreenViewModelProtocol {
     var context: CallScreenViewModelType.Context { get }
     
     func stop()
+    /// Останов с ОЖИДАНИЕМ полного disconnect LiveKit (bounded) — для подмены
+    /// звонка вторым: без ожидания два менеджера живут параллельно (зомби-аудио).
+    func stopAndWaitCleanup() async
 }
