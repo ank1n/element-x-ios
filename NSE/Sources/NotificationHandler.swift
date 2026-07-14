@@ -121,6 +121,7 @@ class NotificationHandler {
     }
     
     func processEvent(_ eventID: String, roomID: String) async {
+        currentRoomID = roomID
         MXLog.info("\(tag) Processing event: \(eventID) in room: \(roomID)")
         NSEDiagLog.write("processEvent eventID=\(eventID) roomID=\(roomID) tag=\(tag)")
 
@@ -294,12 +295,21 @@ class NotificationHandler {
         contentHandler(Self.makePassiveContent())
     }
 
+    /// roomID текущего события — для generic-уведомления на expiration-пути.
+    private var currentRoomID: String?
+
     /// Fetch-таймаут: событие есть, но не скачалось в бюджет NSE. Показываем
-    /// осмысленное «Новое сообщение» (тап откроет приложение) вместо пустой
-    /// passive-заглушки, которую юзеры читают как баг.
+    /// осмысленное уведомление (имя комнаты из ЛОКАЛЬНОГО стора + «Новое
+    /// сообщение») вместо пустой заглушки. Синапс после простоя отвечает NSE
+    /// >27с (лог dp 129) — с именем комнаты такой пуш хотя бы информативен.
     private func showGenericMessageNotification() {
         let content = UNMutableNotificationContent()
         let isRussian = Locale.preferredLanguages.first?.hasPrefix("ru") ?? false
+        if let roomID = currentRoomID,
+           let roomName = userSession.roomForIdentifier(roomID)?.displayName(),
+           !roomName.isEmpty {
+            content.title = roomName
+        }
         content.body = isRussian ? "Новое сообщение" : "New message"
         content.sound = .default
         contentHandler(content)
