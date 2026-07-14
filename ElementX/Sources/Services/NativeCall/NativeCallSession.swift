@@ -123,6 +123,12 @@ final class NativeCallSession: ObservableObject {
 
     // MARK: - Init
 
+    /// Включать ли камеру сразу после connect. false для АУДИО-звонков:
+    /// раньше камера включалась безусловно и гасла постфактум в VM — вспышка
+    /// индикатора камеры + первые кадры в эфир (тот же баг Molly чинила на web:
+    /// enable_video=true по умолчанию у виджета). Вопрос Molly 15.07.
+    private let enableCameraOnConnect: Bool
+
     init(widgetDriver: ElementCallWidgetDriverProtocol,
          liveKitRoomManager: LiveKitRoomManager,
          isEncrypted: Bool,
@@ -132,7 +138,9 @@ final class NativeCallSession: ObservableObject {
          matrixRoomId: String,
          homeserverURL: String,
          accessToken: String,
-         roomProxy: JoinedRoomProxyProtocol? = nil) {
+         roomProxy: JoinedRoomProxyProtocol? = nil,
+         enableCameraOnConnect: Bool = true) {
+        self.enableCameraOnConnect = enableCameraOnConnect
         self.widgetDriver = widgetDriver
         self.liveKitRoomManager = liveKitRoomManager
         self.isEncrypted = isEncrypted
@@ -1754,8 +1762,11 @@ final class NativeCallSession: ObservableObject {
 
             // Publish media
             try? await liveKitRoomManager.setMicrophone(enabled: true)
-            try? await liveKitRoomManager.setCamera(enabled: true)
-            MXLog.info("sTalk NativeCall: Camera + microphone enabled")
+            if enableCameraOnConnect {
+                try? await liveKitRoomManager.setCamera(enabled: true)
+            }
+            MXLog.info("sTalk NativeCall: mic enabled, camera=\(enableCameraOnConnect)")
+            DiagLog.write("Call", "publish media: mic=on camera=\(enableCameraOnConnect ? "on" : "OFF (audio call)")")
 
             #if targetEnvironment(simulator)
             // DEBUG: через 20s после connect триггерим fake network switch

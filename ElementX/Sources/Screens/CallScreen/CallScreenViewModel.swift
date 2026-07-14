@@ -565,7 +565,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                                                     matrixRoomId: roomProxy.id,
                                                     homeserverURL: clientProxy.homeserver,
                                                     accessToken: token,
-                                                    roomProxy: roomProxy)
+                                                    roomProxy: roomProxy,
+                                                    enableCameraOnConnect: startWithVideoEnabled)
                     self.nativeCallSession = session
 
                     // Observe session state
