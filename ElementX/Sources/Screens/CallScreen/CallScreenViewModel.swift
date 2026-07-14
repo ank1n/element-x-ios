@@ -81,6 +81,11 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
 
     /// sTalk: Polling task for remote recording detection
     private var recordingPollingTask: Task<Void, Never>?
+
+    /// Гудки исходящего вызова: играют, пока МЫ инициатор (в комнате никого не
+    /// было на старте) и ни один участник ещё не подключился.
+    private let ringbackPlayer = RingbackTonePlayer()
+    private var shouldPlayRingback = false
         
     /// Designated initialiser
     /// - Parameters:
@@ -328,6 +333,10 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             .sink { [weak self] participants in
                 guard let self else { return }
                 let realUsersCount = participants.filter { $0.kind == .standard }.count
+                // Собеседник подключился — гудки исходящего вызова умолкают
+                if realUsersCount > 0 {
+                    self.stopRingback()
+                }
                 let liveKitTotal = realUsersCount + 1
                 if liveKitTotal > self.state.callParticipantsCount {
                     self.state.callParticipantsCount = liveKitTotal
@@ -444,6 +453,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     }
     
     func stop() {
+        stopRingback()
         callTimerTask = nil
         recordingPollingTask?.cancel()
         recordingPollingTask = nil
@@ -482,6 +492,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
 
     /// Синхронные части stop() (таймеры/стейт) — общие для stop и stopAndWaitCleanup.
     private func stopSyncParts() {
+        stopRingback()
         callTimerTask = nil
         recordingPollingTask?.cancel()
         recordingPollingTask = nil
@@ -568,6 +579,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                                 self.state.wasConnected = true
                                 // Блюр-интент из настроек прочитан менеджером при connect — синк в UI
                                 self.state.callBackgroundMode = self.liveKitRoomManager.callBackgroundMode
+                                self.startRingbackIfInitiator()
                                 // STMOB-80: header «Вызов...» застревал — нужен явный
                                 // переход в connected + старт таймера. Раньше зависело
                                 // только от MatrixRTC infoPublisher, который опаздывал.
@@ -779,6 +791,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         state.wasConnected = true
         // Блюр-интент из настроек прочитан менеджером при connect — синк в UI
         state.callBackgroundMode = liveKitRoomManager.callBackgroundMode
+        startRingbackIfInitiator()
 
         // Ring notification is now sent by NativeCallSession.sendCallNotification()
         // immediately after sendJoinViaREST(), with proper user_ids and m.relates_to.
@@ -822,6 +835,25 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
 
         // Observe native LiveKit connection state for call lifecycle
         observeLiveKitState()
+    }
+
+    /// Гудки: только если на старте звонка в комнате никого не было (мы звоним
+    /// первыми). Ответ на входящий / вход в идущий звонок — без гудков.
+    private func startRingbackIfInitiator() {
+        guard state.callParticipantsCount == 0, liveKitRoomManager.displayParticipants.isEmpty else { return }
+        shouldPlayRingback = true
+        ringbackPlayer.start()
+        // потолок 60с — дальше тишина (UI продолжает «Вызов…»)
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(60))
+            self?.stopRingback()
+        }
+    }
+
+    private func stopRingback() {
+        guard shouldPlayRingback else { return }
+        shouldPlayRingback = false
+        ringbackPlayer.stop()
     }
 
     private func observeLiveKitState() {
@@ -1395,5 +1427,64 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 }
             }
         }
+    }
+}
+
+// MARK: - Ringback (гудки исходящего вызова)
+
+/// Синтезатор стандартных гудков (425 Гц, 1с сигнал / 4с пауза) через AVAudioEngine.
+/// Ассета нет и не нужно: тон генерируется source-нодой, играет через уже
+/// сконфигурированную звонковую AVAudioSession (ухо/динамик по текущему роуту).
+@MainActor
+final class RingbackTonePlayer {
+    private var engine: AVAudioEngine?
+    private var phase: Double = 0
+
+    func start() {
+        guard engine == nil else { return }
+        let engine = AVAudioEngine()
+        let sampleRate = engine.outputNode.outputFormat(forBus: 0).sampleRate
+        guard sampleRate > 0 else { return }
+        var sampleIndex: Double = 0
+        let sourceNode = AVAudioSourceNode { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
+            let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
+            let period = sampleRate * 5.0 // 1с тон + 4с тишина
+            let toneLength = sampleRate * 1.0
+            for frame in 0..<Int(frameCount) {
+                let posInPeriod = sampleIndex.truncatingRemainder(dividingBy: period)
+                var value: Float = 0
+                if posInPeriod < toneLength {
+                    // плавные фронты 20мс, чтобы не щёлкало
+                    let ramp = min(posInPeriod / (sampleRate * 0.02),
+                                   (toneLength - posInPeriod) / (sampleRate * 0.02),
+                                   1.0)
+                    let phase = 2.0 * Double.pi * 425.0 * (posInPeriod / sampleRate)
+                    value = Float(sin(phase)) * Float(max(0, ramp)) * 0.25
+                }
+                sampleIndex += 1
+                for buffer in ablPointer {
+                    let buf = UnsafeMutableBufferPointer<Float>(buffer)
+                    buf[frame] = value
+                }
+            }
+            _ = self
+            return noErr
+        }
+        engine.attach(sourceNode)
+        engine.connect(sourceNode, to: engine.mainMixerNode, format: nil)
+        do {
+            try engine.start()
+            self.engine = engine
+            DiagLog.write("Call", "ringback START")
+        } catch {
+            MXLog.error("sTalk: ringback engine start failed: \(error)")
+        }
+    }
+
+    func stop() {
+        guard let engine else { return }
+        engine.stop()
+        self.engine = nil
+        DiagLog.write("Call", "ringback STOP")
     }
 }

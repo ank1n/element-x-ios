@@ -154,7 +154,32 @@ struct CallScreen: View {
                                onRequestPortrait: { context.send(viewAction: .requestPortraitOrientation) })
                 .ignoresSafeArea(.container, edges: .bottom)
         } else if context.viewState.url == nil {
-            ProgressView()
+            // Экран набора: до подключения показываем, кого вызываем, + «Вызов…»
+            // (раньше висел голый спиннер — «просто пусто», dp 14.07)
+            VStack(spacing: 20) {
+                Spacer()
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.12))
+                        .frame(width: 108, height: 108)
+                    Text(String((context.viewState.roomDisplayName ?? "•").prefix(1)).uppercased())
+                        .font(.system(size: 44, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.9))
+                }
+                Text(context.viewState.roomDisplayName ?? SL10n.callDefault)
+                    .font(.system(size: 26, weight: .bold))
+                    .foregroundColor(.white)
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .tint(.white.opacity(0.7))
+                    Text(SL10n.callCalling)
+                        .font(.system(size: 16))
+                        .foregroundColor(.white.opacity(0.75))
+                }
+                Spacer()
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ZStack {
                 // sTalk: WebView renders Element Call video fullscreen.
