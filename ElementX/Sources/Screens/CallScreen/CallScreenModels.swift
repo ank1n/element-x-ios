@@ -37,6 +37,9 @@ struct CallScreenViewState: BindableState {
 
     // sTalk: call participant info
     var roomDisplayName: String?
+    /// sTalk: аватар комнаты/собеседника для экрана набора (RoomAvatarImage —
+    /// разруливает картинку комнаты и heroes для DM). nil → инициал-плейсхолдер.
+    var roomAvatar: RoomAvatar?
     var callStatus: CallStatus = .connecting
     var callElapsedTime: TimeInterval = 0
     var isDirect = false

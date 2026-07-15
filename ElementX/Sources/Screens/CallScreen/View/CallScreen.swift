@@ -154,28 +154,33 @@ struct CallScreen: View {
                                onRequestPortrait: { context.send(viewAction: .requestPortraitOrientation) })
                 .ignoresSafeArea(.container, edges: .bottom)
         } else if context.viewState.url == nil {
-            // Экран набора: до подключения показываем, кого вызываем, + «Вызов…»
-            // (раньше висел голый спиннер — «просто пусто», dp 14.07)
+            // Экран набора: до подключения показываем, кого вызываем, + «Вызов»
+            // с анимированными точками (попытки дозвона, в такт гудкам).
+            // Аватар комнаты/собеседника (RoomAvatarImage — картинка или инициал);
+            // раньше был голый спиннер («просто пусто», dp 14.07) и только буква.
             VStack(spacing: 20) {
                 Spacer()
-                ZStack {
-                    Circle()
-                        .fill(Color.white.opacity(0.12))
-                        .frame(width: 108, height: 108)
-                    Text(String((context.viewState.roomDisplayName ?? "•").prefix(1)).uppercased())
-                        .font(.system(size: 44, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.9))
+                Group {
+                    if let roomAvatar = context.viewState.roomAvatar {
+                        RoomAvatarImage(avatar: roomAvatar,
+                                        avatarSize: .custom(108),
+                                        mediaProvider: context.viewState.mediaProvider)
+                    } else {
+                        ZStack {
+                            Circle()
+                                .fill(Color.white.opacity(0.12))
+                                .frame(width: 108, height: 108)
+                            Text(String((context.viewState.roomDisplayName ?? "•").prefix(1)).uppercased())
+                                .font(.system(size: 44, weight: .semibold))
+                                .foregroundColor(.white.opacity(0.9))
+                        }
+                    }
                 }
+                .frame(width: 108, height: 108)
                 Text(context.viewState.roomDisplayName ?? SL10n.callDefault)
                     .font(.system(size: 26, weight: .bold))
                     .foregroundColor(.white)
-                HStack(spacing: 10) {
-                    ProgressView()
-                        .tint(.white.opacity(0.7))
-                    Text(SL10n.callCalling)
-                        .font(.system(size: 16))
-                        .foregroundColor(.white.opacity(0.75))
-                }
+                CallingDotsLabel()
                 Spacer()
                 Spacer()
             }
@@ -352,6 +357,36 @@ struct CallScreen: View {
                     }
                 }
             }
+        }
+    }
+}
+
+// MARK: - sTalk Dialing Indicator
+
+/// «Вызов» с анимированными точками (1→3), имитирующими попытки дозвона
+/// в такт гудкам. Без спиннера — по просьбе dp. База «Вызов»/«Calling»
+/// берётся из локализации, хвостовые точки/многоточие срезаются.
+private struct CallingDotsLabel: View {
+    @State private var dotCount = 1
+
+    private let timer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
+
+    private var baseText: String {
+        SL10n.callCalling.trimmingCharacters(in: CharacterSet(charactersIn: ".…"))
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Text(baseText)
+            // Фиксированная ширина под 3 точки — текст не «прыгает» при смене.
+            Text(String(repeating: ".", count: dotCount))
+                .frame(width: 18, alignment: .leading)
+        }
+        .font(.system(size: 16))
+        .foregroundColor(.white.opacity(0.75))
+        .monospacedDigit()
+        .onReceive(timer) { _ in
+            dotCount = dotCount % 3 + 1
         }
     }
 }

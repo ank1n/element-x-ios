@@ -146,12 +146,14 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         
         // sTalk: get room display name and info for call header
         var roomDisplayName: String?
+        var roomAvatar: RoomAvatar?
         var isDirect = false
         var totalMembersCount = 0
         var callParticipantsCount = 0
         if case .roomCall(let roomProxy, _, _, _, _, _) = configuration.kind {
             let roomInfo = roomProxy.infoPublisher.value
             roomDisplayName = roomInfo.displayName
+            roomAvatar = roomInfo.avatar
             isDirect = roomInfo.isDirect
             totalMembersCount = roomInfo.activeMembersCount
             callParticipantsCount = roomInfo.activeRoomCallParticipants.count
@@ -161,6 +163,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                                                          isGenericCallLink: isGenericCallLink,
                                                          certificateValidator: appHooks.certificateValidatorHook,
                                                          roomDisplayName: roomDisplayName,
+                                                         roomAvatar: roomAvatar,
                                                          isDirect: isDirect,
                                                          totalMembersCount: totalMembersCount,
                                                          callParticipantsCount: callParticipantsCount,
