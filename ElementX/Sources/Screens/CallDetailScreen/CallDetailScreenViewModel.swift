@@ -111,6 +111,35 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
                 }
             }
             .store(in: &detailCancellables)
+
+        // STMOB-257: слушаем room-событие готовности транскрибации. Molly шлёт
+        // `im.stalk.transcription_ready` (session_id=egress_id) в комнату звонка;
+        // Sygnal deny гасит только APNS-пуш, через /sync событие приходит. Как
+        // прилетело для нашего egressId — мгновенно перезагружаем транскрипцию
+        // (быстрее 10с-поллинга). Паттерн как у encryption_keys в NativeCallSession.
+        await roomProxy.timeline.subscribeForUpdates()
+        roomProxy.timeline.timelineItemProvider.updatePublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] items, _ in
+                guard let self else { return }
+                for item in items {
+                    guard case .event(let eventItem) = item,
+                          case .msgLike(let msgContent) = eventItem.content,
+                          case .other(let eventType) = msgContent.kind,
+                          case .other(let typeStr) = eventType,
+                          typeStr.contains("transcription_ready") else { continue }
+                    guard let json = eventItem.debugInfo.originalJSON,
+                          let data = json.data(using: .utf8),
+                          let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                          let content = dict["content"] as? [String: Any] else { continue }
+                    let sessionId = content["session_id"] as? String
+                    if sessionId == self.egressId {
+                        DiagLog.write("CallDetail", "  transcription_ready event matched egress=\(self.egressId ?? "") → reload")
+                        Task { await self.loadTranscription() }
+                    }
+                }
+            }
+            .store(in: &detailCancellables)
     }
 
     private func preloadRecording() {
