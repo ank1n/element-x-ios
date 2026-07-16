@@ -909,13 +909,34 @@ struct BriefingWalkthroughView: View {
         let icon: String
         let color: Color
         let title: String
-        let text: String
+        let bullets: [BriefingStep]
+    }
+
+    private static func s(_ key: String, _ ru: String) -> String {
+        NSLocalizedString(key, tableName: "Localizable", value: ru, comment: "Walkthrough bullet")
     }
 
     private var slides: [Slide] {
-        [.init(icon: "phone.fill", color: .green, title: SL10n.briefingCallsTitle, text: SL10n.briefingCallsBody),
-         .init(icon: "record.circle", color: .red, title: SL10n.briefingRecordingTitle, text: SL10n.briefingRecordingBody),
-         .init(icon: "lock.shield.fill", color: .blue, title: SL10n.briefingSecurityTitle, text: SL10n.briefingSecurityBody)]
+        [.init(icon: "phone.fill", color: .green, title: SL10n.briefingCallsTitle, bullets: [
+            BriefingStep(icon: "phone", text: Self.s("stalk_walk_calls_1", "Телефон — аудиозвонок, камера — видеозвонок")),
+            BriefingStep(icon: "mic", text: Self.s("stalk_walk_calls_2", "Микрофон, камеру и динамик включаете тапом в звонке")),
+            BriefingStep(icon: "person.and.background.dotted", text: Self.s("stalk_walk_calls_3", "Размытие или фон вместо реального окружения"))
+        ]),
+        .init(icon: "record.circle", color: .red, title: SL10n.briefingRecordingTitle, bullets: [
+            BriefingStep(icon: "record.circle", text: Self.s("stalk_walk_rec_1", "Звонок можно записать (с подтверждением)")),
+            BriefingStep(icon: "exclamationmark.bubble", text: Self.s("stalk_walk_rec_2", "Все участники увидят предупреждение о записи")),
+            BriefingStep(icon: "text.quote", text: Self.s("stalk_walk_rec_3", "Запись и расшифровка — в истории звонков"))
+        ]),
+        .init(icon: "square.grid.2x2.fill", color: .orange, title: Self.s("stalk_walk_apps_t", "Приложения и встречи"), bullets: [
+            BriefingStep(icon: "square.grid.2x2", text: Self.s("stalk_walk_apps_1", "Вкладка «Приложения» — сервисы и мини-приложения")),
+            BriefingStep(icon: "calendar", text: Self.s("stalk_walk_apps_2", "Встречи — запланированные звонки, вход по ссылке")),
+            BriefingStep(icon: "message", text: Self.s("stalk_walk_apps_3", "Чаты — сообщения, ответы свайпом, вложения"))
+        ]),
+        .init(icon: "lock.shield.fill", color: .indigo, title: SL10n.briefingSecurityTitle, bullets: [
+            BriefingStep(icon: "lock", text: Self.s("stalk_walk_sec_1", "В защищённых чатах — сквозное шифрование")),
+            BriefingStep(icon: "key", text: Self.s("stalk_walk_sec_2", "Ключи есть только у участников")),
+            BriefingStep(icon: "checkmark.shield", text: Self.s("stalk_walk_sec_3", "Устройства вашего аккаунта — в Настройках"))
+        ])]
     }
 
     var body: some View {
@@ -927,23 +948,35 @@ struct BriefingWalkthroughView: View {
             }
             TabView(selection: $page) {
                 ForEach(Array(slides.enumerated()), id: \.element.id) { index, slide in
-                    VStack(spacing: 20) {
+                    VStack(spacing: 32) {
+                        Spacer()
                         Image(systemName: slide.icon)
-                            .font(.system(size: 56))
+                            .font(.system(size: 64))
                             .foregroundColor(.white)
-                            .frame(width: 104, height: 104)
+                            .frame(width: 132, height: 132)
                             .background(slide.color)
-                            .clipShape(RoundedRectangle(cornerRadius: 26))
+                            .clipShape(RoundedRectangle(cornerRadius: 32))
                         Text(slide.title)
-                            .font(.title2.bold())
-                        Text(slide.text)
-                            .font(.body)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 32)
+                            .font(.largeTitle.bold())
+                        VStack(alignment: .leading, spacing: 22) {
+                            ForEach(slide.bullets) { b in
+                                HStack(alignment: .top, spacing: 16) {
+                                    Image(systemName: b.icon)
+                                        .font(.system(size: 20))
+                                        .foregroundColor(slide.color)
+                                        .frame(width: 30)
+                                    Text(b.text)
+                                        .font(.title3)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 36)
+                        Spacer()
                         Spacer()
                     }
-                    .padding(.top, 40)
+                    .padding(.top, 20)
                     .tag(index)
                 }
             }
