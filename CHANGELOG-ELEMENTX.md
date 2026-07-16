@@ -3093,5 +3093,31 @@ dp/UZ: «нет предупреждения о старте записи». Л�
 
 ---
 
+### 69. ✅ STMOB-259 — in-app брифинг «Как пользоваться» + first-run walkthrough (build 250)
+
+**Дата**: 2026-07-16
+**Plane**: STMOB-259
+**Коммит**: `260b928b1` (ios)
+
+#### Запрос
+
+dp: нужен in-app брифинг — как работают функции, по примеру инструкций в мобильных приложениях. Решение: Настройки + first-run.
+
+#### Реализация (build 250)
+
+- **Экран «Как пользоваться»** в Настройках → секция Support (`questionmark.circle.fill`, sheet). Карточки: Звонки / Запись и транскрибация / Безопасность / Чаты — иконка + заголовок + текст.
+- **First-run walkthrough** — 3 карточки со свайпом (Звонки/Запись/Безопасность), «Пропустить»/«Далее»/«Начать», полноэкранно, один раз (флаг `stalk_briefing_shown` в UserDefaults, триггер в `NavigationTabCoordinatorView.onAppear` с задержкой 0.8с).
+- Статичный контент, без бэкенда. Строки `stalk_briefing_*` (ru/en).
+- Вью (`BriefingScreen`, `BriefingWalkthroughView`, `BriefingCard`) размещены в `SettingsScreen.swift` — проект без синхронизированных групп Xcode 16, новый файл потребовал бы правки pbxproj.
+
+#### Файлы
+
+- `ios/ElementX/Sources/Screens/Settings/SettingsScreen/View/SettingsScreen.swift` — строка + BriefingScreen/Walkthrough/Card
+- `ios/ElementX/Sources/Application/Navigation/NavigationTabCoordinator.swift` — first-run cover + флаг
+- `ios/ElementX/Sources/Other/SwiftUI/Views/StalkTheme.swift` — строки `briefing*`
+- `ios/ElementX/Resources/Localizations/{ru,en}.lproj/Localizable.strings`
+
+---
+
 **Дата создания**: 2026-01-28
 **Последнее обновление**: 2026-05-28
