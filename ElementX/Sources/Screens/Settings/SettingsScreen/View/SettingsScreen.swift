@@ -783,25 +783,60 @@ struct SettingsScreen_Previews: PreviewProvider, TestablePreview {
 
 // MARK: - Briefing (STMOB-259)
 
-/// Статичный экран «Как пользоваться» — секции по функциям. Открывается из
-/// Настроек и (в walkthrough-виде) при первом запуске. Без бэкенда.
+private struct BriefingStep: Identifiable {
+    let id = UUID()
+    let icon: String
+    let text: String
+}
+
+private struct BriefingTopic: Identifiable {
+    let id = UUID()
+    let icon: String
+    let color: Color
+    let title: String
+    let steps: [BriefingStep]
+}
+
+/// Статичный экран «Как пользоваться» — функции разбиты на секции с
+/// пошаговыми подсказками (иконка + короткий шаг), а не сплошным текстом.
+/// Открывается из Настроек. Без бэкенда.
 struct BriefingScreen: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 14) {
-                BriefingCard(icon: "phone.fill", color: .green,
-                             title: SL10n.briefingCallsTitle, text: SL10n.briefingCallsBody)
-                BriefingCard(icon: "record.circle", color: .red,
-                             title: SL10n.briefingRecordingTitle, text: SL10n.briefingRecordingBody)
-                BriefingCard(icon: "lock.shield.fill", color: .blue,
-                             title: SL10n.briefingSecurityTitle, text: SL10n.briefingSecurityBody)
-                BriefingCard(icon: "message.fill", color: .indigo,
-                             title: SL10n.briefingChatsTitle, text: SL10n.briefingChatsBody)
+        List {
+            ForEach(Self.topics) { topic in
+                Section {
+                    ForEach(topic.steps) { step in
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: step.icon)
+                                .font(.system(size: 15))
+                                .foregroundColor(topic.color)
+                                .frame(width: 24)
+                            Text(step.text)
+                                .font(.callout)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(.vertical, 3)
+                    }
+                } header: {
+                    HStack(spacing: 10) {
+                        Image(systemName: topic.icon)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 28, height: 28)
+                            .background(topic.color)
+                            .clipShape(RoundedRectangle(cornerRadius: 7))
+                        Text(topic.title)
+                            .font(.headline)
+                            .textCase(nil)
+                            .foregroundColor(.primary)
+                    }
+                    .padding(.vertical, 6)
+                }
             }
-            .padding()
         }
+        .listStyle(.insetGrouped)
         .navigationTitle(SL10n.briefingTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -810,34 +845,56 @@ struct BriefingScreen: View {
             }
         }
     }
-}
 
-private struct BriefingCard: View {
-    let icon: String
-    let color: Color
-    let title: String
-    let text: String
+    private static func s(_ key: String, _ ru: String) -> String {
+        NSLocalizedString(key, tableName: "Localizable", value: ru, comment: "Briefing step")
+    }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                Image(systemName: icon)
-                    .foregroundColor(.white)
-                    .frame(width: 34, height: 34)
-                    .background(color)
-                    .clipShape(RoundedRectangle(cornerRadius: 9))
-                Text(title)
-                    .font(.headline)
-            }
-            Text(text)
-                .font(.callout)
-                .foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(Color(UIColor.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 14))
+    private static var topics: [BriefingTopic] {
+        [
+            BriefingTopic(icon: "person.2.fill", color: .blue,
+                          title: s("stalk_brief_chats_t", "Контакты и чаты"),
+                          steps: [
+                              BriefingStep(icon: "list.bullet", text: s("stalk_brief_chats_1", "Вкладка «Контакты» — список людей. Тап открывает чат.")),
+                              BriefingStep(icon: "bubble.left.and.bubble.right", text: s("stalk_brief_chats_2", "Пишите сообщение в поле внизу экрана.")),
+                              BriefingStep(icon: "arrowshape.turn.up.left", text: s("stalk_brief_chats_3", "Свайп по сообщению вправо — быстрый ответ.")),
+                              BriefingStep(icon: "paperclip", text: s("stalk_brief_chats_4", "Скрепка — прикрепить фото, файл или другое вложение.")),
+                              BriefingStep(icon: "hand.tap", text: s("stalk_brief_chats_5", "Долгое нажатие на сообщение — ответить, копировать, переслать."))
+                          ]),
+            BriefingTopic(icon: "phone.fill", color: .green,
+                          title: s("stalk_brief_calls_t", "Звонки"),
+                          steps: [
+                              BriefingStep(icon: "phone", text: s("stalk_brief_calls_1", "Кнопка телефона в чате — аудиозвонок.")),
+                              BriefingStep(icon: "video", text: s("stalk_brief_calls_2", "Кнопка камеры — видеозвонок.")),
+                              BriefingStep(icon: "mic", text: s("stalk_brief_calls_3", "В звонке тап по микрофону, камере и динамику включает и выключает их.")),
+                              BriefingStep(icon: "phone.down", text: s("stalk_brief_calls_4", "Красная кнопка — завершить звонок."))
+                          ]),
+            BriefingTopic(icon: "person.and.background.dotted", color: .purple,
+                          title: s("stalk_brief_bg_t", "Фон в звонке"),
+                          steps: [
+                              BriefingStep(icon: "ellipsis.circle", text: s("stalk_brief_bg_1", "В звонке откройте меню «•••» → «Фон».")),
+                              BriefingStep(icon: "camera.filters", text: s("stalk_brief_bg_2", "Выберите размытие или обои вместо реального окружения."))
+                          ]),
+            BriefingTopic(icon: "record.circle", color: .red,
+                          title: s("stalk_brief_rec_t", "Запись и расшифровка"),
+                          steps: [
+                              BriefingStep(icon: "record.circle", text: s("stalk_brief_rec_1", "Кнопка записи вверху экрана звонка — начать запись (нужно подтверждение).")),
+                              BriefingStep(icon: "exclamationmark.bubble", text: s("stalk_brief_rec_2", "Все участники получат предупреждение о начале записи.")),
+                              BriefingStep(icon: "text.quote", text: s("stalk_brief_rec_3", "После звонка запись и её текстовая расшифровка — в истории звонков."))
+                          ]),
+            BriefingTopic(icon: "square.grid.2x2.fill", color: .orange,
+                          title: s("stalk_brief_apps_t", "Приложения и встречи"),
+                          steps: [
+                              BriefingStep(icon: "square.grid.2x2", text: s("stalk_brief_apps_1", "Вкладка «Приложения» — сервисы и мини-приложения.")),
+                              BriefingStep(icon: "calendar", text: s("stalk_brief_apps_2", "Встречи — запланированные звонки, подключение по ссылке."))
+                          ]),
+            BriefingTopic(icon: "lock.shield.fill", color: .indigo,
+                          title: s("stalk_brief_sec_t", "Безопасность"),
+                          steps: [
+                              BriefingStep(icon: "lock", text: s("stalk_brief_sec_1", "В защищённых чатах сообщения и звонки шифруются сквозным шифрованием — ключи только у участников.")),
+                              BriefingStep(icon: "checkmark.shield", text: s("stalk_brief_sec_2", "Настройки → Активные сессии — список устройств вашего аккаунта."))
+                          ])
+        ]
     }
 }
 

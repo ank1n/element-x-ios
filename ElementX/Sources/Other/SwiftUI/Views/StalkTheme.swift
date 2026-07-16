@@ -350,7 +350,7 @@ enum SL10n {
     static let briefingRecordingTitle = NSLocalizedString("stalk_briefing_recording_title", tableName: "Localizable", value: "Запись и транскрибация", comment: "")
     static let briefingRecordingBody = NSLocalizedString("stalk_briefing_recording_body", tableName: "Localizable", value: "Звонок можно записать кнопкой записи. Все участники получают предупреждение о начале записи. После звонка запись и её текстовая расшифровка доступны в истории звонков.", comment: "")
     static let briefingSecurityTitle = NSLocalizedString("stalk_briefing_security_title", tableName: "Localizable", value: "Безопасность", comment: "")
-    static let briefingSecurityBody = NSLocalizedString("stalk_briefing_security_body", tableName: "Localizable", value: "Все звонки и переписка защищены сквозным шифрованием — доступ к ключам есть только у участников. В настройках можно посмотреть активные сессии и устройства вашего аккаунта.", comment: "")
+    static let briefingSecurityBody = NSLocalizedString("stalk_briefing_security_body", tableName: "Localizable", value: "В защищённых чатах сообщения и звонки шифруются сквозным шифрованием — ключи есть только у участников. В настройках можно посмотреть активные сессии и устройства вашего аккаунта.", comment: "")
     static let briefingChatsTitle = NSLocalizedString("stalk_briefing_chats_title", tableName: "Localizable", value: "Чаты", comment: "")
     static let briefingChatsBody = NSLocalizedString("stalk_briefing_chats_body", tableName: "Localizable", value: "Пишите сообщения, отвечайте на них свайпом, прикрепляйте файлы и фото. Долгое нажатие на сообщение открывает действия: ответить, скопировать, переслать.", comment: "")
     // First-run walkthrough
