@@ -438,23 +438,26 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         // Hop on MainActor — Avatars helper isolated; donation выполнится
         // параллельно с reportNewIncomingCall, не блокирует CallKit deadline.
         let senderAvatarMXC = dict["sender_avatar_url"] as? String
-        // STMOB-256/видео: репортим входящий как АУДИО (hasVideo=false). Раньше было
-        // true → CallKit показывал видео-звонок и создавал ощущение «всегда с видео»
-        // (жалоба UZ). VoIP-payload не несёт тип звонка, поэтому дефолт = аудио
-        // (стандартное телефонное поведение); камера включается кнопкой уже в звонке.
-        // Реальное состояние камеры при accept и так гасит гвард isJoiningExistingCall
-        // в presentCallScreen. Тип звонка от инициатора (аудио/видео) — отдельная
-        // задача Б (ring-payload + бэкенд Molly).
+        // STMOB-260: тип звонка от инициатора. Molly/web и Andy/Android кладут
+        // `call_type: "audio"|"video"` в ring-событие → пушкин протаскивает в VoIP-
+        // payload. Читаем и репортим CallKit соответственно. Дефолт (поле отсутствует,
+        // старый сервер) = АУДИО (hasVideo=false) — поведение фикса А, форвард-совместимо.
+        // Раньше было безусловно true → «всегда с видео» (жалоба UZ). Реальное
+        // состояние камеры при accept дополнительно гасит гвард isJoiningExistingCall.
+        let callType = (dict["call_type"] as? String)?.lowercased()
+        let hasVideo = (callType == "video")
+        os_log(.info, log: pushLog, "Incoming VoIP call_type=%{public}@ → hasVideo=%{public}@",
+               callType ?? "nil(default audio)", "\(hasVideo)")
         Task { @MainActor in
             Self.donateIncomingCallIntent(senderMXID: senderMXID,
                                           callerName: callerName,
                                           roomID: roomID,
-                                          hasVideo: false,
+                                          hasVideo: hasVideo,
                                           avatarMXC: senderAvatarMXC)
         }
 
         let update = CXCallUpdate()
-        update.hasVideo = false
+        update.hasVideo = hasVideo
         update.localizedCallerName = callerName
         // https://stackoverflow.com/a/41230020/730924
         update.remoteHandle = .init(type: .generic, value: roomID)
