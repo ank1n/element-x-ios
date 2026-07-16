@@ -3119,5 +3119,25 @@ dp: нужен in-app брифинг — как работают функции,
 
 ---
 
+### 70. ✅ STMOB-257 — iOS listener готовности транскрибации через sync (build 250)
+
+**Дата**: 2026-07-16
+**Plane**: STMOB-257
+**Коммит**: `c3a3f8451` (ios)
+
+#### Контекст
+
+«Долго подтягивается транскрибация» (UZ). iOS поллил статус каждые 10с → до 10с лага после готовности. Molly (STALK-605) добавила событие `im.stalk.transcription_ready` (room-event, `session_id`=egress_id) и положила тип в Sygnal `denied_event_types` (без APNS — решение dp «без оффлайн-пуша», только sync).
+
+#### Реализация (build 250)
+
+`CallDetailScreenViewModel.loadRoomMetadata` подписывается на таймлайн комнаты звонка (`roomProxy.timeline.timelineItemProvider.updatePublisher`) и ловит `im.stalk.transcription_ready`: `.msgLike(.other("...transcription_ready"))` → парсит `debugInfo.originalJSON` → `content.session_id`. При совпадении с `egressId` — мгновенно `loadTranscription()`. Быстрее 10с-поллинга; поллинг оставлен как fallback. Событие приходит ПОСЛЕ звонка (виджет не работает), поэтому слушаем основной sync-таймлайн, не widget. Deny-лист гасит только пуш, sync не трогает. Паттерн — как приём `encryption_keys` в `NativeCallSession`.
+
+#### Файлы
+
+- `ios/ElementX/Sources/Screens/CallDetailScreen/CallDetailScreenViewModel.swift` — timeline-listener transcription_ready
+
+---
+
 **Дата создания**: 2026-01-28
 **Последнее обновление**: 2026-05-28
