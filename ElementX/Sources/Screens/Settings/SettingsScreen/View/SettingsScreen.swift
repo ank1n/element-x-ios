@@ -130,8 +130,11 @@ struct SettingsScreen: View {
                 }
             } label: {
                 HStack {
-                    Image(systemName: "globe").foregroundColor(StalkTheme.accent).frame(width: 24)
-                    Text(currentLanguageName).foregroundColor(.primary)
+                    Label {
+                        Text(currentLanguageName).foregroundColor(.primary)
+                    } icon: {
+                        Image(systemName: "globe").foregroundColor(StalkTheme.accent)
+                    }
                     Spacer()
                     Image(systemName: "chevron.up.chevron.down").foregroundColor(.secondary).font(.system(size: 12))
                 }
@@ -148,12 +151,16 @@ struct SettingsScreen: View {
                                   showsChevron: Bool = true,
                                   action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 12) {
-                Image(systemName: systemImage)
-                    .foregroundColor(isDestructive ? .red : color)
-                    .frame(width: 24)
-                Text(title)
-                    .foregroundColor(isDestructive ? .red : .primary)
+            HStack {
+                // Label — тот же контейнер, что у тумблеров (DND/звонки):
+                // иконка получает системный размер, всё оптически одинаковое
+                Label {
+                    Text(title)
+                        .foregroundColor(isDestructive ? .red : .primary)
+                } icon: {
+                    Image(systemName: systemImage)
+                        .foregroundColor(isDestructive ? .red : color)
+                }
                 Spacer()
                 if showsChevron {
                     Image(systemName: "chevron.right")
@@ -342,8 +349,8 @@ struct SettingsScreen: View {
 
             // sTalk: STMOB-87 — нативный экран активных сессий (parity с web)
             stalkSettingsRow(title: NSLocalizedString("stalk_sessions_title", tableName: "Localizable", value: "Активные сессии", comment: "Active sessions screen title"),
-                             systemImage: "shield.lefthalf.filled",
-                             color: .mint) {
+                             systemImage: "checkmark.shield.fill",
+                             color: .green) {
                 context.send(viewAction: .activeSessions)
             }
 
