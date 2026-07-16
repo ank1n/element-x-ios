@@ -3007,5 +3007,38 @@ dp 2026-07-16: на экране набора (до подключения к з
 
 ---
 
+### 66. ✅ STMOB-256 — долгое подключение к звонку: снят 6с глухого сна + диагностика (build 249)
+
+**Дата**: 2026-07-16
+**Plane**: STMOB-256
+**Коммит**: `659e77bc4` (ios)
+
+#### Симптом
+
+Тестеры UZ (через Сергея, 2026-07-15): «долго подключаешься к звонку». На .uz RTT до Synapse/SFU выше, а критический путь подключения — фиксированные задержки + последовательные сетевые round-trip'ы.
+
+#### Диагностика (тап → звук/видео пошли)
+
+Флоу: `CallScreenViewModel.setupCall()` → `NativeCallSession.start()` → `connectWithGeneratedJWT()` → `connectToLiveKit()`.
+
+- **Фаза A (handshake виджет-драйвера):** `widgetDriver.start()` → request_capabilities → **sleep(1s)** → content_loaded → **sleep(5s)** → io.element.join. Итого **6 секунд фиксированного мёртвого ожидания на каждый звонок**.
+- **Фаза B (connectWithGeneratedJWT):** resolve well-known → join REST → delayed-leave → чтение активных → ring → **debugReadCallMemberState (чистый DEBUG-round-trip)** → fetch creds (openid + /sfu/get) → connectToLiveKit. Медиа-путь (creds+connect) стоит позади 4-5 сигнальных запросов.
+
+#### Fix (build 249)
+
+1. **Снят 6с глухой сон.** `sleep(5s)` «ждём негоциацию capabilities» → событийное ожидание `waitForCapabilitiesNegotiation(ceilingMs:5000)`: флаг `capabilitiesNegotiated` поднимается в `processWidgetMessage` после ответа на toWidget capabilities. Worst case = прежние 5s (потолок), типично < 1s. `sleep(1s)` → 400мс.
+2. **Убран `debugReadCallMemberState()`** с критического пути — минус один сетевой round-trip на каждый звонок (метод-определение оставлен для отладки, вызов удалён).
+3. **Инструментирование `CallPerf` в DiagLog** — метки в мс от `callStartTime` на каждой фазе: widgetDriver.start, capabilities negotiated, io.element.join, jwt resolved, join REST, creds fetched, LiveKit CONNECTED. Даёт точную разбивку на устройстве/.uz.
+
+#### Предложение (фаза 2, после валидации цифрами)
+
+Распараллелить медиа-путь (fetch creds → connect) и сигналинг (join REST → ring → delayed-leave) — сейчас последовательны. Локальный connect не зависит от нашего membership (SFU авторизует по JWT; E2EE-ключи самозалечиваются на remote JOIN + rebroadcast). Держится sequential до получения DiagLog CallPerf с .uz.
+
+#### Файлы
+
+- `ios/ElementX/Sources/Services/NativeCall/NativeCallSession.swift` — `callStartTime`/`elapsedMs()`/`capabilitiesNegotiated`, `waitForCapabilitiesNegotiation`, CallPerf-метки, удаление debug-вызова
+
+---
+
 **Дата создания**: 2026-01-28
 **Последнее обновление**: 2026-05-28
