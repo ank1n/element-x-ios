@@ -3038,6 +3038,12 @@ dp 2026-07-16: на экране набора (до подключения к з
 
 - `ios/ElementX/Sources/Services/NativeCall/NativeCallSession.swift` — `callStartTime`/`elapsedMs()`/`capabilitiesNegotiated`, `waitForCapabilitiesNegotiation`, CallPerf-метки, удаление debug-вызова
 
+#### Дополнение (commit `79089ab45`): CallPerf на пути ОТВЕТА
+
+Для «40с после того как взял трубку» инструментирования только в `NativeCallSession` мало — задержка сидит РАНЬШЕ connect, в ожидании синка комнаты (cold-Synapse). Добавлены CallPerf-маркеры на весь answer→connect: `user ANSWERED` (CXAnswerCallAction) → `startCall dispatched (after 1s)` → `presentCallScreen START` → `roomForIdentifier → <state>` → (если не синкнута) `joinRoom START` → `joinRoom OK → awaiting sync` → `room sync re-fetch → resolved/TIMEOUT(8s)` → NativeCallSession connect-цепочка. Один `grep CallPerf` даёт полный таймлайн с абсолютными таймингами — 40с локализуются в конкретный промежуток (подозреваемый: ожидание синка = cold-Synapse, зона Molly).
+
+Файлы: `ios/ElementX/Sources/Services/ElementCall/ElementCallService.swift`, `ios/ElementX/Sources/FlowCoordinators/UserSessionFlowCoordinator.swift`.
+
 ---
 
 ### 67. ✅ Входящий звонок репортится как аудио (hasVideo=false) — фикс «всегда с видео» (build 249)
