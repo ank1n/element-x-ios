@@ -1708,6 +1708,8 @@
 "stalk_recording_title" = "Start recording?";
 "stalk_recording_message" = "The call will be recorded. All participants will be notified.";
 "stalk_recording_start" = "Start recording";
+"stalk_remote_recording_title" = "Call is being recorded";
+"stalk_remote_recording_message" = "A participant started recording this call.";
 "stalk_call_screen_share" = "screen";
 "stalk_search_no_results" = "Nothing found";
 "stalk_bookmark_add" = "Add to favorites";

@@ -1706,6 +1706,8 @@
 "stalk_recording_title" = "Начать запись?";
 "stalk_recording_message" = "Звонок будет записан. Все участники будут уведомлены о начале записи.";
 "stalk_recording_start" = "Начать запись";
+"stalk_remote_recording_title" = "Идёт запись звонка";
+"stalk_remote_recording_message" = "Один из участников начал запись этого звонка.";
 "stalk_call_screen_share" = "экран";
 "stalk_search_no_results" = "Ничего не найдено";
 "stalk_bookmark_add" = "В избранное";

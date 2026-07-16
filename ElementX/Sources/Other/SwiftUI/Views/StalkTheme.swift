@@ -339,6 +339,8 @@ enum SL10n {
     static let recordingTitle = NSLocalizedString("stalk_recording_title", tableName: "Localizable", value: "Начать запись?", comment: "Recording consent title")
     static let recordingMessage = NSLocalizedString("stalk_recording_message", tableName: "Localizable", value: "Звонок будет записан. Все участники будут уведомлены о начале записи.", comment: "Recording consent message")
     static let recordingStart = NSLocalizedString("stalk_recording_start", tableName: "Localizable", value: "Начать запись", comment: "Start recording button")
+    static let remoteRecordingTitle = NSLocalizedString("stalk_remote_recording_title", tableName: "Localizable", value: "Идёт запись звонка", comment: "Remote recording warning title")
+    static let remoteRecordingMessage = NSLocalizedString("stalk_remote_recording_message", tableName: "Localizable", value: "Один из участников начал запись этого звонка.", comment: "Remote recording warning message")
 
     // MARK: - Calendar
 

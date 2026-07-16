@@ -1424,6 +1424,13 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                         self.state.isRemoteRecording = hasRemote
                         if hasRemote {
                             MXLog.info("sTalk: Remote recording detected for room \(matrixRoomId)")
+                            // Предупреждение при УДАЛЁННОМ старте записи: помимо красной
+                            // пилюли — модальное окно с текстом + ОК (dp 2026-07-16).
+                            // Срабатывает один раз на переход idle→recording (гард !=).
+                            self.state.bindings.alertInfo = .init(id: UUID(),
+                                                                  title: SL10n.remoteRecordingTitle,
+                                                                  message: SL10n.remoteRecordingMessage,
+                                                                  primaryButton: .init(title: L10n.actionOk, action: nil))
                         } else {
                             MXLog.info("sTalk: Remote recording stopped for room \(matrixRoomId)")
                         }
