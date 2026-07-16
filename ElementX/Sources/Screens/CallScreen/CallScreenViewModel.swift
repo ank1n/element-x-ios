@@ -48,6 +48,10 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     private let currentCallID: String?
 
     private let startWithVideoEnabled: Bool
+    /// sTalk: были ли мы инициатором звонка (в комнате не было активного звонка на
+    /// старте). Захватываем при init ДО того как подписки на участников выставят
+    /// callParticipantsCount в 1 (=себя). Гудки играют ТОЛЬКО у инициатора.
+    private let startedAsInitiator: Bool
     private let widgetDriver: ElementCallWidgetDriverProtocol
 
     /// sTalk: Native LiveKit room manager
@@ -158,6 +162,10 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             totalMembersCount = roomInfo.activeMembersCount
             callParticipantsCount = roomInfo.activeRoomCallParticipants.count
         }
+
+        // sTalk: инициатор = в комнате на старте не было активного звонка. Захват
+        // ДО super.init/подписок (иначе callParticipantsCount станет 1 = себя).
+        startedAsInitiator = (callParticipantsCount == 0)
 
         super.init(initialViewState: CallScreenViewState(script: CallScreenJavaScriptMessageName.allCasesInjectionScript,
                                                          isGenericCallLink: isGenericCallLink,
@@ -844,7 +852,13 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     /// Гудки: только если на старте звонка в комнате никого не было (мы звоним
     /// первыми). Ответ на входящий / вход в идущий звонок — без гудков.
     private func startRingbackIfInitiator() {
-        guard state.callParticipantsCount == 0, liveKitRoomManager.displayParticipants.isEmpty else { return }
+        // sTalk-фикс: раньше проверяли `state.callParticipantsCount == 0`, но этот
+        // счётчик считается как max(membership, displayParticipants+1) — включает
+        // себя (+1) и выставляется в 1 подпиской почти сразу при connect, поэтому
+        // гудки НИКОГДА не играли (лог 130: ни одного ringback START). Теперь гейт —
+        // захваченный при init `startedAsInitiator` (в комнате не было звонка на старте)
+        // + нет удалённых участников. Уже играющие — не перезапускаем.
+        guard startedAsInitiator, !shouldPlayRingback, liveKitRoomManager.displayParticipants.isEmpty else { return }
         shouldPlayRingback = true
         ringbackPlayer.start()
         // потолок 60с — дальше тишина (UI продолжает «Вызов…»)
@@ -995,18 +1009,23 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         recordingPollingTask = nil
         stalkLog("endCall — начинаю завершение звонка")
 
+        // sTalk (лог 130): экран висел ~5с пока идёт очистка (leave REST 3.7с и т.д.),
+        // юзер тыкал «Завершить» 8 раз от нетерпения. Закрываем UI СРАЗУ, а очистка
+        // (leave/hangup/disconnect) доигрывает в фоне: `Task { await endCall() }`
+        // держит self сильно, поэтому VM жива до конца очистки даже после того как
+        // координатор убрал оверлей. Это не отменяет очистку — она гарантирована.
+        UIDevice.current.isProximityMonitoringEnabled = false
+        DiagLog.write("CallUI", "endCall: dismiss NOW (cleanup continues in background)")
+        actionsSubject.send(.dismiss)
+
         // STMOB-115 build 139: каждый шаг с timeout. Если любой await зависает
-        // (network/SDK deadlock), переходим дальше. Финальный dismiss гарантирован
-        // через defer — иначе UI не закрывается, юзер тыкает endCall, watchdog
-        // убивает app (наблюдалось 13 endCall taps + 0xDEADBEEC через 36 мин).
+        // (network/SDK deadlock), переходим дальше. Финальный teardown через defer.
         defer {
-            DiagLog.write("CallUI", "endCall: dismiss (forced after timeout-bounded cleanup)")
+            DiagLog.write("CallUI", "endCall: cleanup done — teardown")
             elementCallService.tearDownCallSession()
             // STMOB-130: очистить native call marker (для native path tearDown
             // не выставляет ongoingCallID=nil, нужно отдельно).
             elementCallService.markNativeCallActive(roomID: nil)
-            UIDevice.current.isProximityMonitoringEnabled = false
-            actionsSubject.send(.dismiss)
         }
 
         // 1. Остановить запись (до закрытия звонка, иначе ABORTED)
