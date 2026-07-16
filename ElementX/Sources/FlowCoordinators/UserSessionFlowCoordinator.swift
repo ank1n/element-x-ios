@@ -493,7 +493,9 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         // не делала НИЧЕГО, ни ошибки в UI, ни записи в лог. Теперь:
         // .joined → present, .invited/.nil → joinRoom + retry, иначе → error toast.
         DiagLog.write("Meeting", "presentCallScreen(roomID:) START room=\(roomID)")
+        DiagLog.write("CallPerf", "presentCallScreen(roomID:) START — resolving room (sync?) room=\(roomID)")
         let roomType = await userSession.clientProxy.roomForIdentifier(roomID)
+        DiagLog.write("CallPerf", "roomForIdentifier → \(String(describing: roomType).prefix(24)) room=\(roomID)")
         switch roomType {
         case .joined(let roomProxy):
             DiagLog.write("Meeting", "presentCallScreen room=\(roomID) state=joined → present")
@@ -525,17 +527,20 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         // .values.first { $0.isLoaded }` БЕЗ таймаута если sync ещё не подключён.
         // Симптом build 174 (dp.bondar 00:16:18): joinRoom OK → re-fetch
         // никогда не вернулся, кнопка работала только со 2-го нажатия через 23s.
+        DiagLog.write("CallPerf", "joinRoom START (room not synced yet — cold-Synapse suspect) room=\(roomID)")
         userSession.clientProxy.roomsToAwait.insert(roomID)
         let joinResult = await userSession.clientProxy.joinRoom(roomID, via: [])
         switch joinResult {
         case .success:
             DiagLog.write("Meeting", "presentCallScreen room=\(roomID) joinRoom OK → re-fetch")
+            DiagLog.write("CallPerf", "joinRoom OK → awaiting room sync (ceiling 8s) room=\(roomID)")
             // STMOB-151 build 175: timeout wrapper 8s. Если roomForIdentifier
             // не вернулся за 8s — error toast + suggest retry. Раньше silent hang.
             let refetched = await withTimeout(seconds: 8) {
                 await self.userSession.clientProxy.roomForIdentifier(roomID)
             }
             DiagLog.write("Meeting", "presentCallScreen room=\(roomID) re-fetch result=\(refetched.map { String(describing: $0).prefix(40) } ?? "TIMEOUT")")
+            DiagLog.write("CallPerf", "room sync re-fetch → \(refetched != nil ? "resolved" : "TIMEOUT(8s)") room=\(roomID)")
             if case let .joined(roomProxy) = refetched {
                 presentCallScreen(roomProxy: roomProxy)
             } else {

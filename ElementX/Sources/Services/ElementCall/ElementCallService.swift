@@ -662,13 +662,18 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         
         // First fullfill the action
         action.fulfill()
-        
+        // STMOB-256: точка отсчёта для диагностики «40с после ответа». Далее CallPerf
+        // маркеры в presentCallScreen/join и NativeCallSession дают полную разбивку
+        // answer→connect (главный подозреваемый — ожидание синка комнаты на cold-Synapse).
+        DiagLog.write("CallPerf", "user ANSWERED incoming room=\(incomingCallID.roomID) — clock starts")
+
         // And delay ending the call so that the app has enough time
         // to get deeplinked into
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             // Then end the and call rely on `setupCallSession` to create a new one
             provider.reportCall(with: incomingCallID.callKitID, endedAt: nil, reason: .remoteEnded)
-            
+
+            DiagLog.write("CallPerf", "startCall dispatched (after 1s deeplink delay) room=\(incomingCallID.roomID)")
             self.actionsSubject.send(.startCall(roomID: incomingCallID.roomID))
             self.endUnansweredCallTask?.cancel()
         }
