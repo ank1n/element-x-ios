@@ -3072,5 +3072,26 @@ dp 2026-07-16: на экране набора (до подключения к з
 
 ---
 
+### 68. ✅ Предупреждение при удалённом старте записи — окно с текстом + ОК (build 250)
+
+**Дата**: 2026-07-16
+**Коммит**: `f4d95614a` (ios)
+
+#### Запрос
+
+dp/UZ: «нет предупреждения о старте записи». Локальный старт записи consent-диалог уже имел (`RecordingConsentView`), а при УДАЛЁННОМ старте (другой участник начал запись) была только маленькая красная пилюля `RecordingButton` в тулбаре — не читается как предупреждение.
+
+#### Fix (build 250)
+
+При переходе `isRemoteRecording` idle→recording (детект — поллинг recording-api каждые 5с, `startRecordingPolling`) — помимо красной пилюли показывается **модальное окно** «Идёт запись звонка / Один из участников начал запись этого звонка» с кнопкой ОК (`state.bindings.alertInfo`, гард `!=` → одноразово на переход). Строки `stalk_remote_recording_title/message` (ru/en).
+
+#### Файлы
+
+- `ios/ElementX/Sources/Screens/CallScreen/CallScreenViewModel.swift` — alert при remote-recording transition
+- `ios/ElementX/Sources/Other/SwiftUI/Views/StalkTheme.swift` — `remoteRecordingTitle/Message`
+- `ios/ElementX/Resources/Localizations/{ru,en}.lproj/Localizable.strings`
+
+---
+
 **Дата создания**: 2026-01-28
 **Последнее обновление**: 2026-05-28
