@@ -438,16 +438,23 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         // Hop on MainActor — Avatars helper isolated; donation выполнится
         // параллельно с reportNewIncomingCall, не блокирует CallKit deadline.
         let senderAvatarMXC = dict["sender_avatar_url"] as? String
+        // STMOB-256/видео: репортим входящий как АУДИО (hasVideo=false). Раньше было
+        // true → CallKit показывал видео-звонок и создавал ощущение «всегда с видео»
+        // (жалоба UZ). VoIP-payload не несёт тип звонка, поэтому дефолт = аудио
+        // (стандартное телефонное поведение); камера включается кнопкой уже в звонке.
+        // Реальное состояние камеры при accept и так гасит гвард isJoiningExistingCall
+        // в presentCallScreen. Тип звонка от инициатора (аудио/видео) — отдельная
+        // задача Б (ring-payload + бэкенд Molly).
         Task { @MainActor in
             Self.donateIncomingCallIntent(senderMXID: senderMXID,
                                           callerName: callerName,
                                           roomID: roomID,
-                                          hasVideo: true,
+                                          hasVideo: false,
                                           avatarMXC: senderAvatarMXC)
         }
 
         let update = CXCallUpdate()
-        update.hasVideo = true
+        update.hasVideo = false
         update.localizedCallerName = callerName
         // https://stackoverflow.com/a/41230020/730924
         update.remoteHandle = .init(type: .generic, value: roomID)
