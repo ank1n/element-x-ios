@@ -14,6 +14,7 @@ struct SettingsScreen: View {
     let context: SettingsScreenViewModel.Context
     @AppStorage("stalk_design_theme") private var settingsDesignTheme = "cosmos"
     @State private var showLanguageRestartAlert = false
+    @State private var showBriefing = false
 
     /// STMOB-183: применяет выбор языка и просит перезапустить (UIKit-навигация
     /// не перелокализуется на лету — язык вступает в силу при следующем запуске).
@@ -100,6 +101,9 @@ struct SettingsScreen: View {
             Button(NSLocalizedString("stalk_settings_language_restart_ok", tableName: "Localizable", value: "Понятно", comment: "OK"), role: .cancel) { }
         } message: {
             Text(NSLocalizedString("stalk_settings_language_restart_message", tableName: "Localizable", value: "Язык интерфейса изменится после перезапуска приложения.", comment: "Language change restart alert message"))
+        }
+        .sheet(isPresented: $showBriefing) {
+            NavigationStack { BriefingScreen() }
         }
     }
     
@@ -621,6 +625,12 @@ struct SettingsScreen: View {
 
     private var generalSection: some View {
         Section(header: Text(SL10n.settingsSupport)) {
+            stalkSettingsRow(title: SL10n.briefingTitle,
+                             systemImage: "questionmark.circle.fill",
+                             color: .blue) {
+                showBriefing = true
+            }
+
             stalkSettingsRow(title: L10n.commonAdvancedSettings,
                              systemImage: "gearshape.2.fill",
                              color: .gray) {
@@ -768,5 +778,132 @@ struct SettingsScreen_Previews: PreviewProvider, TestablePreview {
         return SettingsScreenViewModel(userSession: userSession,
                                        appSettings: ServiceLocator.shared.settings,
                                        isBugReportServiceEnabled: isBugReportServiceEnabled)
+    }
+}
+
+// MARK: - Briefing (STMOB-259)
+
+/// Статичный экран «Как пользоваться» — секции по функциям. Открывается из
+/// Настроек и (в walkthrough-виде) при первом запуске. Без бэкенда.
+struct BriefingScreen: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 14) {
+                BriefingCard(icon: "phone.fill", color: .green,
+                             title: SL10n.briefingCallsTitle, text: SL10n.briefingCallsBody)
+                BriefingCard(icon: "record.circle", color: .red,
+                             title: SL10n.briefingRecordingTitle, text: SL10n.briefingRecordingBody)
+                BriefingCard(icon: "lock.shield.fill", color: .blue,
+                             title: SL10n.briefingSecurityTitle, text: SL10n.briefingSecurityBody)
+                BriefingCard(icon: "message.fill", color: .indigo,
+                             title: SL10n.briefingChatsTitle, text: SL10n.briefingChatsBody)
+            }
+            .padding()
+        }
+        .navigationTitle(SL10n.briefingTitle)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button { dismiss() } label: { Image(systemName: "xmark") }
+            }
+        }
+    }
+}
+
+private struct BriefingCard: View {
+    let icon: String
+    let color: Color
+    let title: String
+    let text: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: icon)
+                    .foregroundColor(.white)
+                    .frame(width: 34, height: 34)
+                    .background(color)
+                    .clipShape(RoundedRectangle(cornerRadius: 9))
+                Text(title)
+                    .font(.headline)
+            }
+            Text(text)
+                .font(.callout)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(Color(UIColor.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+}
+
+/// First-run walkthrough — 3 карточки со свайпом, показывается один раз
+/// (флаг `stalk_briefing_shown` в UserDefaults ставит вызывающая сторона).
+struct BriefingWalkthroughView: View {
+    let onFinish: () -> Void
+    @State private var page = 0
+
+    private struct Slide: Identifiable {
+        let id = UUID()
+        let icon: String
+        let color: Color
+        let title: String
+        let text: String
+    }
+
+    private var slides: [Slide] {
+        [.init(icon: "phone.fill", color: .green, title: SL10n.briefingCallsTitle, text: SL10n.briefingCallsBody),
+         .init(icon: "record.circle", color: .red, title: SL10n.briefingRecordingTitle, text: SL10n.briefingRecordingBody),
+         .init(icon: "lock.shield.fill", color: .blue, title: SL10n.briefingSecurityTitle, text: SL10n.briefingSecurityBody)]
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Spacer()
+                Button(SL10n.briefingSkip) { onFinish() }
+                    .padding()
+            }
+            TabView(selection: $page) {
+                ForEach(Array(slides.enumerated()), id: \.element.id) { index, slide in
+                    VStack(spacing: 20) {
+                        Image(systemName: slide.icon)
+                            .font(.system(size: 56))
+                            .foregroundColor(.white)
+                            .frame(width: 104, height: 104)
+                            .background(slide.color)
+                            .clipShape(RoundedRectangle(cornerRadius: 26))
+                        Text(slide.title)
+                            .font(.title2.bold())
+                        Text(slide.text)
+                            .font(.body)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 32)
+                        Spacer()
+                    }
+                    .padding(.top, 40)
+                    .tag(index)
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: .always))
+
+            Button {
+                if page < slides.count - 1 { withAnimation { page += 1 } } else { onFinish() }
+            } label: {
+                Text(page < slides.count - 1 ? SL10n.briefingNext : SL10n.briefingStart)
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(StalkTheme.accent)
+                    .cornerRadius(12)
+            }
+            .padding(24)
+        }
     }
 }

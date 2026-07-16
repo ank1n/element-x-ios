@@ -342,6 +342,23 @@ enum SL10n {
     static let remoteRecordingTitle = NSLocalizedString("stalk_remote_recording_title", tableName: "Localizable", value: "Идёт запись звонка", comment: "Remote recording warning title")
     static let remoteRecordingMessage = NSLocalizedString("stalk_remote_recording_message", tableName: "Localizable", value: "Один из участников начал запись этого звонка.", comment: "Remote recording warning message")
 
+    // MARK: Briefing / онбординг (STMOB-259)
+
+    static let briefingTitle = NSLocalizedString("stalk_briefing_title", tableName: "Localizable", value: "Как пользоваться", comment: "Briefing screen title")
+    static let briefingCallsTitle = NSLocalizedString("stalk_briefing_calls_title", tableName: "Localizable", value: "Звонки", comment: "")
+    static let briefingCallsBody = NSLocalizedString("stalk_briefing_calls_body", tableName: "Localizable", value: "Кнопка телефона — аудиозвонок, кнопка камеры — видеозвонок. В звонке можно включить или выключить микрофон и камеру, переключить динамик и включить размытие или фон вместо реального окружения.", comment: "")
+    static let briefingRecordingTitle = NSLocalizedString("stalk_briefing_recording_title", tableName: "Localizable", value: "Запись и транскрибация", comment: "")
+    static let briefingRecordingBody = NSLocalizedString("stalk_briefing_recording_body", tableName: "Localizable", value: "Звонок можно записать кнопкой записи. Все участники получают предупреждение о начале записи. После звонка запись и её текстовая расшифровка доступны в истории звонков.", comment: "")
+    static let briefingSecurityTitle = NSLocalizedString("stalk_briefing_security_title", tableName: "Localizable", value: "Безопасность", comment: "")
+    static let briefingSecurityBody = NSLocalizedString("stalk_briefing_security_body", tableName: "Localizable", value: "Все звонки и переписка защищены сквозным шифрованием — доступ к ключам есть только у участников. В настройках можно посмотреть активные сессии и устройства вашего аккаунта.", comment: "")
+    static let briefingChatsTitle = NSLocalizedString("stalk_briefing_chats_title", tableName: "Localizable", value: "Чаты", comment: "")
+    static let briefingChatsBody = NSLocalizedString("stalk_briefing_chats_body", tableName: "Localizable", value: "Пишите сообщения, отвечайте на них свайпом, прикрепляйте файлы и фото. Долгое нажатие на сообщение открывает действия: ответить, скопировать, переслать.", comment: "")
+    // First-run walkthrough
+    static let briefingWelcomeTitle = NSLocalizedString("stalk_briefing_welcome_title", tableName: "Localizable", value: "Добро пожаловать в sTalk", comment: "")
+    static let briefingSkip = NSLocalizedString("stalk_briefing_skip", tableName: "Localizable", value: "Пропустить", comment: "")
+    static let briefingNext = NSLocalizedString("stalk_briefing_next", tableName: "Localizable", value: "Далее", comment: "")
+    static let briefingStart = NSLocalizedString("stalk_briefing_done", tableName: "Localizable", value: "Начать", comment: "")
+
     // MARK: - Calendar
 
     static let calendarWeekdays: [String] = {

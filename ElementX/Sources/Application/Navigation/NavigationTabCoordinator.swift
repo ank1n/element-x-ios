@@ -326,6 +326,10 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
     @State private var standardAppearance = UITabBarAppearance()
     @State private var selectedIndex = 0
 
+    // STMOB-259: first-run онбординг — показать один раз после логина.
+    @AppStorage("stalk_briefing_shown") private var briefingShown = false
+    @State private var showBriefingWalkthrough = false
+
     /// Whether any tab has a Lottie/SF Symbol icon configured (use custom Stalk tab bar)
     private var useCustomTabBar: Bool {
         navigationTabCoordinator.tabModules.contains { $0.details.sfSymbol != nil }
@@ -389,6 +393,19 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
                let index = navigationTabCoordinator.tabModules.firstIndex(where: { $0.details.tag == selected }),
                selectedIndex != index {
                 selectedIndex = index
+            }
+            // STMOB-259: first-run briefing — один раз после логина, с небольшой
+            // задержкой чтобы основной UI успел появиться.
+            if !briefingShown {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                    if !briefingShown { showBriefingWalkthrough = true }
+                }
+            }
+        }
+        .fullScreenCover(isPresented: $showBriefingWalkthrough) {
+            BriefingWalkthroughView {
+                briefingShown = true
+                showBriefingWalkthrough = false
             }
         }
         .onChange(of: selectedIndex) { _, newValue in
