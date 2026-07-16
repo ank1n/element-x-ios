@@ -121,6 +121,18 @@ final class NativeCallSession: ObservableObject {
     private var pathMonitor: NWPathMonitor?
     private var lastNetworkInterface = ""
 
+    // STMOB-256: диагностика латентности подключения. callStartTime ставится в start(),
+    // elapsedMs() даёт мс от старта — DiagLog каждой фазы, чтобы видеть где уходят
+    // секунды (особенно на .uz с высоким RTT). capabilitiesNegotiated поднимается
+    // после ответа на toWidget capabilities — заменяет глухой sleep(5s) событийным
+    // ожиданием с потолком.
+    private var callStartTime: Date?
+    private var capabilitiesNegotiated = false
+    private func elapsedMs() -> Int {
+        guard let callStartTime else { return -1 }
+        return Int(Date().timeIntervalSince(callStartTime) * 1000)
+    }
+
     // MARK: - Init
 
     /// Включать ли камеру сразу после connect. false для АУДИО-звонков:
@@ -161,6 +173,8 @@ final class NativeCallSession: ObservableObject {
         MXLog.info("sTalk NativeCall: Starting session, encrypted=\(isEncrypted), user=\(userId)")
         os_log(.info, log: callLog, "Starting session encrypted=%{public}@ user=%{public}@", "\(isEncrypted)", userId)
         sessionState = .starting
+        callStartTime = Date() // STMOB-256: точка отсчёта для диагностики латентности
+        DiagLog.write("CallPerf", "start() begin — connecting to call")
         setupNetworkMonitor()
 
         // Start WidgetDriver in background for E2EE key exchange only
@@ -170,6 +184,7 @@ final class NativeCallSession: ObservableObject {
                                                     colorScheme: colorScheme,
                                                     rageshakeURL: nil,
                                                     analyticsConfiguration: nil)
+        DiagLog.write("CallPerf", "widgetDriver.start done @\(elapsedMs())ms")
         if case .success = driverResult {
             widgetDriver.messagePublisher
                 .receive(on: DispatchQueue.main)
@@ -197,8 +212,10 @@ final class NativeCallSession: ObservableObject {
             await widgetDriver.handleMessage(capRequest)
             MXLog.info("sTalk NativeCall: WidgetDriver — capabilities requested")
 
-            // Wait for driver to process capabilities
-            try? await Task.sleep(for: .seconds(1))
+            // STMOB-256: раньше здесь был глухой sleep(1s) — драйверу нужно лишь
+            // локально принять fromWidget request_capabilities, это быстро. 400мс с
+            // запасом; настоящее ожидание — событийное на шаге negotiation ниже.
+            try? await Task.sleep(for: .milliseconds(400))
 
             // Step 2: content_loaded
             let contentLoaded = """
@@ -207,14 +224,20 @@ final class NativeCallSession: ObservableObject {
             await widgetDriver.handleMessage(contentLoaded)
             MXLog.info("sTalk NativeCall: WidgetDriver — content_loaded sent")
 
-            // Wait for capabilities negotiation to complete (async)
-            try? await Task.sleep(for: .seconds(5))
+            // STMOB-256: раньше глухой sleep(5s) «ждём негоциацию capabilities» —
+            // это была самая большая фиксированная задержка на КАЖДЫЙ звонок (тестеры
+            // .uz: «долго подключаешься»). Теперь ждём РЕАЛЬНОГО завершения (флаг
+            // capabilitiesNegotiated поднимается в processWidgetMessage после ответа
+            // на toWidget capabilities) с потолком 5s — worst case не хуже прежнего,
+            // типично < 1s. Поллинг 50мс.
+            await waitForCapabilitiesNegotiation(ceilingMs: 5000)
 
             // Step 3: io.element.join — trigger MatrixRTC
             let joinCall = """
             {"api":"fromWidget","action":"io.element.join","widgetId":"\(widgetDriver.widgetID)","requestId":"native-join-\(UUID().uuidString)","data":{}}
             """
             await widgetDriver.handleMessage(joinCall)
+            DiagLog.write("CallPerf", "io.element.join sent @\(elapsedMs())ms")
             MXLog.info("sTalk NativeCall: WidgetDriver — io.element.join sent")
         }
 
@@ -357,6 +380,25 @@ final class NativeCallSession: ObservableObject {
         await connectWithGeneratedJWT()
     }
 
+    /// STMOB-256: событийное ожидание завершения negotiation capabilities с потолком.
+    /// Возвращается сразу как только `capabilitiesNegotiated` поднят в
+    /// processWidgetMessage (ответ на toWidget capabilities), иначе — по истечении
+    /// ceilingMs. Заменяет прежний глухой sleep(5s): worst case не хуже, типично много
+    /// быстрее. Поллинг 50мс — дёшево и без continuation-гонок.
+    private func waitForCapabilitiesNegotiation(ceilingMs: Int) async {
+        let stepMs = 50
+        var waited = 0
+        while !capabilitiesNegotiated, waited < ceilingMs {
+            try? await Task.sleep(for: .milliseconds(stepMs))
+            waited += stepMs
+        }
+        if capabilitiesNegotiated {
+            DiagLog.write("CallPerf", "capabilities wait resolved after \(waited)ms (@\(elapsedMs())ms)")
+        } else {
+            DiagLog.write("CallPerf", "capabilities wait CEILING \(ceilingMs)ms hit (@\(elapsedMs())ms) — proceeding")
+        }
+    }
+
     // MARK: - Join Membership
 
     private func sendJoinMembership() async {
@@ -416,9 +458,11 @@ final class NativeCallSession: ObservableObject {
         // the correct focus in our own call.member and fetch creds from the right service.
         let jwtService = await resolveLiveKitServiceURL()
         resolvedJWTServiceURL = jwtService
+        DiagLog.write("CallPerf", "jwt service resolved @\(elapsedMs())ms")
 
         // Send MatrixRTC join via REST API so remote participants see us
         let joinEventID = await sendJoinViaREST()
+        DiagLog.write("CallPerf", "join via REST done @\(elapsedMs())ms")
         // STMOB-154 build 178: сохраняем для использования в m.reaction events
         // (hand raise iOS → Web bridge). Web Element Call widget читает m.reaction
         // с m.relates_to.event_id равным call.member event_id для отображения hand raise.
@@ -440,8 +484,9 @@ final class NativeCallSession: ObservableObject {
             DiagLog.write("Call", "join ongoing call: \(alreadyInCall.count) members already in → NO ring (STMOB-200)")
         }
 
-        // Debug: read current state events to compare formats
-        await debugReadCallMemberState()
+        // STMOB-256: debugReadCallMemberState() удалён с критического пути — это был
+        // чистый DEBUG-round-trip (read state events «to compare formats»), который
+        // задерживал fetch creds на целый сетевой запрос без пользы в проде.
 
         // Fetch LiveKit creds from the per-domain lk-jwt-service (correct SFU wss url + a valid JWT
         // signed with THIS install's api secret). Replaces the old local generation with a
@@ -451,6 +496,7 @@ final class NativeCallSession: ObservableObject {
             sessionState = .failed(NativeCallError.noCredentials)
             return
         }
+        DiagLog.write("CallPerf", "livekit creds fetched @\(elapsedMs())ms sfu=\(creds.url)")
         MXLog.info("sTalk NativeCall: LiveKit creds room=\(roomName) identity=\(userId):\(deviceId) sfu=\(creds.url)")
         await connectToLiveKit(url: creds.url, token: creds.jwt)
     }
@@ -1472,6 +1518,10 @@ final class NativeCallSession: ObservableObject {
                     MXLog.info("sTalk NativeCall: Sending toWidget response: \(String(response.prefix(200)))")
                     let result = await widgetDriver.handleMessage(response)
                     MXLog.info("sTalk NativeCall: toWidget response result=\(result)")
+                    // STMOB-256: негоциация capabilities завершена — снимаем событийное
+                    // ожидание в start() (вместо глухого sleep(5s)).
+                    self.capabilitiesNegotiated = true
+                    DiagLog.write("CallPerf", "capabilities negotiated @\(self.elapsedMs())ms")
                 }
             } else {
                 Task {
@@ -1755,6 +1805,7 @@ final class NativeCallSession: ObservableObject {
 
             sessionState = .connected
             roomManager = liveKitRoomManager
+            DiagLog.write("CallPerf", "LiveKit CONNECTED @\(elapsedMs())ms — audio/video path up")
             MXLog.info("sTalk NativeCall: Connected to LiveKit")
 
             // STMOB-126: запускаем периодический rebroadcast ключа (E2EE only).
