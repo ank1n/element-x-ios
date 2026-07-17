@@ -3229,5 +3229,22 @@ UZ-фидбек «долго подключаешься»: часть висяк
 
 ---
 
+### 77. ✅ Аудио-first на всех путях входа в звонок + self-healing гудков (build 254)
+
+**Дата**: 2026-07-17
+**Коммит**: `1b70a492e` (ios)
+
+Лог 136 (build 253, STALK-610 прогон): гейт инициатора работает ✅, но три новых симптома с одним корнем — «аудио»-звонок публиковал **камеру** через ~1.3с после старта гудков (`publish media: mic=on camera=on`). Публикация видео-трека реконфигурирует AVAudioSession → (1) AVAudioEngine гудков молча глохнет (тишина после первого гудка при живом экране набора), (2) индикатор камеры вспыхивает ON, (3) при ответе камера остаётся включённой.
+
+Причина: пути входа теряли аудио-флаг — `videoEnabled: true` хардкод/дефолт в: карточке контакта (`RoomMembersFlowCoordinator` ×2), профиле из Чатов (`ChatsTabFlowCoordinator`), деталях комнаты (`RoomFlowCoordinator .presentCall`), перезвоне из истории/Встреч (`UserSessionFlowCoordinator.presentCallScreen(roomID:)` ×2). dp звонил из карточки контакта → камера ON.
+
+**Фиксы:**
+1. **Аудио-first везде**: видео-звонок стартует ТОЛЬКО явной видео-кнопкой в шапке комнаты (`displayCall`); все прочие входы = камера off (включается в звонке).
+2. **RingbackTonePlayer self-healing**: подписка на `AVAudioEngineConfigurationChange` → пересборка движка. Гудки переживают реконфиг сессии (публикация камеры в легитимном видео-звонке, смена роута на AirPods). DiagLog: `ringback RESTART after audio config change`.
+
+Файлы: `UserSessionFlowCoordinator.swift`, `RoomFlowCoordinator.swift`, `RoomMembersFlowCoordinator.swift`, `ChatsTabFlowCoordinator.swift`, `CallScreenViewModel.swift`.
+
+---
+
 **Дата создания**: 2026-01-28
 **Последнее обновление**: 2026-05-28
