@@ -347,6 +347,14 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 // Собеседник подключился — гудки исходящего вызова умолкают
                 if realUsersCount > 0 {
                     self.stopRingback()
+                    // sTalk-фикс (лог 132): для ИНИЦИАТОРА переход в .connected происходит
+                    // ЗДЕСЬ — когда собеседник реально ответил (вошёл в медиа-сессию), а не
+                    // при нашем LiveKit-connect. До этого экран показывает «Вызов…» + гудки.
+                    if self.state.callStatus != .connected {
+                        self.state.callStatus = .connected
+                        self.startCallTimer()
+                        MXLog.info("sTalk: callStatus=connected — remote answered (\(realUsersCount) real)")
+                    }
                 }
                 let liveKitTotal = realUsersCount + 1
                 if liveKitTotal > self.state.callParticipantsCount {
@@ -592,13 +600,17 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                                 // Блюр-интент из настроек прочитан менеджером при connect — синк в UI
                                 self.state.callBackgroundMode = self.liveKitRoomManager.callBackgroundMode
                                 self.startRingbackIfInitiator()
-                                // STMOB-80: header «Вызов...» застревал — нужен явный
-                                // переход в connected + старт таймера. Раньше зависело
-                                // только от MatrixRTC infoPublisher, который опаздывал.
-                                if self.state.callStatus != .connected {
+                                // sTalk-фикс (лог 132): раньше callStatus=.connected ставился
+                                // при НАШЕМ LiveKit-connect — до того как собеседник поднял
+                                // трубку. Исходящий показывал «принято»+таймер, пока на той
+                                // стороне ещё звонит. Теперь: ИНИЦИАТОР остаётся в «Вызов…»
+                                // (+гудки) до входа первого remote-участника (см. подписку
+                                // remoteParticipants → там переход в .connected). Отвечающий/
+                                // входящий в идущий звонок — remote уже есть → connected сразу.
+                                if !self.startedAsInitiator, self.state.callStatus != .connected {
                                     self.state.callStatus = .connected
                                     self.startCallTimer()
-                                    MXLog.info("sTalk: callStatus=connected via NativeCallSession")
+                                    MXLog.info("sTalk: callStatus=connected (joiner) via NativeCallSession")
                                 }
                                 // STMOB-80: subscribe на LiveKit localVideoTrack чтобы
                                 // icon камеры всегда отражал реальность. Раньше observe

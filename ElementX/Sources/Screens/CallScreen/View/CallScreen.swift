@@ -139,7 +139,12 @@ struct CallScreen: View {
     
     @ViewBuilder
     var content: some View {
-        if let roomManager = context.viewState.liveKitRoomManager, context.viewState.url == nil {
+        // sTalk-фикс (лог 132): пока callStatus == .connecting (инициатор ждёт ответа),
+        // показываем ЭКРАН НАБОРА («Вызов…» + гудки), а не in-call вид — даже если
+        // liveKitRoomManager уже установлен (мы подключились к SFU первыми). Переход
+        // на in-call сетку происходит когда собеседник ответил (callStatus → .connected).
+        if let roomManager = context.viewState.liveKitRoomManager, context.viewState.url == nil,
+           context.viewState.callStatus != .connecting {
             // sTalk: Native call mode — no WebView, native LiveKit rendering
             NativeCallGridView(roomManager: roomManager,
                                isDirect: context.viewState.isDirect,
