@@ -272,6 +272,12 @@ import SwiftUI
 
         withTransaction(transaction) {
             overlayPresentationMode = presentationMode
+            // sTalk-фикс «окно звонка не открывается»: callOverlay рендерит по
+            // `isCallMinimized`, а он раньше НЕ сбрасывался при установке нового
+            // координатора (сброс был только при nil). Если оставался true от
+            // прошлого сворачивания — новый звонок открывался крохотным мини-окном
+            // 140×200 вместо фуллскрина. Синхронизируем с presentationMode.
+            isCallMinimized = (presentationMode == .minimized)
             overlayModule = NavigationModule(coordinator, dismissalCallback: dismissalCallback)
         }
     }
