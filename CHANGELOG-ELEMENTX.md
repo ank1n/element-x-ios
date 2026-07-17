@@ -3263,5 +3263,27 @@ UZ-фидбек «долго подключаешься»: часть висяк
 
 ---
 
+### 79. ✅ 0xDEAD10CC-митигации: гейты фоновых триггеров записи (build 256)
+
+**Дата**: 2026-07-17
+**Коммит**: `ce1b6b048^` (ios, fix+bump)
+
+Крашы 0xDEAD10CC на 250 (01:17) и 254 (16:33): tokio-worker заморожен в `rusqlite execute_batch → sqlite3PagerCommitPhaseOne → pwrite/fsync`. Диагноз (мульти-агентный воркфлоу, адверсарно проверен): **race «фоновое CPU-окно → SDK докатывает WAL-коммит → ре-суспенд посреди записи»**. НЕ возврат бага 240 — stopSync отработал за 22 мин до kill. Хронология 254: bg task истёк 16:10:55 → NSE-пуши 16:32:51 → «Meetings GET» 16:33:05 (фоновое CPU-окно главного приложения!) → kill 16:33:07.
+
+Ключевой факт: `syncService.stop()` НЕ закрывает сторы/локи — для этого в SDK 26.06.03 есть `Client.pause()` (док: «releasing all connections and file locks… to avoid 0xdead10cc kills»), который форк не вызывает, а upstream держит за флагом `clientPausingAndResumingEnabled`.
+
+**Фиксы 256 (нулевой риск, триггеры урока 240 не тронуты):**
+1. Meetings-поллер (120с, `HomeScreenViewModel.refreshMeetingRoomIDs`) — no-op в фоне (DiagLog `refresh skipped (app in background)`).
+2. Транскрипционный поллер (10с, `CallDetailScreenViewModel.startPolling`) — no-op в фоне.
+3. `ClientProxy.forceTokenRefresh` — skip в фоне (401→OIDC-персист в sqlite без bg task; DiagLog `forceTokenRefresh skipped (background)`).
+4. BGAppRefresh — DiagLog-маркеры `START/END/EXPIRED` (кандидат в источники CPU-окна; по следующему дампу видно, стрелял ли перед kill).
+5. Completion-гигиена ранних выходов `AppCoordinator.stopSync` (класс 0x8badf00d).
+
+**План 257:** порт upstream-модели `client.pause()/resume()` (`reconcileServiceState`, сериализация `serviceStateTask`) за флагом, с DiagLog-замером `client.pause() took Xms`. Гейт включения: стабильно < 2-3с на устройстве.
+
+Файлы: `HomeScreenViewModel.swift`, `CallDetailScreenViewModel.swift`, `ClientProxy.swift` (+`import UIKit`), `AppCoordinator.swift`.
+
+---
+
 **Дата создания**: 2026-01-28
 **Последнее обновление**: 2026-05-28
