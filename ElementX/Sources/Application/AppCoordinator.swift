@@ -1174,11 +1174,18 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
     private func stopSync(isBackgroundTask: Bool, completion: (() -> Void)? = nil) {
         if isBackgroundTask, UIApplication.shared.applicationState == .active {
             // Attempt to stop the background task sync loop cleanly, only if the app not already running
+            // 0xDEAD10CC-гигиена: completion ОБЯЗАН вызваться и на ранних выходах —
+            // иначе в expiration-пути bg task не снимается (класс 0x8badf00d).
+            completion?()
             return
         }
-        
+
         MainActor.assumeIsolated {
-            userSession?.clientProxy.stopSync(completion: completion)
+            if let userSession {
+                userSession.clientProxy.stopSync(completion: completion)
+            } else {
+                completion?()
+            }
             clientProxyObserver = nil
         }
     }
@@ -1470,7 +1477,11 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
     private var backgroundRefreshSyncObserver: AnyCancellable?
     private func handleBackgroundAppRefresh(_ task: BGAppRefreshTask) {
         MXLog.info("Started background app refresh")
-        
+        // 0xDEAD10CC-диагностика (крашы 250/254): BGAppRefresh запускает startSync()
+        // в фоне — кандидат в источники CPU-окна перед kill (16:33:05). Маркеры в
+        // DiagLog, чтобы по следующему дампу видеть, стрелял ли он в окне краша.
+        DiagLog.write("AppLifecycle", "BGAppRefresh START")
+
         // This is important for the app to keep refreshing in the background
         scheduleBackgroundAppRefresh()
         
@@ -1482,10 +1493,12 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         // https://sentry.tools.element.io/organizations/element/issues/4477794/
         task.expirationHandler = { @Sendable [weak self] in
             MXLog.info("Background app refresh task is about to expire.")
-            
+            DiagLog.write("AppLifecycle", "BGAppRefresh EXPIRED → stopSync")
+
             Task { @MainActor in
                 self?.stopSync(isBackgroundTask: true) {
                     MXLog.info("Marking Background app refresh task as complete.")
+                    DiagLog.write("AppLifecycle", "BGAppRefresh END (expired path)")
                     task.setTaskCompleted(success: true)
                 }
             }
@@ -1507,11 +1520,12 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
                 guard let self else { return }
                 MXLog.info("Background app refresh finished")
                 backgroundRefreshSyncObserver?.cancel()
-                
+
                 // Make sure we stop the sync loop, otherwise the ongoing request is immediately
                 // handled the next time the app refreshes, which can trigger timeout failures.
                 stopSync(isBackgroundTask: true) {
                     MXLog.info("Marking Background app refresh task as complete.")
+                    DiagLog.write("AppLifecycle", "BGAppRefresh END (10 events/10s)")
                     task.setTaskCompleted(success: true)
                 }
             }

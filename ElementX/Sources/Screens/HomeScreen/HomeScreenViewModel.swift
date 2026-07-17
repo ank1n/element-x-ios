@@ -420,6 +420,14 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
     }
 
     private func refreshMeetingRoomIDs() {
+        // 0xDEAD10CC (крашы 250/254): таймер жил и в фоне — тик в фоновом CPU-окне
+        // дёргал сеть (лог 138: «Meetings GET» 16:33:05, за 2с до kill) и мог
+        // триггерить SDK-запись (401→token refresh) без bg task → суспенд посреди
+        // WAL-коммита. В фоне тик = no-op, форграунд догонит следующим тиком.
+        guard UIApplication.shared.applicationState != .background else {
+            DiagLog.write("Meetings", "refresh skipped (app in background)")
+            return
+        }
         Task { [weak self] in
             guard let self else { return }
             do {

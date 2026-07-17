@@ -11,6 +11,7 @@ import CryptoKit
 import Foundation
 import MatrixRustSDK
 import OrderedCollections
+import UIKit
 
 class ClientProxy: ClientProxyProtocol {
     private let client: ClientProtocol
@@ -313,6 +314,14 @@ class ClientProxy: ClientProxyProtocol {
     /// MAS tokens expire every 15 min — SDK refreshes automatically for its own calls,
     /// but our custom API calls (meetings, recordings) need fresh tokens too.
     func forceTokenRefresh() async {
+        // 0xDEAD10CC (крашы 250/254): в фоне refresh НЕ делаем — OIDC-refresh
+        // персистит токены в sqlite; в фоновом CPU-окне без bg task ре-суспенд
+        // ловит WAL-коммит → kill. 401 в фоне тихо фейлится, ретрай на форграунде.
+        let state = await MainActor.run { UIApplication.shared.applicationState }
+        guard state != .background else {
+            DiagLog.write("ClientProxy", "forceTokenRefresh skipped (background)")
+            return
+        }
         // displayName() makes a real server request (/profile/{userId}/displayname)
         // which triggers SDK's internal OIDC token refresh if expired.
         // After this call, client.session().accessToken returns the fresh token.

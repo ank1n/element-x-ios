@@ -296,6 +296,9 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
         pollingCancellable = Timer.publish(every: 10, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
+                // 0xDEAD10CC-гигиена: тик в фоне = no-op (сеть/401→token refresh
+                // в фоновом CPU-окне без bg task = суспенд посреди SDK-записи)
+                guard UIApplication.shared.applicationState != .background else { return }
                 Task { [weak self] in
                     guard let self, let egressId = self.egressId else { return }
                     do {
