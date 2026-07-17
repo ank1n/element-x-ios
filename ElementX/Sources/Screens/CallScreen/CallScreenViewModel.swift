@@ -1492,7 +1492,7 @@ final class RingbackTonePlayer {
     /// транзиента реконфига (публикация камеры в видео-звонке) читал промежуточный
     /// HW-рейт → тон другой высоты/тембра («гудок совсем не похож на системный»).
     /// Генерим всегда под 48к с явным форматом — миксер сам ресемплит в HW.
-    private static let toneSampleRate: Double = 48_000
+    private static let toneSampleRate: Double = 48000
     private var engine: AVAudioEngine?
     private var configObserver: NSObjectProtocol?
     private var restartTask: Task<Void, Never>?
