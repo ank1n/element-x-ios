@@ -46,6 +46,19 @@ final class NativeCallSession: ObservableObject {
     private let accessToken: String
     private let roomProxy: JoinedRoomProxyProtocol?
 
+    /// Единая URLSession для всех MatrixRTC REST-запросов. Request/resource timeout = 15с
+    /// (дефолт URLSession.shared = 60с) — мёртвый/медленный homeserver (в частности .uz
+    /// cold-start) падает быстро, а не вешает путь подключения к звонку.
+    /// waitsForConnectivity=false обязателен: иначе timeoutIntervalForRequest НЕ тикает пока
+    /// система «ждёт связи» — на reachable-но-немом .uz-хосте это и даёт многоминутный висяк.
+    private let restSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 15
+        config.timeoutIntervalForResource = 15
+        config.waitsForConnectivity = false
+        return URLSession(configuration: config)
+    }()
+
     // MARK: - LiveKit Config
 
     // LiveKit credentials are NOT hardcoded anymore: they are fetched per-call from the
@@ -485,7 +498,7 @@ final class NativeCallSession: ObservableObject {
     /// so the old hardcoded stalk.implica.ru URL + embedded key only worked on .ru-shared infra.
     private func resolveLiveKitServiceURL() async -> String {
         if let wellKnownURL = URL(string: "\(homeserverURL)/.well-known/matrix/client"),
-           let (data, _) = try? await URLSession.shared.data(from: wellKnownURL),
+           let (data, _) = try? await restSession.data(from: wellKnownURL),
            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            let foci = json["org.matrix.msc4143.rtc_foci"] as? [[String: Any]],
            let url = foci.first(where: { ($0["type"] as? String) == "livekit" })?["livekit_service_url"] as? String,
@@ -507,7 +520,7 @@ final class NativeCallSession: ObservableObject {
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = Data("{}".utf8)
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
+        guard let (data, response) = try? await restSession.data(for: request),
               let status = (response as? HTTPURLResponse)?.statusCode, (200..<300).contains(status),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             MXLog.error("sTalk NativeCall: failed to obtain Matrix OpenID token")
@@ -535,7 +548,7 @@ final class NativeCallSession: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await restSession.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             guard (200..<300).contains(status),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -597,7 +610,7 @@ final class NativeCallSession: ObservableObject {
         request.httpBody = jsonData
 
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await restSession.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             let respBody = String(data: data, encoding: .utf8) ?? ""
             MXLog.info("sTalk NativeCall: REST join \(eventType) → \(status) url=\(url) body=\(respBody.prefix(200))")
@@ -675,7 +688,7 @@ final class NativeCallSession: ObservableObject {
         request.httpBody = jsonData
 
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await restSession.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             if status >= 200, status < 300,
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -1023,7 +1036,7 @@ final class NativeCallSession: ObservableObject {
         request.httpBody = jsonData
 
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await restSession.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             if status >= 200, status < 300 {
                 DiagLog.write("E2EE", "KS publish[\(label)] OK \(status) host=\(homeserverHost) room=\(roomName) identity=\(identity)")
@@ -1129,7 +1142,7 @@ final class NativeCallSession: ObservableObject {
             }
             var request = URLRequest(url: requestURL)
             request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-            if let (data, _) = try? await URLSession.shared.data(for: request),
+            if let (data, _) = try? await restSession.data(for: request),
                let parsed = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
                 events = parsed
                 break
@@ -1227,7 +1240,7 @@ final class NativeCallSession: ObservableObject {
         request.httpBody = jsonData
 
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await restSession.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             let respBody = String(data: data, encoding: .utf8) ?? ""
             MXLog.info("sTalk NativeCall: Ring notification → \(status) users=\(otherUserIDs.count) ref=\(callMemberEventID ?? "none") resp=\(respBody.prefix(100))")
@@ -1307,7 +1320,7 @@ final class NativeCallSession: ObservableObject {
             request.httpBody = jsonData
 
             do {
-                let (_, response) = try await URLSession.shared.data(for: request)
+                let (_, response) = try await restSession.data(for: request)
                 let status = (response as? HTTPURLResponse)?.statusCode ?? 0
                 MXLog.info("sTalk NativeCall: REST leave \(eventType) → \(status)")
             } catch {
@@ -1347,7 +1360,7 @@ final class NativeCallSession: ObservableObject {
         request.httpBody = Data("{}".utf8)
 
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await restSession.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             guard status == 200,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -1387,7 +1400,7 @@ final class NativeCallSession: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = Data("{\"action\":\"\(action)\"}".utf8)
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
+            let (_, response) = try await restSession.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             if status != 200 {
                 DiagLog.write("Call", "delayed leave \(action) → \(status)")
