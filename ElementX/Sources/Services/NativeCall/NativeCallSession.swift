@@ -399,47 +399,9 @@ final class NativeCallSession: ObservableObject {
         }
     }
 
-    // MARK: - Join Membership
-
-    private func sendJoinMembership() async {
-        let stateKey = userId
-        let expiresTs = Int(Date().timeIntervalSince1970 * 1000) + 7_200_000 // 2 hours
-
-        let membership: [String: Any] = [
-            "application": "m.call",
-            "call_id": "",
-            "scope": "m.room",
-            "device_id": deviceId,
-            "expires_ts": expiresTs,
-            "foci_preferred": [
-                ["type": "livekit", "livekit_service_url": resolvedJWTServiceURL ?? "https://jwt.\(homeserverHost)"]
-            ],
-            "membershipID": UUID().uuidString
-        ]
-
-        let eventData: [String: Any] = [
-            "type": "org.matrix.msc3401.call.member",
-            "state_key": stateKey,
-            "content": ["memberships": [membership]]
-        ]
-
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: eventData),
-              let jsonString = String(data: jsonData, encoding: .utf8) else {
-            MXLog.error("sTalk NativeCall: Failed to serialize join membership")
-            return
-        }
-
-        let sendEvent = """
-        {"api":"fromWidget","action":"send_event","widgetId":"\(widgetDriver.widgetID)","requestId":"native-join-\(UUID().uuidString)","data":\(jsonString)}
-        """
-
-        MXLog.info("sTalk NativeCall: Sending join membership via Widget API")
-        await widgetDriver.handleMessage(sendEvent)
-
-        // After join, generate JWT and connect to LiveKit
-        try? await Task.sleep(for: .seconds(2))
-        await connectWithGeneratedJWT()
-    }
+    // sTalk: sendJoinMembership() удалён (ревью 2026-07-17) — мёртвый код (join идёт
+    // через sendJoinViaREST() REST-путём; widget-based join был вытеснен). При
+    // воскрешении вызвал бы второй connectWithGeneratedJWT() без гарда credentialsReceived.
 
     private func connectWithGeneratedJWT() async {
         // LiveKit room name = the matrix room ID (the call's livekit_alias). Element Call web sends
@@ -1132,87 +1094,12 @@ final class NativeCallSession: ObservableObject {
         MXLog.info("sTalk NativeCall E2EE: Listening to room timeline for encryption_keys")
     }
 
-    private func pollForEncryptionKeys() async {
-        // Poll room messages for io.element.call.encryption_keys events
-        let encodedRoom = matrixRoomId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? matrixRoomId
-        let url = "\(homeserverURL)/_matrix/client/v3/rooms/\(encodedRoom)/messages?dir=b&limit=20&filter={\"types\":[\"io.element.call.encryption_keys\"]}"
+    // sTalk: pollForEncryptionKeys() удалён (ревью 2026-07-17) — мёртвый код (приём
+    // ключей идёт через listenForEncryptionKeysFromTimeline; этот polling бы ещё
+    // ставил ключи через keyProvider.setKey строкой вместо setRawKeyInProvider).
 
-        guard let requestURL = URL(string: url) else { return }
-
-        // Poll every 3 seconds for 60 seconds
-        for _ in 0..<20 {
-            guard sessionState == .connected || sessionState == .waitingForCredentials || sessionState == .connecting else { return }
-
-            var request = URLRequest(url: requestURL)
-            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-
-            do {
-                let (data, response) = try await URLSession.shared.data(for: request)
-                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-
-                if status == 200,
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let chunk = json["chunk"] as? [[String: Any]] {
-                    for event in chunk {
-                        guard let content = event["content"] as? [String: Any],
-                              let sender = event["sender"] as? String,
-                              sender != userId, // Skip our own keys
-                              let deviceId = content["device_id"] as? String else { continue }
-
-                        // Extract keys array
-                        if let keys = content["keys"] as? [[String: Any]] {
-                            for keyObj in keys {
-                                if let key = keyObj["key"] as? String,
-                                   let index = keyObj["index"] as? Int {
-                                    let participantId = "\(sender):\(deviceId)"
-                                    MXLog.info("sTalk NativeCall E2EE: Got key from timeline! \(participantId) index=\(index)")
-                                    keyProvider.setKey(key: key, participantId: participantId, index: Int32(index))
-                                    participantKeys[participantId] = true
-
-                                    if let participant = pendingParticipants.removeValue(forKey: participantId) {
-                                        subscribeToAllTracks(of: participant)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            } catch {
-                MXLog.error("sTalk NativeCall E2EE: Poll failed: \(error)")
-            }
-
-            try? await Task.sleep(for: .seconds(3))
-        }
-    }
-
-    // MARK: - Debug
-
-    private func debugReadCallMemberState() async {
-        let encodedRoom = matrixRoomId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? matrixRoomId
-        let url = "\(homeserverURL)/_matrix/client/v3/rooms/\(encodedRoom)/state"
-
-        var request = URLRequest(url: URL(string: url)!)
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-
-        do {
-            let (data, _) = try await URLSession.shared.data(for: request)
-            if let events = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
-                for event in events {
-                    let type = event["type"] as? String ?? ""
-                    if type.contains("call") {
-                        let stateKey = event["state_key"] as? String ?? ""
-                        let content = event["content"] as? [String: Any] ?? [:]
-                        if let contentData = try? JSONSerialization.data(withJSONObject: content),
-                           let contentStr = String(data: contentData, encoding: .utf8) {
-                            MXLog.info("sTalk DEBUG: state \(type) key=\(stateKey) content=\(contentStr.prefix(500))")
-                        }
-                    }
-                }
-            }
-        } catch {
-            MXLog.error("sTalk DEBUG: Failed to read state: \(error)")
-        }
-    }
+    // sTalk: debugReadCallMemberState() удалён (ревью 2026-07-17) — мёртвый debug-код
+    // (читал call.member state и логировал content в MXLog), содержал force-unwrap URL.
 
     // MARK: - Call Notification
 
@@ -1868,21 +1755,10 @@ final class NativeCallSession: ObservableObject {
 
     // MARK: - Participant Management
 
-    func handleRemoteParticipantConnected(_ participant: RemoteParticipant) {
-        let identity = participant.identity?.stringValue ?? ""
-        if !isEncrypted || participantKeys[identity] == true {
-            subscribeToAllTracks(of: participant)
-        } else {
-            pendingParticipants[identity] = participant
-            MXLog.info("sTalk NativeCall: Queued \(identity) — waiting for E2EE key")
-        }
-
-        // Resend our encryption key when remote joins — they may have missed initial key
-        if isEncrypted, ourEncryptionKey != nil {
-            Task { await sendOurEncryptionKey() }
-            MXLog.info("sTalk NativeCall: Resent our E2EE key for new participant \(identity)")
-        }
-    }
+    // sTalk: handleRemoteParticipantConnected удалён (ревью 2026-07-17) — был мёртвым
+    // кодом И ловушкой: при воскрешении вызывал sendOurEncryptionKey() (ротация KID)
+    // на каждый JOIN, что противоречит v3-политике (rebroadcast без ротации). Приём
+    // участников идёт через $remoteParticipants sink (rebroadcast) + subscribeToAllTracks.
 
     private func subscribeToAllTracks(of participant: RemoteParticipant) {
         Task {
