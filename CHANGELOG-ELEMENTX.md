@@ -3285,5 +3285,22 @@ UZ-фидбек «долго подключаешься»: часть висяк
 
 ---
 
+### 80. ✅ client.pause()/resume() за флагом — главный фикс 0xDEAD10CC (build 257)
+
+**Дата**: 2026-07-17
+**Коммит**: `8ac88078b^` (ios, feat+bump)
+
+Дамп 256 (20:02:46) доказал диагноз экспериментом: митигации #79 отработали (в логе `refresh skipped (app in background)` ×2, `BGAppRefresh START` не стрелял, ни Meetings GET, ни token refresh) — а краш всё равно случился с замороженным WAL-commit. Значит **пишет сам SDK**: после `syncService.stop()` сторы и файловые локи остаются открытыми, и в любом фоновом CPU-окне tokio-потоки докатывают записи → ре-суспенд посреди `pwrite` → kill.
+
+**Фикс — порт upstream-модели:**
+- `ClientProxy.stopSync`: после `syncService.stop()` → `try await client.pause()` (док SDK: «releasing all connections and file locks… to avoid 0xdead10cc kills… after stopping the SyncService»); completion ждёт конца pause (bg task живёт всё время); замер `client.pause() OK took Xms` в DiagLog.
+- `ClientProxy.startSync`: `client.resume()` ПЕРЕД `syncService.start()`; фейл resume → лог + фолбэк на обычный start.
+- Сериализация переходов цепочкой `serviceTransitionTask` (upstream serviceStateTask-паттерн) — быстрый свернул/развернул не даёт resume влезть посреди pause.
+- Флаг `clientPauseInBackgroundEnabled` (default **OFF**) + тумблер в Developer Options (секция «0xDEAD10CC») — device-замеры до раскатки; гейт включения по умолчанию: стабильно <2-3с.
+
+Файлы: `AppSettings.swift`, `DeveloperOptionsScreenModels.swift`, `DeveloperOptionsScreen.swift`, `ClientProxy.swift`.
+
+---
+
 **Дата создания**: 2026-01-28
 **Последнее обновление**: 2026-05-28
