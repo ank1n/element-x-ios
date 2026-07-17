@@ -499,7 +499,11 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         switch roomType {
         case .joined(let roomProxy):
             DiagLog.write("Meeting", "presentCallScreen room=\(roomID) state=joined → present")
-            presentCallScreen(roomProxy: roomProxy)
+            // sTalk: перезвон из истории Звонков / «Начать звонок» из Встреч = АУДИО-first
+            // (камера off). Раньше уходил в дефолт videoEnabled=true → на аудио-перезвоне
+            // публиковалась камера на connect, что (а) включало камеру и (б) переключало
+            // AVAudioSession в videoChat и глушило AVAudioEngine-гудки. Юзер включит камеру в звонке.
+            presentCallScreen(roomProxy: roomProxy, videoEnabled: false)
         case .invited:
             await joinAndPresentCallScreen(roomID: roomID, fromState: "invited")
         case .none:
@@ -542,7 +546,8 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
             DiagLog.write("Meeting", "presentCallScreen room=\(roomID) re-fetch result=\(refetched.map { String(describing: $0).prefix(40) } ?? "TIMEOUT")")
             DiagLog.write("CallPerf", "room sync re-fetch → \(refetched != nil ? "resolved" : "TIMEOUT(8s)") room=\(roomID)")
             if case let .joined(roomProxy) = refetched {
-                presentCallScreen(roomProxy: roomProxy)
+                // sTalk: аудио-first для перезвона из истории / Встреч (см. коммент выше)
+                presentCallScreen(roomProxy: roomProxy, videoEnabled: false)
             } else {
                 DiagLog.write("Meeting", "presentCallScreen room=\(roomID) joinRoom OK но re-fetch != .joined")
                 flowParameters.userIndicatorController.submitIndicator(.init(title: L10n.errorUnknown))

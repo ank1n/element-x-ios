@@ -1490,9 +1490,31 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
 final class RingbackTonePlayer {
     private var engine: AVAudioEngine?
     private var phase: Double = 0
+    private var configObserver: NSObjectProtocol?
 
     func start() {
         guard engine == nil else { return }
+        startEngine()
+        guard engine != nil else { return }
+        DiagLog.write("Call", "ringback START")
+        // Лог 136: публикация камеры (или смена роута) реконфигурирует AVAudioSession —
+        // AVAudioEngine молча останавливается и гудки глохнут при живом экране набора.
+        // Система шлёт AVAudioEngineConfigurationChange — пересобираем движок и продолжаем.
+        configObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange,
+                                                                object: nil,
+                                                                queue: .main) { [weak self] notification in
+            Task { @MainActor [weak self] in
+                guard let self, let current = self.engine,
+                      (notification.object as? AVAudioEngine) === current else { return }
+                current.stop()
+                self.engine = nil
+                self.startEngine()
+                DiagLog.write("Call", "ringback RESTART after audio config change (engine=\(self.engine != nil ? "ok" : "failed"))")
+            }
+        }
+    }
+
+    private func startEngine() {
         let engine = AVAudioEngine()
         let sampleRate = engine.outputNode.outputFormat(forBus: 0).sampleRate
         guard sampleRate > 0 else { return }
@@ -1526,13 +1548,16 @@ final class RingbackTonePlayer {
         do {
             try engine.start()
             self.engine = engine
-            DiagLog.write("Call", "ringback START")
         } catch {
             MXLog.error("sTalk: ringback engine start failed: \(error)")
         }
     }
 
     func stop() {
+        if let configObserver {
+            NotificationCenter.default.removeObserver(configObserver)
+            self.configObserver = nil
+        }
         guard let engine else { return }
         engine.stop()
         self.engine = nil

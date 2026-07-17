@@ -797,7 +797,8 @@ class ChatsTabFlowCoordinator: FlowCoordinatorProtocol {
                 navigationSplitCoordinator.setSheetCoordinator(nil)
                 stateMachine.processEvent(.selectRoom(roomID: roomID, via: [], entryPoint: .room))
             case .startCall(let roomProxy):
-                actionsSubject.send(.showCallScreen(roomProxy: roomProxy, videoEnabled: true))
+                // sTalk: аудио-first (лог 136 — камера из профиля глушила гудки)
+                actionsSubject.send(.showCallScreen(roomProxy: roomProxy, videoEnabled: false))
             case .dismiss:
                 navigationSplitCoordinator.setSheetCoordinator(nil)
             }

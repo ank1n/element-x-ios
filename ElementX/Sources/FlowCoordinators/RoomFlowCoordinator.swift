@@ -932,7 +932,10 @@ class RoomFlowCoordinator: FlowCoordinatorProtocol {
             case .presentRolesAndPermissionsScreen:
                 stateMachine.tryEvent(.presentRolesAndPermissionsScreen)
             case .presentCall:
-                actionsSubject.send(.presentCallScreen(roomProxy: roomProxy, videoEnabled: true))
+                // sTalk: аудио-first — видео только явной видео-кнопкой в шапке комнаты.
+                // Хардкод true публиковал камеру на connect у «аудио»-путей → глушил гудки
+                // (AVAudioSession реконфиг) + индикатор камеры вспыхивал ON (лог 136).
+                actionsSubject.send(.presentCallScreen(roomProxy: roomProxy, videoEnabled: false))
             case .presentPinnedEventsTimeline:
                 stateMachine.tryEvent(.presentPinnedEventsTimeline)
             case .presentKnockingRequestsListScreen:
