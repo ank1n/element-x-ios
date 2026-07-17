@@ -370,7 +370,7 @@ final class NativeCallSession: ObservableObject {
                     self.knownRemoteIdentities = currentIdentities
                 } else if self.hasSeenRemoteParticipant {
                     MXLog.info("sTalk NativeCall: All remote participants left after being connected — ending session")
-                    Task { await self.stop() }
+                    Task { [weak self] in await self?.stop() }
                 }
             }
             .store(in: &cancellables)
@@ -624,7 +624,11 @@ final class NativeCallSession: ObservableObject {
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else { return nil }
 
-        var request = URLRequest(url: URL(string: url)!)
+        guard let requestURL = URL(string: url) else {
+            MXLog.error("sTalk NativeCall: invalid join URL: \(url)")
+            return nil
+        }
+        var request = URLRequest(url: requestURL)
         request.httpMethod = "PUT"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -847,7 +851,9 @@ final class NativeCallSession: ObservableObject {
             DiagLog.write("E2EE", "rebroadcast SKIPPED — no current key (state=\(sessionState))")
             return
         }
-        DiagLog.write("E2EE", "rebroadcast START key=\(key.prefix(8))… (state=\(sessionState))")
+        // ⚠️ БЕЗОПАСНОСТЬ: НЕ логировать даже фрагмент ключа — DiagLog шарится
+        // тестерами («Share NSE diagnostic log»). Логируем только длину.
+        DiagLog.write("E2EE", "rebroadcast START keyLen=\(key.count) (state=\(sessionState))")
 
         let widgetId = widgetDriver.widgetID
         let devId = deviceId
@@ -1230,7 +1236,11 @@ final class NativeCallSession: ObservableObject {
 
         var events: [[String: Any]]?
         for attempt in 1...2 {
-            var request = URLRequest(url: URL(string: url)!)
+            guard let requestURL = URL(string: url) else {
+                MXLog.error("sTalk NativeCall: invalid state URL: \(url)")
+                continue
+            }
+            var request = URLRequest(url: requestURL)
             request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
             if let (data, _) = try? await URLSession.shared.data(for: request),
                let parsed = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
@@ -1319,7 +1329,11 @@ final class NativeCallSession: ObservableObject {
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else { return }
 
-        var request = URLRequest(url: URL(string: url)!)
+        guard let requestURL = URL(string: url) else {
+            MXLog.error("sTalk NativeCall: invalid notification URL: \(url)")
+            return
+        }
+        var request = URLRequest(url: requestURL)
         request.httpMethod = "PUT"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -1395,7 +1409,11 @@ final class NativeCallSession: ObservableObject {
             let body: [String: Any] = [:]
             guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else { continue }
 
-            var request = URLRequest(url: URL(string: url)!)
+            guard let requestURL = URL(string: url) else {
+                MXLog.error("sTalk NativeCall: invalid leave URL: \(url)")
+                continue
+            }
+            var request = URLRequest(url: requestURL)
             request.httpMethod = "PUT"
             request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -1431,7 +1449,11 @@ final class NativeCallSession: ObservableObject {
         let encodedType = eventType.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? eventType
         let url = "\(homeserverURL)/_matrix/client/v3/rooms/\(encodedRoom)/state/\(encodedType)/\(encodedStateKey)?org.matrix.msc4140.delay=\(Self.delayedLeaveMs)"
 
-        var request = URLRequest(url: URL(string: url)!)
+        guard let requestURL = URL(string: url) else {
+            MXLog.error("sTalk NativeCall: invalid delayed-leave URL: \(url)")
+            return
+        }
+        var request = URLRequest(url: requestURL)
         request.httpMethod = "PUT"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -1468,7 +1490,11 @@ final class NativeCallSession: ObservableObject {
     @discardableResult
     private func delayedLeaveAction(_ action: String, delayID: String) async -> Bool {
         let url = "\(homeserverURL)/_matrix/client/unstable/org.matrix.msc4140/delayed_events/\(delayID)"
-        var request = URLRequest(url: URL(string: url)!)
+        guard let requestURL = URL(string: url) else {
+            MXLog.error("sTalk NativeCall: invalid delayed-action URL: \(url)")
+            return false
+        }
+        var request = URLRequest(url: requestURL)
         request.httpMethod = "POST"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -1552,12 +1578,13 @@ final class NativeCallSession: ObservableObject {
         // remote keys; real remote keys arrive as toWidget send_event (content.keys[] +
         // sender) and still parse. Gating to toWidget removes the noise, no behaviour change.
         if message.api == "toWidget", messageString.contains("encryption_keys") {
-            MXLog.info("sTalk NativeCall E2EE RAW: \(messageString.prefix(500))")
-            // STMOB-152 build 176: DiagLog для incoming E2EE keys.
-            // Помогает Molly верифицировать что её server-side fan-out
-            // (STALK-303) достигает iOS — каждый received key event
-            // от guest должен появляться здесь.
-            DiagLog.write("E2EE", "incoming widget message api=\(message.api) action=\(message.action) raw=\(messageString.prefix(300))")
+            // ⚠️ БЕЗОПАСНОСТЬ: НЕ логировать сырое сообщение — оно содержит base64
+            // E2EE-ключ удалённых участников, а MXLog/DiagLog персистятся и DiagLog
+            // шарится тестерами. Диагностическая ценность (факт прихода key-события
+            // для верификации fan-out Molly, STALK-303) сохраняется по api/action/длине;
+            // разбор конкретного ключа — в handleEncryptionKeys (там keyLen, не ключ).
+            MXLog.info("sTalk NativeCall E2EE: incoming encryption_keys message (len=\(messageString.count))")
+            DiagLog.write("E2EE", "incoming widget message api=\(message.api) action=\(message.action) len=\(messageString.count)")
             handleEncryptionKeys(message)
         }
     }
