@@ -284,15 +284,28 @@ class NotificationHandler {
     }
     
     // MARK: - Private
-    
+
+    /// ⚠️ iOS считает поведение неопределённым (дубль-баннер/краш) при повторном
+    /// вызове contentHandler. На cold-Synapse (наш кейс: NSE-фетч 28-29с) expiration
+    /// и fetch-timeout могут дёрнуть его дважды. Один-и-только-один гард.
+    private var contentHandlerCalled = false
+    private func callContentHandlerOnce(_ content: UNNotificationContent) {
+        guard !contentHandlerCalled else {
+            MXLog.info("\(tag) contentHandler already called — ignoring duplicate")
+            return
+        }
+        contentHandlerCalled = true
+        contentHandler(content)
+    }
+
     private func deliverNotification() {
         MXLog.info("\(tag) Delivering notification")
-        contentHandler(notificationContent)
+        callContentHandlerOnce(notificationContent)
     }
 
     private func discardNotification() {
         MXLog.info("\(tag) Discarding notification")
-        contentHandler(Self.makePassiveContent())
+        callContentHandlerOnce(Self.makePassiveContent())
     }
 
     /// roomID текущего события — для generic-уведомления на expiration-пути.
@@ -312,7 +325,7 @@ class NotificationHandler {
         }
         content.body = isRussian ? "Новое сообщение" : "New message"
         content.sound = .default
-        contentHandler(content)
+        callContentHandlerOnce(content)
     }
 
     // sTalk: STMOB-94 — iOS NSE не может полностью отменить уведомление,
@@ -478,9 +491,16 @@ class NotificationHandler {
             if !room.hasActiveRoomCall() { // If I don't have an active call wait a bit and make sure
                 let expiringTask = ExpiringTaskRunner {
                     await withCheckedContinuation { [weak self] continuation in
+                        // ⚠️ CheckedContinuation одноразовый: listener шлёт апдейт на КАЖДОЕ
+                        // изменение roomInfo, и два подряд с hasRoomCall=true (glare/rejoin)
+                        // вызвали бы resume() дважды → фатальный краш NSE-процесса → входящий
+                        // не доставлен. Гард `resumed` (локальный, захвачен замыканием).
+                        var resumed = false
                         self?.roomInfoObservationToken = room.subscribeToRoomInfoUpdates(listener: SDKListener { info in
                             if info.hasRoomCall {
                                 MXLog.info("Received room info update and the room has an active call now.")
+                                guard !resumed else { return }
+                                resumed = true
                                 continuation.resume()
                             } else {
                                 MXLog.info("Received a room info update but the room still doesn't have an ongoing call.")
