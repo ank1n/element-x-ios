@@ -1488,38 +1488,64 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
 /// сконфигурированную звонковую AVAudioSession (ухо/динамик по текущему роуту).
 @MainActor
 final class RingbackTonePlayer {
+    /// Фиксированный внутренний рейт генерации. Лог 137: рестарт движка в момент
+    /// транзиента реконфига (публикация камеры в видео-звонке) читал промежуточный
+    /// HW-рейт → тон другой высоты/тембра («гудок совсем не похож на системный»).
+    /// Генерим всегда под 48к с явным форматом — миксер сам ресемплит в HW.
+    private static let toneSampleRate: Double = 48_000
     private var engine: AVAudioEngine?
-    private var phase: Double = 0
     private var configObserver: NSObjectProtocol?
+    private var restartTask: Task<Void, Never>?
+    /// Позиция в периоде (1с тон / 4с пауза) — переживает пересборку движка,
+    /// чтобы рестарт продолжал ритм, а не начинал гудок заново с нуля.
+    private var periodOffset: Double = 0
+    private var engineStartDate: Date?
 
     func start() {
         guard engine == nil else { return }
+        periodOffset = 0
         startEngine()
         guard engine != nil else { return }
         DiagLog.write("Call", "ringback START")
         // Лог 136: публикация камеры (или смена роута) реконфигурирует AVAudioSession —
         // AVAudioEngine молча останавливается и гудки глохнут при живом экране набора.
         // Система шлёт AVAudioEngineConfigurationChange — пересобираем движок и продолжаем.
+        // Дебаунс 250мс: реконфиг приходит пачкой (камера+роут+режим) — одна пересборка,
+        // а не серия рестартов с гудком на каждом (лог 137: «рваные не-системные гудки»).
         configObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange,
                                                                 object: nil,
                                                                 queue: .main) { [weak self] notification in
             Task { @MainActor [weak self] in
                 guard let self, let current = self.engine,
                       (notification.object as? AVAudioEngine) === current else { return }
-                current.stop()
-                self.engine = nil
-                self.startEngine()
-                DiagLog.write("Call", "ringback RESTART after audio config change (engine=\(self.engine != nil ? "ok" : "failed"))")
+                self.restartTask?.cancel()
+                self.restartTask = Task { @MainActor [weak self] in
+                    try? await Task.sleep(nanoseconds: 250_000_000)
+                    guard let self, !Task.isCancelled, let running = self.engine else { return }
+                    self.rememberPeriodPosition()
+                    running.stop()
+                    self.engine = nil
+                    self.startEngine()
+                    DiagLog.write("Call", "ringback RESTART after audio config change (engine=\(self.engine != nil ? "ok" : "failed"))")
+                }
             }
         }
     }
 
+    /// Сохраняет текущую позицию ритма по wall-clock, чтобы новый движок продолжил период.
+    private func rememberPeriodPosition() {
+        guard let engineStartDate else { return }
+        let period = Self.toneSampleRate * 5.0
+        let elapsed = Date().timeIntervalSince(engineStartDate) * Self.toneSampleRate
+        periodOffset = (periodOffset + elapsed).truncatingRemainder(dividingBy: period)
+    }
+
     private func startEngine() {
         let engine = AVAudioEngine()
-        let sampleRate = engine.outputNode.outputFormat(forBus: 0).sampleRate
-        guard sampleRate > 0 else { return }
-        var sampleIndex: Double = 0
-        let sourceNode = AVAudioSourceNode { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
+        let sampleRate = Self.toneSampleRate
+        guard let toneFormat = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1) else { return }
+        var sampleIndex = periodOffset
+        let sourceNode = AVAudioSourceNode(format: toneFormat) { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
             let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
             let period = sampleRate * 5.0 // 1с тон + 4с тишина
             let toneLength = sampleRate * 1.0
@@ -1544,16 +1570,21 @@ final class RingbackTonePlayer {
             return noErr
         }
         engine.attach(sourceNode)
-        engine.connect(sourceNode, to: engine.mainMixerNode, format: nil)
+        // Явный формат 48к на коннекте: миксер ресемплит в текущий HW-рейт,
+        // высота тона не зависит от состояния сессии в момент старта движка.
+        engine.connect(sourceNode, to: engine.mainMixerNode, format: toneFormat)
         do {
             try engine.start()
             self.engine = engine
+            engineStartDate = Date()
         } catch {
             MXLog.error("sTalk: ringback engine start failed: \(error)")
         }
     }
 
     func stop() {
+        restartTask?.cancel()
+        restartTask = nil
         if let configObserver {
             NotificationCenter.default.removeObserver(configObserver)
             self.configObserver = nil
