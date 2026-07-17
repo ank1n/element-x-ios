@@ -438,26 +438,28 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         // Hop on MainActor — Avatars helper isolated; donation выполнится
         // параллельно с reportNewIncomingCall, не блокирует CallKit deadline.
         let senderAvatarMXC = dict["sender_avatar_url"] as? String
-        // STMOB-260: тип звонка от инициатора. Molly/web и Andy/Android кладут
-        // `call_type: "audio"|"video"` в ring-событие → пушкин протаскивает в VoIP-
-        // payload. Читаем и репортим CallKit соответственно. Дефолт (поле отсутствует,
-        // старый сервер) = АУДИО (hasVideo=false) — поведение фикса А, форвард-совместимо.
-        // Раньше было безусловно true → «всегда с видео» (жалоба UZ). Реальное
-        // состояние камеры при accept дополнительно гасит гвард isJoiningExistingCall.
+        // ⚠️ CallKit `hasVideo` РЕШАЕТ вывод приложения на передний план при ответе:
+        // при hasVideo=true iOS разблокирует/выводит app на answer (для видео-UI);
+        // при hasVideo=false (аудио) — оставляет системный CallKit-UI, app в фоне
+        // (юзер: «принимаю на пуше — не переходит в приложение, только после ручной
+        // разблокировки виден звонок»). Поэтому hasVideo=true ВСЕГДА — иначе звонок
+        // не открывается. Жалоба «всегда с видео» относилась к КАМЕРЕ, а её гасит
+        // гвард isJoiningExistingCall в presentCallScreen (входящий → камера off),
+        // а НЕ CallKit hasVideo. call_type читаем в лог; стартовая камера по типу —
+        // отдельная доработка (STMOB-260, через startWithVideoEnabled, не через hasVideo).
         let callType = (dict["call_type"] as? String)?.lowercased()
-        let hasVideo = (callType == "video")
-        os_log(.info, log: pushLog, "Incoming VoIP call_type=%{public}@ → hasVideo=%{public}@",
-               callType ?? "nil(default audio)", "\(hasVideo)")
+        os_log(.info, log: pushLog, "Incoming VoIP call_type=%{public}@ (hasVideo=true для foreground; камера off гвардом)",
+               callType ?? "nil")
         Task { @MainActor in
             Self.donateIncomingCallIntent(senderMXID: senderMXID,
                                           callerName: callerName,
                                           roomID: roomID,
-                                          hasVideo: hasVideo,
+                                          hasVideo: true,
                                           avatarMXC: senderAvatarMXC)
         }
 
         let update = CXCallUpdate()
-        update.hasVideo = hasVideo
+        update.hasVideo = true
         update.localizedCallerName = callerName
         // https://stackoverflow.com/a/41230020/730924
         update.remoteHandle = .init(type: .generic, value: roomID)
