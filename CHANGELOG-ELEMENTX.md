@@ -3181,5 +3181,22 @@ Web (Molly, `6a4a0ccffe`) и Android (Andy) кладут `call_type: "audio"|"vi
 
 ---
 
+### 74. ✅ Три call-фикса по device-логам 131/132 (build 252)
+
+**Дата**: 2026-07-17
+**Коммит**: `c0e10c462` (ios)
+
+По логам 131/132 с устройства (build 251):
+
+1. **Ответ на пуше не открывал приложение** (юзер: «принимаю — не переходит, только после ручной разблокировки виден звонок»). Корень: фикс А `hasVideo=false` → CallKit трактует как аудио → iOS НЕ выводит app на передний план при ответе с локскрина (для видео — выводит). Экран звонка создавался, но телефон не разблокировался. **Фикс: `hasVideo=true` всегда** (`ElementCallService`). Камеру «всегда с видео» гасит гвард `isJoiningExistingCall`, а не CallKit hasVideo — та жалоба остаётся закрытой. call_type → стартовая камера = отдельная доработка STMOB-260 (через startWithVideoEnabled, не hasVideo).
+
+2. **Исходящий показывал «принято» до ответа** (лог 132: мы LiveKit CONNECTED @57.6, remote вошёл @01:16:01 — 3.5с таймер шёл, пока собеседник ещё звонит). Корень: `callStatus=.connected` при НАШЕМ SFU-connect. **Фикс: инициатор остаётся в `.connecting` («Вызов…» + гудки) до входа первого real-участника** (`CallScreenViewModel`: гейт `!startedAsInitiator` в .connected + переход в remoteParticipants-подписке), экран показывает набор пока `callStatus == .connecting` (`CallScreen.content`). Заодно гудки теперь осмысленны весь звонок-ожидание.
+
+3. **`isCallMinimized` не сбрасывался** в `setOverlayCoordinator` (латентный) → новый звонок мог открыться мини-окном 140×200 вместо фуллскрина. Синхронизирован с presentationMode.
+
+Файлы: `ElementCallService.swift`, `CallScreenViewModel.swift`, `CallScreen.swift`, `NavigationTabCoordinator.swift`.
+
+---
+
 **Дата создания**: 2026-01-28
 **Последнее обновление**: 2026-05-28
