@@ -425,15 +425,37 @@ class ClientProxy: ClientProxyProtocol {
         }
         
         MXLog.info("Starting sync")
-        
-        Task {
+
+        // 0xDEAD10CC: переходы stop→pause / resume→start сериализованы цепочкой
+        // (upstream serviceStateTask-паттерн) — resume не может влезть посреди pause.
+        let previousTransition = serviceTransitionTask
+        serviceTransitionTask = Task { [syncService, client, appSettings] in
+            await previousTransition?.value
+            if appSettings.clientPauseInBackgroundEnabled {
+                let started = Date()
+                do {
+                    try await client.resume()
+                    DiagLog.write("ClientProxy", "client.resume() OK took \(Int(-started.timeIntervalSinceNow * 1000))ms")
+                } catch {
+                    // resume-фейл НЕ блокирует синк — фолбэк на обычный start
+                    DiagLog.write("ClientProxy", "client.resume() FAILED after \(Int(-started.timeIntervalSinceNow * 1000))ms: \(error) — startSync продолжаем")
+                }
+            }
             await syncService.start()
-            
+        }
+
+        Task { [serviceTransitionTask] in
+            await serviceTransitionTask?.value
+
             // If we are using OIDC we want to cache the account management URL in volatile memory on the SDK side.
             // To avoid the cache being invalidated while the app is backgrounded, we cache at every sync start.
             await cacheAccountURL()
         }
     }
+
+    /// 0xDEAD10CC: цепочка сериализации переходов sync-сервиса (stop→pause / resume→start).
+    /// Быстрое сворачивание/разворачивание не даёт resume() влезть посреди pause().
+    private var serviceTransitionTask: Task<Void, Never>?
     
     /// A stored task for restarting the sync after a failure. This is stored so that we can cancel
     /// it when `stopSync` is called (e.g. when signing out) to prevent an otherwise infinite
@@ -484,13 +506,30 @@ class ClientProxy: ClientProxyProtocol {
         // existence of self when the Task executes is questionable and would sometimes crash.
         // Note: This isn't strictly necessary now given the unwrap above, but leaving the code as
         // documentation. SE-0371 will allow us to fix this by using an async deinit.
-        Task { [syncService] in
+        let previousTransition = serviceTransitionTask
+        serviceTransitionTask = Task { [syncService, client, appSettings] in
+            await previousTransition?.value
             defer {
                 completion?()
             }
-            
+
             await syncService.stop()
             MXLog.info("Sync stopped")
+
+            // 0xDEAD10CC (крашы 250/254/256): stop() гасит только sync-циклы, сторы и
+            // файловые локи остаются открытыми → любое фоновое CPU-окно докатывает
+            // WAL-коммит и ре-суспенд убивает процесс. pause() отпускает коннекции и
+            // локи (док SDK: «to avoid 0xdead10cc kills… after stopping the SyncService»).
+            // За флагом до device-замеров длительности (гейт включения <2-3с стабильно).
+            if appSettings.clientPauseInBackgroundEnabled {
+                let started = Date()
+                do {
+                    try await client.pause()
+                    DiagLog.write("ClientProxy", "client.pause() OK took \(Int(-started.timeIntervalSinceNow * 1000))ms")
+                } catch {
+                    DiagLog.write("ClientProxy", "client.pause() FAILED after \(Int(-started.timeIntervalSinceNow * 1000))ms: \(error)")
+                }
+            }
         }
     }
     

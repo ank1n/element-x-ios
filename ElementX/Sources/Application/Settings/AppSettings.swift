@@ -82,6 +82,9 @@ final class AppSettings {
 
         /// Interface language override (STMOB-183): nil = follow system
         case appLanguageIdentifier
+
+        /// 0xDEAD10CC-эксперимент: client.pause() после stopSync (отпускает файловые локи)
+        case clientPauseInBackgroundEnabled
     }
     
     private static var suiteName: String = InfoPlistReader.main.appGroupIdentifier
@@ -413,7 +416,13 @@ final class AppSettings {
     
     @UserPreference(key: UserDefaultsKeys.hideUnreadMessagesBadge, defaultValue: false, storageType: .userDefaults(store))
     var hideUnreadMessagesBadge
-    
+
+    /// 0xDEAD10CC-эксперимент (крашы 250/254/256): client.pause() после syncService.stop()
+    /// отпускает коннекции и файловые локи sqlite (док SDK: «to avoid 0xdead10cc kills»).
+    /// Default OFF — включается в Developer Options для device-замеров перед раскаткой.
+    @UserPreference(key: UserDefaultsKeys.clientPauseInBackgroundEnabled, defaultValue: false, storageType: .userDefaults(store))
+    var clientPauseInBackgroundEnabled
+
     // MARK: - Room Screen
     
     @UserPreference(key: UserDefaultsKeys.viewSourceEnabled, defaultValue: isDevelopmentBuild, storageType: .userDefaults(store))

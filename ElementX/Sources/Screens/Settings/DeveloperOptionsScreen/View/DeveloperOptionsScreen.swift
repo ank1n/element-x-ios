@@ -55,9 +55,16 @@ struct DeveloperOptionsScreen: View {
                 Toggle(isOn: $context.spaceSettingsEnabled) {
                     Text("Space settings")
                 }
-                
+
                 Toggle(isOn: $context.createSpaceEnabled) {
                     Text("Create space")
+                }
+            }
+
+            Section("0xDEAD10CC") {
+                Toggle(isOn: $context.clientPauseInBackgroundEnabled) {
+                    Text("Client pause в фоне")
+                    Text("Эксперимент: client.pause() после stopSync — отпускает файловые локи sqlite. Замеры в NSE diag log.")
                 }
             }
             
