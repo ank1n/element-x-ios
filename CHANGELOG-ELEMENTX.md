@@ -3198,5 +3198,36 @@ Web (Molly, `6a4a0ccffe`) и Android (Andy) кладут `call_type: "audio"|"vi
 
 ---
 
+### 75. ✅ Загарджены ВСЕ преждевременные переходы инициатора в .connected (build 253)
+
+**Дата**: 2026-07-17
+**Коммит**: `77a164a18` (ios)
+
+Доводка #74: в build 252 гейт `!startedAsInitiator` стоял не на всех путях `callStatus = .connected` (из 6 сайтов загарджено 2). Ревизия по логу 134 (веб v448) добавила гейты ещё на 3:
+
+- **LiveKit `$connectionState` fallback (STMOB-80)** — ставил connected на НАШЕМ подключении к SFU (~4с), потенциально раньше всех. Защитный гейт `!startedAsInitiator`. NB: в реальном логе 134 экран тут и так не флипал (гудки стартовали ПОСЛЕ нашего connect), но путь оставался открытым — закрыт как defence-in-depth.
+- **MatrixRTC call.member 1:1** (`callParticipants.count >= 2`) и **group** (`callParticipants.contains(ownUserID)`) — веб постит membership в лобби до реального входа в SFU.
+
+Теперь у инициатора «принято» ставит ТОЛЬКО реальный вход remote в SFU (`remoteParticipants`-подписка). Проверено на устройстве (лог 134, звонок 11:55): гудки 11с, переход ровно по `participant JOIN totalRemote=1`.
+
+Файл: `CallScreenViewModel.swift`.
+
+---
+
+### 76. ✅ 15с таймаут на MatrixRTC REST — .uz cold-start не вешает connect (build 253)
+
+**Дата**: 2026-07-17
+**Коммит**: `5d49bc00e` (ios)
+
+UZ-фидбек «долго подключаешься»: часть висяков — сетевые REST-вызовы на `URLSession.shared` (дефолтный request-таймаут 60с). На мёртвом/медленном .uz cold-start homeserver путь подключения к звонку висел минутами.
+
+**Фикс:** единая `restSession` с `timeoutIntervalForRequest/Resource = 15` и **`waitsForConnectivity = false`** на все 11 REST-вызовов `NativeCallSession`. `waitsForConnectivity=false` — ключевой: иначе таймаут не тикает, пока система «ждёт связи», что и давало многоминутный висяк на reachable-но-немом хосте. Мёртвый хост теперь падает за 15с, а не 60с.
+
+Фаза 1 из плана извлечения `MatrixRTCRestClient` (Фаза 2 — вынос pure-REST методов в отдельный `Sendable`-класс — опциональна, отложена; таймаут-выигрыш от неё не зависит).
+
+Файл: `NativeCallSession.swift`.
+
+---
+
 **Дата создания**: 2026-01-28
 **Последнее обновление**: 2026-05-28
