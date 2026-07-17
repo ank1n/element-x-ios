@@ -292,9 +292,15 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                         MXLog.info("sTalk: MatrixRTC participants changed: \(prevCount) → \(callParticipants.count), users=\(callParticipants), liveKit remote=\(self.liveKitRoomManager.displayParticipants.count)")
                     }
 
-                    // sTalk: For 1:1 — start timer only when BOTH participants are in the call.
-                    // This prevents the timer from running during the lobby/connecting phase.
-                    if self.state.isDirect,
+                    // sTalk-фикс (STALK-610/лог получателя): для ИНИЦИАТОРА НЕ переходить
+                    // в .connected по MatrixRTC call.member — веб-получатель постит
+                    // call.member в лобби ДО нажатия «Принять», и count>=2 срабатывал
+                    // преждевременно («принято» пока абонент ещё звонит). Для инициатора
+                    // «принято» ставит ТОЛЬКО реальный вход remote в SFU (подписка
+                    // remoteParticipants ниже). Отвечающий/join (!startedAsInitiator) —
+                    // remote уже есть, эти пути корректны.
+                    if !self.startedAsInitiator,
+                       self.state.isDirect,
                        self.state.callStatus != .connected,
                        callParticipants.count >= 2 {
                         self.state.callStatus = .connected
@@ -303,7 +309,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                     }
 
                     // sTalk: For group — start timer when we see ourselves in call
-                    if !self.state.isDirect,
+                    if !self.startedAsInitiator,
+                       !self.state.isDirect,
                        self.state.callStatus != .connected,
                        callParticipants.contains(roomProxy.ownUserID) {
                         self.state.callStatus = .connected
@@ -916,12 +923,14 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                         self.state.callStatus = .connected
                         MXLog.info("sTalk LiveKit: Reconnected successfully")
                     }
-                    // STMOB-80: Fallback initial connected. roomProxy.infoPublisher
-                    // (MatrixRTC participants) может задержаться или не emit'ить
-                    // — header застревает на «Вызов...», timer не запускается.
-                    // Если LiveKit подключился — звонок реально идёт, переключаем
-                    // status даже без MatrixRTC update.
-                    if self.state.callStatus == .connecting {
+                    // STMOB-80: Fallback initial connected — но ТОЛЬКО для НЕ-инициатора.
+                    // ⚠️ Этот fallback срабатывал на НАШЕМ подключении к SFU (~4с), т.е.
+                    // раньше всех прочих путей → у ИНИЦИАТОРА экран показывал «в звонке»,
+                    // пока абонент ещё не поднял трубку (баг «принято до ответа», лог 134).
+                    // Для инициатора «принято» ставит только реальный вход remote в SFU
+                    // (подписка remoteParticipants). Для отвечающего/join — remote уже
+                    // есть, fallback корректен (MatrixRTC мог опоздать → не застреваем в «Вызов…»).
+                    if !self.startedAsInitiator, self.state.callStatus == .connecting {
                         self.state.callStatus = .connected
                         self.state.wasConnected = true
                         self.startCallTimer()
