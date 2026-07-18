@@ -417,10 +417,12 @@ final class AppSettings {
     @UserPreference(key: UserDefaultsKeys.hideUnreadMessagesBadge, defaultValue: false, storageType: .userDefaults(store))
     var hideUnreadMessagesBadge
 
-    /// 0xDEAD10CC-эксперимент (крашы 250/254/256): client.pause() после syncService.stop()
+    /// 0xDEAD10CC-фикс (крашы 250/254/256): client.pause() после syncService.stop()
     /// отпускает коннекции и файловые локи sqlite (док SDK: «to avoid 0xdead10cc kills»).
-    /// Default OFF — включается в Developer Options для device-замеров перед раскаткой.
-    @UserPreference(key: UserDefaultsKeys.clientPauseInBackgroundEnabled, defaultValue: false, storageType: .userDefaults(store))
+    /// Default ON с build 258 — ночной device-гейт пройден (лог 140: pause 8-11мс,
+    /// resume 22-41мс, 0 фейлов, 0 крашей). Тумблер в Developer Options оставлен
+    /// как аварийный выключатель.
+    @UserPreference(key: UserDefaultsKeys.clientPauseInBackgroundEnabled, defaultValue: true, storageType: .userDefaults(store))
     var clientPauseInBackgroundEnabled
 
     // MARK: - Room Screen
