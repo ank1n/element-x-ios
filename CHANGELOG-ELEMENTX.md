@@ -3332,5 +3332,24 @@ UZ-фидбек «долго подключаешься»: часть висяк
 
 ---
 
+### 83. ✅ Сага пустых плашек: NSE-реестр, expiration-фолбэк, кэш сессий, дедлайн + фикс «нужно приглашение» (build 260)
+
+**Дата**: 2026-07-20
+**Коммит**: `20d0c12cf^` (ios, fix+bump)
+
+Симптом у dp (259) и Тымбая (258): часть пушей — сырые пустые плашки «sTalk», тап открывал превью «нужно приглашение» при живом membership. Диагноз (мульти-агентный воркфлоу + логи обоих устройств + Sygnal-сверка Molly: payload плашек и нормальных пушей байт-в-байт одинаков, mutable-content=1 у всех → сервер чист):
+
+1. **Параллельные didReceive затирали единственное поле `notificationHandler`** → expiration затёртого = молчаливый no-op → iOS показывала сырой eventIdOnly payload (плашка Тымбая 23:57 в бурсте из 5 пушей). **Фикс: реестр `pendingRequests` по request.identifier** + единственная точка доставки (unregister-гард от дублей).
+2. **Запрос без хендлера (инит сессии не успел) молчал на expiration.** Фикс: немедленный фолбэк «sTalk / Новое сообщение» с room_id.
+3. **Полный клиент (3 SQLCipher-стора + OlmMachine) строился на КАЖДЫЙ пуш** → бюджетные киллы по времени (27с фетч + инит > 30с бюджета при холодном Synapse 28-29с) → iOS переставала запускать NSE вовсе (мёртвая зона 7ч у dp, 9 запусков/8ч у Тымбая). **Фикс: static-кэш `NSEUserSession` по userID** (один клиент на процесс).
+4. **Дедлайн-бюджет didReceive+24с** вместо фиксированных 27с (учитывает инит; ~6с на финализацию всегда) + кап 2с на синхронный FFI `displayName` в generic-пути.
+5. **«Нужно приглашение» по тапу**: `buildRoomForIdentifier` на запаузенном сторе (client.pause, 258) кидал store-closed → catch → nil → превью. **Фикс: ретрай после `serviceTransitionTask`**.
+
+DiagLog-маркеры для проверки: `fetch budget Ns`, `NSE session cache HIT/MISS`, `expire with NO handler → fallback`, `retrying after service transition`.
+
+Файлы: `NotificationServiceExtension.swift`, `NotificationHandler.swift`, `ClientProxy.swift`.
+
+---
+
 **Дата создания**: 2026-01-28
 **Последнее обновление**: 2026-05-28
