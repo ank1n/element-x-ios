@@ -102,16 +102,23 @@ class NotificationHandler {
     // periphery:ignore - required for instance retention in the rust codebase
     private var roomInfoObservationToken: TaskHandle?
     
+    /// Дедлайн фетча: didReceive + 24с (бюджет NSE ~30с, ~6с на финализацию).
+    /// С кэшем сессии инит почти бесплатный → бюджет фетча почти полный; при
+    /// холодном ините остаток честно меньше — финализация не страдает.
+    private let fetchDeadline: Date
+
     init(userSession: NSEUserSession,
          settings: CommonSettingsProtocol,
          contentHandler: @escaping (UNNotificationContent) -> Void,
          notificationContent: UNMutableNotificationContent,
-         tag: String) {
+         tag: String,
+         fetchDeadline: Date = Date().addingTimeInterval(24)) {
         self.userSession = userSession
         self.settings = settings
         self.contentHandler = contentHandler
         self.notificationContent = notificationContent
         self.tag = tag
+        self.fetchDeadline = fetchDeadline
         
         let eventStringBuilder = RoomMessageEventStringBuilder(attributedStringBuilder: AttributedStringBuilder(mentionBuilder: PlainMentionBuilder()),
                                                                destination: .notification)
@@ -170,12 +177,18 @@ class NotificationHandler {
         // Бюджет NSE ~30s от didReceive; 27s оставляет ~3s на финализацию,
         // ring-event hang всё равно перехватит handleTimeExpiration.
         // Upstream Element X не имеет этого timeout вообще.
+        // Сага плашек (20.07): фикс 27с при бюджете 30с не учитывал стоимость инита
+        // сессии до processEvent → системные киллы по времени → iOS переставала
+        // запускать NSE (мёртвые зоны, сырые плашки). Теперь бюджет = остаток до
+        // дедлайна (didReceive+24с), финализация всегда успевает.
+        let fetchBudget = max(5.0, fetchDeadline.timeIntervalSinceNow)
+        NSEDiagLog.write("  fetch budget \(Int(fetchBudget))s")
         let item: NotificationItemProxyProtocol? = await withTaskGroup(of: NotificationItemProxyProtocol?.self) { group in
             group.addTask { [weak self] in
                 await self?.userSession.notificationItemProxy(roomID: roomID, eventID: eventID)
             }
             group.addTask {
-                try? await Task.sleep(nanoseconds: 27_000_000_000)
+                try? await Task.sleep(nanoseconds: UInt64(fetchBudget * 1_000_000_000))
                 return nil
             }
             let first = await group.next() ?? nil
@@ -319,13 +332,37 @@ class NotificationHandler {
         let content = UNMutableNotificationContent()
         let isRussian = Locale.preferredLanguages.first?.hasPrefix("ru") ?? false
         if let roomID = currentRoomID,
-           let roomName = userSession.roomForIdentifier(roomID)?.displayName(),
+           let roomName = roomNameWithTimeout(roomID),
            !roomName.isEmpty {
             content.title = roomName
         }
         content.body = isRussian ? "Новое сообщение" : "New message"
         content.sound = .default
         callContentHandlerOnce(content)
+    }
+
+    /// displayName комнаты через синхронный FFI, но с капом: на запаузенном/занятом
+    /// сторе вызов мог висеть и съедать финализацию перед системным киллом.
+    private func roomNameWithTimeout(_ roomID: String, seconds: Double = 2) -> String? {
+        final class Box: @unchecked Sendable {
+            private let lock = NSLock()
+            private var value: String?
+            func set(_ v: String?) {
+                lock.lock(); value = v; lock.unlock()
+            }
+
+            func get() -> String? {
+                lock.lock(); defer { lock.unlock() }; return value
+            }
+        }
+        let box = Box()
+        let semaphore = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .userInitiated).async { [userSession] in
+            box.set(userSession.roomForIdentifier(roomID)?.displayName())
+            semaphore.signal()
+        }
+        _ = semaphore.wait(timeout: .now() + seconds)
+        return box.get()
     }
 
     // sTalk: STMOB-94 — iOS NSE не может полностью отменить уведомление,

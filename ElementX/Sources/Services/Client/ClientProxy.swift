@@ -1305,6 +1305,22 @@ class ClientProxy: ClientProxyProtocol {
     }
     
     private func buildRoomForIdentifier(_ roomID: String) async -> RoomProxyType? {
+        if let result = await buildRoomForIdentifierOnce(roomID) {
+            return result
+        }
+        // Сага «нужно приглашение» (20.07): тап по пушу резолвил комнату на
+        // ЗАПАУЗЕННОМ сторе (client.pause) — getRoom кидал store-closed → nil →
+        // экран «нужно приглашение» при живом membership. Дожидаемся конца
+        // pause/resume-перехода и пробуем ещё раз.
+        guard let transition = serviceTransitionTask else {
+            return nil
+        }
+        await transition.value
+        MXLog.info("Room \(roomID) not resolved on first try — retrying after service transition")
+        return await buildRoomForIdentifierOnce(roomID)
+    }
+
+    private func buildRoomForIdentifierOnce(_ roomID: String) async -> RoomProxyType? {
         do {
             guard let room = try client.getRoom(roomId: roomID) else {
                 return nil
