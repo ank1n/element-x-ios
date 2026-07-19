@@ -59,7 +59,7 @@ class RoomDetailsScreenViewModel: RoomDetailsScreenViewModelType, RoomDetailsScr
         self.attributedStringBuilder = attributedStringBuilder
         self.appSettings = appSettings
         
-        let topic = attributedStringBuilder.fromPlain(roomProxy.infoPublisher.value.topic)
+        let topic = attributedStringBuilder.fromPlain(roomProxy.infoPublisher.value.topic, detectMarkdown: false)
         
         super.init(initialViewState: .init(details: roomProxy.details,
                                            isEncrypted: roomProxy.infoPublisher.value.isEncrypted,
@@ -281,7 +281,7 @@ class RoomDetailsScreenViewModel: RoomDetailsScreenViewModelType, RoomDetailsScr
         
         state.details = roomProxy.details
         
-        let topic = attributedStringBuilder.fromPlain(roomInfo.topic)
+        let topic = attributedStringBuilder.fromPlain(roomInfo.topic, detectMarkdown: false)
         state.topic = topic
         state.topicSummary = topic?.unattributedStringByReplacingNewlinesWithSpaces()
         

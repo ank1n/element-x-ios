@@ -15,9 +15,18 @@ struct AttributedStringBuilderComponent: Hashable, Identifiable {
 }
 
 protocol AttributedStringBuilderProtocol {
-    func fromPlain(_ string: String?) -> AttributedString?
-    
+    func fromPlain(_ string: String?, detectMarkdown: Bool) -> AttributedString?
+
     func fromHTML(_ htmlString: String?) -> AttributedString?
-    
+
     func addMatrixEntityPermalinkAttributesTo(_ attributedString: NSMutableAttributedString)
+}
+
+extension AttributedStringBuilderProtocol {
+    /// По умолчанию рендерим markdown в plain-body (боты шлют md без formatted_body).
+    /// detectMarkdown: false — для строк, где md-конвенции неуместны (эмоты «* name …»,
+    /// подписи к медиа, топик комнаты).
+    func fromPlain(_ string: String?) -> AttributedString? {
+        fromPlain(string, detectMarkdown: true)
+    }
 }

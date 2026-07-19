@@ -511,7 +511,7 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
     
     private func buildAudioTimelineItemContent(_ messageContent: AudioMessageContent) -> AudioRoomTimelineItemContent {
         let htmlCaption = messageContent.formattedCaption?.format == .html ? messageContent.formattedCaption?.body : nil
-        let formattedCaption = htmlCaption != nil ? attributedStringBuilder.fromHTML(htmlCaption) : attributedStringBuilder.fromPlain(messageContent.caption)
+        let formattedCaption = htmlCaption != nil ? attributedStringBuilder.fromHTML(htmlCaption) : attributedStringBuilder.fromPlain(messageContent.caption, detectMarkdown: false)
         
         var waveform: EstimatedWaveform?
         if let audioWaveform = messageContent.audio?.waveform {
@@ -531,7 +531,7 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
     
     private func buildImageTimelineItemContent(_ messageContent: ImageMessageContent) -> ImageRoomTimelineItemContent {
         let htmlCaption = messageContent.formattedCaption?.format == .html ? messageContent.formattedCaption?.body : nil
-        let formattedCaption = htmlCaption != nil ? attributedStringBuilder.fromHTML(htmlCaption) : attributedStringBuilder.fromPlain(messageContent.caption)
+        let formattedCaption = htmlCaption != nil ? attributedStringBuilder.fromHTML(htmlCaption) : attributedStringBuilder.fromPlain(messageContent.caption, detectMarkdown: false)
         
         let thumbnailInfo = ImageInfoProxy(source: messageContent.info?.thumbnailSource,
                                            width: messageContent.info?.thumbnailInfo?.width,
@@ -557,7 +557,7 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
     
     private func buildVideoTimelineItemContent(_ messageContent: VideoMessageContent) -> VideoRoomTimelineItemContent {
         let htmlCaption = messageContent.formattedCaption?.format == .html ? messageContent.formattedCaption?.body : nil
-        let formattedCaption = htmlCaption != nil ? attributedStringBuilder.fromHTML(htmlCaption) : attributedStringBuilder.fromPlain(messageContent.caption)
+        let formattedCaption = htmlCaption != nil ? attributedStringBuilder.fromHTML(htmlCaption) : attributedStringBuilder.fromPlain(messageContent.caption, detectMarkdown: false)
         
         let thumbnailInfo = ImageInfoProxy(source: messageContent.info?.thumbnailSource,
                                            width: messageContent.info?.thumbnailInfo?.width,
@@ -590,7 +590,7 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
 
     private func buildFileTimelineItemContent(_ messageContent: FileMessageContent) -> FileRoomTimelineItemContent {
         let htmlCaption = messageContent.formattedCaption?.format == .html ? messageContent.formattedCaption?.body : nil
-        let formattedCaption = htmlCaption != nil ? attributedStringBuilder.fromHTML(htmlCaption) : attributedStringBuilder.fromPlain(messageContent.caption)
+        let formattedCaption = htmlCaption != nil ? attributedStringBuilder.fromHTML(htmlCaption) : attributedStringBuilder.fromPlain(messageContent.caption, detectMarkdown: false)
         
         let thumbnailSource = messageContent.info?.thumbnailSource.map { MediaSourceProxy(source: $0, mimeType: messageContent.info?.thumbnailInfo?.mimetype) }
         
@@ -620,7 +620,8 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
         if let htmlBody {
             formattedBody = buildEmoteFormattedBodyFromHTML(html: htmlBody, name: name)
         } else {
-            formattedBody = attributedStringBuilder.fromPlain(L10n.commonEmote(name, messageContent.body))
+            // detectMarkdown: false — шаблон эмота «* name body» иначе матчится как список
+            formattedBody = attributedStringBuilder.fromPlain(L10n.commonEmote(name, messageContent.body), detectMarkdown: false)
         }
         
         return .init(body: messageContent.body, formattedBody: formattedBody, formattedBodyHTMLString: htmlBody)

@@ -53,22 +53,40 @@ struct AttributedStringBuilder: AttributedStringBuilderProtocol {
         self.mentionBuilder = mentionBuilder
     }
         
-    func fromPlain(_ string: String?) -> AttributedString? {
+    func fromPlain(_ string: String?, detectMarkdown: Bool) -> AttributedString? {
         guard let string else {
             return nil
         }
-        
-        if let cached = Self.cachedValue(forKey: string, cacheKey: cacheKey) {
+
+        // Кэш — первым (таймлайн ребилдит ячейки многократно). Ключи неймспейсим,
+        // чтобы plain-, markdown- и html-результаты одной строки не пересекались.
+        let storageKey = (detectMarkdown ? "plainmd:" : "plain:") + string
+        if let cached = Self.cachedValue(forKey: storageKey, cacheKey: cacheKey) {
             return cached
+        }
+
+        // sTalk: боты (#ops и т.п.) шлют markdown в plain body БЕЗ formatted_body —
+        // upstream рендерит его буквально («**жирный**»). При уверенных md-признаках
+        // конвертируем в HTML и пускаем через полный fromHTML-пайплайн (цитаты,
+        // код-блоки, списки, ссылки, пиллы-меншены — бесплатно). Обычный текст
+        // без признаков идёт по старому пути нетронутым.
+        if detectMarkdown, StalkMarkdown.looksLikeMarkdown(string) {
+            let html = StalkMarkdown.toHTML(string)
+            if !html.isEmpty, let result = fromHTML(html) {
+                Self.cacheValue(result, forKey: storageKey, cacheKey: cacheKey)
+                return result
+            }
+            // Пустой/неудачный результат (например, сообщение из одного «```») —
+            // фолбэк на обычный plain-рендер ниже.
         }
 
         let mutableAttributedString = NSMutableAttributedString(string: string)
         addLinksAndMentions(mutableAttributedString)
         addMatrixEntityPermalinkAttributesTo(mutableAttributedString)
-        
+
         let result = try? AttributedString(mutableAttributedString, including: \.elementX)
-        Self.cacheValue(result, forKey: string, cacheKey: cacheKey)
-        
+        Self.cacheValue(result, forKey: storageKey, cacheKey: cacheKey)
+
         return result
     }
         
@@ -541,5 +559,258 @@ private extension NSString {
         let lastChar = character(at: length - 1)
         
         return (characterSet as NSCharacterSet).characterIsMember(lastChar)
+    }
+}
+
+// MARK: - sTalk Markdown → HTML (рендер plain-body markdown от ботов)
+
+/// Консервативный markdown→HTML конвертер для plain-text сообщений БЕЗ formatted_body.
+/// Включается только при уверенных признаках (`looksLikeMarkdown`), чтобы обычные
+/// человеческие тексты («2*3», snake_case, «- забыл купить») не форматировались ложно.
+/// Весь ввод HTML-эскейпится ДО конвертации — инъекция тегов из plain-текста невозможна.
+enum StalkMarkdown {
+    // Прекомпилированные регексы (перф: fromPlain — горячий путь таймлайна)
+    private static let detectBold = regex(#"(?<![\w*])\*\*\S(?:[^*\n]*\S)?\*\*(?![\w*])"#)
+    private static let detectCode = regex(#"`[^`\n]+`"#)
+    private static let detectLink = regex(#"\[[^\]\n]+\]\(https?://[^\s)"]+\)"#)
+    private static let detectHeading = regex(#"(^|\n)#{1,6} \S"#)
+    private static let detectQuote = regex(#"(^|\n)> \S"#)
+    // Список — признак только от ДВУХ подряд строк-пунктов (одиночное «- забыл» — не markdown)
+    private static let detectUnorderedList = regex(#"(^|\n)[-*] [^\n]*\n[-*] \S"#)
+    private static let detectOrderedList = regex(#"(^|\n)\d{1,3}\. [^\n]*\n\d{1,3}\. \S"#)
+    private static let detectStrike = regex(#"~~\S(?:[^~\n]*\S)?~~"#)
+
+    private static let headingPrefix = regex(#"^#{1,6} "#)
+    private static let unorderedItem = regex(#"^[-*] "#)
+    private static let orderedItem = regex(#"^(\d{1,3})\. "#)
+
+    private static let inlineCode = regex(#"`([^`\n]+)`"#)
+    private static let inlineLink = regex(#"\[([^\]\n]+)\]\((https?://[^\s)"]+)\)"#)
+    private static let inlineBareURL = regex(#"https?://[^\s]+"#)
+    private static let inlineBold = regex(#"(?<![\w*])\*\*(\S(?:[^*\n]*?\S)?)\*\*(?![\w*])"#)
+    private static let inlineStrike = regex(#"~~(\S(?:[^~\n]*?\S)?)~~"#)
+    private static let inlineEmAsterisk = regex(#"(?<![\w*])\*(\S(?:[^*\n]*?\S)?)\*(?![\w*])"#)
+    private static let inlineEmUnderscore = regex(#"(?<![\w])_(\S(?:[^_\n]*?\S)?)_(?![\w])"#)
+
+    private static func regex(_ pattern: String) -> NSRegularExpression? {
+        try? NSRegularExpression(pattern: pattern)
+    }
+
+    private static func matches(_ regex: NSRegularExpression?, _ string: String) -> Bool {
+        guard let regex else { return false }
+        return regex.firstMatch(in: string, range: NSRange(location: 0, length: (string as NSString).length)) != nil
+    }
+
+    /// Уверенные признаки markdown. Одиночные *курсив*/_подчёркивания_ и одиночные
+    /// строки-пункты признаком НЕ считаются (ложные срабатывания на человеческих текстах).
+    static func looksLikeMarkdown(_ string: String) -> Bool {
+        if string.contains("```") { return true }
+        if matches(detectBold, string) { return true }
+        if matches(detectCode, string) { return true }
+        if matches(detectLink, string) { return true }
+        if matches(detectHeading, string) { return true }
+        if matches(detectQuote, string) { return true }
+        if matches(detectUnorderedList, string) { return true }
+        if matches(detectOrderedList, string) { return true }
+        if matches(detectStrike, string) { return true }
+        return false
+    }
+
+    // swiftlint:disable:next function_body_length cyclomatic_complexity
+    static func toHTML(_ string: String) -> String {
+        let lines = string.components(separatedBy: "\n")
+        var html = ""
+        var inFence = false
+        var fenceBuffer: [String] = []
+        var listBuffer: [String] = []
+        var listOrdered = false
+        var listStartNumber = 1
+        var pendingListBlank = false
+        var quoteBuffer: [String] = []
+
+        func flushList() {
+            guard !listBuffer.isEmpty else { return }
+            let items = listBuffer.map { "<li>\($0)</li>" }.joined()
+            if listOrdered {
+                // Сохраняем реальную нумерацию автора («3. созвон» ≠ «1. созвон»)
+                html += listStartNumber == 1 ? "<ol>\(items)</ol>" : "<ol start=\"\(listStartNumber)\">\(items)</ol>"
+            } else {
+                html += "<ul>\(items)</ul>"
+            }
+            listBuffer = []
+            pendingListBlank = false
+        }
+        func flushQuote() {
+            guard !quoteBuffer.isEmpty else { return }
+            html += "<blockquote>" + quoteBuffer.joined(separator: "<br/>") + "</blockquote>"
+            quoteBuffer = []
+        }
+        func appendListItem(ordered: Bool, startNumber: Int, item: String) {
+            // Смена типа списка — закрыть предыдущий, номер не терять
+            if !listBuffer.isEmpty, listOrdered != ordered {
+                flushList()
+            }
+            if listBuffer.isEmpty {
+                listOrdered = ordered
+                listStartNumber = startNumber
+            }
+            listBuffer.append(item)
+            pendingListBlank = false
+        }
+        /// Локальное замыкание (НЕ inout!): flushList + отложенный <br/> за пустую
+        /// строку, оборвавшую список. Статик-хелпер с inout падал на эксклюзивности.
+        func flushListAndBreak() {
+            let hadPending = pendingListBlank
+            flushList()
+            if hadPending {
+                html += "<br/>"
+            }
+            pendingListBlank = false
+        }
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            // Fenced code blocks: содержимое эскейпится и НЕ обрабатывается инлайн-правилами
+            if trimmed.hasPrefix("```"), !inFence {
+                let rest = String(trimmed.dropFirst(3))
+                // Однострочный fence «```код```» — эмитим сразу, без входа в fence-режим
+                if rest.count > 3, rest.hasSuffix("```") {
+                    flushList(); flushQuote()
+                    html += "<pre><code>" + escape(String(rest.dropLast(3))) + "</code></pre>"
+                    continue
+                }
+                flushList(); flushQuote()
+                inFence = true
+                continue
+            }
+            if inFence {
+                if trimmed.hasPrefix("```") {
+                    html += "<pre><code>" + fenceBuffer.map(escape).joined(separator: "\n") + "</code></pre>"
+                    fenceBuffer = []
+                    inFence = false
+                } else {
+                    fenceBuffer.append(line)
+                }
+                continue
+            }
+
+            // Пустая строка внутри списка не рвёт его («1. a\n\n2. b»)
+            if trimmed.isEmpty, !listBuffer.isEmpty {
+                pendingListBlank = true
+                continue
+            }
+
+            // Заголовки
+            if let match = firstMatch(headingPrefix, in: trimmed) {
+                flushListAndBreak(); flushQuote()
+                let level = match.range.length - 1
+                html += "<h\(level)>" + inline(String(trimmed.dropFirst(match.range.length))) + "</h\(level)>"
+                continue
+            }
+            // Цитаты (группируются)
+            if trimmed.hasPrefix("> ") || trimmed == ">" {
+                flushListAndBreak()
+                quoteBuffer.append(inline(String(trimmed.dropFirst(trimmed == ">" ? 1 : 2))))
+                continue
+            }
+            // Списки (группируются, пустая строка между пунктами допускается)
+            if let match = firstMatch(unorderedItem, in: trimmed) {
+                flushQuote()
+                appendListItem(ordered: false, startNumber: 1, item: inline(String(trimmed.dropFirst(match.range.length))))
+                continue
+            }
+            if let match = firstMatch(orderedItem, in: trimmed) {
+                flushQuote()
+                let numberText = (trimmed as NSString).substring(with: match.range(at: 1))
+                appendListItem(ordered: true, startNumber: Int(numberText) ?? 1, item: inline(String(trimmed.dropFirst(match.range.length))))
+                continue
+            }
+            // Горизонтальная линия
+            if trimmed == "---" || trimmed == "***" {
+                flushListAndBreak(); flushQuote()
+                html += "<hr/>"
+                continue
+            }
+
+            flushListAndBreak(); flushQuote()
+            html += inline(line) + "<br/>"
+        }
+        // Незакрытый fence — отдаём как код (боты режут сообщения)
+        if inFence, !fenceBuffer.isEmpty {
+            html += "<pre><code>" + fenceBuffer.map(escape).joined(separator: "\n") + "</code></pre>"
+        }
+        flushList(); flushQuote()
+        return html
+    }
+
+    private static func firstMatch(_ regex: NSRegularExpression?, in string: String) -> NSTextCheckingResult? {
+        guard let regex else { return nil }
+        return regex.firstMatch(in: string, range: NSRange(location: 0, length: (string as NSString).length))
+    }
+
+    // MARK: Inline
+
+    private static func escape(_ string: String) -> String {
+        string.replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+    }
+
+    /// Инлайн-правила поверх HTML-эскейпнутого текста. Код-спаны, markdown-ссылки и голые
+    /// URL извлекаются в плейсхолдеры ДО остальных правил — их содержимое не форматируется.
+    private static func inline(_ raw: String) -> String {
+        // U+FFFC из ввода вычищаем — он служит маркером плейсхолдеров (и смысла в тексте не несёт)
+        var text = escape(raw).replacingOccurrences(of: "\u{FFFC}", with: "")
+        var tokens: [String] = []
+
+        func stash(_ html: String) -> String {
+            tokens.append(html)
+            return "\u{FFFC}\(tokens.count - 1)\u{FFFC}"
+        }
+
+        // Код-спаны — первыми, их содержимое неприкосновенно
+        text = replacing(text, inlineCode) { groups in
+            stash("<code>\(groups[1])</code>")
+        }
+        // Ссылки [текст](http...) — URL защищаем от прочих правил
+        text = replacing(text, inlineLink) { groups in
+            stash("<a href=\"\(groups[2])\">\(groups[1])</a>")
+        }
+        // Голые URL — тоже в плейсхолдеры (подчёркивания в пути не должны стать курсивом)
+        text = replacing(text, inlineBareURL) { groups in
+            stash(groups[0])
+        }
+        // Жирный / зачёркнутый / курсив (с гардами от snake_case и «2**3»)
+        text = replacing(text, inlineBold) { "<strong>\($0[1])</strong>" }
+        text = replacing(text, inlineStrike) { "<del>\($0[1])</del>" }
+        text = replacing(text, inlineEmAsterisk) { "<em>\($0[1])</em>" }
+        text = replacing(text, inlineEmUnderscore) { "<em>\($0[1])</em>" }
+
+        // Восстанавливаем в ОБРАТНОМ порядке: поздние токены (ссылки) могут содержать
+        // плейсхолдеры ранних (код-спанов) — reverse-проход закрывает вложенность
+        for (index, token) in tokens.enumerated().reversed() {
+            text = text.replacingOccurrences(of: "\u{FFFC}\(index)\u{FFFC}", with: token)
+        }
+        return text
+    }
+
+    private static func replacing(_ string: String, _ regex: NSRegularExpression?, with builder: ([String]) -> String) -> String {
+        guard let regex else { return string }
+        let nsString = string as NSString
+        var result = ""
+        var lastEnd = 0
+        for match in regex.matches(in: string, range: NSRange(location: 0, length: nsString.length)) {
+            result += nsString.substring(with: NSRange(location: lastEnd, length: match.range.location - lastEnd))
+            var groups: [String] = []
+            for groupIndex in 0..<match.numberOfRanges {
+                let range = match.range(at: groupIndex)
+                groups.append(range.location == NSNotFound ? "" : nsString.substring(with: range))
+            }
+            result += builder(groups)
+            lastEnd = match.range.location + match.range.length
+        }
+        result += nsString.substring(from: lastEnd)
+        return result
     }
 }
