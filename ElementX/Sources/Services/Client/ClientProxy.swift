@@ -733,7 +733,19 @@ class ClientProxy: ClientProxyProtocol {
         if let room = await buildRoomForIdentifier(identifier) {
             return room
         }
-        
+
+        // sTalk (20.07, лог 143): тап по ЧИТАЕМОМУ пушу опережал didBecomeActive→
+        // startSync — стор ещё запаузен (client.pause, 258), getRoom возвращал nil
+        // → экран «нужно приглашение» для member-комнаты (#ops). Прежний ретрай ждал
+        // serviceTransitionTask, но в момент тапа это ЗАВЕРШЁННАЯ pause-задача (resume
+        // ещё не запланирован) → await мгновенный, толку ноль. Теперь ЯВНО форсим
+        // resume и ждём его завершения (порядок lifecycle-колбэков не важен), ретрай.
+        startSync()
+        await serviceTransitionTask?.value
+        if let room = await buildRoomForIdentifier(identifier) {
+            return room
+        }
+
         if !staticRoomSummaryProvider.statePublisher.value.isLoaded {
             _ = await staticRoomSummaryProvider.statePublisher.values.first { $0.isLoaded }
         }
@@ -1305,22 +1317,6 @@ class ClientProxy: ClientProxyProtocol {
     }
     
     private func buildRoomForIdentifier(_ roomID: String) async -> RoomProxyType? {
-        if let result = await buildRoomForIdentifierOnce(roomID) {
-            return result
-        }
-        // Сага «нужно приглашение» (20.07): тап по пушу резолвил комнату на
-        // ЗАПАУЗЕННОМ сторе (client.pause) — getRoom кидал store-closed → nil →
-        // экран «нужно приглашение» при живом membership. Дожидаемся конца
-        // pause/resume-перехода и пробуем ещё раз.
-        guard let transition = serviceTransitionTask else {
-            return nil
-        }
-        await transition.value
-        MXLog.info("Room \(roomID) not resolved on first try — retrying after service transition")
-        return await buildRoomForIdentifierOnce(roomID)
-    }
-
-    private func buildRoomForIdentifierOnce(_ roomID: String) async -> RoomProxyType? {
         do {
             guard let room = try client.getRoom(roomId: roomID) else {
                 return nil
