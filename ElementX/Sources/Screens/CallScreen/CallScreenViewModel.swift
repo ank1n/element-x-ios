@@ -287,7 +287,17 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                     // — реальное состояние медиа-сессии (видишь ли ты людей на экране). +1 за себя.
                     let liveKitTotal = self.liveKitRoomManager.displayParticipants.count + 1
                     self.state.callParticipantsCount = max(callParticipants.count, liveKitTotal)
-                    self.state.activeCallParticipantIDs = callParticipants.map { $0 }
+                    // sTalk-фикс (скрин dp 00:29 «Участники (1)» + сам в «не в сети»):
+                    // activeRoomCallParticipants (m.call.member) может НЕ содержать себя
+                    // (лаг sync / SDK не кладёт self) → локальный юзер падал в секцию
+                    // «не в сети» в CallParticipantsSheet, хотя он в звонке. Счётчик шапки
+                    // уже делает +1 за себя — приводим список активных в соответствие:
+                    // сам ВСЕГДА активен в звонке, который смотрит.
+                    var activeIDs = callParticipants
+                    if !activeIDs.contains(roomProxy.ownUserID) {
+                        activeIDs.append(roomProxy.ownUserID)
+                    }
+                    self.state.activeCallParticipantIDs = activeIDs
                     if callParticipants.count != prevCount {
                         MXLog.info("sTalk: MatrixRTC participants changed: \(prevCount) → \(callParticipants.count), users=\(callParticipants), liveKit remote=\(self.liveKitRoomManager.displayParticipants.count)")
                     }
