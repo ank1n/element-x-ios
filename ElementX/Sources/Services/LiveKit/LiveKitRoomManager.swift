@@ -11,6 +11,7 @@ import CoreImage.CIFilterBuiltins
 import LiveKit
 import Metal
 import os.log
+import ReplayKit
 import SwiftUI
 import Vision
 #if canImport(UIKit)
@@ -148,14 +149,25 @@ final class LiveKitRoomManager: ObservableObject {
 
     #if canImport(UIKit)
     @objc private func appDidEnterBackground() {
-        guard connectionState == .connected || connectionState == .reconnecting else { return }
         // Remember if camera was actively publishing — need to re-enable on return.
         // Именно КАМЕРА и именно НЕ muted: setCamera(false) на устройстве только мьютит
         // publication (track остаётся != nil), а videoTracks.first может быть screen-share.
         // Старый чек «track != nil» после сворачивания сам ВКЛЮЧАЛ камеру, которую юзер
         // выключил (privacy).
+        //
+        // STMOB-234: считаем флаг ДО раннего guard по connectionState. Раньше уход в фон
+        // в состоянии .connecting/.disconnected (реконнект — как раз то, что провоцирует
+        // системная запись экрана) не обновлял флаг, в нём оставалось протухшее true с
+        // прошлого цикла, и на возврате камера включалась САМА — в том числе в аудио-звонке
+        // (setCamera(true) без publication не размьючивает, а публикует новый трек).
         wasCameraEnabledBeforeBackground = room.localParticipant.firstCameraPublication
             .map { $0.track != nil && !$0.isMuted } ?? false
+        if isScreenSharing {
+            // In-app ReplayKit-захват в фоне кадров не отдаёт — фиксируем в логе, чтобы
+            // отличать «демонстрация встала от сворачивания» от перехвата системной записью.
+            DiagLog.write("Call", "background во время демонстрации экрана (in-app capture кадры не отдаёт)")
+        }
+        guard connectionState == .connected || connectionState == .reconnecting else { return }
         // Блюр: CIContext на Metal не должен рендерить в фоне (GPU work in background
         // = command-buffer abort в момент транзишена). Отцепляем процессор; foreground
         // setCamera(true) ре-аттачит по интенту (blurIntent не трогаем).
@@ -193,7 +205,15 @@ final class LiveKitRoomManager: ObservableObject {
         }
         // Proactively re-enable camera — iOS stops AVCaptureSession in background.
         // Without this, waiting for LiveKit SDK's passive recovery takes 2-5 seconds.
-        if wasCameraEnabledBeforeBackground {
+        // STMOB-234: флаг одноразовый — сбрасываем сразу после чтения, иначе он
+        // переживает цикл и включает камеру на следующем возврате из фона.
+        let shouldRestoreCamera = wasCameraEnabledBeforeBackground
+        wasCameraEnabledBeforeBackground = false
+        DiagLog.write("Call", "foreground: restore camera=\(shouldRestoreCamera) state=\(connectionState) screenSharing=\(isScreenSharing)")
+        // Время «в фоне» не простой кадров демонстрации: in-app ReplayKit-захват
+        // там не отдаёт их в принципе, засчитывать это как перехват нельзя.
+        screenShareWatchdog?.noteResumedFromBackground()
+        if shouldRestoreCamera {
             Task { [weak self] in
                 guard let self, self.connectionState == .connected else { return }
                 do {
@@ -579,10 +599,85 @@ final class LiveKitRoomManager: ObservableObject {
         MXLog.warning("sTalk LiveKit: Screen sharing not available on simulator")
         #else
         try await room.localParticipant.setScreenShare(enabled: enabled)
-        isScreenSharing = enabled
+        // STMOB-235: SDK для screen-share делает unpublish (а не mute, как у
+        // камеры) — путь didUpdateIsMuted → updateState не срабатывает, и своя
+        // плитка оставалась с мёртвым треком. Пересчитываем состояние явно;
+        // страховка на случай, если делегат didUnpublishTrack не придёт.
+        // isScreenSharing здесь НЕ присваиваем: он выводится из публикации в
+        // updateState() — иначе флаг расходится с реальностью на republish SDK.
+        updateState()
+        if enabled {
+            startScreenShareWatchdog()
+        } else {
+            stopScreenShareWatchdog()
+        }
+        DiagLog.write("Call", "screen share \(enabled ? "started" : "stopped"), localVideoTrack=\(localVideoTrack != nil)")
         MXLog.info("sTalk LiveKit: Screen share \(enabled ? "started" : "stopped")")
         #endif
     }
+
+    // MARK: - Screen share watchdog (STMOB-234)
+
+    /// Ватчдог in-app ReplayKit-захвата. Демонстрация идёт через
+    /// `RPScreenRecorder.startCapture` (broadcast extension в сборку не входит),
+    /// а системная запись экрана забирает тот же синглтон — поток кадров молча
+    /// встаёт: SDK об этом не узнаёт (errorHandler у startCapture игнорируется,
+    /// авто-unpublish есть только для BroadcastScreenCapturer). Ватчдог видит
+    /// остановку кадров и потерю доступности рекордера и гасит демонстрацию
+    /// честно, вместо застывшего кадра у всех участников.
+    private var screenShareWatchdog: ScreenShareWatchdog?
+    /// Трек, на который навешен ватчдог. Снимать рендерер надо именно по этой
+    /// ссылке: к моменту `didUnpublishTrack` публикация из состояния SDK уже
+    /// удалена, и найти трек через `firstScreenSharePublication` уже нельзя.
+    private weak var watchedScreenShareTrack: VideoTrack?
+
+    private func startScreenShareWatchdog() {
+        stopScreenShareWatchdog()
+        guard let track = room.localParticipant.firstScreenSharePublication?.track as? VideoTrack else {
+            DiagLog.write("Call", "screen share watchdog: НЕТ трека — пропускаю")
+            return
+        }
+        let watchdog = ScreenShareWatchdog { [weak self] reason in
+            guard let self, self.isScreenSharing else { return }
+            DiagLog.write("Call", "screen share ПЕРЕХВАЧЕН (\(reason)) → останавливаю демонстрацию")
+            MXLog.warning("sTalk LiveKit: screen capture lost (\(reason)) — stopping share")
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    try await self.setScreenShare(enabled: false)
+                    self.screenShareInterruptedSubject.send(())
+                } catch {
+                    // Стоп не прошёл (например, в момент реконнекта). Ватчдог себя уже
+                    // разоружил в tick — приводим состояние к реальности и, если
+                    // демонстрация всё ещё опубликована, поднимаем наблюдение заново,
+                    // иначе авто-стопа не будет до конца звонка.
+                    DiagLog.write("Call", "screen share авто-стоп FAIL: \(error.localizedDescription)")
+                    self.updateState()
+                    if self.room.localParticipant.firstScreenSharePublication?.track != nil {
+                        self.startScreenShareWatchdog()
+                    } else {
+                        self.stopScreenShareWatchdog()
+                    }
+                }
+            }
+        }
+        track.add(videoRenderer: watchdog)
+        watchdog.start()
+        screenShareWatchdog = watchdog
+        watchedScreenShareTrack = track
+    }
+
+    private func stopScreenShareWatchdog() {
+        guard let watchdog = screenShareWatchdog else { return }
+        watchedScreenShareTrack?.remove(videoRenderer: watchdog)
+        watchedScreenShareTrack = nil
+        watchdog.stop()
+        screenShareWatchdog = nil
+    }
+
+    /// Демонстрацию оборвали снаружи (системная запись/ошибка ReplayKit) —
+    /// экран звонка показывает пользователю, почему шаринг погас.
+    let screenShareInterruptedSubject = PassthroughSubject<Void, Never>()
 
     /// Strong-ссылка на процессор: SDK держит `capturer.processor` weak,
     /// без неё фон молча отвалится после первого прохода autorelease.
@@ -827,12 +922,37 @@ final class LiveKitRoomManager: ObservableObject {
         // true, иконка не обновляется, self-view продолжает рендериться.
         // didUpdateIsMuted уже дёргает updateState — теперь оно корректно
         // отразит mute как "track is nil".
-        localVideoTrack = room.localParticipant.videoTracks
+        //
+        // STMOB-234/235: и ТОЛЬКО камера. `videoTracks` — values словаря
+        // публикаций, порядок недетерминирован, при демонстрации экрана сюда
+        // попадал screen-share трек. Последствия были два:
+        //   • своя плитка/PiP показывали экран вместо камеры, а после стопа
+        //     демонстрации — застывший последний кадр (STMOB-235);
+        //   • кнопка камеры «умирала» (STMOB-234): observer читает track != nil
+        //     как «камера включена», тап → setCamera(false) → updateState →
+        //     снова screen-share трек → isVideoEnabled откатывался в true.
+        let cameraTrack = room.localParticipant.videoTracks
+            .filter { $0.source == .camera }
             .compactMap { pub -> VideoTrack? in
                 guard !pub.isMuted else { return nil }
                 return pub.track as? VideoTrack
             }
             .first
+        if (localVideoTrack == nil) != (cameraTrack == nil) {
+            DiagLog.write("Call", "localVideoTrack → \(cameraTrack == nil ? "nil" : "camera") screenSharing=\(isScreenSharing)")
+        }
+        localVideoTrack = cameraTrack
+
+        // STMOB-234: isScreenSharing выводим из ФАКТИЧЕСКОЙ публикации, а не из
+        // намерения юзера. SDK при full reconnect / room move сам делает
+        // republishAllTracks (unpublish + publish), и флаг-из-намерения после
+        // такого цикла врал бы: кнопка «выключено», а экран продолжает уходить
+        // участникам. Здесь же сходятся все пути: тап, внешний обрыв, republish.
+        let sharing = room.localParticipant.firstScreenSharePublication?.track != nil
+        if isScreenSharing != sharing {
+            isScreenSharing = sharing
+            DiagLog.write("Call", "isScreenSharing → \(sharing) (по публикации)")
+        }
     }
 }
 
@@ -1012,7 +1132,228 @@ extension LiveKitRoomManager: RoomDelegate {
             if publication.source == .camera {
                 self.applyBlurIfNeeded()
             }
+            // STMOB-234: republish демонстрации внутри SDK (full reconnect / room move)
+            // приносит НОВЫЙ трек — ватчдог надо перевесить на него, иначе после
+            // первого же реконнекта перехват экрана системной записью останется
+            // незамеченным. Для юзерского старта это тоже верный путь (idempotent).
+            if publication.source == .screenShareVideo {
+                self.startScreenShareWatchdog()
+            }
         }
+    }
+
+    /// STMOB-234/235: парный делегат к didPublishTrack. Screen-share при стопе
+    /// SDK именно UNPUBLISH'ит (у камеры/микрофона — mute), и без этого
+    /// обработчика состояние не пересчитывалось вообще: localVideoTrack держал
+    /// остановленный трек (застывший кадр в своей плитке), isScreenSharing
+    /// оставался true. Важно, что это единственный путь для ВНЕШНЕЙ остановки
+    /// (системная запись экрана, ошибка ReplayKit), а не только для тапа юзера.
+    nonisolated func room(_ room: Room, participant: LocalParticipant, didUnpublishTrack publication: LocalTrackPublication) {
+        Task { @MainActor in
+            if publication.source == .screenShareVideo {
+                // Публикации больше нет — ватчдог снимаем с мёртвого трека.
+                // Если это republish внутри SDK, парный didPublishTrack сразу
+                // поднимет наблюдение на новом треке, а updateState вернёт флаг.
+                self.stopScreenShareWatchdog()
+                DiagLog.write("Call", "screen share publication снята (стоп юзера, внешний обрыв или republish)")
+            }
+            self.updateState()
+            MXLog.info("sTalk LiveKit: Unpublished local track: \(publication.kind) source=\(publication.source)")
+        }
+    }
+}
+
+// MARK: - Screen share watchdog (STMOB-234)
+
+/// Следит за живостью in-app ReplayKit-захвата экрана.
+///
+/// Демонстрация публикуется через `RPScreenRecorder.shared().startCapture` —
+/// broadcast extension в сборке нет (`BroadcastBundleInfo.hasExtension == false`,
+/// app group расширения не совпадает с нашим), поэтому SDK уходит в ветку
+/// `createInAppScreenShareTrack`. Системная запись экрана iPhone забирает тот же
+/// синглтон `RPScreenRecorder`: кадры перестают приходить, но публикация остаётся
+/// живой и не muted — у всех участников висит последний кадр, и юзер об этом не
+/// знает. SDK не страхует: errorHandler у `startCapture` игнорируется
+/// (`InAppCapturer.swift`), а авто-unpublish при остановке капчера сделан только
+/// для `BroadcastScreenCapturer`.
+///
+/// Признак перехвата = потеря доступности рекордера (делегат) И одновременная
+/// остановка кадров. Порознь они врут: ReplayKit отдаёт кадры ПО ИЗМЕНЕНИЮ экрана
+/// (на статичной картинке пауза нормальна), а `isAvailable` меняется и от нашего
+/// собственного захвата. Пара признаков даёт надёжный сигнал.
+/// Кадры прилетают с очереди капчера, делегат ReplayKit — со своей: состояние
+/// живёт под локом, наружу (стоп демонстрации) выходим через @MainActor-колбэк.
+final class ScreenShareWatchdog: NSObject, VideoRenderer, @unchecked Sendable {
+    /// Кадров нет столько секунд — считаем поток вставшим (в паре с делегатом).
+    /// С запасом: ReplayKit шлёт кадры по изменению экрана, статичный документ
+    /// в демонстрации легально молчит несколько секунд.
+    private static let stallThreshold: TimeInterval = 5
+    /// Кадры, пришедшие сразу после сигнала делегата, — «хвост в полёте» из
+    /// очереди капчера, а не признак живого захвата. Взвод снимаем только
+    /// потоком, который держится дольше этого окна.
+    private static let inFlightFrameWindow: TimeInterval = 1.5
+    /// Как часто пишем телеметрию в DiagLog. Редко: DiagLog при переполнении
+    /// сносит файл целиком, а звонок с демонстрацией идёт десятки минут.
+    private static let telemetryInterval: TimeInterval = 30
+
+    private let onCaptureLost: @MainActor (String) -> Void
+    private let lock = NSLock()
+    private var lastFrameAt = Date()
+    private var frameCount = 0
+    private var pollTask: Task<Void, Never>?
+    /// Делегат ReplayKit сказал, что захват отобрали/остановили: причина + когда.
+    private var recorderSignalledLoss: String?
+    private var lossAt: Date?
+
+    init(onCaptureLost: @escaping @MainActor (String) -> Void) {
+        self.onCaptureLost = onCaptureLost
+        super.init()
+    }
+
+    @MainActor
+    func start() {
+        lock.lock()
+        lastFrameAt = Date()
+        frameCount = 0
+        recorderSignalledLoss = nil
+        lossAt = nil
+        lock.unlock()
+
+        let recorder = RPScreenRecorder.shared()
+        recorder.delegate = self
+        DiagLog.write("Call", "screen share watchdog: старт (isRecording=\(recorder.isRecording) isAvailable=\(recorder.isAvailable))")
+
+        pollTask = Task { @MainActor [weak self] in
+            var elapsed: TimeInterval = 0
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled, let self else { return }
+                elapsed += 1
+                self.tick(logTelemetry: elapsed.truncatingRemainder(dividingBy: Self.telemetryInterval) == 0)
+            }
+        }
+    }
+
+    @MainActor
+    func stop() {
+        pollTask?.cancel()
+        pollTask = nil
+        if RPScreenRecorder.shared().delegate === self {
+            RPScreenRecorder.shared().delegate = nil
+        }
+        let (age, frames) = stats()
+        DiagLog.write("Call", "screen share watchdog: стоп (кадров=\(frames), последний \(String(format: "%.1f", age))с назад)")
+    }
+
+    private func stats() -> (age: TimeInterval, frames: Int) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (Date().timeIntervalSince(lastFrameAt), frameCount)
+    }
+
+    @MainActor
+    private func tick(logTelemetry: Bool) {
+        let (age, frames) = stats()
+        lock.lock()
+        let loss = recorderSignalledLoss
+        let signalledAt = lossAt
+        lock.unlock()
+
+        if logTelemetry {
+            let recorder = RPScreenRecorder.shared()
+            DiagLog.write("Call", "screen share: кадров=\(frames), последний \(String(format: "%.1f", age))с назад, isRecording=\(recorder.isRecording), isAvailable=\(recorder.isAvailable), взвод=\(loss ?? "нет")")
+        }
+
+        // Стоп только по ПАРЕ признаков: рекордер сообщил о потере И кадры встали
+        // ПОСЛЕ этого сигнала. Порознь оба врут: ReplayKit отдаёт кадры по изменению
+        // экрана (пауза на статичной картинке легальна), а availability дёргается и от
+        // нашего же захвата. Требование «простой начался не раньше сигнала» не даёт
+        // приписать перехвату чужую паузу.
+        guard let loss, let signalledAt, age > Self.stallThreshold,
+              Date().timeIntervalSince(signalledAt) > Self.stallThreshold else { return }
+        lock.lock()
+        recorderSignalledLoss = nil // не дёргать повторно
+        lossAt = nil
+        lock.unlock()
+        pollTask?.cancel()
+        pollTask = nil
+        onCaptureLost("\(loss), кадров нет \(String(format: "%.1f", age))с")
+    }
+
+    private func signalLoss(_ reason: String) {
+        lock.lock()
+        recorderSignalledLoss = reason
+        lossAt = Date()
+        lock.unlock()
+    }
+
+    private func clearLoss(_ why: String) {
+        lock.lock()
+        let had = recorderSignalledLoss != nil
+        recorderSignalledLoss = nil
+        lossAt = nil
+        lock.unlock()
+        if had {
+            DiagLog.write("Call", "screen share: взвод снят (\(why))")
+        }
+    }
+
+    /// Возврат из фона: время, проведённое свёрнутым, — не простой кадров
+    /// (in-app ReplayKit-захват в фоне не отдаёт их в принципе).
+    func noteResumedFromBackground() {
+        lock.lock()
+        lastFrameAt = Date()
+        lock.unlock()
+    }
+
+    // MARK: VideoRenderer
+
+    @MainActor var isAdaptiveStreamEnabled: Bool {
+        false
+    }
+
+    @MainActor var adaptiveStreamSize: CGSize {
+        .zero
+    }
+
+    func set(size: CGSize) { }
+
+    func render(frame: VideoFrame) {
+        lock.lock()
+        let now = Date()
+        lastFrameAt = now
+        frameCount += 1
+        // Кадры идут дольше окна «хвоста в полёте» — значит захват жив, и сигнал
+        // делегата был ложной тревогой (availability дёргается и от нашего же
+        // startCapture, и от появления AirPlay-приёмника). Снимаем взвод. Кадры
+        // сразу после сигнала не считаем: это остатки очереди капчера.
+        let staleLoss = lossAt.map { now.timeIntervalSince($0) > Self.inFlightFrameWindow } ?? false
+        lock.unlock()
+        if staleLoss {
+            clearLoss("кадры идут")
+        }
+    }
+}
+
+// MARK: RPScreenRecorderDelegate
+
+extension ScreenShareWatchdog: RPScreenRecorderDelegate {
+    func screenRecorderDidChangeAvailability(_ screenRecorder: RPScreenRecorder) {
+        let available = screenRecorder.isAvailable
+        DiagLog.write("Call", "screen share: RPScreenRecorder availability → \(available)")
+        guard !available else {
+            clearLoss("рекордер снова доступен")
+            return
+        }
+        signalLoss("рекордер недоступен")
+    }
+
+    func screenRecorder(_ screenRecorder: RPScreenRecorder,
+                        didStopRecordingWith previewViewController: RPPreviewViewController?,
+                        error: Error?) {
+        let reason = error?.localizedDescription ?? "без ошибки"
+        DiagLog.write("Call", "screen share: RPScreenRecorder didStopRecording (\(reason))")
+        signalLoss("рекордер остановлен: \(reason)")
     }
 }
 

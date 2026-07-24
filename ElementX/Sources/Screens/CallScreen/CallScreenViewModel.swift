@@ -921,6 +921,37 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             }
             .store(in: &cancellables)
 
+        // STMOB-234: до этого на $isScreenSharing никто не был подписан — UI знал о
+        // демонстрации только из собственного тапа. Если шаринг гасили снаружи
+        // (системная запись экрана отбирает ReplayKit, ошибка SDK), кнопка так и
+        // оставалась «активной», а повторный тап пытался ВЫКЛЮЧИТЬ уже мёртвый шаринг.
+        liveKitRoomManager.$isScreenSharing
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] sharing in
+                guard let self, self.state.isScreenSharing != sharing else { return }
+                self.state.isScreenSharing = sharing
+                MXLog.info("sTalk: LiveKit isScreenSharing changed — \(sharing)")
+            }
+            .store(in: &cancellables)
+
+        // Демонстрацию оборвали снаружи — объясняем пользователю, почему она погасла.
+        liveKitRoomManager.screenShareInterruptedSubject
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in
+                guard let self else { return }
+                state.bindings.alertInfo = .init(id: UUID(),
+                                                 title: NSLocalizedString("stalk_call_share_interrupted_title",
+                                                                          tableName: "Localizable",
+                                                                          value: "Демонстрация остановлена",
+                                                                          comment: "Screen share was interrupted by the system"),
+                                                 message: NSLocalizedString("stalk_call_share_interrupted_message",
+                                                                            tableName: "Localizable",
+                                                                            value: "iPhone передал захват экрана другой функции — например, системной записи экрана. Демонстрацию можно включить снова.",
+                                                                            comment: "Screen share interrupted explanation"),
+                                                 primaryButton: .init(title: L10n.actionOk) { })
+            }
+            .store(in: &cancellables)
+
         liveKitRoomManager.$connectionState
             .receive(on: DispatchQueue.main)
             .sink { [weak self] connectionState in

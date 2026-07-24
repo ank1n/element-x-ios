@@ -69,7 +69,9 @@ struct NativeCallGridView: View {
             Color.black.ignoresSafeArea()
 
             if isDirect {
-                DirectCallLayout(roomManager: roomManager, isMinimized: isMinimized)
+                DirectCallLayout(roomManager: roomManager,
+                                 isMinimized: isMinimized,
+                                 isLocalVideoEnabled: isLocalVideoEnabled)
             } else if isMinimized {
                 // Mini mode: show only the active speaker (or first remote participant)
                 ActiveSpeakerMiniView(roomManager: roomManager,
@@ -150,6 +152,9 @@ private struct AspectAwareRemoteVideoView: View {
 private struct DirectCallLayout: View {
     @ObservedObject var roomManager: LiveKitRoomManager
     var isMinimized = false
+    /// STMOB-235: PiP рендерился по одному лишь `localVideoTrack != nil`, без гейта
+    /// по состоянию камеры — «защита в глубину» от застывшего кадра в 1:1.
+    var isLocalVideoEnabled = true
     @State private var selfViewOffset: CGSize = .zero
     @State private var selfViewCorner: PipCorner = .bottomRight
     // Landscape: PiP-бокс переворачивается вместе с камерой (120×160 ↔ 160×120)
@@ -169,7 +174,7 @@ private struct DirectCallLayout: View {
                 }
 
                 // Local self-view — only in fullscreen mode, hide in minimized
-                if !isMinimized, let localTrack = roomManager.localVideoTrack {
+                if !isMinimized, isLocalVideoEnabled, let localTrack = roomManager.localVideoTrack {
                     selfViewPip(track: localTrack, in: geometry)
                 }
             }
