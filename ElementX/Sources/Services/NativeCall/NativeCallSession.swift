@@ -357,8 +357,13 @@ final class NativeCallSession: ObservableObject {
         liveKitRoomManager.encryptionKeyRebroadcastSubject
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in
-                guard let self, isEncrypted, ourEncryptionKey != nil else { return }
-                Task { [weak self] in await self?.rebroadcastCurrentEncryptionKey() }
+                guard let self else { return }
+                if isEncrypted, ourEncryptionKey != nil {
+                    Task { [weak self] in await self?.rebroadcastCurrentEncryptionKey() }
+                }
+                // STMOB-264: переподключение — момент, когда участие в комнате могло
+                // не пережить обрыв. Сверяем инвариант; если всё на месте — no-op.
+                Task { [weak self] in await self?.reconcileCallMembership(trigger: "reconnect") }
             }
             .store(in: &cancellables)
 
@@ -1429,7 +1434,11 @@ final class NativeCallSession: ObservableObject {
     // MARK: - MSC4140 Delayed Leave (STMOB-211)
 
     /// Delay until the server auto-sends our leave if we stop refreshing (app killed/crashed).
-    private static let delayedLeaveMs = 20000
+    /// STMOB-264 (dp): 30с вместо 20с. При рестартах раз в 8с это запас в три
+    /// пропущенных тика — короткий провал связи больше не приводит к тому, что
+    /// сервер снимает наше membership и мы становимся невидимы для собеседника
+    /// (треки идут, а сопоставить их с участником звонка не с чем).
+    private static let delayedLeaveMs = 30000
     /// Refresh cadence — well under `delayedLeaveMs`, so one missed tick isn't fatal.
     private static let delayedLeaveRestartSeconds: UInt64 = 8
 
@@ -1479,17 +1488,109 @@ final class NativeCallSession: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: Self.delayedLeaveRestartSeconds * 1_000_000_000)
                 guard !Task.isCancelled, let self else { return }
-                await self.delayedLeaveAction("restart", delayID: delayID)
+                let status = await self.delayedLeaveAction("restart", delayID: delayID)
+                guard !Task.isCancelled else { return }
+                // Сетевые ошибки во время обрыва — это НЕ повод что-то делать: delay
+                // ещё жив на сервере, продолжаем стучаться.
+                guard status == 404 else { continue }
+                // STMOB-264: 404 = отложенный leave уже СРАБОТАЛ, сервер снял наше
+                // membership. Для всех остальных нас в звонке больше нет: собеседник
+                // получает наши треки из SFU, но не может сопоставить их с участником
+                // звонка и не показывает ни видео, ни звук — при живом медиа. Именно
+                // так выглядит «веб перестал видеть iOS после переподключения».
+                //
+                // Это АВТОРИТЕТНЫЙ признак, сильнее нашего кэша участников: кэш во
+                // время обрыва как раз и протух (событие о снятии могло не дойти).
+                // Поэтому форсим сверку, а heartbeat НЕ прерываем — иначе, если сверка
+                // не пройдёт (сети ещё нет), периодического детектора не останется
+                // вовсе. Петля умрёт сама, когда scheduleDelayedLeave заведёт новую.
+                Task { [weak self] in await self?.reconcileCallMembership(trigger: "delayed-leave-404", force: true) }
             }
         }
     }
 
+    /// Приводит состояние комнаты к инварианту «пока мы в звонке — наше
+    /// `m.call.member` опубликовано».
+    ///
+    /// Это НЕ обработчик конкретной ошибки, а сверка желаемого с фактическим:
+    /// вызывается из всех мест, где мы можем узнать о расхождении (событие о нашем
+    /// участии из комнаты, 404 от отложенного leave, завершённое переподключение).
+    /// Поэтому чинится любой способ потерять участие, а не только сработавший
+    /// delayed leave: ресет состояния, редакция события, рестарт сервера.
+    ///
+    /// Идемпотентна: если участие на месте — ничего не делает.
+    private func reconcileCallMembership(trigger: String, force: Bool = false) async {
+        guard sessionState == .connected else { return }
+        guard !isReconcilingMembership else { return }
+        if let last = lastMembershipReconcileAt, Date().timeIntervalSince(last) < 5 {
+            return
+        }
+        isReconcilingMembership = true
+        defer { isReconcilingMembership = false }
+
+        let selfKey = "\(userId)|\(deviceId)"
+        if force {
+            // Сервер сказал прямо, что участия нет — кэш тут не судья.
+            callMemberDeviceExpiry.removeValue(forKey: selfKey)
+        }
+        // Факт: есть ли наше участие в комнате прямо сейчас.
+        let nowMs = Date().timeIntervalSince1970 * 1000
+        if let expiry = callMemberDeviceExpiry[selfKey], expiry == 0 || expiry > nowMs {
+            return // инвариант соблюдён
+        }
+
+        guard membershipReconcileAttempts < Self.maxMembershipReconcileAttempts else {
+            DiagLog.write("Call", "membership: лимит восстановлений исчерпан (\(membershipReconcileAttempts)) — не долблю сервер")
+            return
+        }
+        lastMembershipReconcileAt = Date()
+        membershipReconcileAttempts += 1
+        DiagLog.write("Call", "membership recon #\(membershipReconcileAttempts) (\(trigger)) → переотправляю join")
+
+        // Старый отложенный leave гасим ЯВНО, а не забываем: переотправка участия его
+        // не отменяет, и уцелевший таймер снял бы нас снова через 30с. На уже
+        // сработавшем delay это безобидный 404.
+        await cancelDelayedLeave()
+        guard let eventID = await sendJoinViaREST() else {
+            // Сеть ещё не вернулась — следующий триггер (heartbeat/событие/реконнект)
+            // попробует снова, отдельной петли ретраев для этого не нужно.
+            DiagLog.write("Call", "membership recon: join не прошёл, ждём следующего триггера")
+            lastMembershipReconcileAt = nil
+            membershipReconcileAttempts -= 1
+            return
+        }
+        // Звонок мог завершиться, пока шёл join (до 15с на плохой сети): без этой
+        // проверки мы бы завели новый серверный таймер и heartbeat уже после выхода.
+        guard sessionState == .connected else {
+            DiagLog.write("Call", "membership recon: звонок завершился во время join — откатываю")
+            await cancelDelayedLeave()
+            return
+        }
+        callMemberEventID = eventID
+        callMemberDeviceExpiry[selfKey] = 0
+        DiagLog.write("Call", "membership восстановлено, event=\(eventID)")
+        await scheduleDelayedLeave()
+        // Для собеседника мы теперь «новый участник» — ключ надо раздать заново.
+        if isEncrypted, ourEncryptionKey != nil {
+            await rebroadcastCurrentEncryptionKey()
+        }
+    }
+
+    private var lastMembershipReconcileAt: Date?
+    private var isReconcilingMembership = false
+    private var membershipReconcileAttempts = 0
+    /// Потолок на звонок: если участие снимают снова и снова, это уже не наш обрыв,
+    /// а что-то на сервере — молчим в лог, а не устраиваем шторм state-событий.
+    private static let maxMembershipReconcileAttempts = 5
+
+    /// Возвращает HTTP-статус (0 — сетевая ошибка). Именно статус, а не Bool:
+    /// 404 («delay уже сработал») и обрыв сети требуют разного поведения.
     @discardableResult
-    private func delayedLeaveAction(_ action: String, delayID: String) async -> Bool {
+    private func delayedLeaveAction(_ action: String, delayID: String) async -> Int {
         let url = "\(homeserverURL)/_matrix/client/unstable/org.matrix.msc4140/delayed_events/\(delayID)"
         guard let requestURL = URL(string: url) else {
             MXLog.error("sTalk NativeCall: invalid delayed-action URL: \(url)")
-            return false
+            return 0
         }
         var request = URLRequest(url: requestURL)
         request.httpMethod = "POST"
@@ -1500,12 +1601,15 @@ final class NativeCallSession: ObservableObject {
             let (_, response) = try await restSession.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             if status != 200 {
-                DiagLog.write("Call", "delayed leave \(action) → \(status)")
+                // 404 = delay_id больше нет, т.е. сервер УЖЕ выполнил отложенный leave
+                // и снял наше membership (STMOB-264).
+                let hint = status == 404 ? " (delay уже сработал — membership снято)" : ""
+                DiagLog.write("Call", "delayed leave \(action) → \(status)\(hint)")
             }
-            return status == 200
+            return status
         } catch {
             DiagLog.write("Call", "delayed leave \(action) FAILED: \(error.localizedDescription)")
-            return false
+            return 0
         }
     }
 
@@ -1609,7 +1713,26 @@ final class NativeCallSession: ObservableObject {
         guard sender.hasPrefix("@") else { return }
         let nowMs = Date().timeIntervalSince1970 * 1000
 
-        let beforeForSender = Set(callMemberDeviceExpiry.keys.filter { $0.hasPrefix("\(sender)|") })
+        // STMOB-264: state_key вида `_@user:server_DEVICE_m.call` говорит, о ЧЬЁМ
+        // устройстве событие. Без него мы вычищали ВСЕ устройства отправителя по
+        // одному событию: второе устройство того же аккаунта затирало запись первого.
+        // Раньше это стоило лишь лишней рассылки ключей, а с инвариантом ниже
+        // приводило бы к ложному «нас сняли» и переотправке участия.
+        let stateKey = (message.data?["state_key"] as? String) ?? ""
+        let deviceFromStateKey: String? = {
+            let prefix = "_\(sender)_"
+            let suffix = "_m.call"
+            guard stateKey.hasPrefix(prefix), stateKey.hasSuffix(suffix) else { return nil }
+            let device = String(stateKey.dropFirst(prefix.count).dropLast(suffix.count))
+            return device.isEmpty ? nil : device
+        }()
+        let beforeForSender: Set<String> = {
+            if let deviceFromStateKey {
+                let key = "\(sender)|\(deviceFromStateKey)"
+                return callMemberDeviceExpiry[key] != nil ? [key] : []
+            }
+            return Set(callMemberDeviceExpiry.keys.filter { $0.hasPrefix("\(sender)|") })
+        }()
 
         // A call.member event carries this user's current memberships. memberships[] (legacy) or a
         // single-membership content (per-device model). Empty content {} → user left.
@@ -1637,6 +1760,19 @@ final class NativeCallSession: ObservableObject {
 
         let selfKey = "\(userId)|\(deviceId)"
         DiagLog.write("E2EE", "call.member from \(sender): active recipients=\(callMemberDeviceExpiry.keys.filter { $0 != selfKey }.count)")
+
+        // STMOB-264: ИНВАРИАНТ — пока сессия в звонке, наше membership обязано быть в
+        // состоянии комнаты. Здесь единственный авторитетный источник правды: событие
+        // о НАШЕМ же участии. Если оно говорит, что нас нет, значит нас сняли — неважно
+        // кем и почему (сработал отложенный leave MSC4140, ресет состояния, редакция
+        // события, рестарт сервера). Медиа при этом продолжает идти, и снаружи это
+        // выглядит как «собеседник перестал видеть iOS» — треки приходят, а
+        // сопоставить их с участником звонка не с чем.
+        let isAboutOurDevice = sender == userId && (deviceFromStateKey == nil || deviceFromStateKey == deviceId)
+        if isAboutOurDevice, !senderKeysNow.contains(selfKey), sessionState == .connected {
+            DiagLog.write("Call", "membership: наше участие пропало из состояния комнаты → восстанавливаю")
+            Task { [weak self] in await self?.reconcileCallMembership(trigger: "state-event") }
+        }
 
         // STMOB-247: re-advertise on membership-settled (new device of any peer appeared).
         let newDevices = senderKeysNow.subtracting(beforeForSender).filter { $0 != selfKey }
