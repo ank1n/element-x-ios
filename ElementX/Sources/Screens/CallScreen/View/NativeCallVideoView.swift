@@ -594,31 +594,34 @@ private struct GroupCallLayout: View {
         // его НЕ нужно дублировать как camera-tile в remote loop.
         let localIdentityString = roomManager.localParticipant?.identity?.stringValue
 
-        // STMOB-129 build 160: local screen share tile — показать ВАМ что вы
-        // шарите. Без этого тайла юзер не видит, что captured (или что capture
-        // не запустилось — нужна Broadcast Extension STMOB-118).
-        if let local = roomManager.localParticipant,
-           let screenPub = local.videoTracks.first(where: { $0.isScreenShareTrack }),
-           !screenPub.isMuted,
-           let track = screenPub.track as? VideoTrack {
-            let identity = local.identity?.stringValue ?? "local"
-            items.append(ParticipantItem(id: "\(identity)-screen",
-                                         videoTrack: track,
-                                         displayName: NSLocalizedString("stalk_call_your_screen", tableName: "Localizable", value: "Ваш экран", comment: "Local screen share tile name"),
-                                         avatarURL: nil,
-                                         isLocal: true,
-                                         isSpeaking: false,
-                                         isAudioMuted: false,
-                                         isVideoMuted: false,
-                                         isScreenShare: true))
-        }
+        // STMOB-234 (dp, лог 145): СВОЙ экран себе НЕ показываем. Тайл «Ваш экран»
+        // (был здесь с build 160) занимал всю ширину первым в сетке и выдавливал
+        // вниз и себя, и собеседника, а внутри давал бесконечную рекурсию —
+        // in-app capture снимает наше же окно, где уже нарисован этот тайл.
+        // Смысла в нём нет: то, что трансляция идёт, видно по подсветке ••• и
+        // плашке «Вы транслируете экран» на экране звонка. Заодно уходит перекос
+        // раскладки: hasScreenShare (ниже) переставал считаться от своего шаринга,
+        // а он меняет аспект тайлов, отключает раскладку «1+2» и включает скролл.
+        // Чужой шаринг показываем как раньше.
 
         // Screen share tracks first (shown prominently)
         for participant in roomManager.displayParticipants {
+            // isSubscribed обязателен: без него сетка рисовала чужой шаринг, который
+            // hasRemoteScreenShare (он требует подписки) не считает — и раскладка не
+            // уходила в speaker, а landscape-фуллскрин не включался. Рассинхронные
+            // условия давали «тайл есть, а поведение как без шаринга».
             if let screenPub = participant.videoTracks.first(where: { $0.isScreenShareTrack }),
+               screenPub.isSubscribed,
                !screenPub.isMuted,
                let track = screenPub.track as? VideoTrack {
                 let identity = participant.identity?.stringValue ?? participant.sid?.stringValue ?? UUID().uuidString
+                // STMOB-131-класс: SFU может отдать виртуального участника с НАШЕЙ
+                // identity (суффикс ":screen") — иначе свой экран вернулся бы сюда
+                // с чужого входа. В камерном цикле ниже такой skip уже есть.
+                if let localID = localIdentityString,
+                   identity == localID || identity.hasPrefix("\(localID):") || identity == "\(localID)-screen" {
+                    continue
+                }
                 let name = participant.name ?? participant.identity?.stringValue ?? "?"
                 items.append(ParticipantItem(id: "\(identity)-screen",
                                              videoTrack: track,

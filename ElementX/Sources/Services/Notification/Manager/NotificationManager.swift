@@ -216,6 +216,23 @@ final class NotificationManager: NSObject, NotificationManagerProtocol {
         }
     }
     
+    /// STMOB-234: выметает заглушки NSE (хвост звонка) из Центра уведомлений.
+    /// В фоне `willPresent` не вызывается, поэтому пустая строка висит там до
+    /// первого открытия приложения — здесь она уходит.
+    func removeDeliveredPlaceholderNotifications() async {
+        let identifiers = await notificationCenter
+            .deliveredNotifications()
+            .filter { notification in
+                let content = notification.request.content
+                return content.userInfo[NotificationConstants.UserInfoKey.suppressed] as? Bool == true ||
+                    (content.title.isEmpty && content.subtitle.isEmpty && content.body.isEmpty)
+            }
+            .map(\.request.identifier)
+        guard !identifiers.isEmpty else { return }
+        notificationCenter.removeDeliveredNotifications(withIdentifiers: identifiers)
+        MXLog.info("sTalk: removed \(identifiers.count) placeholder notification(s)")
+    }
+
     func removeDeliveredMessageNotifications(for roomID: String) async {
         let notificationsIdentifiers = await notificationCenter
             .deliveredNotifications()
@@ -234,15 +251,25 @@ final class NotificationManager: NSObject, NotificationManagerProtocol {
         let notificationsIdentifiers = await notificationCenter
             .deliveredNotifications()
             .filter { notification in
-                guard let roomID = notification.request.content.roomID,
+                // STMOB-234: заодно выметаем заглушки NSE (хвост звонка). В фоне
+                // willPresent не вызывается, и пустая строка остаётся висеть в
+                // Центре уведомлений — здесь она уйдёт при первом же обновлении
+                // списка комнат.
+                let content = notification.request.content
+                if content.userInfo[NotificationConstants.UserInfoKey.suppressed] as? Bool == true ||
+                    (content.title.isEmpty && content.subtitle.isEmpty && content.body.isEmpty) {
+                    return true
+                }
+
+                guard let roomID = content.roomID,
                       let lastMessageDate = roomsToLastMessageDates[roomID] else {
                     return false
                 }
-                    
+
                 return notification.date <= lastMessageDate
             }
             .map(\.request.identifier)
-        
+
         notificationCenter.removeDeliveredNotifications(withIdentifiers: notificationsIdentifiers)
     }
 
@@ -360,6 +387,20 @@ extension NotificationManager: UNUserNotificationCenterDelegate {
         }
         guard let delegate else {
             return [.badge, .sound, .list, .banner]
+        }
+
+        // STMOB-234 (dp, лог 144): «пустая плашка» после звонка. NSE распознал
+        // E2EE-хвост звонка и отдал заглушку (contentHandler вызвать обязан —
+        // отменить доставку из расширения нельзя), но приложение было в
+        // форграунде, а roomID у заглушки нет → shouldDisplayInAppNotification
+        // возвращал true, и iOS показывала пустой баннер и пустую строку в списке.
+        // Опознаём по маркеру, поставленному в makePassiveContent.
+        if notification.request.content.userInfo[NotificationConstants.UserInfoKey.suppressed] as? Bool == true {
+            MXLog.info("sTalk: NSE placeholder notification suppressed")
+            // Заодно подметаем заглушки, накопившиеся в фоне: там willPresent не
+            // вызывается вовсе, и пустые строки висят в Центре уведомлений.
+            await removeDeliveredPlaceholderNotifications()
+            return []
         }
 
         guard delegate.shouldDisplayInAppNotification(content: notification.request.content) else {

@@ -29,6 +29,29 @@ struct CallScreen: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .ignoresSafeArea(.container, edges: .bottom)
 
+                if !isMinimized, context.viewState.isScreenSharing {
+                    // STMOB-234: своей плитки «Ваш экран» больше нет (она выдавливала
+                    // участников и давала рекурсию), поэтому факт трансляции показываем
+                    // компактной плашкой сверху — иначе единственным признаком остаётся
+                    // подсветка кнопки ••• при закрытом меню.
+                    VStack {
+                        HStack(spacing: 6) {
+                            Image(systemName: "rectangle.on.rectangle")
+                                .font(.caption)
+                            Text(NSLocalizedString("stalk_call_you_are_sharing", tableName: "Localizable",
+                                                   value: "Вы транслируете экран", comment: "Local screen sharing indicator"))
+                                .font(.caption.weight(.medium))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Capsule().fill(Color.black.opacity(0.55)))
+                        .padding(.top, 8)
+                        Spacer()
+                    }
+                    .allowsHitTesting(false)
+                }
+
                 if !isMinimized {
                     // sTalk: Native call control buttons at bottom
                     VStack {

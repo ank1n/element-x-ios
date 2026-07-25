@@ -1188,6 +1188,10 @@ final class ScreenShareWatchdog: NSObject, VideoRenderer, @unchecked Sendable {
     /// С запасом: ReplayKit шлёт кадры по изменению экрана, статичный документ
     /// в демонстрации легально молчит несколько секунд.
     private static let stallThreshold: TimeInterval = 5
+    /// Жёсткий сигнал (`didStopRecording` — «Запись прервана другой программой»)
+    /// однозначен, ждать полный порог незачем: гасим почти сразу.
+    private static let hardSignalThreshold: TimeInterval = 1.5
+    private static let hardSignalPrefix = "рекордер остановлен"
     /// Кадры, пришедшие сразу после сигнала делегата, — «хвост в полёте» из
     /// очереди капчера, а не признак живого захвата. Взвод снимаем только
     /// потоком, который держится дольше этого окна.
@@ -1269,8 +1273,14 @@ final class ScreenShareWatchdog: NSObject, VideoRenderer, @unchecked Sendable {
         // экрана (пауза на статичной картинке легальна), а availability дёргается и от
         // нашего же захвата. Требование «простой начался не раньше сигнала» не даёт
         // приписать перехвату чужую паузу.
-        guard let loss, let signalledAt, age > Self.stallThreshold,
-              Date().timeIntervalSince(signalledAt) > Self.stallThreshold else { return }
+        //
+        // Порог зависит от жёсткости сигнала (dp, лог 145 12:05:37→12:05:43): при
+        // системной записи ReplayKit прислал didStopRecording «Запись прервана другой
+        // программой» — это однозначно, ждать 5с незачем; а availability=false шумит
+        // (дёргается от нашего же startCapture) и требует полного порога.
+        guard let loss, let signalledAt else { return }
+        let threshold = loss.hasPrefix(Self.hardSignalPrefix) ? Self.hardSignalThreshold : Self.stallThreshold
+        guard age > threshold, Date().timeIntervalSince(signalledAt) > threshold else { return }
         lock.lock()
         recorderSignalledLoss = nil // не дёргать повторно
         lossAt = nil

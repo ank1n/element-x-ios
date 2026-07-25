@@ -380,7 +380,13 @@ class NotificationHandler {
         content.body = ""
         content.sound = nil
         content.attachments = []
-        content.userInfo = [:]
+        // STMOB-234 (dp, лог 144): userInfo обнуляем (иначе iOS берёт alert из
+        // исходного aps как fallback), но оставляем маркер — по нему приложение
+        // узнаёт «это наша заглушка» и не даёт ей показаться/остаться в Центре
+        // уведомлений пустой строкой. Полностью подавить доставку из NSE нельзя:
+        // contentHandler обязан быть вызван, а пустой контент iOS всё равно
+        // кладёт в список.
+        content.userInfo = [NotificationConstants.UserInfoKey.suppressed: true]
         if #available(iOS 15.0, *) {
             content.interruptionLevel = .passive
             content.relevanceScore = 0

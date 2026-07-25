@@ -16,6 +16,11 @@ enum NotificationConstants {
         static let unreadCount = "unread_count"
         static let pusherNotificationClientIdentifier = "pusher_notification_client_identifier"
         static let receiverIdentifier = "receiver_id"
+        /// Маркер «пустышки» от NSE: событие распознано как хвост звонка/служебное
+        /// и показывать его нечего. Полностью отменить доставку из NSE нельзя,
+        /// поэтому приложение по этому ключу не презентует уведомление и убирает
+        /// его из Центра уведомлений (STMOB-234, лог 144).
+        static let suppressed = "stalk_suppressed"
     }
 
     enum Category {
