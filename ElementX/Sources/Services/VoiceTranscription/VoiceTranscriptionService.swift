@@ -45,6 +45,15 @@ struct VoiceTranscribeResponse: Decodable {
     let pollId: String?
     let status: String?
     let fullText: String?
+
+    /// STMOB-265 (Molly, code review): признак готовности — статус, а НЕ truthiness
+    /// fullText. `status:"completed"` + `fullText:""` — легитимный результат «речь не
+    /// распознана», а не «ещё не готово». Именно на этой путанице споткнулся веб-код
+    /// (truthy-проверка пустой строки в JS) — поллинг впустую крутился 3 минуты и
+    /// затем ложно показывал ошибку вместо «не распознано».
+    var isCompleted: Bool {
+        status == "completed"
+    }
 }
 
 // MARK: - Сеть
@@ -94,8 +103,20 @@ final class VoiceTranscriptionService {
         DiagLog.write("Transcribe", "POST transcribe-voice → \(status) за \(elapsed)с event=\(eventID)")
 
         guard status == 200 else { throw VoiceTranscriptionError.http(status) }
-        guard let response = try? JSONDecoder().decode(VoiceTranscribeResponse.self, from: data) else {
+        guard var response = try? JSONDecoder().decode(VoiceTranscribeResponse.self, from: data) else {
             throw VoiceTranscriptionError.badResponse
+        }
+
+        // Контракт синхронный (1-2с) — это резервный путь на случай, если сервер
+        // всё же вернул промежуточный статус. Готовность проверяем ИСКЛЮЧИТЕЛЬНО по
+        // status, не по содержимому fullText (см. isCompleted).
+        if !response.isCompleted, let pollId = response.pollId {
+            let deadline = Date().addingTimeInterval(30)
+            while !response.isCompleted, Date() < deadline {
+                try await Task.sleep(for: .seconds(1))
+                response = try await poll(pollID: pollId)
+            }
+            DiagLog.write("Transcribe", "poll fallback: completed=\(response.isCompleted) event=\(eventID)")
         }
         return response
     }
@@ -261,6 +282,13 @@ final class VoiceTranscriptionStore {
                 let keepAlive = fileHandle
                 let response = try await service.transcribe(fileURL: fileURL, mimeType: mimeType, roomID: roomID, eventID: eventID)
                 _ = keepAlive
+                // Готовность — по status (см. isCompleted), не по truthiness fullText:
+                // status:"completed" + fullText:"" — легитимное «речь не распознана».
+                guard response.isCompleted else {
+                    state.setPhase(.failed("timeout"))
+                    DiagLog.write("Transcribe", "poll timeout event=\(eventID)")
+                    return
+                }
                 let text = (response.fullText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 cache.store(text: text, isEmpty: text.isEmpty, for: eventID)
                 state.setPhase(text.isEmpty ? .empty : .loaded(text))
