@@ -328,8 +328,17 @@ final class NativeCallSession: ObservableObject {
                 let previous = self.lastConnectionState
                 self.lastConnectionState = state
                 if state == .disconnected, self.sessionState == .connected {
-                    MXLog.info("sTalk NativeCall: LiveKit disconnected while connected — ending session")
-                    self.sessionState = .disconnected
+                    // STMOB-262: окно грации. Пока идёт ремонт доставки, сессию не
+                    // закрываем — иначе экран звонка исчезает раньше, чем ремонт
+                    // успевает отработать, а собственный авто-реконнект вдобавок
+                    // самоотменяется (disconnect() уже обнулил сохранённые креды).
+                    if self.liveKitRoomManager.isRecovering {
+                        DiagLog.write("Call", "LiveKit disconnected, но идёт ремонт доставки — держим сессию")
+                        self.startRecoveryGraceTimer()
+                    } else {
+                        MXLog.info("sTalk NativeCall: LiveKit disconnected while connected — ending session")
+                        self.sessionState = .disconnected
+                    }
                 }
                 // STMOB-126: транспорт восстановился после деградации канала —
                 // немедленно пере-рассылаем ключ (быстрый путь, не дожидаясь
@@ -340,6 +349,16 @@ final class NativeCallSession: ObservableObject {
                     MXLog.info("sTalk NativeCall E2EE: connection recovered — rebroadcasting key")
                     Task { [weak self] in await self?.rebroadcastCurrentEncryptionKey() }
                 }
+            }
+            .store(in: &cancellables)
+
+        // STMOB-262: SDK переподключился — ключ на той стороне мог не пережить
+        // переподключение, рассылаем заново. Тот же путь используют ступени ремонта.
+        liveKitRoomManager.encryptionKeyRebroadcastSubject
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in
+                guard let self, isEncrypted, ourEncryptionKey != nil else { return }
+                Task { [weak self] in await self?.rebroadcastCurrentEncryptionKey() }
             }
             .store(in: &cancellables)
 
@@ -368,10 +387,22 @@ final class NativeCallSession: ObservableObject {
                         // оставлять прошлого peer'а с возможностью decrypt'ить
                         // future audio (он уже не в room, но может прослушивать
                         // SFU stream если cached его old subscription).
-                        MXLog.info("sTalk NativeCall E2EE: remote left \(leftIdentities) — regenerating key")
-                        DiagLog.write("E2EE", "remote LEAVE \(leftIdentities) → regenerate key")
-                        Task { [weak self] in
-                            await self?.sendOurEncryptionKey()
+                        // STMOB-262: во время переподключения LEAVE фантомный — SDK на
+                        // полном реконнекте шлёт disconnect на всех участников, а через
+                        // секунду они возвращаются. Ротировать ключ на этом нельзя:
+                        // получим churn индексов и провалы расшифровки на ровном месте.
+                        let reconnecting = self.liveKitRoomManager.isRecovering
+                            || self.liveKitRoomManager.sdkReconnectMode != nil
+                            || self.liveKitRoomManager.connectionState == .reconnecting
+                        if reconnecting {
+                            DiagLog.write("E2EE", "remote LEAVE \(leftIdentities) во время реконнекта → НЕ ротирую, только re-advertise")
+                            Task { [weak self] in await self?.rebroadcastCurrentEncryptionKey() }
+                        } else {
+                            MXLog.info("sTalk NativeCall E2EE: remote left \(leftIdentities) — regenerating key")
+                            DiagLog.write("E2EE", "remote LEAVE \(leftIdentities) → regenerate key")
+                            Task { [weak self] in
+                                await self?.sendOurEncryptionKey()
+                            }
                         }
                     } else if !newIdentities.isEmpty {
                         MXLog.info("sTalk NativeCall E2EE: new remote participant(s) — \(newIdentities) — rebroadcasting same key")
@@ -382,8 +413,21 @@ final class NativeCallSession: ObservableObject {
                     }
                     self.knownRemoteIdentities = currentIdentities
                 } else if self.hasSeenRemoteParticipant {
-                    MXLog.info("sTalk NativeCall: All remote participants left after being connected — ending session")
-                    Task { [weak self] in await self?.stop() }
+                    // STMOB-262: пустой список — НЕ всегда «все ушли». Полный реконнект
+                    // (наш ремонт доставки или последняя попытка лестницы SDK) делает
+                    // cleanUp(isFullReconnect:), который шлёт participantDidDisconnect на
+                    // каждого и обнуляет remoteParticipants — а через секунду они
+                    // возвращаются. Раньше на этом звонок завершался сам, с REST-leave,
+                    // то есть собеседник видел наш выход посреди переподключения.
+                    let reconnecting = self.liveKitRoomManager.isRecovering
+                        || self.liveKitRoomManager.sdkReconnectMode != nil
+                        || self.liveKitRoomManager.connectionState == .reconnecting
+                    if reconnecting {
+                        DiagLog.write("Call", "все участники исчезли, но идёт переподключение — звонок НЕ завершаю")
+                    } else {
+                        MXLog.info("sTalk NativeCall: All remote participants left after being connected — ending session")
+                        Task { [weak self] in await self?.confirmAllRemotesLeftAndStop() }
+                    }
                 }
             }
             .store(in: &cancellables)
@@ -909,6 +953,46 @@ final class NativeCallSession: ObservableObject {
         pathMonitor = nil
     }
 
+    /// STMOB-262: перед завершением звонка по «все ушли» перепроверяем через 3с.
+    /// Пустой список бывает транзиентным: SDK опустошает участников на время полного
+    /// реконнекта, а признаки переподключения (isRecovering/sdkReconnectMode/
+    /// connectionState) могут не успеть подняться к моменту публикации пустого списка.
+    private func confirmAllRemotesLeftAndStop() async {
+        try? await Task.sleep(for: .seconds(3))
+        let stillEmpty = await MainActor.run { liveKitRoomManager.displayParticipants.isEmpty }
+        let reconnecting = await MainActor.run {
+            liveKitRoomManager.isRecovering
+                || liveKitRoomManager.sdkReconnectMode != nil
+                || liveKitRoomManager.connectionState == .reconnecting
+        }
+        guard stillEmpty, !reconnecting else {
+            DiagLog.write("Call", "«все ушли» не подтвердилось через 3с (empty=\(stillEmpty) reconnecting=\(reconnecting)) — звонок живёт")
+            return
+        }
+        DiagLog.write("Call", "«все ушли» подтверждено — завершаю звонок")
+        await stop()
+    }
+
+    /// Потолок окна грации: дольше держать «восстанавливаем» бессмысленно —
+    /// если ремонт не поднял доставку, звонок надо честно закрыть, а не оставлять
+    /// пользователя перед замороженным экраном.
+    private var recoveryGraceTask: Task<Void, Never>?
+
+    private func startRecoveryGraceTimer() {
+        guard recoveryGraceTask == nil else { return }
+        recoveryGraceTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(20))
+            guard !Task.isCancelled, let self else { return }
+            await MainActor.run {
+                self.recoveryGraceTask = nil
+                guard self.sessionState == .connected,
+                      self.liveKitRoomManager.connectionState == .disconnected else { return }
+                DiagLog.write("Call", "окно грации истекло — закрываю сессию")
+                self.sessionState = .disconnected
+            }
+        }
+    }
+
     private func handleNetworkPathChange(_ path: NWPath) async {
         let iface: String
         if path.status != .satisfied {
@@ -929,6 +1013,10 @@ final class NativeCallSession: ObservableObject {
 
         os_log(.info, log: callLog, "Network change %{public}@ → %{public}@ (encrypted=%{public}@)",
                previous.isEmpty ? "initial" : previous, iface, "\(isEncrypted)")
+        // STMOB-262: путь сети — ключевая улика при разборе «медиа не ожило».
+        // os_log в выгрузку с устройства не попадает, DiagLog попадает.
+        DiagLog.write("Call", "network path \(previous.isEmpty ? "initial" : previous) → \(iface)")
+        liveKitRoomManager.noteNetworkPath(interface: iface)
 
         // Skip the very first path update (no prior state).
         guard !previous.isEmpty else { return }
@@ -949,9 +1037,18 @@ final class NativeCallSession: ObservableObject {
             await rebroadcastCurrentEncryptionKey()
         }
 
-        if Self.kEnableQuickReconnectOnNetworkChange {
-            await liveKitRoomManager.attemptQuickReconnect(trigger: "network:\(previous)→\(iface)")
+        // STMOB-262: переподключаемся на ВОССТАНОВЛЕНИИ пути, а не на его пропадании.
+        // Раньше quick reconnect уходил в том числе на переход «→ none»: на мёртвой
+        // сети он взводит внутреннюю лестницу SDK (десяток попыток с паузами, суммарно
+        // ~45-50с) и на всё это время глушит собственные детекторы SDK — то есть
+        // делает ровно противоположное тому, зачем задумывался. При пропадании пути
+        // теперь только фиксируем факт (он же признак для ватчдога доставки).
+        guard Self.kEnableQuickReconnectOnNetworkChange else { return }
+        guard iface != "none" else {
+            DiagLog.write("Call", "network lost — quick reconnect НЕ дёргаем (ждём восстановления пути)")
+            return
         }
+        await liveKitRoomManager.attemptQuickReconnect(trigger: "network:\(previous)→\(iface)")
     }
 
     /// Build 44 experiment — toggle to fall back to previous build 43 behaviour.

@@ -1810,6 +1810,7 @@
 "stalk_cache_zero_bytes" = "0 B";
 "stalk_call_screen_share_name" = "%@ — screen";
 "stalk_call_you_are_sharing" = "You are sharing your screen";
+"stalk_call_connection_recovering" = "No connection — reconnecting…";
 "stalk_call_share_interrupted_title" = "Screen sharing stopped";
 "stalk_call_share_interrupted_message" = "iPhone handed screen capture to another feature — for example, the system screen recording. You can start sharing again.";
 "stalk_call_status_participants" = "%1$@ · %2$d of %3$d participants";

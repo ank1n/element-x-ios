@@ -29,7 +29,30 @@ struct CallScreen: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .ignoresSafeArea(.container, edges: .bottom)
 
-                if !isMinimized, context.viewState.isScreenSharing {
+                if !isMinimized, context.viewState.isRecoveringConnection {
+                    // STMOB-262: медиа перестало доходить до сервера. Раньше в этой
+                    // ситуации UI молчал и показывал идущий таймер — пользователь
+                    // видел «звонок идёт», хотя его никто не слышал.
+                    VStack {
+                        HStack(spacing: 6) {
+                            ProgressView()
+                                .scaleEffect(0.7)
+                                .tint(.white)
+                            Text(NSLocalizedString("stalk_call_connection_recovering", tableName: "Localizable",
+                                                   value: "Нет связи — восстанавливаем…", comment: "Media transport is being recovered"))
+                                .font(.caption.weight(.medium))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Capsule().fill(Color.orange.opacity(0.85)))
+                        .padding(.top, 8)
+                        Spacer()
+                    }
+                    .allowsHitTesting(false)
+                }
+
+                if !isMinimized, context.viewState.isScreenSharing, !context.viewState.isRecoveringConnection {
                     // STMOB-234: своей плитки «Ваш экран» больше нет (она выдавливала
                     // участников и давала рекурсию), поэтому факт трансляции показываем
                     // компактной плашкой сверху — иначе единственным признаком остаётся

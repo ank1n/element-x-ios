@@ -337,9 +337,16 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                             (callParticipants.count == 1 && callParticipants.contains(roomProxy.ownUserID))
                         let liveKitEmpty = self.liveKitRoomManager.displayParticipants.isEmpty
                         MXLog.info("sTalk: Auto-end check — matrixRTC participants=\(callParticipants.count), liveKit remote=\(self.liveKitRoomManager.displayParticipants.count), elapsed=\(self.state.callElapsedTime)")
-                        if matrixRTCEmpty, liveKitEmpty {
+                        // STMOB-262: пустой LiveKit во время переподключения ничего не
+                        // значит — полный реконнект на секунду обнуляет участников.
+                        let reconnecting = self.liveKitRoomManager.isRecovering
+                            || self.liveKitRoomManager.sdkReconnectMode != nil
+                            || self.liveKitRoomManager.connectionState == .reconnecting
+                        if matrixRTCEmpty, liveKitEmpty, !reconnecting {
                             MXLog.info("sTalk: Remote party left 1:1 call (both MatrixRTC and LiveKit empty) — auto-ending")
                             Task { await self.endCall() }
+                        } else if matrixRTCEmpty, liveKitEmpty {
+                            DiagLog.write("CallUI", "1:1 авто-энд отложен — идёт переподключение")
                         }
                     }
                 }
@@ -925,6 +932,17 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         // демонстрации только из собственного тапа. Если шаринг гасили снаружи
         // (системная запись экрана отбирает ReplayKit, ошибка SDK), кнопка так и
         // оставалась «активной», а повторный тап пытался ВЫКЛЮЧИТЬ уже мёртвый шаринг.
+        // STMOB-262: ремонт доставки — в UI. Показываем сразу, снимаем сразу:
+        // «связь чинится» лучше увидеть с запасом, чем пропустить.
+        liveKitRoomManager.$isRecovering
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] recovering in
+                guard let self, self.state.isRecoveringConnection != recovering else { return }
+                self.state.isRecoveringConnection = recovering
+                DiagLog.write("CallUI", "connection recovering → \(recovering)")
+            }
+            .store(in: &cancellables)
+
         liveKitRoomManager.$isScreenSharing
             .receive(on: DispatchQueue.main)
             .sink { [weak self] sharing in

@@ -38,6 +38,14 @@ final class LiveKitRoomManager: ObservableObject {
     // MARK: - Published State
 
     @Published private(set) var connectionState: ConnectionState = .disconnected
+    /// STMOB-262: режим переподключения, в котором сейчас находится SDK (nil — не
+    /// переподключается). Quick-цикл в `connectionState` не виден вообще.
+    @Published private(set) var sdkReconnectMode: ReconnectMode?
+    /// Оценка качества связи от SFU для СЕБЯ. Приходит только при смене значения,
+    /// поэтому как самостоятельный детектор не годится — только как подтверждение.
+    @Published private(set) var localConnectionQuality: ConnectionQuality = .unknown
+    /// Просьба разослать E2EE-ключ заново (после переподключения SDK).
+    let encryptionKeyRebroadcastSubject = PassthroughSubject<Void, Never>()
     @Published private(set) var remoteParticipants: [RemoteParticipant] = []
     @Published private(set) var localVideoTrack: VideoTrack?
     @Published private(set) var localParticipant: LocalParticipant?
@@ -105,9 +113,22 @@ final class LiveKitRoomManager: ObservableObject {
     #endif
 
     init() {
+        // STMOB-262: мост логов SDK ставим до создания Room (setLogger сам требует
+        // «до первого лога»). Иначе лестница переподключений SDK остаётся невидимой
+        // в выгрузке с устройства.
+        Self.installSDKLogBridgeOnce()
         room = Room()
         room.add(delegate: self)
         registerLifecycleObservers()
+    }
+
+    private static let logBridgeInstalled: Bool = {
+        LiveKitSDK.setLogger(LiveKitDiagLogBridge())
+        return true
+    }()
+
+    private static func installSDKLogBridgeOnce() {
+        _ = logBridgeInstalled
     }
 
     deinit {
@@ -408,6 +429,7 @@ final class LiveKitRoomManager: ObservableObject {
         hasReadCallSettings = false
         blurProcessor = nil
         orientationProcessor = nil
+        stopEgressWatchdog()
         #if canImport(UIKit)
         if backgroundTaskID != .invalid {
             UIApplication.shared.endBackgroundTask(backgroundTaskID)
@@ -614,6 +636,183 @@ final class LiveKitRoomManager: ObservableObject {
         DiagLog.write("Call", "screen share \(enabled ? "started" : "stopped"), localVideoTrack=\(localVideoTrack != nil)")
         MXLog.info("sTalk LiveKit: Screen share \(enabled ? "started" : "stopped")")
         #endif
+    }
+
+    // MARK: - Media egress watchdog & recovery (STMOB-262)
+
+    /// Ватчдог доставки. Держим сильной ссылкой: SDK хранит делегатов трека слабо,
+    /// и без этого поля он тихо умрёт, а «детектор обрыва» перестанет работать,
+    /// никак об этом не сообщив.
+    private var egressWatchdog: MediaEgressWatchdog?
+    /// Идёт попытка восстановления — экран звонка не закрываем и не запускаем
+    /// вторую лестницу параллельно.
+    @Published private(set) var isRecovering = false
+    private var lastRecoveryAt: Date?
+    private var recoveryCycles = 0
+    /// Задача лестницы. Храним, чтобы отменять при завершении звонка — иначе она
+    /// доигрывает поверх уже закрытой сессии и держит isRecovering.
+    private var recoveryTask: Task<Void, Never>?
+
+    /// Ремонт делаем только штатными путями SDK. Ручной unpublish/publish камеры
+    /// уже убивал и видео, и ЗВУК (build 45, пришлось выключать killswitch'ем).
+    private static let kMaxRecoveryCycles = 2
+    private static let kRecoveryCooldown: TimeInterval = 30
+
+    func noteNetworkPath(interface: String) {
+        if interface == "none" {
+            egressWatchdog?.noteNetworkLost()
+        } else {
+            egressWatchdog?.noteNetworkRestored()
+        }
+    }
+
+    private func startEgressWatchdog() {
+        guard egressWatchdog == nil else { return }
+        egressWatchdog = MediaEgressWatchdog { [weak self] reason in
+            self?.recoverEgress(reason: reason)
+        }
+        DiagLog.write("Call", "egress watchdog: старт")
+    }
+
+    private func stopEgressWatchdog() {
+        recoveryTask?.cancel()
+        recoveryTask = nil
+        guard egressWatchdog != nil else {
+            isRecovering = false
+            return
+        }
+        egressWatchdog = nil
+        recoveryCycles = 0
+        isRecovering = false
+        // Гасим таймеры статистики: они не только считают, но и гонят метрики в SFU
+        // раз в секунду на каждый наблюдаемый трек.
+        let tracks: [LocalTrackPublication] = (room.localParticipant.videoTracks + room.localParticipant.audioTracks)
+            .compactMap { $0 as? LocalTrackPublication }
+        Task {
+            for pub in tracks {
+                await pub.track?.set(reportStatistics: false)
+            }
+        }
+        DiagLog.write("Call", "egress watchdog: стоп")
+    }
+
+    /// Вешает наблюдение на локальную публикацию (камера/демонстрация).
+    /// `set(reportStatistics:)` включает у SDK таймер статистики 1 Гц на ЭТОМ треке —
+    /// поэтому включаем точечно, а не через RoomOptions (там это включило бы таймер
+    /// на каждом удалённом треке — прямой вклад в нагрев, с которым боролись в 241).
+    private func observeEgress(for publication: LocalTrackPublication) {
+        // Микрофон включаем тоже: в аудио-звонке видео-треков нет вовсе, и без него
+        // детектор молчал бы ровно там, где обрыв заметнее всего.
+        guard publication.source == .camera || publication.source == .screenShareVideo || publication.source == .microphone,
+              let track = publication.track else { return }
+        startEgressWatchdog()
+        guard let watchdog = egressWatchdog else { return }
+        track.add(delegate: watchdog)
+        Task {
+            await track.set(reportStatistics: true)
+            DiagLog.write("Call", "egress: наблюдаю \(publication.source) sid=\(publication.sid.stringValue)")
+        }
+    }
+
+    /// Лестница восстановления. Ступени — только публичные пути SDK; после каждой
+    /// даём окно на проверку и рассылаем ключ заново (после переподключения на той
+    /// стороне может не быть нашего ключа).
+    private func recoverEgress(reason: String) {
+        guard !isRecovering else { return }
+        guard connectionState == .connected else {
+            DiagLog.write("Call", "egress: ремонт пропущен — connState=\(connectionState)")
+            return
+        }
+        guard sdkReconnectMode == nil else {
+            DiagLog.write("Call", "egress: ремонт пропущен — SDK уже переподключается (\(sdkReconnectMode.map { "\($0)" } ?? "?"))")
+            return
+        }
+        if let lastRecoveryAt, Date().timeIntervalSince(lastRecoveryAt) < Self.kRecoveryCooldown {
+            DiagLog.write("Call", "egress: ремонт пропущен — cooldown")
+            return
+        }
+        guard recoveryCycles < Self.kMaxRecoveryCycles else {
+            DiagLog.write("Call", "egress: лимит попыток исчерпан — дальше молчу, чинить нечем")
+            egressWatchdog?.noteRepairExhausted()
+            return
+        }
+
+        isRecovering = true
+        recoveryCycles += 1
+        lastRecoveryAt = Date()
+        let cycle = recoveryCycles
+        DiagLog.write("Call", "egress РЕМОНТ #\(cycle) старт (\(reason))")
+
+        recoveryTask?.cancel()
+        recoveryTask = Task { [weak self] in
+            guard let self else { return }
+            defer {
+                Task { @MainActor in
+                    self.isRecovering = false
+                    self.recoveryTask = nil
+                    DiagLog.write("Call", "egress ремонт #\(cycle): конец")
+                }
+            }
+
+            let before = egressWatchdog?.totalBytesSent() ?? 0
+
+            // Ступень 1 — ICE restart: капчеры и публикации не трогаются вовсе.
+            // Запускаем и НЕ ждём: `debug_simulate` внутри ждёт всю retry-лестницу
+            // SDK (до 10 попыток с паузами — десятки секунд), а нам нужно окно 8с.
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    try await self.room.debug_simulate(scenario: .quickReconnect)
+                } catch {
+                    DiagLog.write("Call", "egress ремонт #\(cycle): ICE restart отвергнут (\(error.localizedDescription))")
+                }
+            }
+            DiagLog.write("Call", "egress ремонт #\(cycle): ступень 1 — ICE restart")
+            encryptionKeyRebroadcastSubject.send(())
+
+            try? await Task.sleep(for: .seconds(8))
+            guard !Task.isCancelled, egressWatchdog != nil else { return }
+
+            // Успех определяем по РОСТУ БАЙТОВ, а не по отсутствию исключения:
+            // SDK глотает ошибки своей лестницы и возвращается «без ошибки».
+            let afterStage1 = egressWatchdog?.totalBytesSent() ?? 0
+            if afterStage1 > before {
+                DiagLog.write("Call", "egress ремонт #\(cycle): ступень 1 ПОМОГЛА (+\(afterStage1 - before) байт) — не эскалирую")
+                return
+            }
+
+            // Ступень 2 — полный реконнект силами SDK. Дорогая: он делает teardown и
+            // переопубликацию треков, а заодно на секунду опустошает список участников.
+            // Поэтому только когда ступень 1 доказанно не помогла.
+            guard connectionState == .connected || connectionState == .reconnecting else {
+                DiagLog.write("Call", "egress ремонт #\(cycle): ступень 2 пропущена — connState=\(connectionState)")
+                return
+            }
+            // Полный реконнект переопубликовывает треки, а `republishAllTracks` в SDK
+            // обрывает цикл на первой неудачной публикации. В фоне демонстрация
+            // экрана заново не поднимется (in-app ReplayKit-захват там мёртв), и мы
+            // рискуем остаться вообще без публикаций — включая микрофон.
+            #if canImport(UIKit)
+            guard UIApplication.shared.applicationState == .active else {
+                DiagLog.write("Call", "egress ремонт #\(cycle): ступень 2 пропущена — приложение не активно")
+                return
+            }
+            #endif
+            DiagLog.write("Call", "egress ремонт #\(cycle): ступень 2 — полный реконнект (байты так и стоят)")
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    try await self.room.debug_simulate(scenario: .fullReconnect)
+                } catch {
+                    DiagLog.write("Call", "egress ремонт #\(cycle): полный реконнект отвергнут (\(error.localizedDescription))")
+                }
+            }
+            encryptionKeyRebroadcastSubject.send(())
+
+            // Жёсткий потолок: дольше держать «восстанавливаем» нельзя — на этом
+            // висят и плашка в UI, и окно грации, и блокировка второго цикла.
+            try? await Task.sleep(for: .seconds(12))
+        }
     }
 
     // MARK: - Screen share watchdog (STMOB-234)
@@ -1132,6 +1331,9 @@ extension LiveKitRoomManager: RoomDelegate {
             if publication.source == .camera {
                 self.applyBlurIfNeeded()
             }
+            // STMOB-262: наблюдение за доставкой вешаем на каждую свежую публикацию —
+            // в т.ч. после republish внутри SDK, где трек создаётся заново.
+            self.observeEgress(for: publication)
             // STMOB-234: republish демонстрации внутри SDK (full reconnect / room move)
             // приносит НОВЫЙ трек — ватчдог надо перевесить на него, иначе после
             // первого же реконнекта перехват экрана системной записью останется
@@ -1148,6 +1350,52 @@ extension LiveKitRoomManager: RoomDelegate {
     /// остановленный трек (застывший кадр в своей плитке), isScreenSharing
     /// оставался true. Важно, что это единственный путь для ВНЕШНЕЙ остановки
     /// (системная запись экрана, ошибка ReplayKit), а не только для тапа юзера.
+    // MARK: Reconnect visibility (STMOB-262)
+
+    /// Эти три делегата — единственный способ увидеть quick-цикл SDK: он НЕ меняет
+    /// `connectionState` (тот переключается только в полном реконнекте), поэтому по
+    /// логу устройства «SDK спал» и «SDK молча переподключался» были неразличимы.
+    nonisolated func room(_ room: Room, didStartReconnectWithMode reconnectMode: ReconnectMode) {
+        Task { @MainActor in
+            self.sdkReconnectMode = reconnectMode
+            DiagLog.write("LiveKit", "reconnect START mode=\(reconnectMode)")
+        }
+    }
+
+    nonisolated func room(_ room: Room, didUpdateReconnectMode reconnectMode: ReconnectMode) {
+        Task { @MainActor in
+            self.sdkReconnectMode = reconnectMode
+            DiagLog.write("LiveKit", "reconnect MODE → \(reconnectMode)")
+        }
+    }
+
+    nonisolated func room(_ room: Room, didCompleteReconnectWithMode reconnectMode: ReconnectMode) {
+        Task { @MainActor in
+            self.sdkReconnectMode = nil
+            // Делегат приходит и на ПРОВАЛЕ лестницы — «DONE» без проверки состояния
+            // был бы ложью в логе, а рассылка ключа в мёртвую комнату бессмысленна.
+            guard self.room.connectionState == .connected else {
+                DiagLog.write("LiveKit", "reconnect FAILED mode=\(reconnectMode) (room \(self.room.connectionState))")
+                return
+            }
+            DiagLog.write("LiveKit", "reconnect DONE mode=\(reconnectMode)")
+            // После переподключения ключи звонка надо разослать заново: на той
+            // стороне мог смениться транспорт, а publish внутри SDK прошёл мимо
+            // нашего обычного пути рассылки.
+            self.encryptionKeyRebroadcastSubject.send(())
+        }
+    }
+
+    nonisolated func room(_ room: Room, participant: Participant, didUpdateConnectionQuality quality: ConnectionQuality) {
+        // Только про себя: в группе делегат приходит на каждого и зафлудит DiagLog.
+        guard participant is LocalParticipant else { return }
+        Task { @MainActor in
+            guard self.localConnectionQuality != quality else { return }
+            self.localConnectionQuality = quality
+            DiagLog.write("LiveKit", "connection quality → \(quality)")
+        }
+    }
+
     nonisolated func room(_ room: Room, participant: LocalParticipant, didUnpublishTrack publication: LocalTrackPublication) {
         Task { @MainActor in
             if publication.source == .screenShareVideo {
@@ -1160,6 +1408,254 @@ extension LiveKitRoomManager: RoomDelegate {
             self.updateState()
             MXLog.info("sTalk LiveKit: Unpublished local track: \(publication.kind) source=\(publication.source)")
         }
+    }
+}
+
+// MARK: - Media egress watchdog (STMOB-262)
+
+/// Следит за тем, что исходящее медиа реально УХОДИТ в SFU.
+///
+/// Зачем отдельный ватчдог: `ScreenShareWatchdog` меряет захват (кадры от
+/// ReplayKit), и в инциденте dp (лог 145) он честно насчитал 4271 кадр, пока
+/// собеседник не видел ничего — захват жил, доставка была мертва. Единственный
+/// доступный признак доставки — исходящая статистика трека (`outbound-rtp`),
+/// которую SDK отдаёт раз в секунду при `reportStatistics = true`.
+///
+/// Вердикт выносится только по ПАРЕ признаков: «байты стоят» + подтверждение
+/// (ICE в disconnected/failed, либо пропавший сетевой путь, либо растущий счётчик
+/// захвата при стоящем энкодере). Одиночное «байты стоят» врёт: SDK законно гасит
+/// кодировки через dynacast, а mute камеры — это не unpublish.
+final class MediaEgressWatchdog: NSObject, TrackDelegate, @unchecked Sendable {
+    /// Сколько секунд подряд байты не растут, прежде чем это станет уликой.
+    /// 6с закрывают лифт и микропровалы.
+    private static let stallThreshold = 6
+    /// Телеметрия в DiagLog: раз в 30с (DiagLog при переполнении сносит файл целиком).
+    private static let telemetryEvery = 30
+
+    /// Снимок счётчиков одного трека. Держим СВОЙ — у SDK `previous` объявлен weak
+    /// и к следующему тику уже пуст, поэтому его хелперы `bps` всегда дают 0.
+    private struct Snapshot {
+        var bytesSent: UInt64 = 0
+        var packetsSent: UInt64 = 0
+        var framesEncoded: UInt64 = 0
+        var captureFrames: UInt64 = 0
+        var flatTicks = 0
+        var ticks = 0
+    }
+
+    private let onStalled: @MainActor (String) -> Void
+    private let lock = NSLock()
+    private var snapshots: [String: Snapshot] = [:]
+    /// Когда сетевой путь последний раз пропадал — подтверждающий признак.
+    private var networkLostAt: Date?
+    /// Путь сети отсутствует прямо сейчас.
+    private var networkDown = false
+    /// Ремонт больше не применяется (лимит исчерпан) — не спамим вердиктом в лог.
+    private var repairExhausted = false
+
+    func noteRepairExhausted() {
+        lock.lock()
+        repairExhausted = true
+        lock.unlock()
+    }
+
+    init(onStalled: @escaping @MainActor (String) -> Void) {
+        self.onStalled = onStalled
+        super.init()
+    }
+
+    func noteNetworkLost() {
+        lock.lock()
+        networkLostAt = Date()
+        networkDown = true
+        lock.unlock()
+    }
+
+    /// Путь сети вернулся. Пока его нет, вердикт бессмысленен: чинить по мёртвой
+    /// сети нечего, а лимит попыток сгорит до того, как связь появится.
+    func noteNetworkRestored() {
+        lock.lock()
+        networkDown = false
+        networkLostAt = Date()
+        lock.unlock()
+    }
+
+    func reset() {
+        lock.lock()
+        snapshots.removeAll()
+        networkLostAt = nil
+        lock.unlock()
+    }
+
+    /// Суммарно отправленные байты по всем наблюдаемым трекам. Ступени ремонта
+    /// сравнивают снимок до и после: единственный честный признак «помогло».
+    /// По отсутствию исключения судить нельзя — `debug_simulate` не пробрасывает
+    /// ошибку даже при полном провале лестницы SDK.
+    func totalBytesSent() -> UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+        return snapshots.values.reduce(UInt64(0)) { $0 + $1.bytesSent }
+    }
+
+    // MARK: TrackDelegate
+
+    func track(_ track: Track, didUpdateStatistics statistics: TrackStatistics, simulcastStatistics: [VideoCodec: TrackStatistics]) {
+        let key = track.sid?.stringValue ?? track.name
+        let kind = track.source == .screenShareVideo ? "screen" : "camera"
+
+        // Суммируем по всем rid (simulcast включён) и по всем кодекам.
+        var streams = statistics.outboundRtpStream
+        for extra in simulcastStatistics.values {
+            streams.append(contentsOf: extra.outboundRtpStream)
+        }
+        guard !streams.isEmpty else { return }
+
+        // Законная пауза: dynacast погасил ВСЕ кодировки, потому что на слой никто
+        // не подписан. Это не отказ доставки — на таком «простое» чинить нечего.
+        let anyActive = streams.contains { $0.active != false }
+        let bytes = streams.reduce(UInt64(0)) { $0 + ($1.bytesSent ?? 0) }
+        let packets = streams.reduce(UInt64(0)) { $0 + UInt64($1.packetsSent ?? 0) }
+        let encoded = streams.reduce(UInt64(0)) { $0 + UInt64($1.framesEncoded ?? 0) }
+        let captured = statistics.videoSource.reduce(UInt64(0)) { $0 + UInt64($1.frames ?? 0) }
+        let iceState = statistics.transportStats?.iceState
+        let iceBroken = iceState == .disconnected || iceState == .failed
+
+        lock.lock()
+        var snap = snapshots[key] ?? Snapshot()
+        let grew = bytes > snap.bytesSent || packets > snap.packetsSent
+        let captureGrew = captured > snap.captureFrames
+        let encoderStalled = encoded == snap.framesEncoded
+        snap.ticks += 1
+        if grew || !anyActive || track.isMuted {
+            snap.flatTicks = 0
+        } else {
+            snap.flatTicks += 1
+        }
+        let flat = snap.flatTicks
+        let ticks = snap.ticks
+        snap.bytesSent = bytes
+        snap.packetsSent = packets
+        snap.framesEncoded = encoded
+        snap.captureFrames = captured
+        snapshots[key] = snap
+        let networkRecentlyLost = networkLostAt.map { Date().timeIntervalSince($0) < 30 } ?? false
+        let pathDown = networkDown
+        let exhausted = repairExhausted
+        lock.unlock()
+
+        if ticks % Self.telemetryEvery == 0 {
+            DiagLog.write("Call", "egress \(kind): bytes=\(bytes) packets=\(packets) encoded=\(encoded) captured=\(captured) active=\(anyActive) ice=\(iceState.map { "\($0)" } ?? "n/a") flat=\(flat)с")
+        }
+
+        guard flat >= Self.stallThreshold else { return }
+        // Пока сети нет — вердикт не выносим: ремонт по мёртвому пути только сожжёт
+        // лимит попыток. Вернётся путь — вернётся и вердикт, если он ещё актуален.
+        guard !pathDown else {
+            if flat == Self.stallThreshold { DiagLog.write("Call", "egress \(kind): байты стоят, но сети нет — жду восстановления пути") }
+            return
+        }
+        // Нет новых кадров от источника — отправлять нечего, и «байты стоят» это не
+        // отказ доставки (камера на паузе, статичный экран, приложение в фоне).
+        // Для аудио-трека счётчика кадров нет, поэтому проверка только для видео.
+        let isVideo = track is LocalVideoTrack
+        guard !isVideo || captureGrew else { return }
+
+        // Второй признак обязателен — иначе получим ремонт на ровном месте.
+        var corroboration: String?
+        if iceBroken { corroboration = "ice=\(iceState.map { "\($0)" } ?? "?")" }
+        else if networkRecentlyLost { corroboration = "сеть пропадала <30с назад" }
+        else if isVideo, encoderStalled { corroboration = "захват идёт, энкодер стоит" }
+
+        guard let corroboration else {
+            if flat == Self.stallThreshold {
+                DiagLog.write("Call", "egress \(kind): байты стоят \(flat)с, но подтверждения нет — не чиню")
+            }
+            return
+        }
+
+        lock.lock()
+        snapshots[key]?.flatTicks = 0 // не долбить вердиктом каждую секунду
+        lock.unlock()
+
+        let reason = "\(kind): байты стоят \(flat)с, \(corroboration)"
+        guard !exhausted else { return } // лимит исчерпан — молчим, чтобы не смыть лог
+        DiagLog.write("Call", "egress ВСТАЛ — \(reason)")
+        Task { @MainActor [onStalled] in onStalled(reason) }
+    }
+}
+
+// MARK: - LiveKit SDK log bridge (STMOB-262)
+
+/// Мост логов LiveKit SDK в DiagLog.
+///
+/// Зачем: собственная лестница переподключений SDK снаружи почти невидима —
+/// `connectionState = .reconnecting` выставляется ТОЛЬКО в полном реконнекте, а
+/// quick-цикл живёт во внутреннем флаге. Из-за этого по логу устройства нельзя
+/// отличить «SDK проспал обрыв» от «SDK молча крутил свою лестницу» (лог 145).
+/// Всё, что SDK пишет, уходит в OSLog `io.livekit.sdk` и в выгрузку тестера не
+/// попадает — поэтому забираем важное к себе.
+///
+/// Фильтр жёсткий: DiagLog при переполнении сносит файл ЦЕЛИКОМ, а болтливый SDK
+/// сотрёт ровно тот лог, ради которого всё затевалось.
+struct LiveKitDiagLogBridge: LiveKit.Logger {
+    /// Подстроки, ради которых мы вообще читаем info-уровень.
+    private static let allowList = ["[connect]", "ping", "pong", "transport", "reconnect", "republish", "[ice", "icestate", "ice restart", "signal"]
+    /// Бюджет строк: не больше 20 в секунду на всё вместе, включая warning/error —
+    /// иначе шторм переподключений сам вытрет лог этого шторма.
+    private static let budgetLimit = 20
+    private nonisolated(unsafe) static var budgetCount = 0
+    private nonisolated(unsafe) static var budgetSecond = Date.distantPast
+
+    private static func allowBudget() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        let now = Date()
+        if now.timeIntervalSince(budgetSecond) >= 1 {
+            budgetSecond = now
+            budgetCount = 0
+        }
+        budgetCount += 1
+        return budgetCount <= budgetLimit
+    }
+
+    private static let lock = NSLock()
+    private nonisolated(unsafe) static var lastLine = ""
+    private nonisolated(unsafe) static var lastAt = Date.distantPast
+
+    /// Тип уровня — именно из LiveKit: у приложения есть свой `LogLevel`, и без
+    /// квалификации сигнатура не совпадёт с требованием протокола.
+    func log(_ message: @autoclosure () -> CustomStringConvertible,
+             _ level: LiveKit.LogLevel,
+             source: @autoclosure () -> String?,
+             file: StaticString,
+             type: Any.Type,
+             function: StaticString,
+             line: UInt,
+             metaData: ScopedMetadataContainer) {
+        // Уровни квалифицируем модулем: голое `.error` уезжает в SwiftUI
+        // (SensoryFeedback), а голый `LogLevel` — в одноимённый тип из Rust SDK.
+        // Уровень проверяем ДО материализации autoclosure: строить строку для .debug —
+        // чистая трата, а болтливый SDK смоет DiagLog (при переполнении он сносит файл
+        // целиком, вместе с уликами, ради которых мост и делался).
+        guard level != LiveKit.LogLevel.debug, Self.allowBudget() else { return }
+        let isProblem = level == LiveKit.LogLevel.error || level == LiveKit.LogLevel.warning
+        let text = "\(message())"
+        if !isProblem {
+            let lower = text.lowercased()
+            guard Self.allowList.contains(where: { lower.contains($0) }) else { return }
+        }
+        // Дедуп: одинаковая строка не чаще раза в секунду (ping/pong идут пачками).
+        Self.lock.lock()
+        let now = Date()
+        let isRepeat = text == Self.lastLine && now.timeIntervalSince(Self.lastAt) < 1
+        if !isRepeat {
+            Self.lastLine = text
+            Self.lastAt = now
+        }
+        Self.lock.unlock()
+        guard !isRepeat else { return }
+
+        DiagLog.write("LKSDK", "\(level) \(type): \(text.prefix(300))")
     }
 }
 

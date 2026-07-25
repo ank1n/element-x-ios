@@ -41,6 +41,10 @@ struct CallScreenViewState: BindableState {
     /// разруливает картинку комнаты и heroes для DM). nil → инициал-плейсхолдер.
     var roomAvatar: RoomAvatar?
     var callStatus: CallStatus = .connecting
+    /// STMOB-262: связь потеряна и идёт восстановление. Отдельно от callStatus:
+    /// звонок формально остаётся connected (таймер идёт, участники на месте),
+    /// но медиа не доходит — и об этом надо сказать, а не показывать «всё хорошо».
+    var isRecoveringConnection = false
     var callElapsedTime: TimeInterval = 0
     var isDirect = false
     var totalMembersCount = 0
