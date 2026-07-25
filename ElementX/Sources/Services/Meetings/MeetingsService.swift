@@ -11,6 +11,53 @@ import SwiftUI
 
 private let meetingsLog = OSLog(subsystem: "ru.implica.stalk", category: "Meetings")
 
+// MARK: - Meeting rooms registry (STMOB-263)
+
+/// Помнит room ID комнат-встреч, которые клиент узнал сам, и переживает холодный
+/// старт (UserDefaults в App Group).
+///
+/// Зачем: единственным признаком «это встреча» на iOS был список `matrix_room_id`
+/// из `GET /api/meetings`, живший в памяти и обновлявшийся раз в 120с. Комната же
+/// приходит в список чатов через sync мгновенно — встреча успевала засветиться в
+/// «Чатах». Хуже: на сервере `matrix_room_id` пишется fire-and-forget, поэтому для
+/// части встреч он не приходит вовсе, и такая комната оставалась в общем списке
+/// навсегда. Веб этой дыры не имеет — он читает маркер `io.stalk.meeting` прямо из
+/// состояния комнаты, но в нашем пине rust SDK геттера произвольных state-событий
+/// не отдаёт.
+enum MeetingRoomRegistry {
+    private static let queue = DispatchQueue(label: "ru.implica.stalk.meeting-rooms")
+
+    /// Реестр пополнился — список чатов должен перерисоваться немедленно, не
+    /// дожидаясь следующего события room list (комната могла прийти в sync РАНЬШЕ,
+    /// чем ensure-room вернул её id).
+    static let didUpdate = PassthroughSubject<Void, Never>()
+
+    /// Знаем ли мы про эти комнаты, что они — встречи.
+    static var knownRoomIDs: Set<String> {
+        queue.sync { ServiceLocator.shared.settings?.knownMeetingRoomIDs ?? [] }
+    }
+
+    /// Добавляет комнаты в реестр. Пишет только при реальном изменении — метод
+    /// зовётся и на каждый опрос списка встреч.
+    static func remember(_ roomIDs: some Collection<String>, source: String) {
+        let incoming = Set(roomIDs.filter { !$0.isEmpty })
+        guard !incoming.isEmpty else { return }
+        queue.sync {
+            guard let settings = ServiceLocator.shared.settings else { return }
+            let known = settings.knownMeetingRoomIDs
+            let fresh = incoming.subtracting(known)
+            guard !fresh.isEmpty else { return }
+            settings.knownMeetingRoomIDs = known.union(fresh)
+            DiagLog.write("Meetings", "registry += \(fresh.count) комнат (\(source)), всего \(known.count + fresh.count)")
+            Task { @MainActor in didUpdate.send(()) }
+        }
+    }
+
+    static func remember(_ roomID: String, source: String) {
+        remember([roomID], source: source)
+    }
+}
+
 // MARK: - Models
 
 enum MeetingStatus: String, Codable, Equatable {
@@ -385,6 +432,11 @@ class MeetingsService {
             throw URLError(.cannotParseResponse)
         }
         os_log(.default, log: meetingsLog, "ensureRoom: code=%{public}@ → roomId=%{public}@", code, roomId)
+        // STMOB-263: запоминаем комнату встречи в тот момент, когда узнали её id.
+        // Комната создаётся meet-api лениво (первый вход) и через sync попадает в
+        // «Чаты» мгновенно, а список встреч клиент опрашивает раз в 120с — окно, в
+        // котором встреча висит в общем списке. Здесь мы знаем id сразу.
+        MeetingRoomRegistry.remember(roomId, source: "ensureRoom")
         return roomId
     }
 

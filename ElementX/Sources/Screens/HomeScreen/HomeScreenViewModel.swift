@@ -417,6 +417,13 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
             .autoconnect()
             .sink { [weak self] _ in self?.refreshMeetingRoomIDs() }
             .store(in: &cancellables)
+        // STMOB-263: реестр пополняется в момент входа во встречу (ensure-room) —
+        // перерисовываем список сразу, иначе только что созданная встреча висит в
+        // «Чатах» до ближайшего изменения room list.
+        MeetingRoomRegistry.didUpdate
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.updateRooms() }
+            .store(in: &cancellables)
     }
 
     private func refreshMeetingRoomIDs() {
@@ -435,6 +442,10 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
                 // matrix_room_id is null for meetings whose room hasn't been created yet (lazy on
                 // first join) — skip those, there's nothing to hide.
                 let ids = Set(meetings.compactMap(\.matrixRoomId).filter { !$0.isEmpty })
+                // STMOB-263: то, что API отдал, кладём в постоянный реестр — он
+                // переживает холодный старт и покрывает случай, когда позже сервер
+                // перестанет отдавать matrix_room_id (write-back там без гарантии).
+                MeetingRoomRegistry.remember(ids, source: "meetings-api")
                 await MainActor.run {
                     guard ids != self.meetingRoomIDs else { return }
                     self.meetingRoomIDs = ids
@@ -492,13 +503,18 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
         // dedicated "Meetings" filter (mirrors the web client). Skip the filtering while searching
         // so search can still find meeting rooms.
         let meetingsFilterActive = state.bindings.filtersState.isFilterActive(.meetings)
+        // STMOB-263: к списку из meetings-api добавляем комнаты, про которые клиент
+        // узнал сам (ensure-room при входе во встречу). Иначе только что созданная
+        // с iOS встреча висит в «Чатах» до следующего опроса API — а если сервер не
+        // записал matrix_room_id (write-back там fire-and-forget), то и навсегда.
+        let knownMeetingRooms = meetingRoomIDs.union(MeetingRoomRegistry.knownRoomIDs)
         // When the Meetings filter is active always apply it (shows only meeting rooms, possibly
         // empty). Otherwise only bother filtering when there are meeting rooms to hide.
-        let applyMeetingFilter = !state.bindings.isSearchFieldFocused && (meetingsFilterActive || !meetingRoomIDs.isEmpty)
+        let applyMeetingFilter = !state.bindings.isSearchFieldFocused && (meetingsFilterActive || !knownMeetingRooms.isEmpty)
 
         for summary in roomSummaryProvider.roomListPublisher.value {
             if applyMeetingFilter {
-                let isMeetingRoom = meetingRoomIDs.contains(summary.id)
+                let isMeetingRoom = knownMeetingRooms.contains(summary.id)
                 if meetingsFilterActive {
                     if !isMeetingRoom { continue }
                 } else if isMeetingRoom {

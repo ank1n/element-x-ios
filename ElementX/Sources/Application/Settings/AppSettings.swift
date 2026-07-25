@@ -30,6 +30,7 @@ final class AppSettings {
     private enum UserDefaultsKeys: String {
         case lastVersionLaunched
         case seenInvites
+        case knownMeetingRoomIDs
         case hasSeenSpacesAnnouncement
         case hasSeenNewSoundBanner
         case acknowledgedHistoryVisibleRooms
@@ -179,6 +180,16 @@ final class AppSettings {
     /// This Set is being used to implement badges for unread invites.
     @UserPreference(key: UserDefaultsKeys.seenInvites, defaultValue: [], storageType: .userDefaults(store))
     var seenInvites: Set<String>
+
+    /// STMOB-263: room ID комнат-встреч, которые клиент узнал сам — в момент, когда
+    /// meet-api отдал их в ответе `ensure-room` (или когда они пришли в
+    /// `GET /api/meetings`). Нужны, чтобы прятать встречи из «Чатов» СРАЗУ:
+    /// комната прилетает в список через sync мгновенно, а опрос meetings-api идёт
+    /// раз в 120с — и всё это время встреча висит в общем списке. Плюс
+    /// `matrix_room_id` на сервере пишется без гарантии (fire-and-forget PATCH),
+    /// так что для части встреч список из API его не отдаёт вообще.
+    @UserPreference(key: UserDefaultsKeys.knownMeetingRoomIDs, defaultValue: [], storageType: .userDefaults(store))
+    var knownMeetingRoomIDs: Set<String>
     
     @UserPreference(key: UserDefaultsKeys.hasSeenSpacesAnnouncement, defaultValue: false, storageType: .userDefaults(store))
     var hasSeenSpacesAnnouncement
