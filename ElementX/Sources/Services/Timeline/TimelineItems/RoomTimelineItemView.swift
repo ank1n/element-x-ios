@@ -70,7 +70,13 @@ struct RoomTimelineItemView: View {
             let playerState = context?.viewState.audioPlayerStateProvider?(item.id) ?? AudioPlayerState(id: .timelineItemIdentifier(item.id),
                                                                                                         title: L10n.commonVoiceMessage,
                                                                                                         duration: 0)
-            VoiceMessageRoomTimelineView(timelineItem: item, playerState: playerState)
+            // STMOB-265: кнопка расшифровки — только когда комната ТОЧНО не шифрована.
+            let transcriptionState = context?.viewState.isRoomEncrypted == false
+                ? item.id.eventID.flatMap { context?.viewState.voiceTranscriptionStateProvider?($0) }
+                : nil
+            VoiceMessageRoomTimelineView(timelineItem: item,
+                                         playerState: playerState,
+                                         transcriptionState: transcriptionState)
         case .callInvite(let item):
             CallInviteRoomTimelineView(timelineItem: item)
         case .callNotification(let item):

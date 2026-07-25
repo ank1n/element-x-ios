@@ -526,6 +526,72 @@ class TimelineInteractionHandler {
         return playerState
     }
     
+    // MARK: - Voice transcription (STMOB-265)
+
+    /// Состояние расшифровки для сообщения. nil = фичи нет: в зашифрованной комнате
+    /// кнопку не показываем вовсе, чтобы расшифрованное аудио не ушло в STT.
+    func voiceTranscriptionState(for eventID: String) -> VoiceTranscriptionState? {
+        guard !roomProxy.infoPublisher.value.isEncrypted else { return nil }
+        return ServiceLocator.shared.voiceTranscriptionStore?.state(for: eventID)
+    }
+
+    /// Тап по иконке: разворачивает/сворачивает блок и, если текста ещё нет, заказывает
+    /// расшифровку.
+    func toggleVoiceTranscription(itemID: TimelineItemIdentifier) async {
+        guard let eventID = itemID.eventID else { return }
+        // Второй рубеж гейта: состояние комнаты на МОМЕНТ ТАПА. Первый (во вью) мог
+        // отработать на ещё неизвестном статусе шифрования.
+        guard !roomProxy.infoPublisher.value.isEncrypted else {
+            DiagLog.write("Transcribe", "заблокировано: комната зашифрована")
+            return
+        }
+        guard let store = ServiceLocator.shared.voiceTranscriptionStore else { return }
+        guard let timelineItem = timelineController.timelineItems.firstUsingStableID(itemID) as? VoiceMessageRoomTimelineItem else {
+            return
+        }
+
+        let state = store.state(for: eventID)
+        state.isExpanded.toggle()
+        // Разворачивание — не повод пересчитывать: готовый текст берём из кэша.
+        switch state.phase {
+        case .loaded, .empty, .loading:
+            return
+        case .idle, .failed:
+            break
+        }
+        guard state.isExpanded else { return }
+
+        // Пре-гейт по размеру ДО скачивания: своё голосовое ограничено 30 минутами,
+        // но прислать могут что угодно, а файл поедет в память при загрузке.
+        if let fileSize = timelineItem.content.fileSize, fileSize > VoiceTranscriptionService.maxUploadBytes {
+            DiagLog.write("Transcribe", "слишком большой файл (\(fileSize) байт) — не отправляю")
+            state.setPhase(.failed("too large"))
+            return
+        }
+
+        guard let source = timelineItem.content.source else {
+            state.setPhase(.failed("no source"))
+            return
+        }
+        // Оригинальные Matrix-байты (ogg/opus), а не сконвертированный плеером m4a:
+        // voiceMessageMediaManager отдаёт m4a и жёстко падает на не-ogg mimetype.
+        switch await userSession.mediaProvider.loadFileFromSource(source, filename: timelineItem.content.filename) {
+        case .success(let handle):
+            guard let fileURL = handle.url else {
+                state.setPhase(.failed("media"))
+                return
+            }
+            store.requestIfNeeded(eventID: eventID,
+                                  roomID: roomProxy.id,
+                                  fileURL: fileURL,
+                                  mimeType: timelineItem.content.contentType?.preferredMIMEType,
+                                  fileHandle: handle)
+        case .failure(let error):
+            DiagLog.write("Transcribe", "не удалось получить аудио: \(error)")
+            state.setPhase(.failed("media"))
+        }
+    }
+
     // MARK: Other
     
     func displayEmojiPicker(for itemID: TimelineItemIdentifier) {

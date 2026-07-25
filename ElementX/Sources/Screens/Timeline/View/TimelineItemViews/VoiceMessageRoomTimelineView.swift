@@ -12,11 +12,15 @@ import SwiftUI
 struct VoiceMessageRoomTimelineView: View {
     let timelineItem: VoiceMessageRoomTimelineItem
     let playerState: AudioPlayerState
+    /// STMOB-265: nil — расшифровка недоступна (зашифрованная комната, галерея медиа,
+    /// превью). Дефолт держит все прочие точки вызова несломанными.
+    var transcriptionState: VoiceTranscriptionState?
     
     var body: some View {
         TimelineStyler(timelineItem: timelineItem) {
             VoiceMessageRoomTimelineContent(timelineItem: timelineItem,
-                                            playerState: playerState)
+                                            playerState: playerState,
+                                            transcriptionState: transcriptionState)
                 .frame(maxWidth: 400)
         }
     }
@@ -28,13 +32,28 @@ struct VoiceMessageRoomTimelineContent: View {
     
     let timelineItem: VoiceMessageRoomTimelineItem
     let playerState: AudioPlayerState
+    var transcriptionState: VoiceTranscriptionState?
     
     var body: some View {
-        VoiceMessageRoomPlaybackView(playerState: playerState,
-                                     onPlayPause: onPlaybackPlayPause,
-                                     onSeek: { onPlaybackSeek($0) },
-                                     onScrubbing: { onPlaybackScrubbing($0) })
-            .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .center, spacing: 8) {
+                VoiceMessageRoomPlaybackView(playerState: playerState,
+                                             onPlayPause: onPlaybackPlayPause,
+                                             onSeek: { onPlaybackSeek($0) },
+                                             onScrubbing: { onPlaybackScrubbing($0) })
+                    .fixedSize(horizontal: false, vertical: true)
+                if let transcriptionState {
+                    VoiceTranscriptionToggleButton(state: transcriptionState, action: onTranscriptionTap)
+                }
+            }
+            if let transcriptionState {
+                VoiceTranscriptionTextView(state: transcriptionState)
+            }
+        }
+    }
+
+    private func onTranscriptionTap() {
+        context?.send(viewAction: .handleVoiceTranscriptionAction(.toggle(itemID: timelineItem.id)))
     }
     
     private func onPlaybackPlayPause() {

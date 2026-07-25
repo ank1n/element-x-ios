@@ -44,6 +44,11 @@ enum TimelineAudioPlayerAction {
     case seek(itemID: TimelineItemIdentifier, progress: Double)
 }
 
+/// STMOB-265: расшифровка голосового по запросу.
+enum TimelineVoiceTranscriptionAction {
+    case toggle(itemID: TimelineItemIdentifier)
+}
+
 enum TimelineViewAction {
     case itemAppeared(itemID: TimelineItemIdentifier)
     case itemDisappeared(itemID: TimelineItemIdentifier)
@@ -68,6 +73,7 @@ enum TimelineViewAction {
     case handlePasteOrDrop(providers: [NSItemProvider])
     case handlePollAction(TimelineViewPollAction)
     case handleAudioPlayerAction(TimelineAudioPlayerAction)
+    case handleVoiceTranscriptionAction(TimelineVoiceTranscriptionAction)
     
     /// Focus the timeline onto the specified event ID (switching to a detached timeline if needed).
     case focusOnEventID(String)
@@ -123,6 +129,15 @@ struct TimelineViewState: BindableState {
     
     /// A closure providing the associated audio player state for an item in the timeline.
     var audioPlayerStateProvider: (@MainActor (_ itemId: TimelineItemIdentifier) -> AudioPlayerState?)?
+
+    /// STMOB-265: состояние расшифровки голосового. nil — фича недоступна
+    /// (зашифрованная комната или сервис не поднят).
+    var voiceTranscriptionStateProvider: (@MainActor (_ eventID: String) -> VoiceTranscriptionState?)?
+
+    /// Шифрование КОМНАТЫ. По умолчанию true — fail-closed: пока не доказано
+    /// обратное, кнопку расшифровки не рисуем, чтобы расшифрованное аудио не ушло
+    /// на сервер из E2EE-комнаты.
+    var isRoomEncrypted = true
     
     /// A closure that updates the associated pill context
     var pillContextUpdater: (@MainActor (PillContext) -> Void)?

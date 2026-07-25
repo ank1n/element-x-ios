@@ -1701,6 +1701,10 @@
 "stalk_calls_new_call" = "New call";
 "stalk_calls_search" = "Search";
 "stalk_calls_you" = "You";
+"stalk_transcribe_voice" = "Transcribe";
+"stalk_transcribe_hide" = "Hide transcript";
+"stalk_transcribe_empty" = "(no speech detected)";
+"stalk_transcribe_failed" = "Could not transcribe";
 "stalk_calls_group" = "Group • %d participants";
 "stalk_calls_call_button" = "Call %@";
 "stalk_calls_call_button_count" = "Call (%d)";

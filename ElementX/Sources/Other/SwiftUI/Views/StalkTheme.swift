@@ -278,6 +278,12 @@ enum SL10n {
     static let callsSearch = NSLocalizedString("stalk_calls_search", tableName: "Localizable", value: "Поиск", comment: "Search placeholder")
     static let callsYou = NSLocalizedString("stalk_calls_you", tableName: "Localizable", value: "Вы", comment: "You label for local participant")
 
+    // STMOB-265: расшифровка голосовых по запросу
+    static let transcribeVoice = NSLocalizedString("stalk_transcribe_voice", tableName: "Localizable", value: "Расшифровать", comment: "Transcribe voice message button")
+    static let transcribeHide = NSLocalizedString("stalk_transcribe_hide", tableName: "Localizable", value: "Скрыть расшифровку", comment: "Hide voice transcription")
+    static let transcribeEmpty = NSLocalizedString("stalk_transcribe_empty", tableName: "Localizable", value: "(речь не распознана)", comment: "Voice transcription found no speech")
+    static let transcribeFailed = NSLocalizedString("stalk_transcribe_failed", tableName: "Localizable", value: "Не удалось расшифровать", comment: "Voice transcription failed")
+
     static func callsGroup(_ count: Int) -> String {
         String(format: NSLocalizedString("stalk_calls_group", tableName: "Localizable", value: "Групповой • %d уч.", comment: "Group call label"), count)
     }

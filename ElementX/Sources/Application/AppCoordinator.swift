@@ -767,6 +767,15 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         // deployments share the same paths and only differ by domain, so recording-api must
         // follow the logged-in server (e.g. stalk.implica.uz) instead of the hardcoded default.
         ServiceLocator.shared.setupRecordingService(homeserver: userSession.clientProxy.homeserver)
+        // STMOB-265: клиент транскрибации голосовых — на том же домене, что и сессия.
+        ServiceLocator.shared.setupVoiceTranscription(homeserver: userSession.clientProxy.homeserver,
+                                                      userID: userSession.clientProxy.userID,
+                                                      accessTokenProvider: { [weak clientProxy = userSession.clientProxy] in
+                                                          try clientProxy?.matrixAccessToken() ?? ""
+                                                      },
+                                                      forceTokenRefresh: { [weak clientProxy = userSession.clientProxy] in
+                                                          await clientProxy?.forceTokenRefresh()
+                                                      })
 
         let flowParameters = CommonFlowParameters(userSession: userSession,
                                                   bugReportService: bugReportService,

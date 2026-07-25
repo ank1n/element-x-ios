@@ -119,6 +119,10 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
         setupSubscriptions()
         setupDirectRoomSubscriptionsIfNeeded()
         
+        state.voiceTranscriptionStateProvider = { [weak self] eventID -> VoiceTranscriptionState? in
+            self?.timelineInteractionHandler.voiceTranscriptionState(for: eventID)
+        }
+
         state.audioPlayerStateProvider = { [weak self] itemID -> AudioPlayerState? in
             guard let self else {
                 return nil
@@ -198,6 +202,8 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
             handlePollAction(pollAction)
         case .handleAudioPlayerAction(let audioPlayerAction):
             handleAudioPlayerAction(audioPlayerAction)
+        case .handleVoiceTranscriptionAction(.toggle(let itemID)):
+            Task { await timelineInteractionHandler.toggleVoiceTranscription(itemID: itemID) }
         case .focusOnEventID(let eventID):
             Task { await focusOnEvent(eventID: eventID) }
         case .focusLive:
@@ -410,6 +416,9 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
     }
     
     private func updateRoomInfo(_ roomInfo: RoomInfoProxyProtocol) {
+        // STMOB-265: гейт расшифровки голосовых — по шифрованию КОМНАТЫ, не события:
+        // у только что отправленного своего сообщения шифрование ещё не применилось.
+        state.isRoomEncrypted = roomInfo.isEncrypted
         state.pinnedEventIDs = roomInfo.pinnedEventIDs
         
         if let powerLevels = roomInfo.powerLevels {

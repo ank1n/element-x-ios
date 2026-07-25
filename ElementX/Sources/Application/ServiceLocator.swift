@@ -58,6 +58,36 @@ class ServiceLocator {
         register(recordingService: service)
     }
 
+    // MARK: - Voice transcription (STMOB-265)
+
+    private(set) var voiceTranscriptionStore: VoiceTranscriptionStore?
+
+    /// Создаём ТОЛЬКО при живой сессии: домен берётся из её homeserver (мультидомен
+    /// .ru/.uz), а фолбэк на настроечный URL здесь недопустим — он захардкожен на .ru
+    /// и запрос ушёл бы на чужой сервер с нашим токеном.
+    @MainActor
+    func setupVoiceTranscription(homeserver: String,
+                                 userID: String,
+                                 accessTokenProvider: @escaping () throws -> String,
+                                 forceTokenRefresh: @escaping () async -> Void) {
+        guard let url = URL(string: homeserver.hasPrefix("http") ? homeserver : "https://\(homeserver)"),
+              let scheme = url.scheme, let host = url.host,
+              let baseURL = URL(string: "\(scheme)://\(host)") else {
+            voiceTranscriptionStore = nil
+            return
+        }
+        let service = VoiceTranscriptionService(baseURL: baseURL,
+                                                accessTokenProvider: accessTokenProvider,
+                                                forceTokenRefresh: forceTokenRefresh)
+        voiceTranscriptionStore = VoiceTranscriptionStore(service: service,
+                                                          cache: VoiceTranscriptionCache(userID: userID))
+    }
+
+    @MainActor
+    func teardownVoiceTranscription() {
+        voiceTranscriptionStore = nil
+    }
+
     // MARK: - Cache Service
 
     private(set) var cacheService: STalkCacheService?
