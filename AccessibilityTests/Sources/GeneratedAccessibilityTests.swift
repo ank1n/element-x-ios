@@ -7,6 +7,10 @@
 
 extension AccessibilityTests {
 
+    func testActiveSessionsScreen() async throws {
+        try await performAccessibilityAudit(named: "ActiveSessionsScreen_Previews")
+    }
+
     func testAdvancedSettingsScreen() async throws {
         try await performAccessibilityAudit(named: "AdvancedSettingsScreen_Previews")
     }

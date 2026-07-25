@@ -11,6 +11,12 @@ extension PreviewTests {
 
     // MARK: - PreviewProvider
 
+    func testActiveSessionsScreen() async throws {
+        for (index, preview) in ActiveSessionsScreen_Previews._allPreviews.enumerated() {
+            try await assertSnapshots(matching: preview, step: index)
+        }
+    }
+
     func testAdvancedSettingsScreen() async throws {
         for (index, preview) in AdvancedSettingsScreen_Previews._allPreviews.enumerated() {
             try await assertSnapshots(matching: preview, step: index)
