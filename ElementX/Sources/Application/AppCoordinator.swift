@@ -362,8 +362,10 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
 
         guard let roomIdentifier = handleValue else {
             MXLog.error("Failed retrieving information from userActivity: \(userActivity)")
+            DiagLog.write("Call", "перезвон: намерение не разобрано (\(userActivity.activityType), intent=\(String(describing: userActivity.interaction?.intent)))")
             return
         }
+        DiagLog.write("Call", "перезвон из «Недавних»: \(userActivity.activityType) → room=\(roomIdentifier)")
         
         MXLog.info("Starting call in room: \(roomIdentifier)")
         handleAppRoute(AppRoute.call(roomID: roomIdentifier))

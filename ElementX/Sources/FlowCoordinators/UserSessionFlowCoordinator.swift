@@ -633,7 +633,10 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                                    startWithVideoEnabled: Bool = true,
                                    direction: LocalCallHistoryItem.CallDirection = .outgoing) {
         guard flowParameters.ongoingCallRoomIDPublisher.value != configuration.callRoomID else {
+            // Молчаливый выход выглядит как «ничего не произошло»: экрана звонка нет,
+            // а мы считаем, что он есть. Пишем в лог — иначе разбор упирается в пустоту.
             MXLog.info("Returning to existing call.")
+            DiagLog.write("Call", "presentCallScreen: считаем звонок уже идущим room=\(configuration.callRoomID ?? "nil") — возвращаю к нему")
             callScreenPictureInPictureController?.stopPictureInPicture()
             return
         }
