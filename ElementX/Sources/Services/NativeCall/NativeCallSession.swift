@@ -1370,6 +1370,9 @@ final class NativeCallSession: ObservableObject {
         }
     }
 
+    /// Про рассинхрон «ключ есть, шифрования нет» сообщаем один раз за звонок.
+    private var didWarnAboutKeyWithoutEncryption = false
+
     /// Мы намеренно выходим из звонка — сверщику участия трогать состояние нельзя.
     private var isLeavingCall = false
 
@@ -1888,6 +1891,16 @@ final class NativeCallSession: ObservableObject {
         // STMOB-152 build 176: каждый успешно parsed incoming key —
         // подтверждение что Molly fan-out (STALK-303) работает.
         DiagLog.write("E2EE", "incoming key parsed from=\(keyInfo.participantId) index=\(keyInfo.index) keyLen=\(keyInfo.key.count)")
+
+        // Рассинхрон сторон: комната не шифрована (мы публикуем открытые кадры), а
+        // собеседник прислал ключ — значит он кадры ШИФРУЕТ. Соединение при этом
+        // полностью «зелёное», и картинки нет ни у кого. Снаружи неотличимо от
+        // поломки камеры, поэтому говорим об этом прямо и один раз за звонок.
+        if !isEncrypted, !didWarnAboutKeyWithoutEncryption {
+            didWarnAboutKeyWithoutEncryption = true
+            MXLog.error("sTalk NativeCall: peer sent an E2EE key in a non-encrypted room — media will not decode")
+            DiagLog.write("E2EE", "РАССИНХРОН: комната без шифрования, а от \(keyInfo.participantId) пришёл ключ — собеседник шифрует, мы нет")
+        }
 
         // STMOB-152 build 177: normalize base64url → standard padded base64.
         // Guest meet-app использует Node `crypto.randomBytes(16).toString("base64url")`
