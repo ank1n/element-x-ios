@@ -1373,6 +1373,19 @@ final class NativeCallSession: ObservableObject {
     /// Мы намеренно выходим из звонка — сверщику участия трогать состояние нельзя.
     private var isLeavingCall = false
 
+    /// Объявить намерение выйти из звонка. Вызывается ПЕРВЫМ действием завершения,
+    /// до любой очистки состояния: UI закрывается сразу, а `tearDownCallSession`
+    /// снимает наше `m.call.member` в фоне — и до `stop()` проходит ~0.5-1с
+    /// (лог 149, 17:42:27.2 очистка → 17:42:28.0 stop). В этом окне эхо нашего же
+    /// удаления читалось сверщиком как «нас сняли» и он возвращал участие обратно
+    /// вместе с новым отложенным выходом: для собеседника мы висели в звонке ещё
+    /// до 30 секунд после того, как положили трубку.
+    func beginLeaving() {
+        guard !isLeavingCall else { return }
+        isLeavingCall = true
+        DiagLog.write("Call", "leave intent: сверщик участия отключён")
+    }
+
     func stop() async {
         MXLog.info("sTalk NativeCall: Stopping session")
         isLeavingCall = true
@@ -1783,7 +1796,7 @@ final class NativeCallSession: ObservableObject {
         // выглядит как «собеседник перестал видеть iOS» — треки приходят, а
         // сопоставить их с участником звонка не с чем.
         let isAboutOurDevice = sender == userId && (deviceFromStateKey == nil || deviceFromStateKey == deviceId)
-        if isAboutOurDevice, !senderKeysNow.contains(selfKey), sessionState == .connected {
+        if isAboutOurDevice, !senderKeysNow.contains(selfKey), sessionState == .connected, !isLeavingCall {
             DiagLog.write("Call", "membership: наше участие пропало из состояния комнаты → восстанавливаю")
             Task { [weak self] in await self?.reconcileCallMembership(trigger: "state-event") }
         }

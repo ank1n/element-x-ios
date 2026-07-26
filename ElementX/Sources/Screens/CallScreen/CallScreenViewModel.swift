@@ -584,6 +584,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     }
 
     private func performStopCleanup() async {
+        nativeCallSession?.beginLeaving()
         // Очистить MatrixRTC state event через REST API
         if case .roomCall(let roomProxy, let clientProxy, _, _, _, _) = configuration.kind {
             await sendLeaveCallStateEventViaREST(roomProxy: roomProxy, clientProxy: clientProxy)
@@ -1124,6 +1125,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             return
         }
         isEndingCall = true
+        // Первым делом — объявить сессии, что мы уходим: очистка нашего участия
+        // стартует раньше, чем stop(), и без этого сверщик успевал вернуть нас в звонок.
+        nativeCallSession?.beginLeaving()
         recordingPollingTask?.cancel()
         recordingPollingTask = nil
         stalkLog("endCall — начинаю завершение звонка")

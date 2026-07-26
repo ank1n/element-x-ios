@@ -539,7 +539,10 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         update.hasVideo = true
         update.localizedCallerName = callerName
         // https://stackoverflow.com/a/41230020/730924
-        update.remoteHandle = .init(type: .generic, value: roomID)
+        // STMOB-261: handle попадает в «Недавние» системного приложения «Телефон»
+        // (строка «Профиль в соцсети»), поэтому это имя звонящего, а не room ID —
+        // сырой `!AlJFAes…:stalk.implica.ru` в истории читался как мусор.
+        update.remoteHandle = .init(type: .generic, value: callerName.isEmpty ? roomID : callerName)
 
         DiagLog.write("VoIP", "reportNewIncomingCall room=\(roomID) caller=\(callerName) callKitID=\(callID.callKitID)")
         callProvider.reportNewIncomingCall(with: callID.callKitID, update: update) { [weak self] error in
@@ -760,6 +763,15 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         
         // First fullfill the action
         action.fulfill()
+
+        // STMOB-261: звонок принят ИМЕННО ЗДЕСЬ — фаза «звонит» закончилась, значит
+        // наблюдатели этой фазы больше не имеют права заканчивать CallKit-сессию.
+        // Иначе наше же появление в activeRoomCallParticipants (эхо m.call.member
+        // через ~2с после join) читается наблюдателем как «ответили на другом
+        // устройстве» → сессия гаснет: нет зелёной плашки, в «Недавних» 2 секунды,
+        // а на завершение звонка тот же наблюдатель отправляет .missedCall и
+        // принятый звонок оказывается «пропущенным» в истории.
+        disarmIncomingRingWatchers()
         // STMOB-256: точка отсчёта для диагностики «40с после ответа». Далее CallPerf
         // маркеры в presentCallScreen/join и NativeCallSession дают полную разбивку
         // answer→connect (главный подозреваемый — ожидание синка комнаты на cold-Synapse).
@@ -1117,10 +1129,19 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         declineListenerHandle = handle
     }
     
-    private func reportEndedCall(incomingCallID: CallID, reason: CXCallEndedReason) {
+    /// Снимает наблюдателей фазы «звонит» (звонок отменён удалённо / принят или отклонён
+    /// на другом устройстве / не ответили). После локального ответа или завершения этой
+    /// фазы они обязаны молчать: живым звонком дальше управляет экран звонка.
+    private func disarmIncomingRingWatchers() {
+        incomingCallRoomInfoCancellable = nil
         declineListenerHandle?.cancel()
         declineListenerHandle = nil
         endUnansweredCallTask?.cancel()
+        endUnansweredCallTask = nil
+    }
+
+    private func reportEndedCall(incomingCallID: CallID, reason: CXCallEndedReason) {
+        disarmIncomingRingWatchers()
         callProvider.reportCall(with: incomingCallID.callKitID, endedAt: nil, reason: reason)
 
         // Notify about missed call for unanswered scenarios

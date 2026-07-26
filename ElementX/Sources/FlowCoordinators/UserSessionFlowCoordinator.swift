@@ -598,7 +598,8 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                                                elementCallBaseURL: flowParameters.appSettings.elementCallBaseURL,
                                                elementCallBaseURLOverride: flowParameters.appSettings.elementCallBaseURLOverride,
                                                colorScheme: colorScheme),
-                          startWithVideoEnabled: effectiveVideoEnabled)
+                          startWithVideoEnabled: effectiveVideoEnabled,
+                          direction: isJoiningExistingCall ? .incoming : .outgoing)
     }
     
     private var callScreenPictureInPictureController: AVPictureInPictureController?
@@ -623,7 +624,14 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         minimizedCallTimer = nil
     }
 
-    private func presentCallScreen(configuration: ElementCallConfiguration, startWithVideoEnabled: Bool = true) {
+    /// - Parameter direction: направление для записи в истории звонков. Экран звонка —
+    ///   ЕДИНСТВЕННЫЙ владелец записи о состоявшемся звонке (CallHistoryCoordinator
+    ///   заводит записи только для непринятых, где экрана не было). Раньше запись
+    ///   создавали оба: здесь всегда «исходящий», а координатор на .startCall — ещё и
+    ///   «входящий», поэтому каждый принятый входящий звонок попадал в историю дважды.
+    private func presentCallScreen(configuration: ElementCallConfiguration,
+                                   startWithVideoEnabled: Bool = true,
+                                   direction: LocalCallHistoryItem.CallDirection = .outgoing) {
         guard flowParameters.ongoingCallRoomIDPublisher.value != configuration.callRoomID else {
             MXLog.info("Returning to existing call.")
             callScreenPictureInPictureController?.stopPictureInPicture()
@@ -645,7 +653,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                 await existingCall.stopAndWait()
                 guard let self else { return }
                 DiagLog.write("Call", "presentCallScreen: old call stopped — presenting new")
-                self.presentCallScreen(configuration: configuration, startWithVideoEnabled: startWithVideoEnabled)
+                self.presentCallScreen(configuration: configuration, startWithVideoEnabled: startWithVideoEnabled, direction: direction)
             }
             return
         }
@@ -661,7 +669,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
             case .roomCall(let roomProxy, _, _, _, _, _):
                 roomID = roomProxy.id
             }
-            let callID = callHistoryService.startCall(roomID: roomID, direction: .outgoing)
+            let callID = callHistoryService.startCall(roomID: roomID, direction: direction)
             currentCallID = callID
 
             // STMOB-221: enrich the outgoing history entry with the room name and

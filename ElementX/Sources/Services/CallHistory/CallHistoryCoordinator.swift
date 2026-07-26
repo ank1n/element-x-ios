@@ -16,7 +16,6 @@ class CallHistoryCoordinator {
     private var cancellables = Set<AnyCancellable>()
 
     /// Текущий активный звонок (если есть)
-    private var currentCallID: String?
     private var currentCallRoomID: String?
     private var currentCallDirection: LocalCallHistoryItem.CallDirection = .outgoing
     private var pendingIncomingCall = false
@@ -59,30 +58,17 @@ class CallHistoryCoordinator {
                 return
             }
 
-            let direction: LocalCallHistoryItem.CallDirection = pendingIncomingCall ? .incoming : .outgoing
+            // Запись о состоявшемся звонке — и входящем, и исходящем — создаёт
+            // UserSessionFlowCoordinator.presentCallScreen(), он же знает направление
+            // (isJoiningExistingCall) и он же её закрывает на .dismiss. Здесь только
+            // помечаем, что звонок с экраном идёт: чтобы не завести на него дубль
+            // «пропущенного» (раньше запись создавали оба места → каждый принятый
+            // входящий звонок попадал в историю дважды: «входящий» + «исходящий»).
+            currentCallDirection = pendingIncomingCall ? .incoming : .outgoing
             pendingIncomingCall = false
-
-            // Для исходящих звонков запись уже создана в UserSessionFlowCoordinator.presentCallScreen()
-            // Создаём только для входящих звонков (через VoIP push)
-            if direction == .outgoing {
-                currentCallRoomID = roomID
-                currentCallID = nil // Запись управляется UserSessionFlowCoordinator
-                MXLog.info("📞 CallHistory: Outgoing call tracked (entry managed by UserSessionFlowCoordinator)")
-                return
-            }
-
-            // Входящий звонок — создаём запись здесь
-            let callID = localCallHistoryService.startCall(roomID: roomID, direction: direction)
-            currentCallID = callID
             currentCallRoomID = roomID
-            currentCallDirection = direction
 
-            MXLog.info("📞 CallHistory: Started incoming call \(callID), room: \(roomID)")
-
-            // Асинхронно получаем информацию о комнате и участниках
-            Task {
-                await enrichCallInfo(callID: callID, roomID: roomID)
-            }
+            MXLog.info("📞 CallHistory: Call on screen tracked (\(currentCallDirection), entry managed by UserSessionFlowCoordinator)")
 
         case .endCall(let roomID):
             guard currentCallRoomID == roomID else {
@@ -90,16 +76,9 @@ class CallHistoryCoordinator {
                 return
             }
 
-            // Завершаем только входящие звонки (у которых есть callID от нас)
-            // Исходящие завершаются в UserSessionFlowCoordinator на .dismiss
-            if let callID = currentCallID {
-                localCallHistoryService.endCall(id: callID, missed: false)
-                MXLog.info("📞 CallHistory: Ended incoming call \(callID)")
-            } else {
-                MXLog.info("📞 CallHistory: Outgoing call ended (managed by UserSessionFlowCoordinator)")
-            }
-
-            currentCallID = nil
+            // Запись закрывает UserSessionFlowCoordinator на .dismiss — здесь только
+            // снимаем метку активного звонка, чтобы поздний missedCall снова стал валиден.
+            MXLog.info("📞 CallHistory: Call ended (entry managed by UserSessionFlowCoordinator)")
             currentCallRoomID = nil
 
         case .missedCall(let roomID):
@@ -146,22 +125,22 @@ class CallHistoryCoordinator {
 
     /// Обрабатывает пропущенный входящий звонок
     func handleMissedCall(roomID: String) {
-        // Если есть текущий звонок с этим roomID, помечаем его как пропущенный
-        if let callID = currentCallID, currentCallRoomID == roomID {
-            localCallHistoryService.endCall(id: callID, missed: true)
-            currentCallID = nil
-            currentCallRoomID = nil
-            MXLog.info("📞 CallHistory: Marked call as missed: \(callID)")
-        } else {
-            // Создаём новую запись для пропущенного звонка
-            let callID = localCallHistoryService.startCall(roomID: roomID, direction: .incoming)
-            localCallHistoryService.endCall(id: callID, missed: true)
-
-            Task {
-                await enrichCallInfo(callID: callID, roomID: roomID)
-            }
-
-            MXLog.info("📞 CallHistory: Created missed call record: \(callID)")
+        // Звонок с экраном (принятый) пропущенным быть не может — его запись ведёт
+        // UserSessionFlowCoordinator. Иначе принятый звонок помечался «пропущенным»,
+        // когда фаза «звонит» доносила remoteEnded уже после ответа.
+        if currentCallRoomID == roomID {
+            MXLog.info("📞 CallHistory: Ignoring missedCall for active on-screen call in \(roomID)")
+            return
         }
+
+        // Экрана не было — запись пропущенного целиком наша
+        let callID = localCallHistoryService.startCall(roomID: roomID, direction: .incoming)
+        localCallHistoryService.endCall(id: callID, missed: true)
+
+        Task {
+            await enrichCallInfo(callID: callID, roomID: roomID)
+        }
+
+        MXLog.info("📞 CallHistory: Created missed call record: \(callID)")
     }
 }
