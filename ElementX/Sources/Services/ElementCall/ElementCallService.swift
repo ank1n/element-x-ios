@@ -396,6 +396,11 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
                 return
             }
             DiagLog.write("Call", "CXStartCallAction ok → outgoing connecting")
+            // Та же карточка для исходящего: без неё групповой звонок в «Недавних»
+            // подписан сырым идентификатором комнаты.
+            if let displayName, !displayName.isEmpty {
+                Task { @MainActor in Self.donateOutgoingCallIntent(roomID: roomID, displayName: displayName) }
+            }
             if let displayName, !displayName.isEmpty {
                 let update = CXCallUpdate()
                 update.localizedCallerName = displayName
@@ -644,6 +649,40 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     /// Запускается ASAP — synchronously read avatar from disk + generate
     /// placeholder + donate занимает ~5-10ms. CallKit `reportNewIncomingCall`
     /// идёт параллельно, не блокируется.
+    /// Карточка исходящего звонка: имя комнаты под тем же handle, что у звонка в
+    /// CallKit, иначе «Недавние» покажут сырой идентификатор комнаты.
+    @MainActor
+    private static func donateOutgoingCallIntent(roomID: String, displayName: String) {
+        let avatarData = Avatars.generatePlaceholderAvatarImageData(name: displayName,
+                                                                    id: roomID,
+                                                                    size: CGSize(width: 100, height: 100))
+        let image = avatarData.map { INImage(imageData: $0) } ?? INImage(named: "")
+        var nameComponents = PersonNameComponents()
+        nameComponents.givenName = displayName
+        let person = INPerson(personHandle: INPersonHandle(value: roomID, type: .unknown),
+                              nameComponents: nameComponents,
+                              displayName: displayName,
+                              image: image,
+                              contactIdentifier: nil,
+                              customIdentifier: roomID,
+                              aliases: nil,
+                              suggestionType: .none)
+        let intent = INStartCallIntent(callRecordFilter: nil,
+                                       callRecordToCallBack: nil,
+                                       audioRoute: .unknown,
+                                       destinationType: .normal,
+                                       contacts: [person],
+                                       callCapability: .audioCall)
+        intent.setImage(image, forParameterNamed: \.contacts)
+        let interaction = INInteraction(intent: intent, response: nil)
+        interaction.direction = .outgoing
+        interaction.donate { error in
+            if let error {
+                DiagLog.write("Call", "  intent donate (исходящий) FAILED: \(error.localizedDescription)")
+            }
+        }
+    }
+
     @MainActor
     private static func donateIncomingCallIntent(senderMXID: String?,
                                                  callerName: String,
@@ -699,7 +738,13 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         //   - aliases с дополнительным handle = customIdentifier для Siri matching
         var nameComponents = PersonNameComponents()
         nameComponents.givenName = callerName
-        let handle = INPersonHandle(value: personID, type: .emailAddress)
+        // Главный идентификатор карточки обязан совпадать с handle звонка в CallKit —
+        // а там лежит roomID (по нему работает перезвон из «Недавних»). Раньше карточка
+        // дарилась под MXID отправителя, и система не могла связать её с записью
+        // звонка: в «Недавних» вместо имени оставался сырой `!room:server`, а заголовок
+        // был родовой — «ВИДЕОВЫЗОВ STALK». MXID сохраняем псевдонимом, чтобы не
+        // потерять сопоставление в Siri.
+        let handle = INPersonHandle(value: roomID, type: .unknown)
         let aliases = senderMXID.map { [INPersonHandle(value: $0, type: .emailAddress)] } ?? []
         let person = INPerson(personHandle: handle,
                               nameComponents: nameComponents,
