@@ -636,7 +636,11 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 // sTalk: Native call mode — no WebView, WidgetDriver + native LiveKit SDK
                 if useNativeCall {
                     MXLog.info("sTalk: Starting NATIVE call mode")
-                    let isEncrypted = roomProxy.infoPublisher.value.isEncrypted
+                    // НЕ снимок из room info: он считает неизвестное состояние
+                    // «не шифровано» и молча роняет весь медиатракт (см. комментарий
+                    // к encryptionStateForCall).
+                    let isEncrypted = await roomProxy.encryptionStateForCall()
+                    DiagLog.write("E2EE", "звонок: шифрование комнаты = \(isEncrypted)")
                     let token = (try? (clientProxy as? ClientProxy)?.matrixAccessToken()) ?? ""
                     let session = NativeCallSession(widgetDriver: widgetDriver,
                                                     liveKitRoomManager: liveKitRoomManager,
@@ -712,6 +716,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                     // (чтобы «Присоединиться к звонку» плашка скрывалась когда
                     // юзер уже в native звонке этой комнаты) — БЕЗ CallKit.
                     elementCallService.markNativeCallActive(roomID: roomProxy.id, displayName: roomProxy.infoPublisher.value.displayName)
+                    // Тип звонка для системы — по фактическому состоянию камеры, а не
+                    // по «всегда видео», с которым звонок объявляется на входящем.
+                    elementCallService.setCallHasVideo(liveKitRoomManager.localVideoTrack != nil)
                     return
                 }
 
@@ -1102,6 +1109,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 try await liveKitRoomManager.setCamera(enabled: newVideoEnabled)
                 let trackAfter = liveKitRoomManager.localVideoTrack != nil
                 DiagLog.write("CallUI", "  toggleVideo: LiveKit setCamera(\(newVideoEnabled)) ok, track=\(trackAfter)")
+                elementCallService.setCallHasVideo(trackAfter)
             } catch {
                 MXLog.error("sTalk LiveKit: Failed to toggle camera: \(error)")
                 DiagLog.write("CallUI", "  toggleVideo: LiveKit setCamera FAILED: \(error.localizedDescription)")

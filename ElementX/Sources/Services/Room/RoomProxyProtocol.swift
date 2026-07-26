@@ -85,6 +85,10 @@ protocol JoinedRoomProxyProtocol: RoomProxyProtocol {
     var knockRequestsStatePublisher: CurrentValuePublisher<KnockRequestsState, Never> { get }
     
     var timeline: TimelineProxyProtocol { get }
+
+    /// Достоверное состояние шифрования для старта звонка (в отличие от снимка
+    /// `infoPublisher.value.isEncrypted`, который неизвестное состояние считает «нет»).
+    func encryptionStateForCall() async -> Bool
     
     var predecessorRoom: PredecessorRoom? { get }
     

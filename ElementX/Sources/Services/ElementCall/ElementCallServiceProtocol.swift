@@ -43,6 +43,9 @@ protocol ElementCallServiceProtocol {
     /// Используется RoomScreen чтобы скрыть «Присоединиться» плашку
     /// когда юзер уже участвует в native звонке этой комнаты.
     /// Передать nil при leave call чтобы очистить.
+    /// Сообщить системе фактический тип звонка (аудио/видео) после ответа.
+    func setCallHasVideo(_ hasVideo: Bool)
+
     func markNativeCallActive(roomID: String?, displayName: String?)
 
     /// STMOB-261: собеседник ответил — система начинает отсчёт длительности.

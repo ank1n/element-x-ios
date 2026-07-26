@@ -104,6 +104,34 @@ class JoinedRoomProxy: JoinedRoomProxyProtocol {
         }
     }
     
+    /// Достоверное состояние шифрования комнаты для СТАРТА ЗВОНКА.
+    ///
+    /// `RoomInfoProxy.isEncrypted` схлопывает `unknown` в `false` — для сообщений это
+    /// безопасно (SDK доуточнит состояние до отправки), но звонок берёт снимок ОДИН раз
+    /// и на его основании подключается к LiveKit. Если в этот момент состояние ещё
+    /// неизвестно (частый случай при входе в уже идущий звонок сразу после старта
+    /// приложения), звонок уходит БЕЗ E2EE: наши дорожки публикуются открытыми, чужие
+    /// не расшифровываются — на обеих сторонах ни видео, ни звука, и никаких ошибок
+    /// (лог 154, звонок 20:15: `encryptionType=0`, `rebroadcast SKIPPED — no current key`).
+    ///
+    /// Поэтому здесь: спрашиваем SDK явно, а при неизвестном ответе считаем комнату
+    /// шифрованной — открытая публикация в шифрованный звонок это и поломка, и утечка.
+    func encryptionStateForCall() async -> Bool {
+        switch room.encryptionState() {
+        case .encrypted:
+            return true
+        case .notEncrypted:
+            return false
+        case .unknown:
+            if let latest = try? await room.latestEncryptionState() {
+                MXLog.info("Room encryption state resolved for call: \(latest)")
+                return latest == .encrypted
+            }
+            MXLog.error("Room encryption state unknown for call — assuming encrypted")
+            return true
+        }
+    }
+
     func subscribeForUpdates() async {
         guard !subscribedForUpdates else {
             MXLog.warning("Room already subscribed for updates")

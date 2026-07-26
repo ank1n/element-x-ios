@@ -6402,6 +6402,44 @@ class ElementCallServiceMock: ElementCallServiceProtocol, @unchecked Sendable {
     }
     var underlyingCallKitUnavailableRoomIDPublisher: CurrentValuePublisher<String?, Never>! = .init(.init(nil))
 
+    //MARK: - setCallHasVideo
+
+    var setCallHasVideoUnderlyingCallsCount = 0
+    var setCallHasVideoCallsCount: Int {
+        get {
+            if Thread.isMainThread {
+                return setCallHasVideoUnderlyingCallsCount
+            } else {
+                var returnValue: Int? = nil
+                DispatchQueue.main.sync {
+                    returnValue = setCallHasVideoUnderlyingCallsCount
+                }
+
+                return returnValue!
+            }
+        }
+        set {
+            if Thread.isMainThread {
+                setCallHasVideoUnderlyingCallsCount = newValue
+            } else {
+                DispatchQueue.main.sync {
+                    setCallHasVideoUnderlyingCallsCount = newValue
+                }
+            }
+        }
+    }
+    var setCallHasVideoCalled: Bool {
+        return setCallHasVideoCallsCount > 0
+    }
+    var setCallHasVideoReceivedHasVideo: Bool?
+    var setCallHasVideoClosure: ((Bool) -> Void)?
+
+    func setCallHasVideo(_ hasVideo: Bool) {
+        setCallHasVideoCallsCount += 1
+        setCallHasVideoReceivedHasVideo = hasVideo
+        setCallHasVideoClosure?(hasVideo)
+    }
+
     //MARK: - setClientProxy
 
     var setClientProxyUnderlyingCallsCount = 0
@@ -6887,6 +6925,71 @@ class JoinedRoomProxyMock: JoinedRoomProxyProtocol, @unchecked Sendable {
         set(value) { underlyingOwnUserID = value }
     }
     var underlyingOwnUserID: String!
+
+    //MARK: - encryptionStateForCall
+
+    var encryptionStateForCallUnderlyingCallsCount = 0
+    var encryptionStateForCallCallsCount: Int {
+        get {
+            if Thread.isMainThread {
+                return encryptionStateForCallUnderlyingCallsCount
+            } else {
+                var returnValue: Int? = nil
+                DispatchQueue.main.sync {
+                    returnValue = encryptionStateForCallUnderlyingCallsCount
+                }
+
+                return returnValue!
+            }
+        }
+        set {
+            if Thread.isMainThread {
+                encryptionStateForCallUnderlyingCallsCount = newValue
+            } else {
+                DispatchQueue.main.sync {
+                    encryptionStateForCallUnderlyingCallsCount = newValue
+                }
+            }
+        }
+    }
+    var encryptionStateForCallCalled: Bool {
+        return encryptionStateForCallCallsCount > 0
+    }
+
+    var encryptionStateForCallUnderlyingReturnValue: Bool!
+    var encryptionStateForCallReturnValue: Bool! {
+        get {
+            if Thread.isMainThread {
+                return encryptionStateForCallUnderlyingReturnValue
+            } else {
+                var returnValue: Bool? = nil
+                DispatchQueue.main.sync {
+                    returnValue = encryptionStateForCallUnderlyingReturnValue
+                }
+
+                return returnValue!
+            }
+        }
+        set {
+            if Thread.isMainThread {
+                encryptionStateForCallUnderlyingReturnValue = newValue
+            } else {
+                DispatchQueue.main.sync {
+                    encryptionStateForCallUnderlyingReturnValue = newValue
+                }
+            }
+        }
+    }
+    var encryptionStateForCallClosure: (() async -> Bool)?
+
+    func encryptionStateForCall() async -> Bool {
+        encryptionStateForCallCallsCount += 1
+        if let encryptionStateForCallClosure = encryptionStateForCallClosure {
+            return await encryptionStateForCallClosure()
+        } else {
+            return encryptionStateForCallReturnValue
+        }
+    }
 
     //MARK: - subscribeForUpdates
 

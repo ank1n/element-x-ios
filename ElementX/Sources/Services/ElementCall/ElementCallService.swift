@@ -190,6 +190,10 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     /// последнему репорту, поэтому повтор сбрасывал таймер и ломал длительность.
     private var didReportOutgoingConnected = false
 
+    /// Что мы в последний раз сообщили системе о типе звонка — чтобы не слать
+    /// одинаковые обновления на каждое изменение состояния камеры.
+    private var reportedHasVideo: Bool?
+
     /// Звонок с этим CallKit-идентификатором принят НА ЭТОМ устройстве. Сравниваем
     /// по идентификатору, а не флагом: следующий звонок получает новый UUID и
     /// армируется сам собой, не завися от порядка сброса состояния.
@@ -390,6 +394,21 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
             }
             callProvider.reportOutgoingCall(with: callID.callKitID, startedConnectingAt: Date())
         }
+    }
+
+    /// Сообщить системе фактический тип звонка. Звонок ВСЕГДА объявляется видео при
+    /// показе входящего (иначе iOS не выводит его на передний план), но после ответа
+    /// это уже неправда: камера по умолчанию выключена. Последствия у вранья видимые —
+    /// в «Недавних» аудиозвонок подписан «ВИДЕОВЫЗОВ», а в «Динамическом острове»
+    /// система рисует видеозвонок значком камеры, без счётчика длительности.
+    func setCallHasVideo(_ hasVideo: Bool) {
+        guard LiveKitRoomManager.kCallKitFullLifecycle, let ongoingCallID else { return }
+        guard reportedHasVideo != hasVideo else { return }
+        reportedHasVideo = hasVideo
+        let update = CXCallUpdate()
+        update.hasVideo = hasVideo
+        callProvider.reportCall(with: ongoingCallID.callKitID, updated: update)
+        DiagLog.write("Call", "CallKit: тип звонка → \(hasVideo ? "видео" : "аудио")")
     }
 
     /// STMOB-261: собеседник ответил (первый реальный участник вошёл в SFU) —
@@ -1018,6 +1037,7 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         ongoingCallID = nil
         incomingCallID = nil
         answeredCallKitID = nil
+        reportedHasVideo = nil
 
         // STMOB: cancel pending unanswered timeout — иначе при rapid hangup и
         // последующем звонке в ту же комнату он может выстрелить с reportCall
