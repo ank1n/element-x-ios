@@ -55,9 +55,19 @@ struct Application: App {
                 .onOpenURL { url in
                     openURL(url, isExternalURL: true)
                 }
+                // Перезвон из системных «Недавних» приходит РАЗНЫМИ типами активности:
+                // видеозвонок (входящий, он объявляется hasVideo=true) — INStartVideoCallIntent,
+                // аудио (наш исходящий, а именно им попадает в «Недавние» групповой звонок) —
+                // INStartCallIntent/INStartAudioCallIntent. Подписка была только на видео,
+                // поэтому по групповой записи приложение просто открывалось, а звонок не
+                // начинался: активность до него не доходила вовсе.
                 .onContinueUserActivity("INStartVideoCallIntent") { userActivity in
-                    // `INStartVideoCallIntent` is to be replaced with `INStartCallIntent`
-                    // but calls from Recents still send it ¯\_(ツ)_/¯
+                    appCoordinator.handleUserActivity(userActivity)
+                }
+                .onContinueUserActivity("INStartCallIntent") { userActivity in
+                    appCoordinator.handleUserActivity(userActivity)
+                }
+                .onContinueUserActivity("INStartAudioCallIntent") { userActivity in
                     appCoordinator.handleUserActivity(userActivity)
                 }
                 .task {
