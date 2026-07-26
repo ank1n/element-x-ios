@@ -61,7 +61,18 @@ final class LiveKitRoomManager: ObservableObject {
     ///  - Не зависит от publish tracks (muted user всё ещё .standard, visible)
     ///  - Future-proof: новые service kinds (agent для AI bot, etc) автоматически hide
     var displayParticipants: [RemoteParticipant] {
-        remoteParticipants.filter { $0.kind == .standard }
+        let ownIdentity = room.localParticipant.identity?.stringValue
+        return remoteParticipants.filter { participant in
+            guard participant.kind == .standard else { return false }
+            // Наш собственный идентификатор среди «чужих» — это эхо (вторая сессия,
+            // сервис записи, возврат наших же дорожек). В раскладке 1:1 такой участник
+            // занимал главное место вместо собеседника, а трек настоящего собеседника
+            // оставался без приёмника (лог 159, 21:27).
+            if let ownIdentity, participant.identity?.stringValue == ownIdentity {
+                return false
+            }
+            return true
+        }
     }
 
     /// STMOB-223: активен ли screen-share у любого remote-участника.
@@ -2167,8 +2178,14 @@ final class FirstFrameProbe: NSObject, VideoRenderer, @unchecked Sendable {
         super.init()
     }
 
+    /// ОБЯЗАТЕЛЬНО true. SDK считает трек видимым, только если хотя бы один приёмник
+    /// участвует в адаптивной подписке; иначе трек остаётся ВЫКЛЮЧЕННЫМ
+    /// (`shouldReceive = false`) и кадры не идут вовсе. Так пропадало видео тех, кто
+    /// был в комнате ДО нас: плитка ещё не смонтирована, «видимых» приёмников нет —
+    /// SDK гасит трек. Нулевой размер означает «самый лёгкий слой» — ровно то, что
+    /// нужно наблюдателю.
     @MainActor var isAdaptiveStreamEnabled: Bool {
-        false
+        true
     }
 
     @MainActor var adaptiveStreamSize: CGSize {

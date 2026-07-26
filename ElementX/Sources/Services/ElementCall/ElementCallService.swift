@@ -189,6 +189,11 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     /// «Соединён» для исходящего репортим ОДИН раз: система считает точку начала по
     /// последнему репорту, поэтому повтор сбрасывал таймер и ломал длительность.
     private var didReportOutgoingConnected = false
+    /// Системе уже сказано «звонок соединяется». До этого сообщать «соединён» нельзя:
+    /// отсчёт не начнётся, а следом пришедшее «соединяется» вернёт звонок назад.
+    private var didReportOutgoingConnecting = false
+    /// «Соединён» пришёл раньше «соединяется» — отдадим сразу после него.
+    private var pendingOutgoingConnectedAt: Date?
 
     /// Что мы в последний раз сообщили системе о типе звонка — чтобы не слать
     /// одинаковые обновления на каждое изменение состояния камеры.
@@ -373,6 +378,8 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         let callID = CallID(callKitID: UUID(), roomID: roomID, rtcNotificationID: nil)
         ongoingCallID = callID
         didReportOutgoingConnected = false
+        didReportOutgoingConnecting = false
+        pendingOutgoingConnectedAt = nil
 
         // Исходящий: регистрируем системный звонок, чтобы получить зелёную плашку,
         // «Недавние» с длительностью и активацию аудио-сессии через CallKit.
@@ -396,6 +403,7 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
                 return
             }
             DiagLog.write("Call", "CXStartCallAction ok → outgoing connecting")
+            didReportOutgoingConnecting = true
             // Та же карточка для исходящего: без неё групповой звонок в «Недавних»
             // подписан сырым идентификатором комнаты.
             if let displayName, !displayName.isEmpty {
@@ -407,6 +415,11 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
                 callProvider.reportCall(with: callID.callKitID, updated: update)
             }
             callProvider.reportOutgoingCall(with: callID.callKitID, startedConnectingAt: Date())
+            if let pending = pendingOutgoingConnectedAt {
+                pendingOutgoingConnectedAt = nil
+                callProvider.reportOutgoingCall(with: callID.callKitID, connectedAt: pending)
+                DiagLog.write("Call", "outgoing connected (отложенный) → отсчёт длительности пошёл")
+            }
         }
     }
 
@@ -435,6 +448,17 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         // метрику, ради которой всё делалось.
         guard !didReportOutgoingConnected else { return }
         didReportOutgoingConnected = true
+
+        // Порядок обязателен: сначала «соединяется», потом «соединён». При входе в
+        // УЖЕ идущий звонок собеседник в комнате с первой миллисекунды, и «соединён»
+        // успевал уйти раньше транзакции старта — система отсчёт не начинала, и в
+        // «Динамическом острове» висела плашка без счётчика (лог 159: connected в
+        // 21:26:55.801, connecting в 21:26:55.805).
+        guard didReportOutgoingConnecting else {
+            pendingOutgoingConnectedAt = Date()
+            DiagLog.write("Call", "outgoing connected пришёл раньше connecting — откладываю")
+            return
+        }
         callProvider.reportOutgoingCall(with: ongoingCallID.callKitID, connectedAt: Date())
         DiagLog.write("Call", "outgoing call connected → отсчёт длительности пошёл")
     }
@@ -1098,6 +1122,8 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         incomingCallID = nil
         answeredCallKitID = nil
         reportedHasVideo = nil
+        didReportOutgoingConnecting = false
+        pendingOutgoingConnectedAt = nil
 
         // STMOB: cancel pending unanswered timeout — иначе при rapid hangup и
         // последующем звонке в ту же комнату он может выстрелить с reportCall
