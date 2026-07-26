@@ -16,6 +16,10 @@ protocol CXProviderProtocol {
     /// (последнее даёт длительность в «Недавних»).
     func reportOutgoingCall(with UUID: UUID, startedConnectingAt dateStartedConnecting: Date?)
     func reportOutgoingCall(with UUID: UUID, connectedAt dateConnected: Date?)
+    /// Обновить карточку уже созданного звонка — нужен исходящему, чтобы в
+    /// «Недавних» стояло имя собеседника, а в handle оставался machine-id комнаты
+    /// (по нему перезвон из системного «Телефона» находит комнату).
+    func reportCall(with UUID: UUID, updated update: CXCallUpdate)
 }
 
 extension CXProvider: CXProviderProtocol { }

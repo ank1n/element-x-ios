@@ -42,7 +42,12 @@ private enum NSEEventDedupCache {
     private static var dedupDirectory: URL? {
         guard let baseURL = DiagLog.fileURL?.deletingLastPathComponent() else { return nil }
         let dir = baseURL.appending(component: "dedup", directoryHint: .isDirectory)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        // Без защиты: файлы пустые (значение несёт само их существование и mtime),
+        // а класс по умолчанию делает каталог недоступным до первой разблокировки —
+        // именно тогда, когда NSE обязан работать.
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true,
+                                                 attributes: [.protectionKey: FileProtectionType.none])
+        try? FileManager.default.setAttributes([.protectionKey: FileProtectionType.none], ofItemAtPath: dir.path)
         return dir
     }
 
@@ -75,8 +80,15 @@ private enum NSEEventDedupCache {
         // нашей проверкой и open() — open вернёт -1 с EEXIST, считаем duplicate.
         let fd = open(lockPath, O_WRONLY | O_CREAT | O_EXCL, 0o644)
         if fd < 0 {
-            // EEXIST или другая ошибка — race lost, считаем duplicate
-            return true
+            let err = errno // снять СРАЗУ: любой следующий вызов его затрёт
+            if err == EEXIST {
+                return true // гонку проиграли — это настоящий дубликат
+            }
+            // Иначе дедуп просто недоступен (нет прав до первой разблокировки,
+            // нет места, нет каталога). Считать это дубликатом — значит молча
+            // погасить уведомление ровно там, где оно нужнее всего.
+            NSEDiagLog.write("  dedup недоступен key=\(key) errno=\(err) — показываю")
+            return false
         }
         close(fd)
         return false
@@ -201,7 +213,7 @@ class NotificationHandler {
             // В звонке/грации (2 мин после) нескачавшееся событие = E2EE-хвост
             // звонка/записи — тихо гасим, НЕ показываем generic (dp лог 126:
             // «Новое сообщение» через 2.5с после hangup со включённой записью).
-            if isCallActiveForRoom(roomID) {
+            if isCallOrTailForRoom(roomID) {
                 NSEDiagLog.write("  → fetch failed + call-active marker, DISCARD (call tail)")
                 discardNotification()
                 return
@@ -248,8 +260,14 @@ class NotificationHandler {
     /// suppress while the call runs AND for ~2 minutes after it ends — E2EE signalling tails kept
     /// arriving right after hang-up and showed as content-less banners. A crash mid-call self-heals
     /// within the same window.
-    private func isCallActiveForRoom(_ roomID: String, ttlSeconds: TimeInterval = 120) -> Bool {
-        NSECallMarkers.isCallActive(roomID: roomID, ttlSeconds: ttlSeconds)
+    /// Подавление хвостов звонка: «идёт ИЛИ только что кончился».
+    private func isCallOrTailForRoom(_ roomID: String) -> Bool {
+        NSECallMarkers.isCallOrTail(roomID: roomID)
+    }
+
+    /// Звонок идёт прямо сейчас (без грации) — для решений о показе баннера о звонке.
+    private func isCallActiveForRoom(_ roomID: String) -> Bool {
+        NSECallMarkers.isCallActive(roomID: roomID)
     }
     
     func handleTimeExpiration() {
@@ -397,7 +415,7 @@ class NotificationHandler {
                 // all encrypted events — outside a call an undecryptable event may be a real message
                 // (this app has occasional E2EE key-desync), so it still surfaces.
                 let hasActiveCall = userSession.roomForIdentifier(itemProxy.roomID)?.hasActiveRoomCall() ?? false
-                let callMarker = isCallActiveForRoom(itemProxy.roomID)
+                let callMarker = isCallOrTailForRoom(itemProxy.roomID)
                 NSEDiagLog.write("  encrypted event hasActiveRoomCall=\(hasActiveCall) callActiveMarker=\(callMarker) room=\(itemProxy.roomID)")
                 if hasActiveCall || callMarker {
                     os_log(.default, log: nseHandlerLog, "Encrypted event in active-call room %{public}@ — suppressing (likely call signalling)", itemProxy.roomID)
@@ -623,8 +641,16 @@ enum NSECallMarkers {
     /// на отбое. TTL 120с поэтому значит «пока звонок идёт И ~2 минуты после» —
     /// E2EE-хвосты продолжали прилетать сразу после hangup. Падение приложения
     /// посреди звонка самозалечивается в том же окне.
-    static func isCallActive(roomID: String, ttlSeconds: TimeInterval = 120) -> Bool {
+    static func isCallActive(roomID: String, ttlSeconds: TimeInterval = 45) -> Bool {
         freshness(directory: "call-active", roomID: roomID) < ttlSeconds
+    }
+
+    /// Звонок идёт ИЛИ только что закончился. Грация нужна подавлению E2EE-хвостов:
+    /// служебные события продолжают прилетать ещё минуту-две после отбоя. Для
+    /// информационного баннера о НОВОМ звонке грация, наоборот, вредна — им нужен
+    /// isCallActive (лог 151: баннеры гасились через 35 и 53 секунды после отбоя).
+    static func isCallOrTail(roomID: String) -> Bool {
+        isCallActive(roomID: roomID) || freshness(directory: "call-tail", roomID: roomID) < 120
     }
 
     private static func freshness(directory: String, roomID: String) -> TimeInterval {
@@ -783,8 +809,8 @@ enum CallNoticeGate {
             return false
         }
         // 2. Мы уже в этом звонке (heartbeat 30с) или вышли <2 мин назад.
-        if NSECallMarkers.isCallActive(roomID: notice.roomID, ttlSeconds: 120) {
-            NSEDiagLog.write("  call-notice: call-active marker — DISCARD")
+        if NSECallMarkers.isCallActive(roomID: notice.roomID) {
+            NSEDiagLog.write("  call-notice: звонок в этой комнате уже идёт — DISCARD")
             return false
         }
         // 3. Звонок протух: «начался звонок» через 10 минут — мусор.

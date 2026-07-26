@@ -1892,4 +1892,5 @@
 // in the .strings files: the in-code `value:` fallback does not apply to loc-key.
 "stalk_notification_call_started" = "%@ started a call";
 "stalk_notification_call_started_dm" = "Started a call";
+"stalk_notification_call_started_in_room" = "%1$@ started a call in “%2$@”";
 "stalk_notification_call_caller_unknown" = "Call";

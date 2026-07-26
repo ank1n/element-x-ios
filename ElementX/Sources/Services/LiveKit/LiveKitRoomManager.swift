@@ -657,6 +657,8 @@ final class LiveKitRoomManager: ObservableObject {
     /// Ремонт делаем только штатными путями SDK. Ручной unpublish/publish камеры
     /// уже убивал и видео, и ЗВУК (build 45, пришлось выключать killswitch'ем).
     private static let kMaxRecoveryCycles = 2
+    /// Перепубликация камеры при мёртвом захвате — одна на звонок.
+    private var didRestartDeadCapture = false
     private static let kRecoveryCooldown: TimeInterval = 30
 
     func noteNetworkPath(interface: String) {
@@ -669,8 +671,11 @@ final class LiveKitRoomManager: ObservableObject {
 
     private func startEgressWatchdog() {
         guard egressWatchdog == nil else { return }
+        didRestartDeadCapture = false
         egressWatchdog = MediaEgressWatchdog { [weak self] reason in
             self?.recoverEgress(reason: reason)
+        } onCaptureDead: { [weak self] kind in
+            self?.restartDeadCapture(kind: kind)
         }
         DiagLog.write("Call", "egress watchdog: старт")
     }
@@ -712,6 +717,40 @@ final class LiveKitRoomManager: ObservableObject {
         Task {
             await track.set(reportStatistics: true)
             DiagLog.write("Call", "egress: наблюдаю \(publication.source) sid=\(publication.sid.stringValue)")
+        }
+    }
+
+    /// Захват мёртв: трек включён, а камера не отдаёт кадров. ICE restart тут не
+    /// поможет — отправлять нечего. Единственное честное лечение: пересоздать
+    /// публикацию камеры (вместе с процессором фона, который к ней привязан).
+    /// Одна попытка на звонок: если и она не помогла, проблема не в публикации,
+    /// и повтор только моргал бы картинкой собеседнику.
+    private func restartDeadCapture(kind: String) {
+        guard kind == "camera" else { return }
+        guard !didRestartDeadCapture else {
+            DiagLog.write("Call", "захват мёртв повторно — перепубликация уже была, не повторяю")
+            return
+        }
+        guard connectionState == .connected, sdkReconnectMode == nil else { return }
+        guard UIApplication.shared.applicationState == .active else {
+            // В фоне iOS законно останавливает камеру — это не отказ.
+            DiagLog.write("Call", "захват мёртв, но приложение не активно — это фон, не чиню")
+            return
+        }
+        guard room.localParticipant.firstCameraPublication != nil else { return }
+
+        didRestartDeadCapture = true
+        DiagLog.write("Call", "захват мёртв → перепубликую камеру")
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await setCamera(enabled: false)
+                try await Task.sleep(for: .milliseconds(300))
+                try await setCamera(enabled: true)
+                DiagLog.write("Call", "захват мёртв: перепубликация выполнена")
+            } catch {
+                DiagLog.write("Call", "захват мёртв: перепубликация НЕ УДАЛАСЬ — \(error.localizedDescription)")
+            }
         }
     }
 
@@ -1534,6 +1573,10 @@ final class MediaEgressWatchdog: NSObject, TrackDelegate, @unchecked Sendable {
     /// Сколько секунд подряд байты не растут, прежде чем это станет уликой.
     /// 6с закрывают лифт и микропровалы.
     private static let stallThreshold = 6
+    /// Мёртвый захват: трек включён, а кадров нет столько секунд подряд. Отдельно
+    /// от stallThreshold — это другой отказ и другое лечение (перепубликация камеры,
+    /// а не ICE restart).
+    private static let captureStallThreshold = 8
     /// Телеметрия в DiagLog: раз в 30с (DiagLog при переполнении сносит файл целиком).
     private static let telemetryEvery = 30
 
@@ -1545,10 +1588,14 @@ final class MediaEgressWatchdog: NSObject, TrackDelegate, @unchecked Sendable {
         var framesEncoded: UInt64 = 0
         var captureFrames: UInt64 = 0
         var flatTicks = 0
+        /// Тики подряд, когда трек не на паузе, а источник не отдал ни одного кадра.
+        var captureFlatTicks = 0
         var ticks = 0
     }
 
     private let onStalled: @MainActor (String) -> Void
+    /// Источник видео молчит, хотя трек включён — байты тут ни при чём, чинить надо захват.
+    private let onCaptureDead: @MainActor (String) -> Void
     private let lock = NSLock()
     private var snapshots: [String: Snapshot] = [:]
     /// Когда сетевой путь последний раз пропадал — подтверждающий признак.
@@ -1564,8 +1611,10 @@ final class MediaEgressWatchdog: NSObject, TrackDelegate, @unchecked Sendable {
         lock.unlock()
     }
 
-    init(onStalled: @escaping @MainActor (String) -> Void) {
+    init(onStalled: @escaping @MainActor (String) -> Void,
+         onCaptureDead: @escaping @MainActor (String) -> Void) {
         self.onStalled = onStalled
+        self.onCaptureDead = onCaptureDead
         super.init()
     }
 
@@ -1638,6 +1687,17 @@ final class MediaEgressWatchdog: NSObject, TrackDelegate, @unchecked Sendable {
         }
         let flat = snap.flatTicks
         let ticks = snap.ticks
+        // Мёртвый захват: трек НЕ на паузе, а счётчик кадров источника стоит.
+        // «Камеру выключили» и «камера включена, но не снимает» — разные состояния,
+        // и раньше они были неразличимы: обе ветки просто уходили из проверки
+        // («отправлять нечего»). Второй случай собеседник видит как чёрный экран,
+        // а мы — как ничего (лог 151: captured=0 packets=0 active=true ice=connected).
+        if track is LocalVideoTrack, !track.isMuted, anyActive {
+            snap.captureFlatTicks = captureGrew ? 0 : snap.captureFlatTicks + 1
+        } else {
+            snap.captureFlatTicks = 0
+        }
+        let captureFlat = snap.captureFlatTicks
         snap.bytesSent = bytes
         snap.packetsSent = packets
         snap.framesEncoded = encoded
@@ -1650,6 +1710,11 @@ final class MediaEgressWatchdog: NSObject, TrackDelegate, @unchecked Sendable {
 
         if ticks % Self.telemetryEvery == 0 {
             DiagLog.write("Call", "egress \(kind): bytes=\(bytes) packets=\(packets) encoded=\(encoded) captured=\(captured) active=\(anyActive) ice=\(iceState.map { "\($0)" } ?? "n/a") flat=\(flat)с")
+        }
+
+        if captureFlat == Self.captureStallThreshold, !pathDown, !exhausted {
+            DiagLog.write("Call", "egress \(kind): ЗАХВАТ МЁРТВ — кадров нет \(captureFlat)с при включённом треке (captured=\(captured) bytes=\(bytes) ice=\(iceState.map { "\($0)" } ?? "n/a"))")
+            Task { @MainActor [onCaptureDead] in onCaptureDead(kind) }
         }
 
         guard flat >= Self.stallThreshold else { return }

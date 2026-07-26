@@ -2193,6 +2193,42 @@ class CXProviderMock: CXProviderProtocol, @unchecked Sendable {
         reportCallWithEndedAtReasonClosure?(uuid, endedAt, reason)
     }
 
+    //MARK: - reportCall
+
+    var reportCallWithUpdatedUnderlyingCallsCount = 0
+    var reportCallWithUpdatedCallsCount: Int {
+        get {
+            if Thread.isMainThread {
+                return reportCallWithUpdatedUnderlyingCallsCount
+            } else {
+                var returnValue: Int? = nil
+                DispatchQueue.main.sync {
+                    returnValue = reportCallWithUpdatedUnderlyingCallsCount
+                }
+
+                return returnValue!
+            }
+        }
+        set {
+            if Thread.isMainThread {
+                reportCallWithUpdatedUnderlyingCallsCount = newValue
+            } else {
+                DispatchQueue.main.sync {
+                    reportCallWithUpdatedUnderlyingCallsCount = newValue
+                }
+            }
+        }
+    }
+    var reportCallWithUpdatedCalled: Bool {
+        return reportCallWithUpdatedCallsCount > 0
+    }
+    var reportCallWithUpdatedClosure: ((UUID, CXCallUpdate) -> Void)?
+
+    func reportCall(with UUID: UUID, updated update: CXCallUpdate) {
+        reportCallWithUpdatedCallsCount += 1
+        reportCallWithUpdatedClosure?(UUID, update)
+    }
+
     //MARK: - reportOutgoingCall (STMOB-261)
 
     var reportOutgoingCallWithStartedConnectingAtCallsCount = 0

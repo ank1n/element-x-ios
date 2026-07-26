@@ -141,7 +141,13 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
             callActiveMarkerHeartbeatTask?.cancel()
             callActiveMarkerHeartbeatTask = nil
             if let oldRoomID = oldValue?.roomID, oldRoomID != ongoingCallID?.roomID {
-                Self.writeCallActiveMarker(roomID: oldRoomID, context: "grace (call ended)")
+                // STMOB-266: грация пишется ОТДЕЛЬНЫМ маркером. Раньше на отбое
+                // обновлялся сам call-active, и «звонок идёт» было неотличимо от
+                // «звонок только что кончился». Информационный баннер о НОВОМ
+                // звонке в той же комнате из-за этого молчал ещё две минуты
+                // (лог 151: 19:01:07 отбой → 19:01:42 и 19:02:00 «call-active
+                // marker — DISCARD»). Подавление E2EE-хвостов грацию сохраняет.
+                Self.writeCallTailMarker(roomID: oldRoomID)
             }
             if let roomID = ongoingCallID?.roomID {
                 Self.writeCallActiveMarker(roomID: roomID, context: "call started")
@@ -183,6 +189,11 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     /// «Соединён» для исходящего репортим ОДИН раз: система считает точку начала по
     /// последнему репорту, поэтому повтор сбрасывал таймер и ломал длительность.
     private var didReportOutgoingConnected = false
+
+    /// Звонок с этим CallKit-идентификатором принят НА ЭТОМ устройстве. Сравниваем
+    /// по идентификатору, а не флагом: следующий звонок получает новый UUID и
+    /// армируется сам собой, не завися от порядка сброса состояния.
+    private var answeredCallKitID: UUID?
     
     private let actionsSubject: PassthroughSubject<ElementCallServiceAction, Never> = .init()
     var actions: AnyPublisher<ElementCallServiceAction, Never> {
@@ -353,9 +364,12 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         // Исходящий: регистрируем системный звонок, чтобы получить зелёную плашку,
         // «Недавние» с длительностью и активацию аудио-сессии через CallKit.
         guard LiveKitRoomManager.kCallKitFullLifecycle else { return }
-        // Имя звонка: показываем название комнаты, а не сырой matrix room id —
-        // на устройстве в системном UI это выглядело как «!AlJFAes…:stalk.implica.ru».
-        let handle = CXHandle(type: .generic, value: displayName ?? roomID)
+        // В handle обязан лежать МАШИННЫЙ идентификатор: перезвон из системных
+        // «Недавних» приходит через INStartVideoCallIntent, и приложение читает
+        // `personHandle.value` как roomID (AppCoordinator.handleUserActivity).
+        // Имя пользователю показывает localizedCallerName — его выставляем
+        // отдельным апдейтом, иначе перезвон уходил бы в комнату «Сергей».
+        let handle = CXHandle(type: .generic, value: roomID)
         let startCallAction = CXStartCallAction(call: callID.callKitID, handle: handle)
         startCallAction.isVideo = false
         callController.request(CXTransaction(action: startCallAction)) { [weak self] error in
@@ -369,6 +383,11 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
                 return
             }
             DiagLog.write("Call", "CXStartCallAction ok → outgoing connecting")
+            if let displayName, !displayName.isEmpty {
+                let update = CXCallUpdate()
+                update.localizedCallerName = displayName
+                callProvider.reportCall(with: callID.callKitID, updated: update)
+            }
             callProvider.reportOutgoingCall(with: callID.callKitID, startedConnectingAt: Date())
         }
     }
@@ -539,10 +558,11 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         update.hasVideo = true
         update.localizedCallerName = callerName
         // https://stackoverflow.com/a/41230020/730924
-        // STMOB-261: handle попадает в «Недавние» системного приложения «Телефон»
-        // (строка «Профиль в соцсети»), поэтому это имя звонящего, а не room ID —
-        // сырой `!AlJFAes…:stalk.implica.ru` в истории читался как мусор.
-        update.remoteHandle = .init(type: .generic, value: callerName.isEmpty ? roomID : callerName)
+        // В handle — машинный идентификатор: перезвон из «Недавних» приходит
+        // через INStartVideoCallIntent и читается как roomID
+        // (AppCoordinator.handleUserActivity). Имя показывает localizedCallerName
+        // строкой выше — оно и стоит заголовком записи в «Недавних».
+        update.remoteHandle = .init(type: .generic, value: roomID)
 
         DiagLog.write("VoIP", "reportNewIncomingCall room=\(roomID) caller=\(callerName) callKitID=\(callID.callKitID)")
         callProvider.reportNewIncomingCall(with: callID.callKitID, update: update) { [weak self] error in
@@ -771,6 +791,7 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         // устройстве» → сессия гаснет: нет зелёной плашки, в «Недавних» 2 секунды,
         // а на завершение звонка тот же наблюдатель отправляет .missedCall и
         // принятый звонок оказывается «пропущенным» в истории.
+        answeredCallKitID = incomingCallID.callKitID
         disarmIncomingRingWatchers()
         // STMOB-256: точка отсчёта для диагностики «40с после ответа». Далее CallPerf
         // маркеры в presentCallScreen/join и NativeCallSession дают полную разбивку
@@ -854,16 +875,28 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     /// Cross-process marker directory + file URL for the "call is active in this room" flag the NSE
     /// reads to suppress encrypted call-signalling banners. Mirrors the voip-handled marker layout.
     private static func callActiveMarkerURL(roomID: String) -> URL? {
+        markerURL(directory: "call-active", roomID: roomID)
+    }
+
+    private static func markerURL(directory: String, roomID: String) -> URL? {
         let groupID = InfoPlistReader.main.appGroupIdentifier
         guard let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupID) else { return nil }
         let dir = container.appending(component: "Library", directoryHint: .isDirectory)
             .appending(component: "Caches", directoryHint: .isDirectory)
-            .appending(component: "call-active", directoryHint: .isDirectory)
+            .appending(component: directory, directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let allowed = CharacterSet.alphanumerics.union(.init(charactersIn: "._-"))
         let safeKey = roomID.unicodeScalars.map { allowed.contains($0) ? Character($0) : "_" }
             .map(String.init).joined()
         return dir.appending(component: safeKey)
+    }
+
+    /// Звонок в этой комнате только что закончился. Отдельно от call-active:
+    /// NSE подавляет по нему E2EE-хвосты, но НЕ информационные баннеры о звонке.
+    private static func writeCallTailMarker(roomID: String) {
+        guard let url = markerURL(directory: "call-tail", roomID: roomID) else { return }
+        try? Data().write(to: url)
+        DiagLog.write("VoIP", "  call-tail marker [call ended] room=\(roomID)")
     }
 
     private static func writeCallActiveMarker(roomID: String, context: String) {
@@ -938,16 +971,24 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     }
 
     private func tearDownCallSession(sendEndCallAction: Bool = true) {
-        if let ongoingCallID {
+        // `.startCall` уходит ещё из обработчика ответа, когда ongoingCallID не выставлен:
+        // в нативном режиме его ставит markNativeCallActive уже ПОСЛЕ соединения. Отбой
+        // до этого момента (не дошли до экрана, звонящий положил трубку, join упал) не
+        // слал `.endCall` вовсе — метка активного звонка залипала в истории и глушила
+        // следующие пропущенные из этой комнаты, а CallKit-сессия отвеченного звонка
+        // оставалась висеть «активной» с зелёной плашкой до ручного завершения.
+        if let endedCallID = ongoingCallID ?? incomingCallID {
             // Send endCall action for call history tracking
-            actionsSubject.send(.endCall(roomID: ongoingCallID.roomID))
+            actionsSubject.send(.endCall(roomID: endedCallID.roomID))
 
             if sendEndCallAction {
-                let transaction = CXTransaction(action: CXEndCallAction(call: ongoingCallID.callKitID))
-                callController.request(transaction) { error in
-                    if let error {
-                        MXLog.error("Failed transaction with error: \(error)")
-                    }
+                let transaction = CXTransaction(action: CXEndCallAction(call: endedCallID.callKitID))
+                callController.request(transaction) { [weak self] error in
+                    guard let error else { return }
+                    MXLog.error("Failed transaction with error: \(error)")
+                    // Транзакция на ещё не «начатый» для системы звонок отклоняется —
+                    // тогда закрываем сессию напрямую, иначе она останется висеть.
+                    self?.callProvider.reportCall(with: endedCallID.callKitID, endedAt: Date(), reason: .remoteEnded)
                 }
             }
         }
@@ -976,6 +1017,7 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         // с чистого листа.
         ongoingCallID = nil
         incomingCallID = nil
+        answeredCallKitID = nil
 
         // STMOB: cancel pending unanswered timeout — иначе при rapid hangup и
         // последующем звонке в ту же комнату он может выстрелить с reportCall
@@ -1066,6 +1108,17 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
             MXLog.info("No incoming call to observe for.")
             return
         }
+
+        // Звонок уже принят здесь — фаза «звонит» закончилась, наблюдать нечего.
+        // Иначе при холодном старте (приложение убито, отвечаем с локскрина) сессия
+        // поднимается ПОСЛЕ ответа, её `setClientProxy` заново зовёт этот метод, и
+        // первое же событие с нашим участием читается как «ответили на другом
+        // устройстве»: CallKit-сессия гасла через секунду после ответа — ни таймера
+        // в «Динамическом острове», ни зелёной плашки (лог 151, 18:59:18 → 18:59:19).
+        guard answeredCallKitID != incomingCallID.callKitID else {
+            DiagLog.write("Call", "observeIncomingCall пропущен — звонок уже принят здесь")
+            return
+        }
         
         guard let clientProxy else {
             MXLog.warning("A ClientProxy is needed to fetch the room.")
@@ -1077,6 +1130,13 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
             return
         }
         
+        // Повторная проверка после await: задача, стартовавшая до ответа, успевает
+        // дойти сюда уже после снятия наблюдателей и вернула бы их обратно.
+        guard answeredCallKitID != incomingCallID.callKitID else {
+            DiagLog.write("Call", "observeIncomingCall прерван после await — звонок принят здесь")
+            return
+        }
+
         roomProxy.subscribeToRoomInfoUpdates()
         
         incomingCallRoomInfoCancellable = roomProxy
