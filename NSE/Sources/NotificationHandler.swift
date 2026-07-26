@@ -240,21 +240,7 @@ class NotificationHandler {
     /// Проверка cross-process marker от main app (используется и в processEvent,
     /// и в handleCallNotification).
     private func isVoIPHandledRecently(roomID: String, withinSeconds: TimeInterval) -> Bool {
-        let groupID = InfoPlistReader.main.appGroupIdentifier
-        guard let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupID) else { return false }
-        let allowed = CharacterSet.alphanumerics.union(.init(charactersIn: "._-"))
-        let safeKey = roomID.unicodeScalars.map { allowed.contains($0) ? Character($0) : "_" }
-            .map(String.init).joined()
-        let url = container
-            .appending(component: "Library", directoryHint: .isDirectory)
-            .appending(component: "Caches", directoryHint: .isDirectory)
-            .appending(component: "voip-handled", directoryHint: .isDirectory)
-            .appending(component: safeKey)
-        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-              let mtime = attrs[.modificationDate] as? Date else {
-            return false
-        }
-        return -mtime.timeIntervalSinceNow < withinSeconds
+        NSECallMarkers.isVoIPHandledRecently(roomID: roomID, withinSeconds: withinSeconds)
     }
 
     /// Cross-process marker written by the main app during an active call (heartbeat every 30s) and
@@ -263,21 +249,7 @@ class NotificationHandler {
     /// arriving right after hang-up and showed as content-less banners. A crash mid-call self-heals
     /// within the same window.
     private func isCallActiveForRoom(_ roomID: String, ttlSeconds: TimeInterval = 120) -> Bool {
-        let groupID = InfoPlistReader.main.appGroupIdentifier
-        guard let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupID) else { return false }
-        let allowed = CharacterSet.alphanumerics.union(.init(charactersIn: "._-"))
-        let safeKey = roomID.unicodeScalars.map { allowed.contains($0) ? Character($0) : "_" }
-            .map(String.init).joined()
-        let url = container
-            .appending(component: "Library", directoryHint: .isDirectory)
-            .appending(component: "Caches", directoryHint: .isDirectory)
-            .appending(component: "call-active", directoryHint: .isDirectory)
-            .appending(component: safeKey)
-        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-              let mtime = attrs[.modificationDate] as? Date else {
-            return false
-        }
-        return -mtime.timeIntervalSinceNow < ttlSeconds
+        NSECallMarkers.isCallActive(roomID: roomID, ttlSeconds: ttlSeconds)
     }
     
     func handleTimeExpiration() {
@@ -506,9 +478,29 @@ class NotificationHandler {
         os_log(.default, log: nseHandlerLog, "handleCallNotification: type=%{public}@ room=%{public}@ expiration=%llu", String(describing: notificationType), roomID, expirationTimestamp)
         NSEDiagLog.write("  handleCallNotification type=\(notificationType) room=\(roomID) expiration=\(expirationTimestamp)")
         guard notificationType == .ring else {
-            os_log(.default, log: nseHandlerLog, "Non-ringing call, suppressing — not a ring")
-            NSEDiagLog.write("    → not a ring, DISCARD")
-            return .processedShouldDiscard
+            // STMOB-266: не ring = «звонок начался, но звонить не надо» (групповая
+            // комната). Раньше молча гасили — юзер видел пустую плашку и не узнавал
+            // о звонке вовсе. Показываем информационный баннер, но с тем же гейтом,
+            // что и payload-ветка: не дублируем CallKit и не шумим по своему же звонку.
+            os_log(.default, log: nseHandlerLog, "Non-ringing call → информационный баннер")
+            NSEDiagLog.write("    → not a ring, показываем баннер «начался звонок»")
+            if isVoIPHandledRecently(roomID: roomID, withinSeconds: 30) {
+                NSEDiagLog.write("      → VoIP marker свежий — DISCARD")
+                return .processedShouldDiscard
+            }
+            if isCallActiveForRoom(roomID) {
+                NSEDiagLog.write("      → call-active marker — DISCARD")
+                return .processedShouldDiscard
+            }
+            if expirationTimestamp > 0, Date(timeIntervalSince1970: TimeInterval(expirationTimestamp) / 1000) < Date() {
+                NSEDiagLog.write("      → протух — DISCARD")
+                return .processedShouldDiscard
+            }
+            if NSEEventDedupCache.isDuplicateSemanticAndMark(roomID: roomID, kind: "call-notice") {
+                NSEDiagLog.write("      → DUPLICATE call-notice для комнаты — DISCARD")
+                return .processedShouldDiscard
+            }
+            return .shouldDisplay
         }
 
         // Cross-process check: main app PKPushRegistry мог уже получить VoIP push
@@ -614,5 +606,203 @@ class NotificationHandler {
         case shouldDisplay
         case processedShouldDiscard
         case unsupportedShouldDiscard
+    }
+}
+
+/// Cross-process маркеры от главного приложения, лежащие в AppGroup. Читают их
+/// и `NotificationHandler` (ring), и гейт информационного баннера (STMOB-266),
+/// поэтому логика одна на всех — расхождение здесь означало бы дубль к CallKit.
+enum NSECallMarkers {
+    /// Маркер пишет `ElementCallService` сразу после `reportNewIncomingCall`:
+    /// главное приложение уже получило VoIP push и показало CallKit.
+    static func isVoIPHandledRecently(roomID: String, withinSeconds: TimeInterval) -> Bool {
+        freshness(directory: "voip-handled", roomID: roomID) < withinSeconds
+    }
+
+    /// Маркер живого звонка: главное приложение обновляет его каждые 30с и ещё раз
+    /// на отбое. TTL 120с поэтому значит «пока звонок идёт И ~2 минуты после» —
+    /// E2EE-хвосты продолжали прилетать сразу после hangup. Падение приложения
+    /// посреди звонка самозалечивается в том же окне.
+    static func isCallActive(roomID: String, ttlSeconds: TimeInterval = 120) -> Bool {
+        freshness(directory: "call-active", roomID: roomID) < ttlSeconds
+    }
+
+    private static func freshness(directory: String, roomID: String) -> TimeInterval {
+        let groupID = InfoPlistReader.main.appGroupIdentifier
+        guard let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupID) else {
+            return .greatestFiniteMagnitude
+        }
+        let allowed = CharacterSet.alphanumerics.union(.init(charactersIn: "._-"))
+        let safeKey = roomID.unicodeScalars.map { allowed.contains($0) ? Character($0) : "_" }
+            .map(String.init).joined()
+        let url = container
+            .appending(component: "Library", directoryHint: .isDirectory)
+            .appending(component: "Caches", directoryHint: .isDirectory)
+            .appending(component: directory, directoryHint: .isDirectory)
+            .appending(component: safeKey)
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let mtime = attrs[.modificationDate] as? Date else {
+            return .greatestFiniteMagnitude
+        }
+        return -mtime.timeIntervalSinceNow
+    }
+}
+
+// MARK: - STMOB-266: «тихое» уведомление о начавшемся звонке
+
+/// Событие звонка с `intent=silent` приходит ОБЫЧНЫМ APNs-пушем: в групповой
+/// комнате звонок не должен звонить всем, но человек должен узнать, что он начался.
+/// Ring-варианты обслуживает VoIP-пушер → CallKit и сюда не попадают.
+///
+/// SDK по этим типам контента не отдаёт (`contentType=nil` → `unsupportedShouldDiscard`),
+/// поэтому баннер собираем прямо из payload, не поднимая сессию: так это работает
+/// и на залоченном девайсе, и без credentials, и не тратит 24-секундный бюджет NSE.
+/// Поля кладёт Sygnal (STALK-572); пока их нет — `init?` вернёт nil и всё пойдёт
+/// прежним путём, регрессии не будет.
+struct CallNoticePayload {
+    /// Сырые типы события: легаси `call.notify`, MSC4075 `rtc.notification` и
+    /// стабилизированный `m.rtc.notification` — на будущее.
+    private static let supportedTypes: Set = ["org.matrix.msc4075.call.notify",
+                                              "org.matrix.msc4075.rtc.notification",
+                                              "m.rtc.notification"]
+
+    let roomID: String
+    let eventID: String
+    let senderID: String?
+    let senderDisplayName: String?
+    let roomName: String?
+    let isDirect: Bool
+    let expirationDate: Date?
+
+    init?(userInfo: [AnyHashable: Any]) {
+        guard let eventType = userInfo["event_type"] as? String,
+              Self.supportedTypes.contains(eventType) else { return nil }
+
+        // ring не перехватываем ни при каких условиях — это территория CallKit.
+        // Нет поля вовсе → тоже не перехватываем: старый сервер, пусть работает
+        // существующий путь через SDK.
+        guard let notifyType = (userInfo["call_notify_type"] as? String)?.lowercased(),
+              notifyType == "notify" || notifyType == "notification" else { return nil }
+
+        guard let roomID = userInfo[NotificationConstants.UserInfoKey.roomIdentifier] as? String,
+              let eventID = userInfo[NotificationConstants.UserInfoKey.eventIdentifier] as? String else { return nil }
+
+        self.roomID = roomID
+        self.eventID = eventID
+        senderID = userInfo["sender"] as? String
+        senderDisplayName = (userInfo["sender_display_name"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        roomName = (userInfo["room_name"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        isDirect = (userInfo["is_direct"] as? Bool) ?? (userInfo["is_direct"] as? NSNumber)?.boolValue ?? false
+
+        // Звонок живёт недолго: девайс был офлайн, APNs доставил через 10 минут —
+        // «начался звонок» к этому моменту уже неправда. Отсечку даёт сервер
+        // (expires_ts), запасная — по возрасту события.
+        if let expires = userInfo["expires_ts"] as? NSNumber {
+            expirationDate = Date(timeIntervalSince1970: expires.doubleValue / 1000)
+        } else if let origin = userInfo["origin_server_ts"] as? NSNumber {
+            expirationDate = Date(timeIntervalSince1970: origin.doubleValue / 1000).addingTimeInterval(120)
+        } else {
+            expirationDate = nil
+        }
+    }
+
+    /// Имя звонящего: display name → localpart MXID → имя комнаты → нейтральный дефолт.
+    var callerName: String {
+        if let senderDisplayName { return senderDisplayName }
+        if let senderID, senderID.hasPrefix("@") {
+            return String(senderID.dropFirst().prefix { $0 != ":" })
+        }
+        return roomName ?? NSEStrings.callerUnknown
+    }
+
+    func makeContent(receiverID: String?) -> UNMutableNotificationContent {
+        let content = UNMutableNotificationContent()
+        let caller = callerName
+
+        if let roomName, !isDirect {
+            // Группа: комната в заголовке, кто начал — в теле.
+            content.title = "📞 \(roomName)"
+            content.body = String(format: NSEStrings.callStarted, caller)
+        } else {
+            content.title = "📞 \(caller)"
+            content.body = NSEStrings.callStartedDirect
+        }
+
+        content.sound = .default
+        content.categoryIdentifier = NotificationConstants.Category.call
+        content.threadIdentifier = roomID
+        content.interruptionLevel = .active
+
+        var info: [AnyHashable: Any] = [
+            NotificationConstants.UserInfoKey.roomIdentifier: roomID,
+            NotificationConstants.UserInfoKey.eventIdentifier: eventID,
+            NotificationConstants.UserInfoKey.callNotice: true
+        ]
+        if let receiverID {
+            info[NotificationConstants.UserInfoKey.receiverIdentifier] = receiverID
+        }
+        content.userInfo = info
+
+        return content
+    }
+}
+
+/// Строки баннера. `SL10n` живёт в таргете приложения и в NSE не доступен,
+/// поэтому здесь прямой `NSLocalizedString` — как в остальном коде расширения.
+/// Ключи заведены и в `ru.lproj`, и в `en.lproj`: сервер использует их же как
+/// `loc-key` в `aps.alert`, чтобы осмысленный текст был даже если NSE не успеет
+/// отработать (тогда фолбэк `value:` из кода не применяется).
+enum NSEStrings {
+    static var callStarted: String {
+        NSLocalizedString("stalk_notification_call_started", tableName: "Localizable",
+                          bundle: Bundle.app, value: "%@ начал звонок",
+                          comment: "Call started banner, group room")
+    }
+
+    static var callStartedDirect: String {
+        NSLocalizedString("stalk_notification_call_started_dm", tableName: "Localizable",
+                          bundle: Bundle.app, value: "Начал звонок",
+                          comment: "Call started banner, direct chat")
+    }
+
+    static var callerUnknown: String {
+        NSLocalizedString("stalk_notification_call_caller_unknown", tableName: "Localizable",
+                          bundle: Bundle.app, value: "Звонок",
+                          comment: "Call started banner, unknown caller")
+    }
+}
+
+/// Решение «показывать ли баннер». Порядок важен: сначала дешёвые проверки
+/// «нам вообще нечего показывать», и только потом дедуп — он ПИШЕТ lock-файл,
+/// не тратим его на заведомо подавляемый пуш.
+enum CallNoticeGate {
+    static func shouldShow(_ notice: CallNoticePayload) -> Bool {
+        // 1. CallKit уже на экране: main app принял VoIP push по этому же звонку.
+        if NSECallMarkers.isVoIPHandledRecently(roomID: notice.roomID, withinSeconds: 30) {
+            NSEDiagLog.write("  call-notice: VoIP marker свежий — DISCARD")
+            return false
+        }
+        // 2. Мы уже в этом звонке (heartbeat 30с) или вышли <2 мин назад.
+        if NSECallMarkers.isCallActive(roomID: notice.roomID, ttlSeconds: 120) {
+            NSEDiagLog.write("  call-notice: call-active marker — DISCARD")
+            return false
+        }
+        // 3. Звонок протух: «начался звонок» через 10 минут — мусор.
+        if let expiration = notice.expirationDate, expiration < Date() {
+            NSEDiagLog.write("  call-notice: протух (\(expiration)) — DISCARD")
+            return false
+        }
+        // 4. APNs-retry с тем же event_id.
+        if NSEEventDedupCache.isDuplicateAndMark(eventID: notice.eventID) {
+            NSEDiagLog.write("  call-notice: DUPLICATE event — DISCARD")
+            return false
+        }
+        // 5. Веб шлёт 2-3 notify на один звонок с разными eventID — дедуп по комнате.
+        //    Ключ отличен от "ring": пути CallKit не пересекаются.
+        if NSEEventDedupCache.isDuplicateSemanticAndMark(roomID: notice.roomID, kind: "call-notice") {
+            NSEDiagLog.write("  call-notice: DUPLICATE call-notice для комнаты — DISCARD")
+            return false
+        }
+        return true
     }
 }

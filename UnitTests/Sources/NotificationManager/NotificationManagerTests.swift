@@ -125,7 +125,13 @@ final class NotificationManagerTests: XCTestCase {
                                                     actions: [],
                                                     intentIdentifiers: [],
                                                     options: [])
-        XCTAssertEqual(notificationCenter.setNotificationCategoriesReceivedCategories, [messageCategory, inviteCategory])
+
+        // STMOB-266: категория информационного баннера о начавшемся звонке.
+        let callCategory = UNNotificationCategory(identifier: NotificationConstants.Category.call,
+                                                  actions: [],
+                                                  intentIdentifiers: [],
+                                                  options: [])
+        XCTAssertEqual(notificationCenter.setNotificationCategoriesReceivedCategories, [messageCategory, inviteCategory, callCategory])
     }
 
     func test_whenStart_delegateIsSet() throws {

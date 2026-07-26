@@ -404,7 +404,12 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         }
         
         let eventID = appSettings.focusEventOnNotificationTap ? content.eventID : nil
-        if content.categoryIdentifier == NotificationConstants.Category.invite {
+        // STMOB-266: баннер «начался звонок» ведёт в комнату — там в шапке уже есть
+        // кнопка присоединиться. Сразу открывать экран звонка нельзя: пока пуш шёл,
+        // звонок мог закончиться, и мы бы завели новый звонок вместо присоединения.
+        if content.userInfo[NotificationConstants.UserInfoKey.callNotice] as? Bool == true {
+            handleAppRoute(.room(roomID: roomID, via: []))
+        } else if content.categoryIdentifier == NotificationConstants.Category.invite {
             if let userSession {
                 userSession.clientProxy.roomsToAwait.insert(roomID)
             } else {

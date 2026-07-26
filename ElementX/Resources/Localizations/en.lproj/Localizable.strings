@@ -1886,3 +1886,10 @@
 "stalk_roomlist_filter_meetings" = "Meetings";
 "stalk_roomlist_filter_meetings_empty" = "No meetings";
 "stalk_chats_refresh" = "Refresh";
+
+// STMOB-266: silent call notify — informational banner ("call started, not ringing").
+// These keys are also used by the server as aps.alert loc-key, so they must exist
+// in the .strings files: the in-code `value:` fallback does not apply to loc-key.
+"stalk_notification_call_started" = "%@ started a call";
+"stalk_notification_call_started_dm" = "Started a call";
+"stalk_notification_call_caller_unknown" = "Call";

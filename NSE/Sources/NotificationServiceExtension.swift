@@ -127,6 +127,21 @@ class NotificationServiceExtension: UNNotificationServiceExtension {
             return contentHandler(NotificationHandler.makePassiveContent())
         }
 
+        // STMOB-266: «тихое» уведомление о начавшемся звонке (intent=silent).
+        // Обрабатываем ДО подъёма сессии: SDK по этим типам контента не даёт
+        // (contentType=nil → пустая плашка), а тут ничего расшифровывать и не надо —
+        // всё нужное лежит в payload. Заодно работает на залоченном девайсе.
+        // Ring сюда не попадает: его берёт VoIP-пушер → CallKit.
+        if let notice = CallNoticePayload(userInfo: request.content.userInfo) {
+            os_log(.default, log: nseLog, "NSE call-notice: room=%{public}@ caller=%{public}@",
+                   notice.roomID, notice.callerName)
+            guard CallNoticeGate.shouldShow(notice) else {
+                return contentHandler(NotificationHandler.makePassiveContent())
+            }
+            DiagLog.write("NSE", "  call-notice → показываем баннер room=\(notice.roomID)")
+            return contentHandler(notice.makeContent(receiverID: credentials?.userID))
+        }
+
         // If we can't fully process, at least show a useful fallback notification
         guard !isDeviceLocked, let roomID, let eventID, let clientID, let credentials else {
             os_log(.error, log: nseLog, "NSE fallback: locked=%{public}d room=%{public}@ event=%{public}@ clientID=%{public}@ credentialsFound=%{public}d",

@@ -83,7 +83,14 @@ final class NotificationManager: NSObject, NotificationManagerProtocol {
                                                     actions: [],
                                                     intentIdentifiers: [],
                                                     options: [])
-        notificationCenter.setNotificationCategories([messageCategory, inviteCategory])
+        // STMOB-266: информационный баннер о начавшемся звонке. Своя категория,
+        // чтобы он не унаследовал быстрый ответ от message.
+        let callCategory = UNNotificationCategory(identifier: NotificationConstants.Category.call,
+                                                  actions: [],
+                                                  intentIdentifiers: [],
+                                                  options: [])
+
+        notificationCenter.setNotificationCategories([messageCategory, inviteCategory, callCategory])
         notificationCenter.delegate = self
         
         notificationsEnabled = appSettings.enableNotifications

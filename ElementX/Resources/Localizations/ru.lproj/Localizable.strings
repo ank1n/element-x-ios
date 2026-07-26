@@ -1757,3 +1757,10 @@
 "stalk_roomlist_filter_meetings" = "Встречи";
 "stalk_roomlist_filter_meetings_empty" = "Нет встреч";
 "stalk_chats_refresh" = "Обновить";
+
+// STMOB-266: тихий notify звонка — информационный баннер («звонок начался, не звоним»).
+// Эти же ключи сервер использует как loc-key в aps.alert, поэтому записи обязаны быть
+// в .strings: для loc-key фолбэк `value:` из кода не работает.
+"stalk_notification_call_started" = "%@ начал звонок";
+"stalk_notification_call_started_dm" = "Начал звонок";
+"stalk_notification_call_caller_unknown" = "Звонок";

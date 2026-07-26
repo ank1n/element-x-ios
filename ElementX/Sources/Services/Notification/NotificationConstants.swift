@@ -21,11 +21,17 @@ enum NotificationConstants {
         /// поэтому приложение по этому ключу не презентует уведомление и убирает
         /// его из Центра уведомлений (STMOB-234, лог 144).
         static let suppressed = "stalk_suppressed"
+        /// STMOB-266: баннер «начался звонок», собранный NSE из payload тихого
+        /// notify (intent=silent). Это НЕ заглушка: показывать можно и нужно,
+        /// а тап ведёт в комнату, где есть кнопка присоединиться.
+        static let callNotice = "stalk_call_notice"
     }
 
     enum Category {
         static let message = "message"
         static let invite = "invite"
+        /// Информационный баннер о звонке — без quick-reply, в отличие от message.
+        static let call = "call"
     }
 
     enum Action {

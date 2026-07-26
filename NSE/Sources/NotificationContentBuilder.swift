@@ -66,13 +66,24 @@ struct NotificationContentBuilder {
             // Для звонка (rtc.notification ring) НЕ вызываем processMessageLike —
             // он добавляет CommunicationContext с senderDisplayName через mention
             // modifier ("X упомянул или ответил"). Для звонка нужен чистый banner.
-            if case .rtcNotification = messageContent {
+            if case .rtcNotification(let notificationType, _, _) = messageContent {
                 let caller = notificationItem.senderDisplayName ?? notificationItem.roomDisplayName
-                notificationContent.title = "📞 \(caller)"
-                notificationContent.body = L10n.notificationIncomingCall
-                notificationContent.sound = UNNotificationSound.defaultRingtone
-                notificationContent.interruptionLevel = .timeSensitive
-                notificationContent.categoryIdentifier = NotificationConstants.Category.message
+                if notificationType == .ring {
+                    notificationContent.title = "📞 \(caller)"
+                    notificationContent.body = L10n.notificationIncomingCall
+                    notificationContent.sound = UNNotificationSound.defaultRingtone
+                    notificationContent.interruptionLevel = .timeSensitive
+                    notificationContent.categoryIdentifier = NotificationConstants.Category.message
+                } else {
+                    // STMOB-266: «начался звонок» без звонка — тихий notify в группе.
+                    // Заголовок = комната, тело = кто начал; звук обычный, не рингтон.
+                    notificationContent.title = "📞 \(notificationItem.roomDisplayName)"
+                    notificationContent.body = String(format: NSEStrings.callStarted, caller)
+                    notificationContent.sound = .default
+                    notificationContent.interruptionLevel = .active
+                    notificationContent.categoryIdentifier = NotificationConstants.Category.call
+                    notificationContent.userInfo[NotificationConstants.UserInfoKey.callNotice] = true
+                }
                 return
             }
 
