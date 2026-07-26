@@ -1444,7 +1444,7 @@ extension LiveKitRoomManager: RoomDelegate {
             self.updateState()
             MXLog.info("sTalk LiveKit: Subscribed to track: \(pubKind) from \(identity)")
             // STMOB-114: видим в nse-events.log реально ли пришёл screen share track.
-            DiagLog.write("Call", "track subscribed kind=\(pubKind) name=\(pubName) source=\(pubSource) isScreenShare=\(isScreenShare) from=\(identity)")
+            DiagLog.write("Call", "track subscribed kind=\(pubKind) name=\(pubName) source=\(pubSource) isScreenShare=\(isScreenShare) muted=\(publication.isMuted) from=\(identity)")
             // Разбор «не вижу чужое видео» упирался в то, что подписка есть, а
             // дошли ли кадры — неизвестно. Зонд отвечает на это одной строкой.
             if let videoTrack = publication.track as? VideoTrack {
@@ -1468,7 +1468,13 @@ extension LiveKitRoomManager: RoomDelegate {
     }
 
     nonisolated func room(_ room: Room, participant: Participant, trackPublication: TrackPublication, didUpdateIsMuted isMuted: Bool) {
+        // «Собеседник выключил камеру» и «камера включена, а кадров нет» снаружи
+        // выглядят одинаково: публикация есть в обоих случаях. Пишем состояние —
+        // без этого разбор «не вижу чужое видео» упирается в догадки.
+        let identity = participant.identity?.stringValue ?? "?"
+        let source = "\(trackPublication.source)"
         Task { @MainActor in
+            DiagLog.write("Call", "чужой трек \(source) от \(identity): \(isMuted ? "ВЫКЛЮЧЕН" : "включён")")
             self.updateState()
         }
     }

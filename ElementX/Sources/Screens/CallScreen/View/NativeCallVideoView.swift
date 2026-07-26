@@ -71,7 +71,9 @@ struct NativeCallGridView: View {
             if isDirect {
                 DirectCallLayout(roomManager: roomManager,
                                  isMinimized: isMinimized,
-                                 isLocalVideoEnabled: isLocalVideoEnabled)
+                                 isLocalVideoEnabled: isLocalVideoEnabled,
+                                 participants: participants,
+                                 mediaProvider: mediaProvider)
             } else if isMinimized {
                 // Mini mode: show only the active speaker (or first remote participant)
                 ActiveSpeakerMiniView(roomManager: roomManager,
@@ -155,6 +157,12 @@ private struct DirectCallLayout: View {
     /// STMOB-235: PiP рендерился по одному лишь `localVideoTrack != nil`, без гейта
     /// по состоянию камеры — «защита в глубину» от застывшего кадра в 1:1.
     var isLocalVideoEnabled = true
+    /// Участники звонка из Matrix — имя и аватар. Без них заглушка «камера выключена»
+    /// умела показать только инициалы из идентификатора LiveKit, а он у веба выглядит
+    /// как `@user:server:DEVICE` — инициалы из него не вытащить, и вместо аватара
+    /// оставался пустой серый круг.
+    var participants: [CallParticipantInfo] = []
+    var mediaProvider: MediaProviderProtocol?
     @State private var selfViewOffset: CGSize = .zero
     @State private var selfViewCorner: PipCorner = .bottomRight
     // Landscape: PiP-бокс переворачивается вместе с камерой (120×160 ↔ 160×120)
@@ -217,13 +225,14 @@ private struct DirectCallLayout: View {
         ZStack {
             Color(white: 0.08).ignoresSafeArea()
             VStack(spacing: 16) {
-                if let name = remoteParticipant?.name ?? remoteParticipant?.identity?.stringValue {
-                    Text(initials(from: name))
-                        .font(.system(size: 52, weight: .semibold, design: .rounded))
-                        .foregroundColor(.white)
-                        .frame(width: 110, height: 110)
-                        .background(Color.white.opacity(0.12))
-                        .clipShape(Circle())
+                if let identity = remoteParticipant?.identity?.stringValue {
+                    let matched = matchedParticipant(for: identity)
+                    let name = matched?.displayName ?? remoteParticipant?.name ?? identity
+                    LoadableAvatarImage(url: matched?.avatarURL,
+                                        name: name,
+                                        contentID: matched?.userID ?? identity,
+                                        avatarSize: .custom(110),
+                                        mediaProvider: mediaProvider)
                     Text(name)
                         .font(.system(size: 20, weight: .medium))
                         .foregroundColor(.white.opacity(0.7))
@@ -234,6 +243,14 @@ private struct DirectCallLayout: View {
                 }
             }
         }
+    }
+
+    /// Идентификатор LiveKit у веба выглядит как `@user:server:DEVICE`, поэтому
+    /// сопоставляем не только точным равенством, но и по префиксу — как в сетке.
+    private func matchedParticipant(for identity: String) -> CallParticipantInfo? {
+        participants.first { $0.userID == identity }
+            ?? participants.first { identity.hasPrefix($0.userID) }
+            ?? participants.first { $0.userID.hasPrefix(identity) }
     }
 
     @ViewBuilder
