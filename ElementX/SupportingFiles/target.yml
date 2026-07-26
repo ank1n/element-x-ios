@@ -102,6 +102,8 @@ targets:
         NSUserActivityTypes: [
           INSendMessageIntent,
           INStartCallIntent,
+          INStartAudioCallIntent,
+          INStartVideoCallIntent,
         ]
         NSCameraUsageDescription: To take pictures or videos and send them as a message $(APP_DISPLAY_NAME) needs access to the camera.
         NSMicrophoneUsageDescription: To record and send messages with audio, $(APP_DISPLAY_NAME) needs to access the microphone.

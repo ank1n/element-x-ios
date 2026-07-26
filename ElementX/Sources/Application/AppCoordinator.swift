@@ -347,11 +347,20 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
     }
     
     func handleUserActivity(_ userActivity: NSUserActivity) {
-        // `INStartVideoCallIntent` is to be replaced with `INStartCallIntent`
-        // but calls from Recents still send it ¯\_(ツ)_/¯
-        guard let intent = userActivity.interaction?.intent as? INStartVideoCallIntent,
-              let contact = intent.contacts?.first,
-              let roomIdentifier = contact.personHandle?.value else {
+        // Перезвон из системных «Недавних» приходит РАЗНЫМИ намерениями в
+        // зависимости от того, как звонок был записан: видеозвонок (входящий, у нас
+        // hasVideo=true) даёт INStartVideoCallIntent, аудио (наш исходящий,
+        // isVideo=false) — INStartCallIntent/INStartAudioCallIntent. Разбирался
+        // только видео-вариант, поэтому 1:1 перезванивался, а групповой звонок —
+        // нет: его запись в «Недавних» заводит наш исходящий.
+        let handleValue: String? = switch userActivity.interaction?.intent {
+        case let intent as INStartCallIntent: intent.contacts?.first?.personHandle?.value
+        case let intent as INStartVideoCallIntent: intent.contacts?.first?.personHandle?.value
+        case let intent as INStartAudioCallIntent: intent.contacts?.first?.personHandle?.value
+        default: nil
+        }
+
+        guard let roomIdentifier = handleValue else {
             MXLog.error("Failed retrieving information from userActivity: \(userActivity)")
             return
         }

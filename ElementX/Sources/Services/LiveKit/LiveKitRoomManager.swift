@@ -509,7 +509,17 @@ final class LiveKitRoomManager: ObservableObject {
         // (~1-7 @ 24fps) необработанными в эфире — SDK начинает слать до возврата
         // publish. При активном режиме и отсутствии publication создаём трек
         // с уже привязанным процессором; unmute-путь безопасен (capturer жив).
-        if enabled, room.localParticipant.firstCameraPublication == nil {
+        if enabled, publishCameraWithoutProcessor, room.localParticipant.firstCameraPublication == nil {
+            // Диагностический путь после мёртвого захвата: голая камера, без нашей
+            // обработки кадров. Фон при этом не применяется — это осознанный размен
+            // на время звонка: видео без фона лучше, чем чёрный экран у собеседника.
+            let track = LocalVideoTrack.createCameraTrack(options: Self.cameraCaptureOptions)
+            _ = try await room.localParticipant.publish(videoTrack: track)
+            blurProcessor = nil
+            orientationProcessor = nil
+            DiagLog.write("Call", "камера: публикую БЕЗ процессора (проверка мёртвого захвата)")
+            verifyCaptureStarted(track: track, withoutProcessor: true)
+        } else if enabled, room.localParticipant.firstCameraPublication == nil {
             // Свежий publish всегда с процессором: фон (блюр/обои) или, если фон
             // выключен, штамп ориентации (rotation-метаданные — см. DeviceOrientationTracker)
             let processor: LiveKit.VideoProcessor
@@ -526,6 +536,7 @@ final class LiveKitRoomManager: ObservableObject {
             DeviceOrientationTracker.shared.setFrontCamera(Self.cameraCaptureOptions.position != .back)
             MXLog.info("sTalk LiveKit: Camera published with pre-attached processor")
             DiagLog.write("Call", "blur: camera published with PRE-ATTACHED processor")
+            verifyCaptureStarted(track: track)
         } else {
             try await room.localParticipant.setCamera(enabled: enabled)
             if enabled {
@@ -657,8 +668,14 @@ final class LiveKitRoomManager: ObservableObject {
     /// Ремонт делаем только штатными путями SDK. Ручной unpublish/publish камеры
     /// уже убивал и видео, и ЗВУК (build 45, пришлось выключать killswitch'ем).
     private static let kMaxRecoveryCycles = 2
+    /// Зонды первого кадра на чужих видеотреках — держим ссылки, SDK хранит рендереры слабо.
+    private var remoteFrameProbes: [FirstFrameProbe] = []
     /// Перепубликация камеры при мёртвом захвате — одна на звонок.
     private var didRestartDeadCapture = false
+    /// Следующую публикацию камеры делать БЕЗ процессора. Ставится только после
+    /// доказанного мёртвого захвата: если кадры пойдут — виноват процессор, если
+    /// нет — дело в самом капчере, и это тоже ответ.
+    private var publishCameraWithoutProcessor = false
     private static let kRecoveryCooldown: TimeInterval = 30
 
     func noteNetworkPath(interface: String) {
@@ -672,6 +689,8 @@ final class LiveKitRoomManager: ObservableObject {
     private func startEgressWatchdog() {
         guard egressWatchdog == nil else { return }
         didRestartDeadCapture = false
+        publishCameraWithoutProcessor = false
+        remoteFrameProbes.removeAll()
         egressWatchdog = MediaEgressWatchdog { [weak self] reason in
             self?.recoverEgress(reason: reason)
         } onCaptureDead: { [weak self] kind in
@@ -720,6 +739,30 @@ final class LiveKitRoomManager: ObservableObject {
         }
     }
 
+    /// Через несколько секунд после публикации у живой камеры обязаны быть размеры:
+    /// они берутся из первого кадра. Их отсутствие — это ровно тот отказ, который
+    /// собеседник видит как чёрный экран, а мы раньше не видели никак (в логе он
+    /// проявлялся лишь косвенно, предупреждением SDK при отписке трека).
+    private func verifyCaptureStarted(track: LocalVideoTrack, withoutProcessor: Bool = false) {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard let self else { return }
+            guard room.localParticipant.firstCameraPublication?.track === track else { return }
+            guard track.dimensions == nil else {
+                if withoutProcessor {
+                    DiagLog.write("Call", "камера: без процессора кадры ПОШЛИ — виноват процессор кадров")
+                }
+                return
+            }
+            if withoutProcessor {
+                DiagLog.write("Call", "камера: кадров нет и БЕЗ процессора — источник мёртв, не в обработке дело")
+                return
+            }
+            DiagLog.write("Call", "камера: за 4с НИ ОДНОГО кадра (нет размеров у трека) → перепубликую")
+            restartDeadCapture(kind: "camera")
+        }
+    }
+
     /// Захват мёртв: трек включён, а камера не отдаёт кадров. ICE restart тут не
     /// поможет — отправлять нечего. Единственное честное лечение: пересоздать
     /// публикацию камеры (вместе с процессором фона, который к ней привязан).
@@ -740,7 +783,8 @@ final class LiveKitRoomManager: ObservableObject {
         guard room.localParticipant.firstCameraPublication != nil else { return }
 
         didRestartDeadCapture = true
-        DiagLog.write("Call", "захват мёртв → перепубликую камеру")
+        publishCameraWithoutProcessor = true
+        DiagLog.write("Call", "захват мёртв → перепубликую камеру без процессора")
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
@@ -1401,6 +1445,15 @@ extension LiveKitRoomManager: RoomDelegate {
             MXLog.info("sTalk LiveKit: Subscribed to track: \(pubKind) from \(identity)")
             // STMOB-114: видим в nse-events.log реально ли пришёл screen share track.
             DiagLog.write("Call", "track subscribed kind=\(pubKind) name=\(pubName) source=\(pubSource) isScreenShare=\(isScreenShare) from=\(identity)")
+            // Разбор «не вижу чужое видео» упирался в то, что подписка есть, а
+            // дошли ли кадры — неизвестно. Зонд отвечает на это одной строкой.
+            if let videoTrack = publication.track as? VideoTrack {
+                let probe = FirstFrameProbe(label: "\(identity) \(pubSource)") { label, frame in
+                    DiagLog.write("Call", "видео от \(label): ПЕРВЫЙ кадр \(frame.dimensions.width)x\(frame.dimensions.height)")
+                }
+                self.remoteFrameProbes.append(probe)
+                videoTrack.add(videoRenderer: probe)
+            }
         }
     }
 
@@ -1655,7 +1708,11 @@ final class MediaEgressWatchdog: NSObject, TrackDelegate, @unchecked Sendable {
 
     func track(_ track: Track, didUpdateStatistics statistics: TrackStatistics, simulcastStatistics: [VideoCodec: TrackStatistics]) {
         let key = track.sid?.stringValue ?? track.name
-        let kind = track.source == .screenShareVideo ? "screen" : "camera"
+        let kind = switch track.source {
+        case .screenShareVideo: "screen"
+        case .camera: "camera"
+        default: "audio"
+        }
 
         // Суммируем по всем rid (simulcast включён) и по всем кодекам.
         var streams = statistics.outboundRtpStream
@@ -2089,8 +2146,54 @@ final class DeviceOrientationTracker {
 /// Процессор-«штамп»: правит ТОЛЬКО rotation-метаданные кадра по фактической
 /// ориентации устройства, пиксели не трогает. Attach'ится когда фон (блюр/обои)
 /// выключен — чтобы landscape работал и без фона.
+/// Одноразовый зонд: приходят ли к нам кадры чужого видео вообще. Отвечает на
+/// вопрос, который иначе не отличить — «сеть/расшифровка не дают кадров» против
+/// «кадры есть, а UI их не рисует». Отцепляется сам после первого кадра.
+final class FirstFrameProbe: NSObject, VideoRenderer, @unchecked Sendable {
+    private let label: String
+    private let onFirstFrame: @Sendable (String, VideoFrame) -> Void
+    private var fired = false
+    private let lock = NSLock()
+
+    init(label: String, onFirstFrame: @escaping @Sendable (String, VideoFrame) -> Void) {
+        self.label = label
+        self.onFirstFrame = onFirstFrame
+        super.init()
+    }
+
+    @MainActor var isAdaptiveStreamEnabled: Bool {
+        false
+    }
+
+    @MainActor var adaptiveStreamSize: CGSize {
+        .zero
+    }
+
+    func set(size: CGSize) { }
+
+    func render(frame: VideoFrame) {
+        lock.lock()
+        let first = !fired
+        fired = true
+        lock.unlock()
+        guard first else { return }
+        onFirstFrame(label, frame)
+    }
+}
+
 final class StalkOrientationProcessor: NSObject, LiveKit.VideoProcessor {
+    /// Между «капчер стартовал» и «кадр ушёл в трек» логов не было вовсе, и разбор
+    /// «видео не установилось» упирался в темноту: у трека нет размеров, а почему —
+    /// неизвестно. Первый кадр здесь — доказательство, что источник жив.
+    private var frameCount = 0
+
     func process(frame: VideoFrame) -> VideoFrame? {
+        frameCount += 1
+        if frameCount == 1 {
+            DiagLog.write("Call", "камера: ПЕРВЫЙ кадр \(frame.dimensions.width)x\(frame.dimensions.height) rotation=\(frame.rotation)")
+        } else if frameCount % 900 == 0 {
+            DiagLog.write("Call", "камера: кадров \(frameCount)")
+        }
         let rotation = DeviceOrientationTracker.shared.videoRotation
         guard rotation != frame.rotation else { return frame }
         return VideoFrame(dimensions: frame.dimensions,
