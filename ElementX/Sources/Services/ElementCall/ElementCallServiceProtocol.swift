@@ -43,7 +43,7 @@ protocol ElementCallServiceProtocol {
     /// Используется RoomScreen чтобы скрыть «Присоединиться» плашку
     /// когда юзер уже участвует в native звонке этой комнаты.
     /// Передать nil при leave call чтобы очистить.
-    func markNativeCallActive(roomID: String?)
+    func markNativeCallActive(roomID: String?, displayName: String?)
 
     /// STMOB-261: собеседник ответил — система начинает отсчёт длительности.
     func reportOutgoingCallConnected()
@@ -52,6 +52,6 @@ protocol ElementCallServiceProtocol {
 /// STMOB-130 build 153: default no-op чтобы старые Sourcery-generated mocks
 /// не падали в compile. Реальный impl в ElementCallService.swift.
 extension ElementCallServiceProtocol {
-    func markNativeCallActive(roomID: String?) { }
+    func markNativeCallActive(roomID: String?, displayName: String? = nil) { }
     func reportOutgoingCallConnected() { }
 }

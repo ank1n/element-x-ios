@@ -323,7 +323,7 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     /// ongoingCallRoomIDPublisher БЕЗ полного CallKit setup, чтобы
     /// RoomScreen знал что юзер в звонке (для скрытия «Присоединиться»
     /// плашки). nil — очистить при leave.
-    func markNativeCallActive(roomID: String?) {
+    func markNativeCallActive(roomID: String?, displayName: String? = nil) {
         DiagLog.write("Call", "markNativeCallActive(roomID=\(roomID ?? "nil"))")
         guard let roomID else {
             ongoingCallID = nil
@@ -338,7 +338,11 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         if let incomingCallID, incomingCallID.roomID == roomID {
             ongoingCallID = incomingCallID
             self.incomingCallID = nil
-            DiagLog.write("Call", "native call: переиспользую CallKit-сессию входящего")
+            // Сессия этого звонка УЖЕ активирована системой (didActivate пришёл на
+            // ответе), и второй раз система его не пришлёт. Без этой публикации
+            // движок оставался выключенным и входящий шёл без звука (лог 148, 17:02).
+            DiagLog.write("Call", "native call: переиспользую активную CallKit-сессию входящего")
+            callKitAudioRoomIDSubject.send(roomID)
             return
         }
 
@@ -349,7 +353,9 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         // Исходящий: регистрируем системный звонок, чтобы получить зелёную плашку,
         // «Недавние» с длительностью и активацию аудио-сессии через CallKit.
         guard LiveKitRoomManager.kCallKitFullLifecycle else { return }
-        let handle = CXHandle(type: .generic, value: roomID)
+        // Имя звонка: показываем название комнаты, а не сырой matrix room id —
+        // на устройстве в системном UI это выглядело как «!AlJFAes…:stalk.implica.ru».
+        let handle = CXHandle(type: .generic, value: displayName ?? roomID)
         let startCallAction = CXStartCallAction(call: callID.callKitID, handle: handle)
         startCallAction.isVideo = false
         callController.request(CXTransaction(action: startCallAction)) { [weak self] error in
@@ -713,6 +719,13 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     
     func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) {
         MXLog.info("Call provider did deactivate audio session")
+        // Колбэк НЕ несёт идентификатора звонка. Хвост от завершённого звонка гасил
+        // движок уже следующего (лог 148: didDeactivate в 17:02:56 убил звук только
+        // что отвеченного входящего). Гасим только когда живого звонка нет вовсе.
+        guard ongoingCallID == nil, incomingCallID == nil else {
+            DiagLog.write("Call", "CallKit didDeactivate — есть живой звонок, аудио не трогаю")
+            return
+        }
         DiagLog.write("Call", "CallKit didDeactivate")
         callKitAudioRoomIDSubject.send(nil)
     }

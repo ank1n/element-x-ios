@@ -1370,8 +1370,12 @@ final class NativeCallSession: ObservableObject {
         }
     }
 
+    /// Мы намеренно выходим из звонка — сверщику участия трогать состояние нельзя.
+    private var isLeavingCall = false
+
     func stop() async {
         MXLog.info("sTalk NativeCall: Stopping session")
+        isLeavingCall = true
         sessionState = .disconnecting
 
         heartbeatTask?.cancel()
@@ -1520,6 +1524,16 @@ final class NativeCallSession: ObservableObject {
     ///
     /// Идемпотентна: если участие на месте — ничего не делает.
     private func reconcileCallMembership(trigger: String, force: Bool = false) async {
+        // STMOB-261 (лог 148): при завершении звонка мы САМИ убираем своё участие
+        // (clearCallMember), а сверщик расценивал это как «нас сняли» и возвращал
+        // участие обратно вместе с новым отложенным выходом — для остальных юзер
+        // оставался в звонке до 30с после того, как положил трубку.
+        // sessionState на этот момент ещё .connected: endCall закрывает UI сразу, а
+        // очистка доигрывает в фоне. Поэтому нужен явный признак «мы уходим».
+        guard !isLeavingCall else {
+            DiagLog.write("Call", "membership recon пропущен — звонок завершается")
+            return
+        }
         guard sessionState == .connected else { return }
         guard !isReconcilingMembership else { return }
         if let last = lastMembershipReconcileAt, Date().timeIntervalSince(last) < 5 {
