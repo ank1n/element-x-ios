@@ -130,3 +130,6 @@
 - [x] ios: 4-tab навигация — @ios-dev
 - [x] ios: Recording API интеграция — @ios-dev
 - [x] ios: воспроизведение записей — @ios-dev
+
+### 2026-07-27
+- [x] k8s/ingress (matrix ns): добавлен НОВЫЙ объект stalk-callkit-demo-ingress — точный путь /stalk_callkit_279_web.mp4 в сервис stalk-assets с rewrite на /play-review/. Существующие ingress не менялись. Файл лежит на узле в /opt/stalk-assets (hostPath, переживает рестарты подов). Причина: демо-видео CallKit для ревью Apple (Guideline 2.1, Submission 64c6948d) — ссылка должна открываться без авторизации. Проверено: 200, video/mp4, Range 206, sha256 совпадает с локальным файлом; /play-review/ и главная страница не задеты. Удалять после аппрува: kubectl -n matrix delete ingress stalk-callkit-demo-ingress — @ios-dev
