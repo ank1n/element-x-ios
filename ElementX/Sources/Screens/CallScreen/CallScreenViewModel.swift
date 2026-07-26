@@ -187,6 +187,37 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
 
         MXLog.info("sTalk CallScreenVM init: startWithVideoEnabled=\(startWithVideoEnabled), isDirect=\(isDirect), participants=\(callParticipantsCount), room=\(roomDisplayName ?? "nil")")
 
+        // STMOB-261: аудио-движок поднимаем по СОСТОЯНИЮ активной сессии, а не по
+        // разовому событию: система активирует её сразу после ответа, до создания этой
+        // модели, и событие терялось — входящий оставался без звука. Повтор последнего
+        // значения решает гонку, сверка комнаты — чужие звонки.
+        elementCallService.callKitAudioRoomIDPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] activeRoomID in
+                guard let self else { return }
+                if activeRoomID == configuration.callRoomID {
+                    liveKitRoomManager.handleCallKitAudioActivated(systemOwnsSession: true)
+                    // Гудки исходящего играет ПРИЛОЖЕНИЕ — CallKit звучит только на
+                    // входящих. До активации сессии движок гудков стартовать нельзя.
+                    if shouldPlayRingback {
+                        ringbackPlayer.start()
+                    }
+                } else if activeRoomID == nil {
+                    liveKitRoomManager.handleCallKitAudioDeactivated()
+                }
+            }
+            .store(in: &cancellables)
+
+        // Система отказала в CallKit-звонке — забираем владение сессией себе, иначе
+        // звонок останется немым: движок ждёт активации, которой не будет.
+        elementCallService.callKitUnavailableRoomIDPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] roomID in
+                guard let self, roomID == configuration.callRoomID else { return }
+                liveKitRoomManager.handleCallKitAudioActivated(systemOwnsSession: false)
+            }
+            .store(in: &cancellables)
+
         elementCallService.actions
             .receive(on: DispatchQueue.main)
             .sink { [weak self] action in
@@ -200,6 +231,11 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                     }
                     
                     Task {
+                        // STMOB-261: в нативном режиме WebView нет, и сообщение виджету
+                        // уходило в никуда — системная кнопка «Без звука» показывала
+                        // выключённый микрофон, а звук продолжал идти.
+                        try? await self.liveKitRoomManager.setMicrophone(enabled: enabled)
+                        self.state.isMuted = !enabled
                         await self.setAudioEnabled(enabled)
                     }
                 default:
@@ -371,6 +407,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 // Собеседник подключился — гудки исходящего вызова умолкают
                 if realUsersCount > 0 {
                     self.stopRingback()
+                    // STMOB-261: первый реальный участник в SFU = собеседник ответил.
+                    // Это же момент, когда система должна начать считать длительность.
+                    self.elementCallService.reportOutgoingCallConnected()
                     // sTalk-фикс (лог 132): для ИНИЦИАТОРА переход в .connected происходит
                     // ЗДЕСЬ — когда собеседник реально ответил (вошёл в медиа-сессию), а не
                     // при нашем LiveKit-connect. До этого экран показывает «Вызов…» + гудки.

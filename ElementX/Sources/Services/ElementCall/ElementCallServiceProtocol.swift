@@ -22,6 +22,11 @@ protocol ElementCallServiceProtocol {
 
     var ongoingCallRoomIDPublisher: CurrentValuePublisher<String?, Never> { get }
 
+    /// STMOB-261: комната, чью аудио-сессию активировал CallKit (состояние, не событие).
+    var callKitAudioRoomIDPublisher: CurrentValuePublisher<String?, Never> { get }
+    /// Комната, для которой система отказала в CallKit-звонке (сессией владеет приложение).
+    var callKitUnavailableRoomIDPublisher: CurrentValuePublisher<String?, Never> { get }
+
     func setClientProxy(_ clientProxy: ClientProxyProtocol)
 
     func setupCallSession(roomID: String, roomDisplayName: String) async
@@ -39,10 +44,14 @@ protocol ElementCallServiceProtocol {
     /// когда юзер уже участвует в native звонке этой комнаты.
     /// Передать nil при leave call чтобы очистить.
     func markNativeCallActive(roomID: String?)
+
+    /// STMOB-261: собеседник ответил — система начинает отсчёт длительности.
+    func reportOutgoingCallConnected()
 }
 
 /// STMOB-130 build 153: default no-op чтобы старые Sourcery-generated mocks
 /// не падали в compile. Реальный impl в ElementCallService.swift.
 extension ElementCallServiceProtocol {
     func markNativeCallActive(roomID: String?) { }
+    func reportOutgoingCallConnected() { }
 }

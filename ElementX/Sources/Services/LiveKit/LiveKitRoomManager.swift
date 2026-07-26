@@ -429,6 +429,7 @@ final class LiveKitRoomManager: ObservableObject {
         hasReadCallSettings = false
         blurProcessor = nil
         orientationProcessor = nil
+        hasGatedEngineForCall = false
         stopEgressWatchdog()
         #if canImport(UIKit)
         if backgroundTaskID != .invalid {
@@ -973,8 +974,14 @@ final class LiveKitRoomManager: ObservableObject {
         #if targetEnvironment(simulator)
         MXLog.warning("sTalk LiveKit: speaker toggle is a no-op on the simulator")
         #else
-        AudioManager.shared.isSpeakerOutputPreferred = enabled
-        MXLog.info("sTalk LiveKit: Speaker \(enabled ? "ON (speaker)" : "OFF (earpiece)") via isSpeakerOutputPreferred")
+        speakerRoutePreferred = enabled
+        if Self.kCallKitFullLifecycle {
+            applySpeakerRoute(enabled)
+            MXLog.info("sTalk LiveKit: Speaker \(enabled ? "ON" : "OFF") via overrideOutputAudioPort (CallKit owns session)")
+        } else {
+            AudioManager.shared.isSpeakerOutputPreferred = enabled
+            MXLog.info("sTalk LiveKit: Speaker \(enabled ? "ON (speaker)" : "OFF (earpiece)") via isSpeakerOutputPreferred")
+        }
         #endif
     }
 
@@ -1050,17 +1057,62 @@ final class LiveKitRoomManager: ObservableObject {
 
     // MARK: - Audio Session
 
+    // MARK: - Владение аудио-сессией (STMOB-261)
+
+    /// Полный жизненный цикл CallKit: сессией владеет система, а не LiveKit.
+    ///
+    /// Выключатель на случай регресса звука: при `false` поведение ровно то, что
+    /// шипится сегодня (LiveKit сам активирует сессию, CallKit гасится через секунду
+    /// после ответа). Аудио — зона, которая уже дважды роняла звук (сага 214-224,
+    /// build 45), поэтому откат должен быть в одну константу.
+    /// Оба критичных дефекта ревью закрыты: состояние аудио-сессии повторяется
+    /// подписчику (входящий больше не остаётся без звука) и движок гейтится один раз
+    /// на звонок, а не на каждый connect (реконнект больше не глушит звук навсегда).
+    /// Остаётся выключателем на случай регресса на устройстве.
+    static let kCallKitFullLifecycle = true
+
+    /// Последний запрошенный маршрут — переприменяем его при каждой активации
+    /// сессии CallKit (после прерываний система возвращает маршрут по умолчанию).
+    private var speakerRoutePreferred = false
+    /// Движок гейтится один раз на звонок, а не на каждый connect (реконнект!).
+    private var hasGatedEngineForCall = false
+
     /// Configure AVAudioSession for VoIP call before LiveKit connects.
-    /// This ensures the native SDK has exclusive control over the audio hardware.
     /// - Parameter speakerByDefault: If true, route audio to speaker initially (for group calls).
     ///   If false, route to earpiece (for 1:1 calls, like Telegram).
     func configureAudioSession(speakerByDefault: Bool = false) {
-        // The initial route is governed by LiveKit's isSpeakerOutputPreferred: once its audio engine
-        // starts it reconfigures the session from this flag (.videoChat = speaker for group calls,
-        // .voiceChat = earpiece for 1:1), overriding any category/port we set here. So set the flag —
-        // that's what actually makes 1:1 default to the earpiece instead of the loudspeaker.
+        speakerRoutePreferred = speakerByDefault
         #if !targetEnvironment(simulator)
-        AudioManager.shared.isSpeakerOutputPreferred = speakerByDefault
+        if Self.kCallKitFullLifecycle {
+            // Сессию активирует CallKit — SDK не должен ни конфигурировать её, ни
+            // активировать, иначе за неё схватятся оба владельца. Ровно этот класс
+            // конфликта убивал звук в саге 214-224.
+            AudioManager.shared.audioSession.isAutomaticConfigurationEnabled = false
+            AudioManager.shared.audioSession.isAutomaticDeactivationEnabled = false
+            // Движок не поднимаем, пока система не активирует сессию (didActivate).
+            // Это штатный CallKit-путь SDK: «set up connections without touching the
+            // audio device yet».
+            // ТОЛЬКО на первом подключении звонка. На реконнекте (connect зовётся
+            // повторно из attemptAutoReconnect) сессия CallKit уже активна, и система
+            // НЕ пришлёт didActivate второй раз — выключенный здесь движок остался бы
+            // выключенным до конца звонка. Ровно тот симптом, с которым боремся:
+            // «после короткой потери сети друг друга не слышно».
+            if !hasGatedEngineForCall {
+                hasGatedEngineForCall = true
+                do {
+                    try AudioManager.shared.setEngineAvailability(.none)
+                    DiagLog.write("Call", "audio: движок выключен до CallKit didActivate")
+                } catch {
+                    DiagLog.write("Call", "audio: setEngineAvailability(.none) FAIL \(error.localizedDescription)")
+                }
+            } else {
+                DiagLog.write("Call", "audio: реконнект — движок не трогаем")
+            }
+        } else {
+            // Прежняя модель: маршрут задаёт сам SDK своей ручкой (работает только
+            // при включённой авто-конфигурации).
+            AudioManager.shared.isSpeakerOutputPreferred = speakerByDefault
+        }
         #endif
         let session = AVAudioSession.sharedInstance()
         do {
@@ -1073,11 +1125,64 @@ final class LiveKitRoomManager: ObservableObject {
                                     options: options)
             try session.setPreferredIOBufferDuration(0.005) // 5ms — reduces crackling
             try session.setPreferredSampleRate(48000)
-            try session.setActive(true, options: .notifyOthersOnDeactivation)
-            MXLog.info("sTalk LiveKit: Audio session configured — speaker=\(speakerByDefault)")
+            // При полном цикле CallKit активацию делает система: свой setActive здесь
+            // — это как раз второй владелец, которого мы убираем.
+            if !Self.kCallKitFullLifecycle {
+                try session.setActive(true, options: .notifyOthersOnDeactivation)
+            }
+            MXLog.info("sTalk LiveKit: Audio session configured — speaker=\(speakerByDefault), callKitOwned=\(Self.kCallKitFullLifecycle)")
         } catch {
             MXLog.error("sTalk LiveKit: Failed to configure audio session: \(error)")
         }
+    }
+
+    /// Аудио-сессия готова — поднимаем движок и применяем маршрут.
+    /// - Parameter systemOwnsSession: `true` — сессию активировал CallKit;
+    ///   `false` — система отказала в звонке, активируем сами (иначе звонок немой).
+    func handleCallKitAudioActivated(systemOwnsSession: Bool) {
+        #if !targetEnvironment(simulator)
+        guard Self.kCallKitFullLifecycle else { return }
+        if !systemOwnsSession {
+            do {
+                try AVAudioSession.sharedInstance().setActive(true, options: .notifyOthersOnDeactivation)
+            } catch {
+                DiagLog.write("Call", "audio: свой setActive FAIL \(error.localizedDescription)")
+            }
+        }
+        applySpeakerRoute(speakerRoutePreferred)
+        do {
+            try AudioManager.shared.setEngineAvailability(.default)
+            DiagLog.write("Call", "audio: сессия активна (system=\(systemOwnsSession)) → движок включён (speaker=\(speakerRoutePreferred))")
+        } catch {
+            DiagLog.write("Call", "audio: setEngineAvailability(.default) FAIL \(error.localizedDescription)")
+        }
+        #endif
+    }
+
+    /// CallKit деактивировал сессию — останавливаем движок.
+    func handleCallKitAudioDeactivated() {
+        #if !targetEnvironment(simulator)
+        guard Self.kCallKitFullLifecycle else { return }
+        do {
+            try AudioManager.shared.setEngineAvailability(.none)
+            DiagLog.write("Call", "audio: CallKit деактивировал сессию → движок выключен")
+        } catch {
+            DiagLog.write("Call", "audio: setEngineAvailability(.none) FAIL \(error.localizedDescription)")
+        }
+        #endif
+    }
+
+    /// Маршрут вывода. При полном цикле CallKit ручка SDK не работает (она действует
+    /// только при авто-конфигурации), поэтому переключаем порт сами — и это теперь
+    /// безопасно: SDK больше не переконфигурирует сессию под себя, драки нет.
+    private func applySpeakerRoute(_ speaker: Bool) {
+        #if !targetEnvironment(simulator)
+        do {
+            try AVAudioSession.sharedInstance().overrideOutputAudioPort(speaker ? .speaker : .none)
+        } catch {
+            MXLog.error("sTalk LiveKit: overrideOutputAudioPort failed: \(error)")
+        }
+        #endif
     }
 
     // MARK: - Helpers

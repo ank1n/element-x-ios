@@ -12,6 +12,10 @@ protocol CXProviderProtocol {
     func setDelegate(_ delegate: CXProviderDelegate?, queue: DispatchQueue?)
     func reportNewIncomingCall(with uuid: UUID, update: CXCallUpdate, completion: @escaping @Sendable (Error?) -> Void)
     func reportCall(with uuid: UUID, endedAt: Date?, reason: CXCallEndedReason)
+    /// STMOB-261: исходящий звонок в системе — «соединяемся» и «соединён»
+    /// (последнее даёт длительность в «Недавних»).
+    func reportOutgoingCall(with UUID: UUID, startedConnectingAt dateStartedConnecting: Date?)
+    func reportOutgoingCall(with UUID: UUID, connectedAt dateConnected: Date?)
 }
 
 extension CXProvider: CXProviderProtocol { }

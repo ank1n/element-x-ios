@@ -160,6 +160,29 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     var ongoingCallRoomIDPublisher: CurrentValuePublisher<String?, Never> {
         ongoingCallRoomIDSubject.asCurrentValuePublisher()
     }
+
+    /// STMOB-261: комната, чью аудио-сессию активировал CallKit (nil — не активна).
+    ///
+    /// Именно СОСТОЯНИЕ с повтором последнего значения, а не разовое событие: система
+    /// присылает didActivate сразу после ответа, а экран звонка (единственный
+    /// подписчик) создаётся на секунду позже — разовое событие уходило в пустоту и
+    /// входящий оставался без звука. Привязка к комнате отсекает вторую ловушку:
+    /// didDeactivate завершённого звонка глушил аудио уже следующего.
+    let callKitAudioRoomIDSubject = CurrentValueSubject<String?, Never>(nil)
+    var callKitAudioRoomIDPublisher: CurrentValuePublisher<String?, Never> {
+        callKitAudioRoomIDSubject.asCurrentValuePublisher()
+    }
+
+    /// Система отказала в звонке (CXStartCallAction не выполнился) — сессией придётся
+    /// владеть приложению, иначе звонок останется немым без шанса восстановиться.
+    let callKitUnavailableRoomIDSubject = CurrentValueSubject<String?, Never>(nil)
+    var callKitUnavailableRoomIDPublisher: CurrentValuePublisher<String?, Never> {
+        callKitUnavailableRoomIDSubject.asCurrentValuePublisher()
+    }
+
+    /// «Соединён» для исходящего репортим ОДИН раз: система считает точку начала по
+    /// последнему репорту, поэтому повтор сбрасывал таймер и ломал длительность.
+    private var didReportOutgoingConnected = false
     
     private let actionsSubject: PassthroughSubject<ElementCallServiceAction, Never> = .init()
     var actions: AnyPublisher<ElementCallServiceAction, Never> {
@@ -302,12 +325,60 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     /// плашки). nil — очистить при leave.
     func markNativeCallActive(roomID: String?) {
         DiagLog.write("Call", "markNativeCallActive(roomID=\(roomID ?? "nil"))")
-        if let roomID {
-            // Создаём минимальный CallID БЕЗ CallKit registration.
-            ongoingCallID = CallID(callKitID: UUID(), roomID: roomID, rtcNotificationID: nil)
-        } else {
+        guard let roomID else {
             ongoingCallID = nil
+            return
         }
+
+        // STMOB-261: если звонок пришёл ВХОДЯЩИМ, CallKit-сессия для него уже создана
+        // (reportNewIncomingCall) — переиспользуем её идентификатор. Раньше здесь
+        // всегда заводился НОВЫЙ UUID: при живой сессии это оставило бы вечный
+        // системный звонок, потому что завершение адресуется ongoingCallID, а сессия
+        // висит на incomingCallID.
+        if let incomingCallID, incomingCallID.roomID == roomID {
+            ongoingCallID = incomingCallID
+            self.incomingCallID = nil
+            DiagLog.write("Call", "native call: переиспользую CallKit-сессию входящего")
+            return
+        }
+
+        let callID = CallID(callKitID: UUID(), roomID: roomID, rtcNotificationID: nil)
+        ongoingCallID = callID
+        didReportOutgoingConnected = false
+
+        // Исходящий: регистрируем системный звонок, чтобы получить зелёную плашку,
+        // «Недавние» с длительностью и активацию аудио-сессии через CallKit.
+        guard LiveKitRoomManager.kCallKitFullLifecycle else { return }
+        let handle = CXHandle(type: .generic, value: roomID)
+        let startCallAction = CXStartCallAction(call: callID.callKitID, handle: handle)
+        startCallAction.isVideo = false
+        callController.request(CXTransaction(action: startCallAction)) { [weak self] error in
+            guard let self else { return }
+            if let error {
+                // Система отказала (идёт GSM-звонок, фокус-режим, гонка с предыдущей
+                // сессией). Без отката звонок остался бы немым навсегда: движок уже
+                // выключен в ожидании активации, которой не будет.
+                DiagLog.write("Call", "CXStartCallAction FAIL: \(error.localizedDescription) → сессией владеет приложение")
+                callKitUnavailableRoomIDSubject.send(roomID)
+                return
+            }
+            DiagLog.write("Call", "CXStartCallAction ok → outgoing connecting")
+            callProvider.reportOutgoingCall(with: callID.callKitID, startedConnectingAt: Date())
+        }
+    }
+
+    /// STMOB-261: собеседник ответил (первый реальный участник вошёл в SFU) —
+    /// с этого момента система считает звонок соединённым и начинает отсчёт
+    /// длительности для «Недавних».
+    func reportOutgoingCallConnected() {
+        guard LiveKitRoomManager.kCallKitFullLifecycle, let ongoingCallID else { return }
+        // Список участников переприсваивается из десятка мест; повторный репорт
+        // сбрасывал бы точку начала и ломал длительность в «Недавних» — ровно ту
+        // метрику, ради которой всё делалось.
+        guard !didReportOutgoingConnected else { return }
+        didReportOutgoingConnected = true
+        callProvider.reportOutgoingCall(with: ongoingCallID.callKitID, connectedAt: Date())
+        DiagLog.write("Call", "outgoing call connected → отсчёт длительности пошёл")
     }
     
     func setAudioEnabled(_ enabled: Bool, roomID: String) {
@@ -629,12 +700,21 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     
     // MARK: - CXProviderDelegate
     
+    // STMOB-261: аудио-сессией владеет CallKit. Система активирует её сама и
+    // сообщает нам — только после этого поднимаем аудио-движок LiveKit. Раньше
+    // здесь были заглушки, а сессию активировал LiveKit; двух владельцев мы
+    // избегали тем, что гасили CallKit через секунду после ответа.
     func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
         MXLog.info("Call provider did activate audio session")
+        let roomID = ongoingCallID?.roomID ?? incomingCallID?.roomID
+        DiagLog.write("Call", "CallKit didActivate room=\(roomID ?? "nil")")
+        callKitAudioRoomIDSubject.send(roomID)
     }
     
     func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) {
         MXLog.info("Call provider did deactivate audio session")
+        DiagLog.write("Call", "CallKit didDeactivate")
+        callKitAudioRoomIDSubject.send(nil)
     }
     
     func providerDidReset(_ provider: CXProvider) {
@@ -672,11 +752,15 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         // answer→connect (главный подозреваемый — ожидание синка комнаты на cold-Synapse).
         DiagLog.write("CallPerf", "user ANSWERED incoming room=\(incomingCallID.roomID) — clock starts")
 
-        // And delay ending the call so that the app has enough time
-        // to get deeplinked into
+        // STMOB-261: при полном цикле CallKit сессию НЕ гасим — иначе нет зелёной
+        // плашки при сворачивании, а в «Недавних» звонок остаётся нулевой длины.
+        // Workaround с гашением был нужен для element-call в WKWebView (отдельный
+        // процесс не мог взять микрофон при активной CallKit-сессии); звонки давно
+        // нативные, LiveKit работает в процессе приложения, конфликта нет.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            // Then end the and call rely on `setupCallSession` to create a new one
-            provider.reportCall(with: incomingCallID.callKitID, endedAt: nil, reason: .remoteEnded)
+            if !LiveKitRoomManager.kCallKitFullLifecycle {
+                provider.reportCall(with: incomingCallID.callKitID, endedAt: nil, reason: .remoteEnded)
+            }
 
             DiagLog.write("CallPerf", "startCall dispatched (after 1s deeplink delay) room=\(incomingCallID.roomID)")
             self.actionsSubject.send(.startCall(roomID: incomingCallID.roomID))
@@ -684,6 +768,13 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         }
     }
     
+    /// STMOB-261: без этого обработчика запрошенная транзакция исходящего звонка
+    /// не выполнится и система его не покажет.
+    func provider(_ provider: CXProvider, perform action: CXStartCallAction) {
+        DiagLog.write("Call", "CallKit perform CXStartCallAction")
+        action.fulfill()
+    }
+
     func provider(_ provider: CXProvider, perform action: CXSetMutedCallAction) {
         if let ongoingCallID {
             actionsSubject.send(.setAudioEnabled(!action.isMuted, roomID: ongoingCallID.roomID))

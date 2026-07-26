@@ -2192,6 +2192,28 @@ class CXProviderMock: CXProviderProtocol, @unchecked Sendable {
         }
         reportCallWithEndedAtReasonClosure?(uuid, endedAt, reason)
     }
+
+    //MARK: - reportOutgoingCall (STMOB-261)
+
+    var reportOutgoingCallWithStartedConnectingAtCallsCount = 0
+    var reportOutgoingCallWithStartedConnectingAtReceivedArguments: (UUID: UUID, dateStartedConnecting: Date?)?
+    var reportOutgoingCallWithStartedConnectingAtClosure: ((UUID, Date?) -> Void)?
+
+    func reportOutgoingCall(with UUID: UUID, startedConnectingAt dateStartedConnecting: Date?) {
+        reportOutgoingCallWithStartedConnectingAtCallsCount += 1
+        reportOutgoingCallWithStartedConnectingAtReceivedArguments = (UUID: UUID, dateStartedConnecting: dateStartedConnecting)
+        reportOutgoingCallWithStartedConnectingAtClosure?(UUID, dateStartedConnecting)
+    }
+
+    var reportOutgoingCallWithConnectedAtCallsCount = 0
+    var reportOutgoingCallWithConnectedAtReceivedArguments: (UUID: UUID, dateConnected: Date?)?
+    var reportOutgoingCallWithConnectedAtClosure: ((UUID, Date?) -> Void)?
+
+    func reportOutgoingCall(with UUID: UUID, connectedAt dateConnected: Date?) {
+        reportOutgoingCallWithConnectedAtCallsCount += 1
+        reportOutgoingCallWithConnectedAtReceivedArguments = (UUID: UUID, dateConnected: dateConnected)
+        reportOutgoingCallWithConnectedAtClosure?(UUID, dateConnected)
+    }
 }
 class ClientProxyMock: ClientProxyProtocol, @unchecked Sendable {
     var actionsPublisher: AnyPublisher<ClientProxyAction, Never> {
@@ -6333,6 +6355,16 @@ class ElementCallServiceMock: ElementCallServiceProtocol, @unchecked Sendable {
         set(value) { underlyingOngoingCallRoomIDPublisher = value }
     }
     var underlyingOngoingCallRoomIDPublisher: CurrentValuePublisher<String?, Never>!
+    var callKitAudioRoomIDPublisher: CurrentValuePublisher<String?, Never> {
+        get { return underlyingCallKitAudioRoomIDPublisher }
+        set(value) { underlyingCallKitAudioRoomIDPublisher = value }
+    }
+    var underlyingCallKitAudioRoomIDPublisher: CurrentValuePublisher<String?, Never>! = .init(.init(nil))
+    var callKitUnavailableRoomIDPublisher: CurrentValuePublisher<String?, Never> {
+        get { return underlyingCallKitUnavailableRoomIDPublisher }
+        set(value) { underlyingCallKitUnavailableRoomIDPublisher = value }
+    }
+    var underlyingCallKitUnavailableRoomIDPublisher: CurrentValuePublisher<String?, Never>! = .init(.init(nil))
 
     //MARK: - setClientProxy
 
