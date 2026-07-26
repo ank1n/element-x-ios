@@ -402,19 +402,20 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
                 callKitUnavailableRoomIDSubject.send(roomID)
                 return
             }
-            DiagLog.write("Call", "CXStartCallAction ok → outgoing connecting")
-            didReportOutgoingConnecting = true
-            // Та же карточка для исходящего: без неё групповой звонок в «Недавних»
-            // подписан сырым идентификатором комнаты.
+            // Отчёты о состоянии звонка — НЕ здесь. Принятая транзакция ещё не значит,
+            // что система завела звонок: это происходит в обработчике самого действия
+            // (`perform: CXStartCallAction`), и он приходит позже (лог 161: транзакция
+            // в 21:50:29.624, обработчик в 21:50:29.642). Отчёт, отправленный раньше,
+            // уходит в пустоту — звонок остаётся «соединяющимся», плашка без счётчика.
+            DiagLog.write("Call", "CXStartCallAction принят системой")
+            // Карточка для исходящего: без неё групповой звонок в «Недавних» подписан
+            // сырым идентификатором комнаты.
             if let displayName, !displayName.isEmpty {
                 Task { @MainActor in Self.donateOutgoingCallIntent(roomID: roomID, displayName: displayName) }
-            }
-            if let displayName, !displayName.isEmpty {
                 let update = CXCallUpdate()
                 update.localizedCallerName = displayName
                 callProvider.reportCall(with: callID.callKitID, updated: update)
             }
-            callProvider.reportOutgoingCall(with: callID.callKitID, startedConnectingAt: Date())
             if let pending = pendingOutgoingConnectedAt {
                 pendingOutgoingConnectedAt = nil
                 callProvider.reportOutgoingCall(with: callID.callKitID, connectedAt: pending)
@@ -922,6 +923,18 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     func provider(_ provider: CXProvider, perform action: CXStartCallAction) {
         DiagLog.write("Call", "CallKit perform CXStartCallAction")
         action.fulfill()
+
+        // С этого момента звонок для системы существует — только теперь отчёты о его
+        // состоянии имеют смысл. Порядок обязателен: «соединяется», затем «соединён».
+        didReportOutgoingConnecting = true
+        provider.reportOutgoingCall(with: action.callUUID, startedConnectingAt: Date())
+        DiagLog.write("Call", "outgoing connecting → система ждёт соединения")
+
+        if let pending = pendingOutgoingConnectedAt {
+            pendingOutgoingConnectedAt = nil
+            provider.reportOutgoingCall(with: action.callUUID, connectedAt: pending)
+            DiagLog.write("Call", "outgoing connected (отложенный) → отсчёт длительности пошёл")
+        }
     }
 
     func provider(_ provider: CXProvider, perform action: CXSetMutedCallAction) {
