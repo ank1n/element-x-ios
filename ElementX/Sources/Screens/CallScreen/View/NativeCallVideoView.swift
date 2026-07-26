@@ -197,7 +197,10 @@ private struct DirectCallLayout: View {
             if let track = participant.firstCameraVideoTrack {
                 return track
             }
-            for pub in participant.videoTracks where pub.isSubscribed {
+            // isMuted обязателен: SDK при выключении камеры НЕ удаляет публикацию,
+            // а мьютит её. Без проверки запасная ветка возвращала замьюченный трек,
+            // и вместо исчезновения картинки собеседник «замерзал» последним кадром.
+            for pub in participant.videoTracks where pub.isSubscribed && !pub.isMuted {
                 if let track = pub.track as? VideoTrack {
                     return track
                 }

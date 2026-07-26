@@ -599,9 +599,17 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                                                elementCallBaseURLOverride: flowParameters.appSettings.elementCallBaseURLOverride,
                                                colorScheme: colorScheme),
                           startWithVideoEnabled: effectiveVideoEnabled,
-                          direction: isJoiningExistingCall ? .incoming : .outgoing)
+                          direction: isIncomingCall(roomProxy: roomProxy, joiningExisting: isJoiningExistingCall) ? .incoming : .outgoing)
     }
     
+    /// Направление для истории звонков. Приоритет у сервиса звонков: он знает про
+    /// CallKit-звонок и про явную пометку «вхожу в идущий звонок». Снимок состояния
+    /// комнаты остаётся запасным вариантом — на ответе из убитого приложения синк
+    /// ещё догоняет, и по нему принятый входящий выглядел как исходящий.
+    private func isIncomingCall(roomProxy: JoinedRoomProxyProtocol, joiningExisting: Bool) -> Bool {
+        flowParameters.elementCallService.isIncomingCall(roomID: roomProxy.id) || joiningExisting
+    }
+
     private var callScreenPictureInPictureController: AVPictureInPictureController?
     /// Подписки ТЕКУЩЕГО call-экрана. Отдельно от общих cancellables: sink
     /// захватывает координатор сильно — в общем наборе прошлые звонки

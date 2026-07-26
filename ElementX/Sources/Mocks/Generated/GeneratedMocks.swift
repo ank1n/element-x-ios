@@ -6402,6 +6402,73 @@ class ElementCallServiceMock: ElementCallServiceProtocol, @unchecked Sendable {
     }
     var underlyingCallKitUnavailableRoomIDPublisher: CurrentValuePublisher<String?, Never>! = .init(.init(nil))
 
+    //MARK: - isIncomingCall
+
+    var isIncomingCallRoomIDUnderlyingCallsCount = 0
+    var isIncomingCallRoomIDCallsCount: Int {
+        get {
+            if Thread.isMainThread {
+                return isIncomingCallRoomIDUnderlyingCallsCount
+            } else {
+                var returnValue: Int? = nil
+                DispatchQueue.main.sync {
+                    returnValue = isIncomingCallRoomIDUnderlyingCallsCount
+                }
+
+                return returnValue!
+            }
+        }
+        set {
+            if Thread.isMainThread {
+                isIncomingCallRoomIDUnderlyingCallsCount = newValue
+            } else {
+                DispatchQueue.main.sync {
+                    isIncomingCallRoomIDUnderlyingCallsCount = newValue
+                }
+            }
+        }
+    }
+    var isIncomingCallRoomIDCalled: Bool {
+        return isIncomingCallRoomIDCallsCount > 0
+    }
+    var isIncomingCallRoomIDReceivedRoomID: String?
+
+    var isIncomingCallRoomIDUnderlyingReturnValue: Bool!
+    var isIncomingCallRoomIDReturnValue: Bool! {
+        get {
+            if Thread.isMainThread {
+                return isIncomingCallRoomIDUnderlyingReturnValue
+            } else {
+                var returnValue: Bool? = nil
+                DispatchQueue.main.sync {
+                    returnValue = isIncomingCallRoomIDUnderlyingReturnValue
+                }
+
+                return returnValue!
+            }
+        }
+        set {
+            if Thread.isMainThread {
+                isIncomingCallRoomIDUnderlyingReturnValue = newValue
+            } else {
+                DispatchQueue.main.sync {
+                    isIncomingCallRoomIDUnderlyingReturnValue = newValue
+                }
+            }
+        }
+    }
+    var isIncomingCallRoomIDClosure: ((String) -> Bool)?
+
+    func isIncomingCall(roomID: String) -> Bool {
+        isIncomingCallRoomIDCallsCount += 1
+        isIncomingCallRoomIDReceivedRoomID = roomID
+        if let isIncomingCallRoomIDClosure = isIncomingCallRoomIDClosure {
+            return isIncomingCallRoomIDClosure(roomID)
+        } else {
+            return isIncomingCallRoomIDReturnValue
+        }
+    }
+
     //MARK: - setCallHasVideo
 
     var setCallHasVideoUnderlyingCallsCount = 0

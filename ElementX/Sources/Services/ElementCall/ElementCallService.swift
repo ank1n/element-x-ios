@@ -284,6 +284,15 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         }
     }
 
+    /// Звонок в этой комнате начат как ВХОДЯЩИЙ. Достоверный признак: либо был
+    /// CallKit-звонок (ещё не ставший ongoing), либо экран сам пометил вход в уже
+    /// идущий звонок. Снимок состояния комнаты (`hasRoomCall` + список участников)
+    /// для этого не годится: на ответе из убитого приложения синк ещё догоняет, и
+    /// принятый ВХОДЯЩИЙ попадал в историю как исходящий.
+    func isIncomingCall(roomID: String) -> Bool {
+        nextCallIsIncoming || incomingCallID?.roomID == roomID || answeredCallKitID != nil && ongoingCallID?.roomID == roomID
+    }
+
     func markNextCallAsIncoming() {
         nextCallIsIncoming = true
         // Также отправляем событие для CallHistoryCoordinator
@@ -801,7 +810,13 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         // https://stackoverflow.com/questions/71483732/webrtc-running-from-wkwebview-avaudiosession-development-roadblock
         
         // First fullfill the action
-        action.fulfill()
+        //
+        // ИМЕННО с датой: без неё система не считает входящий звонок соединённым —
+        // в «Недавних» у него длительность «0 с», а при сворачивании приложения в
+        // «Динамическом острове» нет счётчика (лог 155: звонок 20:37:27→20:37:55,
+        // 28 секунд, в «Недавних» ноль). У исходящего этой болезни нет, потому что
+        // там момент соединения сообщается явно — reportOutgoingCall(connectedAt:).
+        action.fulfill(withDateConnected: Date())
 
         // STMOB-261: звонок принят ИМЕННО ЗДЕСЬ — фаза «звонит» закончилась, значит
         // наблюдатели этой фазы больше не имеют права заканчивать CallKit-сессию.

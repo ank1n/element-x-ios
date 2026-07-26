@@ -38,6 +38,10 @@ protocol ElementCallServiceProtocol {
     /// Помечает следующий звонок как входящий (используется когда VoIP push недоступен)
     func markNextCallAsIncoming()
 
+    /// Достоверный признак «этот звонок начат как входящий» — для направления
+    /// записи в истории звонков.
+    func isIncomingCall(roomID: String) -> Bool
+
     /// STMOB-130: для native LiveKit call path. Публикует roomID в
     /// `ongoingCallRoomIDPublisher` БЕЗ запуска CallKit lifecycle.
     /// Используется RoomScreen чтобы скрыть «Присоединиться» плашку
