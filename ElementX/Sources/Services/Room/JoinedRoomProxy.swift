@@ -885,6 +885,18 @@ class JoinedRoomProxy: JoinedRoomProxyProtocol {
                                                    .policyRuleRoom,
                                                    .policyRuleServer,
                                                    .policyRuleUser]
-        return .excludeEventTypes(eventTypes: stateEventFilters.map { FilterTimelineEventType.state(eventType: $0) })
+        // Служебные события звонка публикуются В КОМНАТУ обычными событиями — и нами,
+        // и веб-клиентом (в логе веба: `send.event:io.element.call.encryption_keys`).
+        // В ленте им делать нечего: ключи шифрования звонка расшифровать как
+        // сообщение нельзя, и чат во время разговора забивался строками «Ожидание
+        // ключа расшифровки» вперемешку с повторными карточками «Звонок начат».
+        let callServiceEventFilters: [FilterTimelineEventType] = [
+            .messageLike(eventType: .other("io.element.call.encryption_keys")),
+            .messageLike(eventType: .other("io.element.call.reaction")),
+            .messageLike(eventType: .other("org.matrix.rageshake_request"))
+        ]
+
+        return .excludeEventTypes(eventTypes: stateEventFilters.map { FilterTimelineEventType.state(eventType: $0) }
+            + callServiceEventFilters)
     }()
 }
