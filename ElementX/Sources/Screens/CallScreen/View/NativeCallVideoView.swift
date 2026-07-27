@@ -1462,3 +1462,193 @@ private func initials(from name: String) -> String {
     }
     return String(name.prefix(2)).uppercased()
 }
+
+// MARK: - Картинка в картинке для нативного звонка
+
+import AVKit
+import Combine
+
+/// Содержимое системного окна «картинка в картинке» во время звонка.
+///
+/// Рисуем через `RenderMode.sampleBuffer` (системный слой), а НЕ через Metal:
+/// в фоне отправка работы на видеокарту завершается снятием процесса, поэтому
+/// обычный рендерер LiveKit для окна поверх домашнего экрана непригоден.
+final class CallPictureInPictureViewController: AVPictureInPictureVideoCallViewController {
+    private let videoView = VideoView()
+    private let placeholder = UILabel()
+
+    override init(nibName: String?, bundle: Bundle?) {
+        super.init(nibName: nibName, bundle: bundle)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .black
+
+        videoView.renderMode = .sampleBuffer
+        videoView.layoutMode = .fill
+        videoView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(videoView)
+
+        placeholder.textAlignment = .center
+        placeholder.textColor = .white
+        placeholder.font = .systemFont(ofSize: 15, weight: .medium)
+        placeholder.numberOfLines = 2
+        placeholder.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(placeholder)
+
+        NSLayoutConstraint.activate([
+            videoView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            videoView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            videoView.topAnchor.constraint(equalTo: view.topAnchor),
+            videoView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            placeholder.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            placeholder.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            placeholder.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 8),
+            placeholder.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -8)
+        ])
+    }
+
+    /// Показать поток собеседника. `nil` — камера выключена или собеседник вышел:
+    /// окно НЕ закрываем, звонок продолжается, показываем подпись.
+    func update(track: VideoTrack?, title: String) {
+        loadViewIfNeeded()
+        videoView.track = track
+        videoView.isHidden = track == nil
+        placeholder.isHidden = track != nil
+        placeholder.text = track == nil ? title : nil
+
+        if let dimensions = track?.dimensions, dimensions.width > 0, dimensions.height > 0 {
+            preferredContentSize = CGSize(width: CGFloat(dimensions.width), height: CGFloat(dimensions.height))
+        }
+    }
+}
+
+/// Заводит системное окно и держит в нём актуальный поток.
+@MainActor
+final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerDelegate {
+    private let contentViewController = CallPictureInPictureViewController()
+    private var cancellables = Set<AnyCancellable>()
+    private weak var roomManager: LiveKitRoomManager?
+    private(set) var controller: AVPictureInPictureController?
+
+    /// - Returns: контроллер окна или nil, если устройство/система его не поддерживает —
+    ///   тогда остаёмся на зелёной плашке со счётчиком, ничего не ломая.
+    func start(sourceView: UIView, roomManager: LiveKitRoomManager, fallbackTitle: String) -> AVPictureInPictureController? {
+        guard AVPictureInPictureController.isPictureInPictureSupported() else {
+            DiagLog.write("CallUI", "картинка в картинке не поддерживается устройством")
+            return nil
+        }
+        guard controller == nil else { return controller }
+
+        self.roomManager = roomManager
+        let source = AVPictureInPictureController.ContentSource(activeVideoCallSourceView: sourceView,
+                                                                contentViewController: contentViewController)
+        let controller = AVPictureInPictureController(contentSource: source)
+        // Именно это даёт «свернул приложение — окно появилось само».
+        controller.canStartPictureInPictureAutomaticallyFromInline = true
+        controller.delegate = self
+        self.controller = controller
+
+        // Кого показывать: чужая демонстрация экрана важнее говорящего, говорящий
+        // важнее первого попавшегося. Тот же порядок, что и в мини-окне на экране,
+        // иначе при возврате из окна картинка «прыгает».
+        Publishers.CombineLatest(roomManager.$remoteParticipants, roomManager.$activeSpeakers)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _, _ in
+                self?.refreshTrack(fallbackTitle: fallbackTitle)
+            }
+            .store(in: &cancellables)
+
+        refreshTrack(fallbackTitle: fallbackTitle)
+        DiagLog.write("CallUI", "картинка в картинке готова")
+        return controller
+    }
+
+    func stop() {
+        controller?.stopPictureInPicture()
+        cancellables.removeAll()
+        controller = nil
+    }
+
+    private func refreshTrack(fallbackTitle: String) {
+        guard let roomManager else { return }
+        let participants = roomManager.displayParticipants
+
+        // 1. Демонстрация экрана
+        for participant in participants {
+            if let publication = participant.videoTracks.first(where: { $0.isScreenShareTrack }),
+               publication.isSubscribed, !publication.isMuted,
+               let track = publication.track as? VideoTrack {
+                contentViewController.update(track: track, title: fallbackTitle)
+                return
+            }
+        }
+        // 2. Говорящий
+        if let speakerSID = roomManager.activeSpeakers.first?.sid?.stringValue,
+           let speaker = participants.first(where: { $0.sid?.stringValue == speakerSID }),
+           let track = speaker.firstCameraVideoTrack {
+            contentViewController.update(track: track, title: fallbackTitle)
+            return
+        }
+        // 3. Первый с включённой камерой
+        for participant in participants {
+            if let track = participant.firstCameraVideoTrack {
+                contentViewController.update(track: track, title: fallbackTitle)
+                return
+            }
+        }
+        contentViewController.update(track: nil, title: fallbackTitle)
+    }
+
+    // MARK: AVPictureInPictureControllerDelegate
+
+    nonisolated func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController,
+                                                failedToStartPictureInPictureWithError error: Error) {
+        Task { @MainActor in
+            DiagLog.write("CallUI", "картинка в картинке не запустилась: \(error.localizedDescription)")
+        }
+    }
+}
+
+/// Невидимая подложка на экране звонка: система требует, чтобы источник окна
+/// находился в иерархии в момент ухода приложения в фон.
+struct CallPictureInPictureSource: UIViewRepresentable {
+    let roomManager: LiveKitRoomManager
+    let title: String
+    let onReady: (AVPictureInPictureController) -> Void
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.isUserInteractionEnabled = false
+        view.backgroundColor = .clear
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        guard context.coordinator.manager.controller == nil else { return }
+        if let controller = context.coordinator.manager.start(sourceView: uiView,
+                                                              roomManager: roomManager,
+                                                              fallbackTitle: title) {
+            onReady(controller)
+        }
+    }
+
+    static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
+        MainActor.assumeIsolated { coordinator.manager.stop() }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    @MainActor
+    final class Coordinator {
+        let manager = CallPictureInPictureManager()
+    }
+}
