@@ -210,6 +210,10 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     }
     
     private var declineListenerHandle: TaskHandle?
+
+    /// Провайдер для служебных «пустых» звонков — не попадает в «Недавние».
+    /// nil в тестах, где провайдер подменён моком: там заглушка уйдёт в него же.
+    private var silentCallProvider: CXProviderProtocol?
     
     init(callProvider: CXProviderProtocol? = nil, timeProvider: TimeProvider? = nil) {
         pushRegistry = PKPushRegistry(queue: nil)
@@ -231,6 +235,15 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
             configuration.supportedHandleTypes = [.generic]
             
             self.callProvider = CXProvider(configuration: configuration)
+
+            // Провайдер для обязательных «пустых» ответов на VoIP-пуши: всё то же
+            // самое, но БЕЗ записи в системные «Недавние» — иначе там оседают
+            // фантомные пропущенные звонки.
+            let silentConfiguration = CXProviderConfiguration()
+            silentConfiguration.supportsVideo = false
+            silentConfiguration.includesCallsInRecents = false
+            silentConfiguration.supportedHandleTypes = [.generic]
+            silentCallProvider = CXProvider(configuration: silentConfiguration)
         }
         
         super.init()
@@ -811,6 +824,14 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     /// Report a fake incoming call and immediately cancel it to satisfy iOS VoIP push requirement.
     /// iOS kills the app if reportNewIncomingCall is not called for every VoIP push.
     /// We report and instantly end the call so the user sees nothing.
+    ///
+    /// Отдельный провайдер обязателен. У основного включено попадание звонков в
+    /// системные «Недавние», поэтому эта заглушка оставляла там фантомный
+    /// пропущенный звонок с именем «silent» — dp поймал такой, когда его вызвали
+    /// во время другого разговора (payload при этом был нормальный: имя «Сергей
+    /// Троцкий», intent=ring — проверено по журналу Sygnal). Признака «не писать
+    /// в Недавние» у отдельного звонка нет, он задаётся только на уровне
+    /// провайдера — отсюда второй, «тихий».
     private func reportAndCancelFakeCall(completion: @escaping () -> Void) {
         let fakeCallID = UUID()
         let update = CXCallUpdate()
@@ -818,9 +839,10 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         update.localizedCallerName = ""
         update.remoteHandle = .init(type: .generic, value: "silent")
 
-        callProvider.reportNewIncomingCall(with: fakeCallID, update: update) { [weak self] _ in
+        let provider = silentCallProvider ?? callProvider
+        provider.reportNewIncomingCall(with: fakeCallID, update: update) { _ in
             // End immediately — before iOS has a chance to show CallKit UI
-            self?.callProvider.reportCall(with: fakeCallID, endedAt: Date(), reason: .remoteEnded)
+            provider.reportCall(with: fakeCallID, endedAt: Date(), reason: .remoteEnded)
             completion()
         }
     }
