@@ -210,6 +210,13 @@ final class NativeCallSession: ObservableObject {
             let capabilities = [
                 "org.matrix.msc3819.send.to_device:io.element.call.encryption_keys",
                 "org.matrix.msc3819.receive.to_device:io.element.call.encryption_keys",
+                // Ключи звонка ходят ДВУМЯ путями: адресно через устройства и обычными
+                // событиями в комнату. Мы просили только первый, поэтому ключ веба до нас
+                // не доходил ни по какому каналу — своё эхо видели, чужого ключа нет,
+                // расшифровать чужое видео нечем. Симптом: с веба на iOS видео не идёт,
+                // обратно идёт (разбор Molly по логам обеих сторон, 28.07).
+                "org.matrix.msc2762.send.event:io.element.call.encryption_keys",
+                "org.matrix.msc2762.receive.event:io.element.call.encryption_keys",
                 "org.matrix.msc2762.send.state_event:org.matrix.msc3401.call.member",
                 "org.matrix.msc2762.receive.state_event:org.matrix.msc3401.call.member",
                 "org.matrix.msc2762.send.state_event:org.matrix.msc4075.rtc.notification",
