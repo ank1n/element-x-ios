@@ -87,6 +87,13 @@ enum MatrixDeviceIDKeychain {
 }
 
 class AuthenticationService: AuthenticationServiceProtocol {
+    /// Есть ли на диске данные сессии SDK — вместе с ними живёт крипто-хранилище.
+    /// Пусто = приложение поставили заново, прежние ключи шифрования утеряны.
+    private static var hasLocalCryptoStore: Bool {
+        let contents = try? FileManager.default.contentsOfDirectory(atPath: URL.sessionsBaseDirectory.path)
+        return !(contents ?? []).isEmpty
+    }
+
     private var client: ClientProtocol?
     private var sessionDirectories: SessionDirectories
     private let passphrase: String
@@ -175,7 +182,22 @@ class AuthenticationService: AuthenticationServiceProtocol {
             // devices при logout/login циклах. Если в keychain пусто
             // (первый login на этом IDFV) — передаём nil как раньше, MAS
             // сгенерирует свежий device_id который мы сохраним после callback.
-            let storedDeviceID = MatrixDeviceIDKeychain.savedDeviceID()
+            // Переиспользовать идентификатор устройства можно ТОЛЬКО если пережило и
+            // локальное крипто-хранилище. Оно лежит внутри приложения и исчезает при
+            // переустановке, а идентификатор — в keychain, который переустановку
+            // переживает. В такой паре мы представляемся старым устройством с новыми
+            // ключами: собеседник продолжает шифровать под старые, и его сообщения с
+            // ключами звонка приходят, но расшифровать их нечем — видео с той стороны
+            // не появляется вовсе (разбор 28.07, логи 171/172: после переустановки
+            // «incoming key parsed from=@rusty» пропадает полностью).
+            let storedDeviceID = Self.hasLocalCryptoStore ? MatrixDeviceIDKeychain.savedDeviceID() : nil
+            if storedDeviceID == nil, MatrixDeviceIDKeychain.savedDeviceID() != nil {
+                // Хранилища нет — значит это чистая установка. Забываем идентификатор,
+                // иначе сервер выдаст нам то же устройство и мы снова окажемся в паре
+                // «старое устройство, новые ключи».
+                MatrixDeviceIDKeychain.clearStoredDeviceID()
+                DiagLog.write("STMOB98", "чистая установка: идентификатор устройства сброшен, будет новый")
+            }
             DiagLog.write("STMOB98", "urlForOIDCLogin reuse deviceID=\(storedDeviceID ?? "nil")")
             let oidcData = try await client.urlForOauth(oauthConfiguration: appSettings.oidcConfiguration(for: homeserverSubject.value.address).rustValue,
                                                         prompt: prompt,
