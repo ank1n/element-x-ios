@@ -488,11 +488,19 @@ class JoinedRoomProxy: JoinedRoomProxyProtocol {
         // помечаем прочитанным на уровне КОМНАТЫ — там учитываются все события,
         // включая нерисуемые. Это дороже (SDK строит свежую ленту), поэтому только
         // как ремонт, а не как основной путь.
-        if infoPublisher.value.unreadMentionsCount > 0 || infoPublisher.value.highlightCount > 0 {
-            MXLog.info("Room \(id): mention badge survived timeline mark-as-read, repairing at room level")
+        let mentionsBefore = infoPublisher.value.unreadMentionsCount
+        if mentionsBefore > 0 || infoPublisher.value.highlightCount > 0 {
+            DiagLog.write("Rooms", "упоминания не сняты лентой (\(mentionsBefore)) → помечаю на уровне комнаты")
             do {
                 try await room.markAsRead(receiptType: receiptType)
+                // Проверяем факт: счётчик приходит с сервера, и если он уцелел даже
+                // после отметки на уровне комнаты — значит дело не в квитанции, и
+                // гадать не надо, это будет видно в логе.
+                try? await Task.sleep(for: .seconds(2))
+                let mentionsAfter = infoPublisher.value.unreadMentionsCount
+                DiagLog.write("Rooms", "после отметки на уровне комнаты упоминаний: \(mentionsAfter)")
             } catch {
+                DiagLog.write("Rooms", "отметка на уровне комнаты НЕ УДАЛАСЬ: \(error.localizedDescription)")
                 MXLog.error("Room \(id): room-level mark-as-read failed: \(error)")
             }
         }

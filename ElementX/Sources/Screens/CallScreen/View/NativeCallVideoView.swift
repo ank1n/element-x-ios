@@ -1536,6 +1536,9 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
     private var cancellables = Set<AnyCancellable>()
     private weak var roomManager: LiveKitRoomManager?
     private(set) var controller: AVPictureInPictureController?
+    private var fallbackTitle = ""
+    /// Окно открыто — только в этом состоянии держим в нём трек.
+    private var isWindowVisible = false
 
     /// - Returns: контроллер окна или nil, если устройство/система его не поддерживает —
     ///   тогда остаёмся на зелёной плашке со счётчиком, ничего не ломая.
@@ -1547,6 +1550,7 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
         guard controller == nil else { return controller }
 
         self.roomManager = roomManager
+        self.fallbackTitle = fallbackTitle
         let source = AVPictureInPictureController.ContentSource(activeVideoCallSourceView: sourceView,
                                                                 contentViewController: contentViewController)
         let controller = AVPictureInPictureController(contentSource: source)
@@ -1561,11 +1565,14 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
         Publishers.CombineLatest(roomManager.$remoteParticipants, roomManager.$activeSpeakers)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _, _ in
-                self?.refreshTrack(fallbackTitle: fallbackTitle)
+                guard let self, isWindowVisible else { return }
+                refreshTrack(fallbackTitle: self.fallbackTitle)
             }
             .store(in: &cancellables)
 
-        refreshTrack(fallbackTitle: fallbackTitle)
+        // ВАЖНО: трек в окно не отдаём, пока окно не открылось. Лишний приёмник
+        // участвует в согласовании качества с сервером, и на экране это выливалось
+        // в кадры 8×8 — чёрный прямоугольник вместо собеседника (лог 163).
         DiagLog.write("CallUI", "картинка в картинке готова")
         return controller
     }
@@ -1607,6 +1614,24 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
     }
 
     // MARK: AVPictureInPictureControllerDelegate
+
+    nonisolated func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        Task { @MainActor in
+            isWindowVisible = true
+            refreshTrack(fallbackTitle: fallbackTitle)
+            DiagLog.write("CallUI", "картинка в картинке: окно открылось, отдаю видео")
+        }
+    }
+
+    nonisolated func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        Task { @MainActor in
+            isWindowVisible = false
+            // Отцепляем трек: пока окно закрыто, лишний приёмник только мешает
+            // согласованию качества с сервером.
+            contentViewController.update(track: nil, title: fallbackTitle)
+            DiagLog.write("CallUI", "картинка в картинке: окно закрыто, видео отцеплено")
+        }
+    }
 
     nonisolated func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController,
                                                 failedToStartPictureInPictureWithError error: Error) {
