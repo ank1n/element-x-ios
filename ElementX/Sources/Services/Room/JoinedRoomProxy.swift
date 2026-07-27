@@ -467,7 +467,7 @@ class JoinedRoomProxy: JoinedRoomProxyProtocol {
     
     func markAsRead(receiptType: ReceiptType) async -> Result<Void, RoomProxyError> {
         // Defer to the timeline here as room.markAsRead will build a fresh timeline.
-        switch await timeline.markAsRead(receiptType: receiptType) {
+        let result: Result<Void, RoomProxyError> = switch await timeline.markAsRead(receiptType: receiptType) {
         case .success:
             .success(())
         case .failure(.sdkError(let error)):
@@ -475,6 +475,29 @@ class JoinedRoomProxy: JoinedRoomProxyProtocol {
         case .failure(let error):
             .failure(.timelineError(error))
         }
+
+        // Инвариант: комнату открыли — счётчик упоминаний обязан обнулиться.
+        //
+        // Лента помечает прочитанным по своим элементам, а часть событий в неё не
+        // попадает вовсе — например события звонка. Упоминание при этом висит именно
+        // на таком событии (в payload звонка приходит `m.mentions` с нашим userID),
+        // и квитанция через него не перешагивает: значок «@» остаётся навсегда, хоть
+        // сто раз открой чат (dp, комната «Пресейл и маркетинговые материалы»).
+        //
+        // Поэтому после дешёвого пути проверяем факт и, если счётчик остался,
+        // помечаем прочитанным на уровне КОМНАТЫ — там учитываются все события,
+        // включая нерисуемые. Это дороже (SDK строит свежую ленту), поэтому только
+        // как ремонт, а не как основной путь.
+        if infoPublisher.value.unreadMentionsCount > 0 || infoPublisher.value.highlightCount > 0 {
+            MXLog.info("Room \(id): mention badge survived timeline mark-as-read, repairing at room level")
+            do {
+                try await room.markAsRead(receiptType: receiptType)
+            } catch {
+                MXLog.error("Room \(id): room-level mark-as-read failed: \(error)")
+            }
+        }
+
+        return result
     }
     
     func edit(eventID: String, newContent: RoomMessageEventContentWithoutRelation) async -> Result<Void, RoomProxyError> {
