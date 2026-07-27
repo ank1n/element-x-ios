@@ -488,21 +488,17 @@ class JoinedRoomProxy: JoinedRoomProxyProtocol {
         // помечаем прочитанным на уровне КОМНАТЫ — там учитываются все события,
         // включая нерисуемые. Это дороже (SDK строит свежую ленту), поэтому только
         // как ремонт, а не как основной путь.
-        let mentionsBefore = infoPublisher.value.unreadMentionsCount
-        if mentionsBefore > 0 || infoPublisher.value.highlightCount > 0 {
-            DiagLog.write("Rooms", "упоминания не сняты лентой (\(mentionsBefore)) → помечаю на уровне комнаты")
-            do {
-                try await room.markAsRead(receiptType: receiptType)
-                // Проверяем факт: счётчик приходит с сервера, и если он уцелел даже
-                // после отметки на уровне комнаты — значит дело не в квитанции, и
-                // гадать не надо, это будет видно в логе.
-                try? await Task.sleep(for: .seconds(2))
-                let mentionsAfter = infoPublisher.value.unreadMentionsCount
-                DiagLog.write("Rooms", "после отметки на уровне комнаты упоминаний: \(mentionsAfter)")
-            } catch {
-                DiagLog.write("Rooms", "отметка на уровне комнаты НЕ УДАЛАСЬ: \(error.localizedDescription)")
-                MXLog.error("Room \(id): room-level mark-as-read failed: \(error)")
-            }
+        // ВНИМАНИЕ: пометка прочитанным на уровне комнаты (`room.markAsRead`) здесь
+        // НЕ используется намеренно. Она пересобирает ленту заново — см. комментарий
+        // выше, — и на устройстве это выливалось в «ожидание расшифровки» на живых
+        // сообщениях во время звонка: свежая лента заново разбирает события, а туда
+        // же попадают служебные события звонка с ключами, которые сообщением
+        // расшифровать нельзя. Значок упоминаний она при этом всё равно не снимала.
+        // Лечить счётчик надо не здесь, а тем, чтобы служебные события звонка не
+        // считались упоминаниями.
+        let mentions = infoPublisher.value.unreadMentionsCount
+        if mentions > 0 {
+            DiagLog.write("Rooms", "после открытия комнаты упоминаний осталось: \(mentions)")
         }
 
         return result
