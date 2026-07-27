@@ -50,7 +50,7 @@ protocol ElementCallServiceProtocol {
     /// Сообщить системе фактический тип звонка (аудио/видео) после ответа.
     func setCallHasVideo(_ hasVideo: Bool)
 
-    func markNativeCallActive(roomID: String?, displayName: String?)
+    func markNativeCallActive(roomID: String?, displayName: String?, directPeerID: String?)
 
     /// STMOB-261: собеседник ответил — система начинает отсчёт длительности.
     func reportOutgoingCallConnected()
@@ -59,6 +59,6 @@ protocol ElementCallServiceProtocol {
 /// STMOB-130 build 153: default no-op чтобы старые Sourcery-generated mocks
 /// не падали в compile. Реальный impl в ElementCallService.swift.
 extension ElementCallServiceProtocol {
-    func markNativeCallActive(roomID: String?, displayName: String? = nil) { }
+    func markNativeCallActive(roomID: String?, displayName: String? = nil, directPeerID: String? = nil) { }
     func reportOutgoingCallConnected() { }
 }
