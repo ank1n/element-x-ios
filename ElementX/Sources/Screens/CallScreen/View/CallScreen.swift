@@ -204,18 +204,6 @@ struct CallScreen: View {
                                onTogglePin: { sid in context.send(viewAction: .togglePinParticipant(sid: sid)) },
                                onRequestPortrait: { context.send(viewAction: .requestPortraitOrientation) })
                 .ignoresSafeArea(.container, edges: .bottom)
-                // Подложка для системного окна «картинка в картинке»: она должна
-                // быть в иерархии в момент сворачивания приложения, иначе система
-                // окно не откроет. Невидимая и не перехватывает касания.
-                .overlay(alignment: .topLeading) {
-                    CallPictureInPictureSource(roomManager: roomManager,
-                                               title: context.viewState.roomDisplayName ?? SL10n.callDefault) { controller in
-                        context.send(viewAction: .pictureInPictureIsAvailable(controller))
-                    }
-                    .frame(width: 1, height: 1)
-                    .allowsHitTesting(false)
-                    .opacity(0.001)
-                }
         } else if context.viewState.url == nil {
             // Экран набора: до подключения показываем, кого вызываем, + «Вызов»
             // с анимированными точками (попытки дозвона, в такт гудкам).

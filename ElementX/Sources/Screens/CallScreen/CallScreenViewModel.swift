@@ -715,11 +715,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                     // STMOB-130 build 153: но публикуем roomID для RoomScreen
                     // (чтобы «Присоединиться к звонку» плашка скрывалась когда
                     // юзер уже в native звонке этой комнаты) — БЕЗ CallKit.
-                    let roomInfo = roomProxy.infoPublisher.value
-                    let directPeerID = roomInfo.isDirect ? roomInfo.heroes.first?.userId : nil
-                    elementCallService.markNativeCallActive(roomID: roomProxy.id,
-                                                            displayName: roomInfo.displayName,
-                                                            directPeerID: directPeerID)
+                    elementCallService.markNativeCallActive(roomID: roomProxy.id, displayName: roomProxy.infoPublisher.value.displayName)
                     // Тип звонка для системы — по фактическому состоянию камеры, а не
                     // по «всегда видео», с которым звонок объявляется на входящем.
                     elementCallService.setCallHasVideo(liveKitRoomManager.localVideoTrack != nil)

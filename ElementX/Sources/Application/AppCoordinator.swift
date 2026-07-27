@@ -368,23 +368,6 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         DiagLog.write("Call", "перезвон из «Недавних»: \(userActivity.activityType) → room=\(roomIdentifier)")
         
         MXLog.info("Starting call in room: \(roomIdentifier)")
-
-        // В идентификаторе звонка может лежать не только комната: для личных
-        // звонков мы кладём туда MXID собеседника (сырой `!room:server` в системной
-        // карточке читался как мусор). Разрешаем обратно перед открытием звонка.
-        if roomIdentifier.hasPrefix("@") {
-            guard let clientProxy = userSession?.clientProxy,
-                  case .success(let directRoomID) = clientProxy.directRoomForUserID(roomIdentifier),
-                  let directRoomID else {
-                MXLog.error("Перезвон: не нашли личную комнату для \(roomIdentifier)")
-                DiagLog.write("Call", "перезвон: личная комната для \(roomIdentifier) не найдена")
-                return
-            }
-            DiagLog.write("Call", "перезвон: \(roomIdentifier) → комната \(directRoomID)")
-            handleAppRoute(AppRoute.call(roomID: directRoomID))
-            return
-        }
-
         handleAppRoute(AppRoute.call(roomID: roomIdentifier))
     }
     

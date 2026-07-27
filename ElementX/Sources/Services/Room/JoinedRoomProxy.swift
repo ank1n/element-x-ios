@@ -467,7 +467,7 @@ class JoinedRoomProxy: JoinedRoomProxyProtocol {
     
     func markAsRead(receiptType: ReceiptType) async -> Result<Void, RoomProxyError> {
         // Defer to the timeline here as room.markAsRead will build a fresh timeline.
-        let result: Result<Void, RoomProxyError> = switch await timeline.markAsRead(receiptType: receiptType) {
+        switch await timeline.markAsRead(receiptType: receiptType) {
         case .success:
             .success(())
         case .failure(.sdkError(let error)):
@@ -475,33 +475,6 @@ class JoinedRoomProxy: JoinedRoomProxyProtocol {
         case .failure(let error):
             .failure(.timelineError(error))
         }
-
-        // Инвариант: комнату открыли — счётчик упоминаний обязан обнулиться.
-        //
-        // Лента помечает прочитанным по своим элементам, а часть событий в неё не
-        // попадает вовсе — например события звонка. Упоминание при этом висит именно
-        // на таком событии (в payload звонка приходит `m.mentions` с нашим userID),
-        // и квитанция через него не перешагивает: значок «@» остаётся навсегда, хоть
-        // сто раз открой чат (dp, комната «Пресейл и маркетинговые материалы»).
-        //
-        // Поэтому после дешёвого пути проверяем факт и, если счётчик остался,
-        // помечаем прочитанным на уровне КОМНАТЫ — там учитываются все события,
-        // включая нерисуемые. Это дороже (SDK строит свежую ленту), поэтому только
-        // как ремонт, а не как основной путь.
-        // ВНИМАНИЕ: пометка прочитанным на уровне комнаты (`room.markAsRead`) здесь
-        // НЕ используется намеренно. Она пересобирает ленту заново — см. комментарий
-        // выше, — и на устройстве это выливалось в «ожидание расшифровки» на живых
-        // сообщениях во время звонка: свежая лента заново разбирает события, а туда
-        // же попадают служебные события звонка с ключами, которые сообщением
-        // расшифровать нельзя. Значок упоминаний она при этом всё равно не снимала.
-        // Лечить счётчик надо не здесь, а тем, чтобы служебные события звонка не
-        // считались упоминаниями.
-        let mentions = infoPublisher.value.unreadMentionsCount
-        if mentions > 0 {
-            DiagLog.write("Rooms", "после открытия комнаты упоминаний осталось: \(mentions)")
-        }
-
-        return result
     }
     
     func edit(eventID: String, newContent: RoomMessageEventContentWithoutRelation) async -> Result<Void, RoomProxyError> {
@@ -889,7 +862,7 @@ class JoinedRoomProxy: JoinedRoomProxyProtocol {
         // и веб-клиентом (в логе веба: `send.event:io.element.call.encryption_keys`).
         // В ленте им делать нечего: ключи шифрования звонка расшифровать как
         // сообщение нельзя, и чат во время разговора забивался строками «Ожидание
-        // ключа расшифровки» вперемешку с повторными карточками «Звонок начат».
+        // ключа расшифровки».
         let callServiceEventFilters: [FilterTimelineEventType] = [
             .messageLike(eventType: .other("io.element.call.encryption_keys")),
             .messageLike(eventType: .other("io.element.call.reaction")),
