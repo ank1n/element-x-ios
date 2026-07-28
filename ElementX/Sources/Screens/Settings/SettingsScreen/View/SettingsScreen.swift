@@ -668,6 +668,31 @@ struct SettingsScreen: View {
                     }
                 }
             }
+
+            // STMOB-271: лог самого SDK. Кнопка выше отдаёт только НАШ буфер
+            // (nse-events.log) — в нём есть категории приложения и ни одной строки
+            // крипто-слоя. А расклиненные Olm-сессии, неудачные расшифровки и
+            // самовосстановление видны только в логе SDK: он пишет их сам, на
+            // уровне debug, без всяких правок. Файлы лежат в контейнере группы
+            // приложений, поэтому ни Xcode с подключённым телефоном, ни выгрузка
+            // контейнера их не достают — только отсюда.
+            if context.viewState.showDeveloperOptions {
+                let sdkLogFiles = Tracing.logFiles
+                if !sdkLogFiles.isEmpty {
+                    ShareLink(items: sdkLogFiles) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "square.and.arrow.up.on.square")
+                                .foregroundColor(.blue)
+                                .frame(width: 24)
+                            Text(NSLocalizedString("stalk_share_sdk_log", tableName: "Localizable", value: "Поделиться логом SDK (шифрование)", comment: "Share SDK/crypto log files"))
+                                .foregroundColor(.primary)
+                            Spacer()
+                            Text("\(sdkLogFiles.count)")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
             
             // sTalk: hidden Analytics (не показываем тогглы аналитики пользователю —
             // sTalk не собирает аналитику в production).
