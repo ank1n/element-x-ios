@@ -101,6 +101,12 @@ final class NativeCallSession: ObservableObject {
     /// (0 = unknown expiry → treated active). Built from incoming call.member events; exact field
     /// names validated on the STALK-506 stand. Excludes our own (userId|deviceId).
     private var callMemberDeviceExpiry: [String: Double] = [:]
+    /// STMOB-269: момент появления каждой удалённой идентичности в звонке —
+    /// точка отсчёта для сторожа «ключ не пришёл».
+    private var remoteFirstSeenAt: [String: Date] = [:]
+    /// О ком уже отчитались и на какой стадии (1 — предупреждение, 2 — разбор).
+    private var keyGapReported: [String: Int] = [:]
+    private var keyGapWatchdog: Task<Void, Never>?
     /// STMOB-96 v2 / STMOB-101 v3: foreground observer to rebroadcast same key
     /// when app возвращается в foreground (на случай если новые participant'ы
     /// подключились пока iOS suspended app).
@@ -126,6 +132,20 @@ final class NativeCallSession: ObservableObject {
     /// desync в пределах интервала. Тот же подход, что в Element Call web.
     private var keyRebroadcastTimer: Task<Void, Never>?
     private static let keyRebroadcastInterval: UInt64 = 15_000_000_000 // 15s
+
+    /// STMOB-269. Расклиненная (wedged) Olm-сессия — отправитель шлёт ключ, сервер
+    /// доставляет, а расшифровать мы не можем, потому что храповик разъехался.
+    /// Чинится только пересозданием сессии со стороны ОТПРАВИТЕЛЯ. Снаружи это
+    /// выглядит как чёрное видео собеседника, а в логе нет ни строчки: ошибка
+    /// остаётся внутри SDK и наружу не выставлена. 28.07 на это ушёл день перебора
+    /// сборок, хотя признак был однозначный — ноль входящих ключей от участника.
+    /// Сторож делает провал явным.
+    ///
+    /// Порог на порядок больше нормы: в здоровом звонке ключ приходит через
+    /// 0.7-1.5с после появления участника (лог 180: JOIN 22:59:15.867 → ключ .581).
+    private static let keyGapWarnAfter: TimeInterval = 10
+    private static let keyGapEscalateAfter: TimeInterval = 30
+    private static let keyGapCheckInterval: UInt64 = 2_000_000_000 // 2s
     /// STMOB-126: предыдущее состояние LiveKit-соединения — для детекта
     /// восстановления (.reconnecting → .connected) и немедленного rebroadcast.
     private var lastConnectionState: ConnectionState = .disconnected
@@ -210,12 +230,6 @@ final class NativeCallSession: ObservableObject {
             let capabilities = [
                 "org.matrix.msc3819.send.to_device:io.element.call.encryption_keys",
                 "org.matrix.msc3819.receive.to_device:io.element.call.encryption_keys",
-                // Ключи звонка ходят двумя путями: адресно через устройства и обычными
-                // событиями в комнату. Мы просили только первый — и когда собеседник
-                // переходил на второй (веб делает это, получив хоть один комнатный
-                // ключ), мы оставались без ключей вовсе. Просим оба.
-                "org.matrix.msc2762.send.event:io.element.call.encryption_keys",
-                "org.matrix.msc2762.receive.event:io.element.call.encryption_keys",
                 // Ключи звонка ходят ДВУМЯ путями: адресно через устройства и обычными
                 // событиями в комнату. Мы просили только первый, поэтому ключ веба до нас
                 // не доходил ни по какому каналу — своё эхо видели, чужого ключа нет,
@@ -430,6 +444,13 @@ final class NativeCallSession: ObservableObject {
                             await self?.rebroadcastCurrentEncryptionKey()
                         }
                     }
+                    // STMOB-269: момент появления фиксируем ВНЕ ветки newIdentities —
+                    // снимок, где кто-то ушёл и кто-то пришёл одновременно, идёт по
+                    // ветке leftIdentities и мимо неё бы проскочил.
+                    for identity in currentIdentities where self.remoteFirstSeenAt[identity] == nil {
+                        self.remoteFirstSeenAt[identity] = Date()
+                    }
+                    self.startKeyGapWatchdogIfNeeded()
                     self.knownRemoteIdentities = currentIdentities
                 } else if self.hasSeenRemoteParticipant {
                     // STMOB-262: пустой список — НЕ всегда «все ушли». Полный реконнект
@@ -1146,8 +1167,15 @@ final class NativeCallSession: ObservableObject {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        // Build 110: правильный SERVICE_SECRET — `svc` (build 108 был `service`, который default но не prod env).
-        request.setValue("key-server-svc-secret-2026", forHTTPHeaderField: "X-Service-Key")
+        // STALK-679: заголовок X-Service-Key УБРАН. Секрет был захардкожен здесь и
+        // уезжал в App Store внутри бинарника — то есть доставался из сборки командой
+        // strings. С ним можно было прочитать ключи ЛЮБОГО звонка на сервере: проверено
+        // живым запросом 28.07, ответ 200 с полной историей чужой комнаты.
+        // Молли закрыла авторизацию (key-server e9ee801): Bearer пользователя теперь
+        // проверяется на членство в комнате (чтение) и на владение идентичностью
+        // (запись), и одного его достаточно — проверено тем же способом.
+        // Секрет остаётся на сервере для серверных клиентов (egress записи) и должен
+        // быть ротирован, потому что старый уже разошёлся в выпущенных сборках.
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
 
@@ -1384,6 +1412,64 @@ final class NativeCallSession: ObservableObject {
         }
     }
 
+    /// STMOB-269: сторож «ключ не пришёл». Запускается при первом появлении
+    /// удалённого участника и живёт до конца звонка. Ничего не чинит — только
+    /// называет вслух то, что раньше было видно лишь по чёрному экрану.
+    private func startKeyGapWatchdogIfNeeded() {
+        guard isEncrypted, keyGapWatchdog == nil else { return }
+        keyGapWatchdog = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: Self.keyGapCheckInterval)
+                guard let self, !Task.isCancelled else { return }
+                self.reportMissingKeys()
+            }
+        }
+    }
+
+    private func reportMissingKeys() {
+        guard sessionState == .connected else { return }
+        let ourIdentity = "\(userId):\(deviceId)"
+        let now = Date()
+
+        for identity in knownRemoteIdentities.sorted() where identity != ourIdentity {
+            guard participantKeys[identity] != true,
+                  let seenAt = remoteFirstSeenAt[identity] else { continue }
+
+            let waiting = now.timeIntervalSince(seenAt)
+            let stage = keyGapReported[identity] ?? 0
+
+            if stage < 1, waiting >= Self.keyGapWarnAfter {
+                keyGapReported[identity] = 1
+                DiagLog.write("E2EE", "КЛЮЧА НЕТ: от \(identity) ключ не пришёл за \(Int(waiting))с — его видео будет чёрным")
+                MXLog.warning("sTalk NativeCall E2EE: no key from \(identity) after \(Int(waiting))s")
+            } else if stage < 2, waiting >= Self.keyGapEscalateAfter {
+                keyGapReported[identity] = 2
+                let received = knownRemoteIdentities
+                    .filter { $0 != ourIdentity && participantKeys[$0] == true }
+                    .sorted()
+                DiagLog.write("E2EE", """
+                КЛЮЧА НЕТ \(Int(waiting))с от \(identity). Похоже на расклиненную Olm-сессию \
+                у отправителя: он шлёт, мы не расшифровываем, ошибка остаётся внутри SDK. \
+                Лечится пересозданием сессии с ЕГО стороны. Ключ за этот звонок получен от: \
+                \(received.isEmpty ? "никого" : received.joined(separator: ", "))
+                """)
+            }
+        }
+    }
+
+    /// Итог по ключам на конец звонка — чтобы ответ на вопрос «ключи-то пришли?»
+    /// был в логе всегда, а не только когда сторож успел сработать.
+    private func logCallKeySummary() {
+        guard isEncrypted else { return }
+        let ourIdentity = "\(userId):\(deviceId)"
+        let remotes = remoteFirstSeenAt.keys.filter { $0 != ourIdentity }.sorted()
+        guard !remotes.isEmpty else { return }
+
+        let missing = remotes.filter { participantKeys[$0] != true }
+        let summary = "итог по ключам: участников \(remotes.count), ключ получен от \(remotes.count - missing.count)"
+        DiagLog.write("E2EE", missing.isEmpty ? summary : summary + ", НЕ получен от: " + missing.joined(separator: ", "))
+    }
+
     /// Про рассинхрон «ключ есть, шифрования нет» сообщаем один раз за звонок.
     private var didWarnAboutKeyWithoutEncryption = false
 
@@ -1412,6 +1498,9 @@ final class NativeCallSession: ObservableObject {
         heartbeatTask = nil
         keyRebroadcastTimer?.cancel()
         keyRebroadcastTimer = nil
+        logCallKeySummary()
+        keyGapWatchdog?.cancel()
+        keyGapWatchdog = nil
         stopNetworkMonitor()
 
         // STMOB-101 v3: remove foreground observer (rebroadcast loop удалён)
