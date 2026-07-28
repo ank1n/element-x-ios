@@ -182,6 +182,15 @@ class ClientProxy: ClientProxyProtocol {
     var roomsToAwait: Set<String> = []
     
     private let sendQueueStatusSubject = CurrentValueSubject<Bool, Never>(false)
+
+    /// STMOB-272: клиент на паузе — база закрыта, очередь отправки трогать нельзя.
+    /// Без этого признака получался вечный цикл: pause закрывает базу → задача
+    /// очереди падает с «The store is closed» → слушатель шлёт «выключена» →
+    /// подписка ниже включает очереди обратно → они снова падают. В поле это
+    /// давало 20 427 предупреждений ЗА ОДНУ СЕКУНДУ и 148 МБ лога за минуту
+    /// (console.2026-07-29-01log, 22:27:48), то есть жгло процессор ровно тогда,
+    /// когда система собирается нас усыпить, и вымывало из логов всё остальное.
+    private var isClientPaused = false
     
     init(client: ClientProtocol,
          networkMonitor: NetworkMonitorProtocol,
@@ -252,9 +261,16 @@ class ClientProxy: ClientProxyProtocol {
         sendQueueStatusSubject
             .combineLatest(homeserverReachabilityPublisher)
             .debounce(for: 1.0, scheduler: DispatchQueue.main)
-            .sink { enabled, reachability in
+            .sink { [weak self] enabled, reachability in
                 MXLog.info("Send queue status changed to enabled: \(enabled), homeserver reachability: \(reachability)")
-                
+
+                // STMOB-272: на паузе база закрыта — включать очереди значит
+                // запустить цикл падений. Дождёмся resume, он включит их сам.
+                if self?.isClientPaused == true {
+                    MXLog.info("Send queues NOT enabled — client is paused")
+                    return
+                }
+
                 if enabled == false, reachability == .reachable {
                     MXLog.info("Enabling all send queues")
                     Task {
@@ -429,7 +445,7 @@ class ClientProxy: ClientProxyProtocol {
         // 0xDEAD10CC: переходы stop→pause / resume→start сериализованы цепочкой
         // (upstream serviceStateTask-паттерн) — resume не может влезть посреди pause.
         let previousTransition = serviceTransitionTask
-        serviceTransitionTask = Task { [syncService, client, appSettings] in
+        serviceTransitionTask = Task { [weak self, syncService, client, appSettings] in
             await previousTransition?.value
             if appSettings.clientPauseInBackgroundEnabled {
                 let started = Date()
@@ -440,6 +456,11 @@ class ClientProxy: ClientProxyProtocol {
                     // resume-фейл НЕ блокирует синк — фолбэк на обычный start
                     DiagLog.write("ClientProxy", "client.resume() FAILED after \(Int(-started.timeIntervalSinceNow * 1000))ms: \(error) — startSync продолжаем")
                 }
+                // STMOB-272: база снова открыта. Снимаем признак паузы и включаем
+                // очереди отправки — пока мы спали, они выключились от падений,
+                // а подписка сама не сработает: её вход не менялся.
+                self?.isClientPaused = false
+                await client.enableAllSendQueues(enable: true)
             }
             await syncService.start()
         }
@@ -507,7 +528,7 @@ class ClientProxy: ClientProxyProtocol {
         // Note: This isn't strictly necessary now given the unwrap above, but leaving the code as
         // documentation. SE-0371 will allow us to fix this by using an async deinit.
         let previousTransition = serviceTransitionTask
-        serviceTransitionTask = Task { [syncService, client, appSettings] in
+        serviceTransitionTask = Task { [weak self, syncService, client, appSettings] in
             await previousTransition?.value
             defer {
                 completion?()
@@ -522,6 +543,10 @@ class ClientProxy: ClientProxyProtocol {
             // локи (док SDK: «to avoid 0xdead10cc kills… after stopping the SyncService»).
             // За флагом до device-замеров длительности (гейт включения <2-3с стабильно).
             if appSettings.clientPauseInBackgroundEnabled {
+                // STMOB-272: признак ставим ДО самой паузы. Задачи очереди отправки
+                // падают в ту же миллисекунду, когда закрывается база, и слушатель
+                // успевает дёрнуть подписку раньше, чем мы вернёмся из pause().
+                self?.isClientPaused = true
                 let started = Date()
                 do {
                     try await client.pause()
