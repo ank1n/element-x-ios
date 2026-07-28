@@ -210,6 +210,12 @@ final class NativeCallSession: ObservableObject {
             let capabilities = [
                 "org.matrix.msc3819.send.to_device:io.element.call.encryption_keys",
                 "org.matrix.msc3819.receive.to_device:io.element.call.encryption_keys",
+                // Ключи звонка ходят двумя путями: адресно через устройства и обычными
+                // событиями в комнату. Мы просили только первый — и когда собеседник
+                // переходил на второй (веб делает это, получив хоть один комнатный
+                // ключ), мы оставались без ключей вовсе. Просим оба.
+                "org.matrix.msc2762.send.event:io.element.call.encryption_keys",
+                "org.matrix.msc2762.receive.event:io.element.call.encryption_keys",
                 // Ключи звонка ходят ДВУМЯ путями: адресно через устройства и обычными
                 // событиями в комнату. Мы просили только первый, поэтому ключ веба до нас
                 // не доходил ни по какому каналу — своё эхо видели, чужого ключа нет,
@@ -419,6 +425,7 @@ final class NativeCallSession: ObservableObject {
                     } else if !newIdentities.isEmpty {
                         MXLog.info("sTalk NativeCall E2EE: new remote participant(s) — \(newIdentities) — rebroadcasting same key")
                         DiagLog.write("E2EE", "remote JOIN \(newIdentities) → rebroadcast same key")
+                        self.registerRecipients(fromLiveKitIdentities: newIdentities)
                         Task { [weak self] in
                             await self?.rebroadcastCurrentEncryptionKey()
                         }
@@ -1817,6 +1824,37 @@ final class NativeCallSession: ObservableObject {
             DiagLog.write("E2EE", "membership-settled new=\(newDevices) → re-advertise key")
             Task { [weak self] in await self?.rebroadcastCurrentEncryptionKey() }
         }
+    }
+
+    /// Записать участников, известных от SFU, как получателей ключа.
+    ///
+    /// Список получателей строился ТОЛЬКО из событий участия, приходящих через виджет,
+    /// и только из НОВЫХ: при входе в уже идущий звонок событие собеседника лежит в
+    /// состоянии комнаты с прошлого момента и заново не приходит. Отсюда «участника
+    /// вижу, получателей ноль» — две соседние строки лога с разницей в 19 мс.
+    ///
+    /// Последствие было не косметическим: не имея кому отправить адресно, мы слали ключ
+    /// комнатным событием, а веб, получив такой ключ, у себя навсегда выключал адресный
+    /// канал и дальше рассылал ключи только комнатными событиями — которых мы не
+    /// принимаем. Итог: чёрный экран у обеих сторон (разбор Molly, 28.07).
+    ///
+    /// Идентификатор участника в SFU имеет вид `@user:server:DEVICE` — этого достаточно,
+    /// и это авторитетнее состояния комнаты: человек прямо сейчас в звонке.
+    private func registerRecipients(fromLiveKitIdentities identities: Set<String>) {
+        var added: [String] = []
+        for identity in identities {
+            let parts = identity.split(separator: ":").map(String.init)
+            // `@user`, `server`, `DEVICE` — устройство отделено последним двоеточием.
+            guard parts.count >= 3, identity.hasPrefix("@"),
+                  let device = parts.last, !device.isEmpty else { continue }
+            let user = identity.dropLast(device.count + 1)
+            let key = "\(user)|\(device)"
+            guard key != "\(userId)|\(deviceId)", callMemberDeviceExpiry[key] == nil else { continue }
+            callMemberDeviceExpiry[key] = 0 // 0 = активен, срок неизвестен
+            added.append(key)
+        }
+        guard !added.isEmpty else { return }
+        DiagLog.write("E2EE", "получатели из SFU: \(added.joined(separator: ", "))")
     }
 
     /// Active call.member recipients (userId, deviceId) excluding self — source for addressed to-device.
