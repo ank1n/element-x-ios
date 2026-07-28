@@ -730,6 +730,15 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                     if case .roomCall(let roomProxy, _, _, _, _, _) = configuration.kind {
                         self.navigationTabCoordinator.minimizedCallDisplayName = roomProxy.infoPublisher.value.displayName ?? SL10n.callDefault
                     }
+                    // Ветка окна не заводила счётчик и обработчик возврата — в отличие
+                    // от обычного сворачивания. После закрытия окна пользователь
+                    // оставался с плашкой без времени и без способа вернуться в звонок.
+                    self.navigationTabCoordinator.minimizedCallElapsedTime = callScreenCoordinator.callElapsedTime
+                    self.startMinimizedCallTimer(coordinator: callScreenCoordinator)
+                    self.navigationTabCoordinator.restoreCallHandler = { [weak self] in
+                        callScreenCoordinator.restoreFromMinimized()
+                        self?.stopMinimizedCallTimer()
+                    }
                     navigationTabCoordinator.setOverlayPresentationMode(.minimized)
                 case .pictureInPictureStopped:
                     MXLog.info("Restoring call after PiP presentation.")

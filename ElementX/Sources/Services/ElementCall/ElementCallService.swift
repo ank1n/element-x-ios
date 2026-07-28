@@ -210,6 +210,10 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     }
     
     private var declineListenerHandle: TaskHandle?
+
+    /// Провайдер для служебных «пустых» звонков — не попадает в «Недавние».
+    /// nil в тестах, где провайдер подменён моком: там заглушка уйдёт в него же.
+    private var silentCallProvider: CXProviderProtocol?
     
     init(callProvider: CXProviderProtocol? = nil, timeProvider: TimeProvider? = nil) {
         pushRegistry = PKPushRegistry(queue: nil)
@@ -231,6 +235,15 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
             configuration.supportedHandleTypes = [.generic]
             
             self.callProvider = CXProvider(configuration: configuration)
+
+            // Провайдер для обязательных «пустых» ответов на VoIP-пуши: всё то же
+            // самое, но БЕЗ записи в системные «Недавние» — иначе там оседают
+            // фантомные пропущенные звонки.
+            let silentConfiguration = CXProviderConfiguration()
+            silentConfiguration.supportsVideo = false
+            silentConfiguration.includesCallsInRecents = false
+            silentConfiguration.supportedHandleTypes = [.generic]
+            silentCallProvider = CXProvider(configuration: silentConfiguration)
         }
         
         super.init()
@@ -352,7 +365,7 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     /// ongoingCallRoomIDPublisher БЕЗ полного CallKit setup, чтобы
     /// RoomScreen знал что юзер в звонке (для скрытия «Присоединиться»
     /// плашки). nil — очистить при leave.
-    func markNativeCallActive(roomID: String?, displayName: String? = nil) {
+    func markNativeCallActive(roomID: String?, displayName: String? = nil, directPeerID: String? = nil) {
         DiagLog.write("Call", "markNativeCallActive(roomID=\(roomID ?? "nil"))")
         guard let roomID else {
             ongoingCallID = nil
@@ -389,7 +402,10 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         // `personHandle.value` как roomID (AppCoordinator.handleUserActivity).
         // Имя пользователю показывает localizedCallerName — его выставляем
         // отдельным апдейтом, иначе перезвон уходил бы в комнату «Сергей».
-        let handle = CXHandle(type: .generic, value: roomID)
+        // Личный звонок → MXID собеседника: в системной карточке это читаемо, и
+        // перезвон по нему разрешается обратно в ту же комнату. Групповой остаётся
+        // на идентификаторе комнаты.
+        let handle = CXHandle(type: .generic, value: directPeerID ?? roomID)
         let startCallAction = CXStartCallAction(call: callID.callKitID, handle: handle)
         startCallAction.isVideo = false
         callController.request(CXTransaction(action: startCallAction)) { [weak self] error in
@@ -616,11 +632,12 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         update.hasVideo = true
         update.localizedCallerName = callerName
         // https://stackoverflow.com/a/41230020/730924
-        // В handle — машинный идентификатор: перезвон из «Недавних» приходит
-        // через INStartVideoCallIntent и читается как roomID
-        // (AppCoordinator.handleUserActivity). Имя показывает localizedCallerName
-        // строкой выше — оно и стоит заголовком записи в «Недавних».
-        update.remoteHandle = .init(type: .generic, value: roomID)
+        // В handle — то, по чему потом сработает перезвон из «Недавних»
+        // (AppCoordinator.handleUserActivity читает это значение). Системная
+        // карточка показывает его строкой «Профиль в соцсети», поэтому сырой
+        // `!aSRCTT…:server` там читался как мусор. Для личного звонка кладём MXID
+        // собеседника — он и опознаваем, и разрешается обратно в комнату.
+        update.remoteHandle = .init(type: .generic, value: Self.callHandleValue(roomID: roomID, senderMXID: senderMXID, clientProxy: clientProxy))
 
         DiagLog.write("VoIP", "reportNewIncomingCall room=\(roomID) caller=\(callerName) callKitID=\(callID.callKitID)")
         callProvider.reportNewIncomingCall(with: callID.callKitID, update: update) { [weak self] error in
@@ -797,6 +814,20 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         }
     }
 
+    /// Что кладём в CallKit как идентификатор звонка. Личный звонок → MXID
+    /// собеседника (читаемо в системной карточке и однозначно разрешается в
+    /// комнату). Групповой → алиас комнаты, если он есть. Иначе — идентификатор
+    /// комнаты, как раньше: перезвон должен работать в любом случае.
+    private static func callHandleValue(roomID: String, senderMXID: String?, clientProxy: ClientProxyProtocol?) -> String {
+        guard let senderMXID, let clientProxy else { return roomID }
+        // Личный чат опознаём фактом: есть ли у нас с этим человеком комната,
+        // и та ли это самая. Иначе MXID увёл бы перезвон из группы в личку.
+        if case .success(let directRoomID) = clientProxy.directRoomForUserID(senderMXID), directRoomID == roomID {
+            return senderMXID
+        }
+        return roomID
+    }
+
     /// STMOB-253: mxc://server/mediaID → public thumbnail URL on the media's OWN homeserver.
     /// Using the mxc host (not the session's) is multi-domain correct and works on cold start,
     /// before any client session is restored.
@@ -811,6 +842,14 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     /// Report a fake incoming call and immediately cancel it to satisfy iOS VoIP push requirement.
     /// iOS kills the app if reportNewIncomingCall is not called for every VoIP push.
     /// We report and instantly end the call so the user sees nothing.
+    ///
+    /// Отдельный провайдер обязателен. У основного включено попадание звонков в
+    /// системные «Недавние», поэтому эта заглушка оставляла там фантомный
+    /// пропущенный звонок с именем «silent» — dp поймал такой, когда его вызвали
+    /// во время другого разговора (payload при этом был нормальный: имя «Сергей
+    /// Троцкий», intent=ring — проверено по журналу Sygnal). Признака «не писать
+    /// в Недавние» у отдельного звонка нет, он задаётся только на уровне
+    /// провайдера — отсюда второй, «тихий».
     private func reportAndCancelFakeCall(completion: @escaping () -> Void) {
         let fakeCallID = UUID()
         let update = CXCallUpdate()
@@ -818,9 +857,10 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         update.localizedCallerName = ""
         update.remoteHandle = .init(type: .generic, value: "silent")
 
-        callProvider.reportNewIncomingCall(with: fakeCallID, update: update) { [weak self] _ in
+        let provider = silentCallProvider ?? callProvider
+        provider.reportNewIncomingCall(with: fakeCallID, update: update) { _ in
             // End immediately — before iOS has a chance to show CallKit UI
-            self?.callProvider.reportCall(with: fakeCallID, endedAt: Date(), reason: .remoteEnded)
+            provider.reportCall(with: fakeCallID, endedAt: Date(), reason: .remoteEnded)
             completion()
         }
     }
