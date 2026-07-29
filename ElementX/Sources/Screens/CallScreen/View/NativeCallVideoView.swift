@@ -1647,8 +1647,14 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
         let source = AVPictureInPictureController.ContentSource(activeVideoCallSourceView: sourceView,
                                                                 contentViewController: contentViewController)
         let controller = AVPictureInPictureController(contentSource: source)
-        // Именно это даёт «свернул приложение — окно появилось само».
-        controller.canStartPictureInPictureAutomaticallyFromInline = true
+        // STMOB-284: автозапуск разрешаем ТОЛЬКО когда в звонке есть видео.
+        // Для аудиозвонка системное окно бесполезно и вредно: показывать в нём
+        // нечего (чёрный прямоугольник с именем), кнопок в нём не бывает, а место
+        // в «Динамическом острове» оно занимает — счётчик длительности пропадает.
+        // dp поймал это скриншотом: звонок с телефона на веб (окно не открылось) —
+        // счётчик есть; входящий аудио с веба (окно открылось) — счётчика нет.
+        // Стартовое значение false, включаем ниже по факту появления видео.
+        controller.canStartPictureInPictureAutomaticallyFromInline = false
         controller.delegate = self
         self.controller = controller
 
@@ -1662,7 +1668,9 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
                                   roomManager.$localVideoTrack)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _, _, _ in
-                guard let self, isWindowVisible else { return }
+                guard let self else { return }
+                updateAutomaticStart()
+                guard isWindowVisible else { return }
                 refreshTrack(fallbackTitle: self.fallbackTitle)
             }
             .store(in: &cancellables)
@@ -1672,6 +1680,17 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
         // в кадры 8×8 — чёрный прямоугольник вместо собеседника (лог 163).
         DiagLog.write("CallUI", "картинка в картинке готова")
         return controller
+    }
+
+    /// STMOB-284: окно имеет смысл только когда есть что показывать.
+    /// Видео своё или чужое — оба годятся: в окне и главный слой, и тайл в углу.
+    private func updateAutomaticStart() {
+        guard let controller, let roomManager else { return }
+        let hasRemoteVideo = roomManager.displayParticipants.contains { $0.firstCameraVideoTrack != nil }
+        let hasVideo = hasRemoteVideo || roomManager.localVideoTrack != nil
+        guard controller.canStartPictureInPictureAutomaticallyFromInline != hasVideo else { return }
+        controller.canStartPictureInPictureAutomaticallyFromInline = hasVideo
+        DiagLog.write("CallUI", "картинка в картинке: автозапуск \(hasVideo ? "включён (есть видео)" : "выключен (звонок без видео)")")
     }
 
     /// Звонок завершён — окно держать не на чем.
