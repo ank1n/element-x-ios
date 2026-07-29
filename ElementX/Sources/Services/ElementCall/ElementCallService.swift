@@ -640,7 +640,18 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         // карточка показывает его строкой «Профиль в соцсети», поэтому сырой
         // `!aSRCTT…:server` там читался как мусор. Для личного звонка кладём MXID
         // собеседника — он и опознаваем, и разрешается обратно в комнату.
-        update.remoteHandle = .init(type: .generic, value: Self.callHandleValue(roomID: roomID, senderMXID: senderMXID, clientProxy: clientProxy))
+        // STMOB-281: в handle СНАЧАЛА кладём roomID — значение, которое доступно
+        // мгновенно. Читаемый MXID подставим следом, отдельным обновлением.
+        //
+        // Почему не сразу: `callHandleValue` зовёт `directRoomForUserID` —
+        // СИНХРОННЫЙ поход в хранилище SDK. На холодном старте это чтение с диска,
+        // возможно с ожиданием межпроцессной блокировки, которую держит расширение
+        // уведомлений. А система даёт на ответ звонковому пушу считаные секунды и
+        // убивает приложение, если не успели: краш 29.07 14:47 на сборке 292,
+        // FRONTBOARD 0xBAADCA11, стек пустой — внешнее убийство, не наша ошибка
+        // в коде. Правило: до обязательного отчёта не делать ничего, что может
+        // подождать.
+        update.remoteHandle = .init(type: .generic, value: roomID)
 
         DiagLog.write("VoIP", "reportNewIncomingCall room=\(roomID) caller=\(callerName) callKitID=\(callID.callKitID)")
         callProvider.reportNewIncomingCall(with: callID.callKitID, update: update) { [weak self] error in
@@ -649,6 +660,20 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
                 DiagLog.write("VoIP", "  reportNewIncomingCall FAILED: \(error.localizedDescription)")
             } else {
                 DiagLog.write("VoIP", "  reportNewIncomingCall OK → CallKit shown")
+
+                // STMOB-281: обязательный отчёт позади, дедлайна больше нет —
+                // теперь можно спокойно сходить в хранилище за читаемым MXID.
+                // Он нужен для перезвона из «Недавних»: там показывается именно
+                // значение handle, и сырой !room:server читался как мусор.
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    let handle = Self.callHandleValue(roomID: roomID, senderMXID: senderMXID, clientProxy: clientProxy)
+                    guard handle != roomID, self.incomingCallID?.callKitID == callID.callKitID else { return }
+                    let handleUpdate = CXCallUpdate()
+                    handleUpdate.remoteHandle = .init(type: .generic, value: handle)
+                    self.callProvider.reportCall(with: callID.callKitID, updated: handleUpdate)
+                    DiagLog.write("VoIP", "  handle уточнён до \(handle)")
+                }
                 // Marker для NSE: VoIP push дошёл и CallKit запущен. NSE проверяет
                 // этот marker для этой комнаты — если свежий (<30 сек), не показывает
                 // дубль banner от regular APNs ring.
