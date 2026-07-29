@@ -1574,9 +1574,11 @@ final class CallPictureInPictureViewController: AVPictureInPictureVideoCallViewC
         }
         appliedAspect = aspect
 
-        // Фиксированная база: окно системное и маленькое, реальные пиксели кадра
-        // ему не нужны — важна только пропорция.
-        let base: CGFloat = 320
+        // База задаёт не только пропорцию, но и предпочтительный размер окна.
+        // 320 давало заметно крупное окно, перекрывающее пол-экрана — уменьшено.
+        // Последнее слово всё равно за системой: пользователь может растянуть окно
+        // жестом, и наше значение лишь стартовое.
+        let base: CGFloat = 160
         preferredContentSize = aspect >= 1
             ? CGSize(width: base, height: (base / aspect).rounded())
             : CGSize(width: (base * aspect).rounded(), height: base)
@@ -1605,6 +1607,10 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
     /// STMOB-277: система запросила восстановление интерфейса — значит закрытие
     /// окна это возврат в приложение, а не «крестик».
     private var isRestoringInterface = false
+    /// STMOB-285: подложка, на которой заведено окно. Нужна, чтобы ПЕРЕВЗВЕСТИ
+    /// окно после его закрытия: SwiftUI не обязан пересобирать дерево при возврате
+    /// из окна, и без своей ссылки перевзводить не от чего.
+    private weak var sourceView: UIView?
 
     /// Окно открылось. Приложению нужно знать: пока оно висит, звонок не полноэкранный.
     var onWindowOpened: (() -> Void)?
@@ -1644,6 +1650,7 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
 
         self.roomManager = roomManager
         self.fallbackTitle = fallbackTitle
+        self.sourceView = sourceView
         let source = AVPictureInPictureController.ContentSource(activeVideoCallSourceView: sourceView,
                                                                 contentViewController: contentViewController)
         let controller = AVPictureInPictureController(contentSource: source)
@@ -1680,6 +1687,15 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
         // в кадры 8×8 — чёрный прямоугольник вместо собеседника (лог 163).
         DiagLog.write("CallUI", "картинка в картинке готова")
         return controller
+    }
+
+    /// Завести контроллер заново на той же подложке — окно снова готово к запуску.
+    private func rearmAfterClose() {
+        guard !isCallOver, let sourceView, let roomManager else { return }
+        controller = nil
+        cancellables.removeAll()
+        _ = start(sourceView: sourceView, roomManager: roomManager, fallbackTitle: fallbackTitle)
+        DiagLog.write("CallUI", "картинка в картинке: перевзведена на следующее сворачивание")
     }
 
     /// STMOB-284: окно имеет смысл только когда есть что показывать.
@@ -1769,6 +1785,14 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
             isRestoringInterface = false
             DiagLog.write("CallUI", "картинка в картинке: окно закрыто (\(restored ? "возврат в приложение" : "закрыто крестиком")), видео отцеплено")
             onWindowClosed?(restored)
+
+            // STMOB-285: ПЕРЕВЗВОДИМ окно на следующее сворачивание.
+            // Контроллер, у которого окно уже закрывалось, система второй раз сама
+            // не поднимает, а пересобрать его было негде: `start()` зовётся только
+            // из updateUIView, а SwiftUI не обязан пересобирать дерево при возврате
+            // из окна. В поле это выглядело так: окно показалось один раз, вернулся
+            // в приложение, свернул снова — окна больше нет.
+            rearmAfterClose()
         }
     }
 
