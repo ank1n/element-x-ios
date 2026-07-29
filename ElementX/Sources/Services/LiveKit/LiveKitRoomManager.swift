@@ -1461,6 +1461,8 @@ extension LiveKitRoomManager: RoomDelegate {
             if let videoTrack = publication.track as? VideoTrack {
                 let probe = FirstFrameProbe(label: "\(identity) \(pubSource)") { label, frame in
                     DiagLog.write("Call", "видео от \(label): ПЕРВЫЙ кадр \(frame.dimensions.width)x\(frame.dimensions.height)")
+                } onResolutionChange: { label, oldWidth, oldHeight, newWidth, newHeight in
+                    DiagLog.write("Call", "видео от \(label): разрешение \(oldWidth)x\(oldHeight) → \(newWidth)x\(newHeight)")
                 }
                 self.remoteFrameProbes.append(probe)
                 videoTrack.add(videoRenderer: probe)
@@ -2169,12 +2171,23 @@ final class DeviceOrientationTracker {
 final class FirstFrameProbe: NSObject, VideoRenderer, @unchecked Sendable {
     private let label: String
     private let onFirstFrame: @Sendable (String, VideoFrame) -> Void
+    /// STMOB-274: смена разрешения по ходу звонка. Первый кадр всегда приходит
+    /// самым лёгким слоем — адаптивная подписка начинает снизу и поднимается по
+    /// мере того, как приёмники сообщают свой размер. Логируя ТОЛЬКО первый кадр,
+    /// мы видели «320x180» и не могли отличить нормальный старт от застревания
+    /// на нижнем слое. Теперь видно и то, и другое.
+    private let onResolutionChange: (@Sendable (String, Int32, Int32, Int32, Int32) -> Void)?
     private var fired = false
+    private var lastWidth: Int32 = 0
+    private var lastHeight: Int32 = 0
     private let lock = NSLock()
 
-    init(label: String, onFirstFrame: @escaping @Sendable (String, VideoFrame) -> Void) {
+    init(label: String,
+         onFirstFrame: @escaping @Sendable (String, VideoFrame) -> Void,
+         onResolutionChange: (@Sendable (String, Int32, Int32, Int32, Int32) -> Void)? = nil) {
         self.label = label
         self.onFirstFrame = onFirstFrame
+        self.onResolutionChange = onResolutionChange
         super.init()
     }
 
@@ -2199,12 +2212,24 @@ final class FirstFrameProbe: NSObject, VideoRenderer, @unchecked Sendable {
     func set(size: CGSize) { }
 
     func render(frame: VideoFrame) {
+        let width = frame.dimensions.width
+        let height = frame.dimensions.height
+
         lock.lock()
         let first = !fired
         fired = true
+        let previousWidth = lastWidth
+        let previousHeight = lastHeight
+        let changed = !first && (previousWidth != width || previousHeight != height)
+        lastWidth = width
+        lastHeight = height
         lock.unlock()
-        guard first else { return }
-        onFirstFrame(label, frame)
+
+        if first {
+            onFirstFrame(label, frame)
+        } else if changed {
+            onResolutionChange?(label, previousWidth, previousHeight, width, height)
+        }
     }
 }
 
