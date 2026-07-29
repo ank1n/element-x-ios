@@ -209,12 +209,23 @@ struct CallScreen: View {
                 // окно не откроет. Невидимая и не перехватывает касания.
                 .overlay(alignment: .topLeading) {
                     CallPictureInPictureSource(roomManager: roomManager,
-                                               title: context.viewState.roomDisplayName ?? SL10n.callDefault) { controller in
-                        context.send(viewAction: .pictureInPictureIsAvailable(controller))
-                    }
-                    .frame(width: 1, height: 1)
-                    .allowsHitTesting(false)
-                    .opacity(0.001)
+                                               title: context.viewState.roomDisplayName ?? SL10n.callDefault,
+                                               onReady: { controller in
+                                                   context.send(viewAction: .pictureInPictureIsAvailable(controller))
+                                               },
+                                               // STMOB-277: пока системное окно висит, звонок НЕ полноэкранный —
+                                               // приложению нужна своя плашка со счётчиком. Раньше об открытии
+                                               // окна никто не сообщал, и приложение считало звонок развёрнутым:
+                                               // счётчика не было ни в приложении, ни в системном окне.
+                                               onWindowOpened: {
+                                                   context.send(viewAction: .pictureInPictureDidStart)
+                                               },
+                                               onWindowClosed: { restoredToApp in
+                                                   context.send(viewAction: .pictureInPictureDidStop(restoredToApp: restoredToApp))
+                                               })
+                                               .frame(width: 1, height: 1)
+                                               .allowsHitTesting(false)
+                                               .opacity(0.001)
                 }
         } else if context.viewState.url == nil {
             // Экран набора: до подключения показываем, кого вызываем, + «Вызов»

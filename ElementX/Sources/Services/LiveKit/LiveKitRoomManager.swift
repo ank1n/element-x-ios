@@ -554,8 +554,40 @@ final class LiveKitRoomManager: ObservableObject {
                 applyBlurIfNeeded()
             }
         }
+        if enabled {
+            enableBackgroundCameraAccessIfPossible()
+        }
         #endif
         updateState()
+    }
+
+    /// STMOB-277: разрешить камере снимать, когда приложение свёрнуто.
+    /// По умолчанию система глушит захват при уходе в фон — поэтому в системном
+    /// окне звонка наше видео пропадало, и никакое окно его не вернуло бы.
+    /// С iOS 18 приложение с голосовым фоновым режимом (у нас он объявлен) может
+    /// продолжать снимать, но только если попросит об этом ЯВНО. Ручка есть в SDK
+    /// (`CameraCapturer.isMultitaskingAccessEnabled`), мы её не трогали ни разу.
+    ///
+    /// Проверку поддержки делаем ПОСЛЕ проверки «уже включено»: она перенастраивает
+    /// сессию захвата (beginConfiguration/commitConfiguration) и на каждом вызове
+    /// setCamera обходилась бы дороже, чем сама польза.
+    private func enableBackgroundCameraAccessIfPossible() {
+        #if !targetEnvironment(simulator)
+        guard let room,
+              let track = room.localParticipant.firstCameraPublication?.track as? LocalVideoTrack,
+              let capturer = track.capturer as? CameraCapturer else { return }
+
+        if capturer.isMultitaskingAccessEnabled { return }
+
+        guard capturer.isMultitaskingAccessSupported else {
+            DiagLog.write("Call", "камера в фоне: устройство не поддерживает — своё видео при сворачивании замрёт")
+            return
+        }
+
+        capturer.isMultitaskingAccessEnabled = true
+        DiagLog.write("Call", "камера в фоне: доступ включён")
+        MXLog.info("sTalk LiveKit: multitasking camera access enabled")
+        #endif
     }
 
     /// Switch between front and back camera

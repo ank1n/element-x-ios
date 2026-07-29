@@ -1475,6 +1475,9 @@ import Combine
 /// обычный рендерер LiveKit для окна поверх домашнего экрана непригоден.
 final class CallPictureInPictureViewController: AVPictureInPictureVideoCallViewController {
     private let videoView = VideoView()
+    /// STMOB-277: своё видео тайлом в углу окна. Раньше при сворачивании оно
+    /// пропадало совсем, и в окне оставался только собеседник.
+    private let selfView = VideoView()
     private let placeholder = UILabel()
     /// Пропорция, под которую уже подогнано окно. Нужна, чтобы не дёргать его
     /// на каждом переключении слоя адаптивной подписки.
@@ -1498,6 +1501,19 @@ final class CallPictureInPictureViewController: AVPictureInPictureVideoCallViewC
         videoView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(videoView)
 
+        // Только .sampleBuffer: Metal-слой система в фоне останавливает, а окно
+        // живёт именно тогда, когда приложение свёрнуто.
+        selfView.renderMode = .sampleBuffer
+        selfView.layoutMode = .fill
+        selfView.mirrorMode = .mirror
+        selfView.translatesAutoresizingMaskIntoConstraints = false
+        selfView.isHidden = true
+        selfView.layer.cornerRadius = 6
+        selfView.clipsToBounds = true
+        selfView.layer.borderWidth = 1
+        selfView.layer.borderColor = UIColor.white.withAlphaComponent(0.25).cgColor
+        view.addSubview(selfView)
+
         placeholder.textAlignment = .center
         placeholder.textColor = .white
         placeholder.font = .systemFont(ofSize: 15, weight: .medium)
@@ -1513,8 +1529,20 @@ final class CallPictureInPictureViewController: AVPictureInPictureVideoCallViewC
             placeholder.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             placeholder.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             placeholder.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 8),
-            placeholder.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -8)
+            placeholder.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -8),
+
+            selfView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -6),
+            selfView.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -6),
+            selfView.widthAnchor.constraint(equalTo: view.widthAnchor, multiplier: 0.32),
+            selfView.heightAnchor.constraint(equalTo: selfView.widthAnchor, multiplier: 4.0 / 3.0)
         ])
+    }
+
+    /// Своё видео в углу. `nil` — камера выключена, тайл прячем.
+    func update(localTrack: VideoTrack?) {
+        loadViewIfNeeded()
+        selfView.track = localTrack
+        selfView.isHidden = localTrack == nil
     }
 
     /// Показать поток собеседника. `nil` — камера выключена или собеседник вышел:
@@ -1567,9 +1595,19 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
     private var cancellables = Set<AnyCancellable>()
     private weak var roomManager: LiveKitRoomManager?
     private(set) var controller: AVPictureInPictureController?
-    private var fallbackTitle = ""
+    fileprivate var fallbackTitle = ""
     /// Окно открыто — только в этом состоянии держим в нём трек.
     private var isWindowVisible = false
+    /// STMOB-277: система запросила восстановление интерфейса — значит закрытие
+    /// окна это возврат в приложение, а не «крестик».
+    private var isRestoringInterface = false
+
+    /// Окно открылось. Приложению нужно знать: пока оно висит, звонок не полноэкранный.
+    var onWindowOpened: (() -> Void)?
+    /// Пользователь возвращается в приложение по тапу.
+    var onWindowWillRestore: (() -> Void)?
+    /// Окно закрылось. `restoredToApp` — вернулись в приложение (true) или закрыли крестиком (false).
+    var onWindowClosed: ((_ restoredToApp: Bool) -> Void)?
 
     /// - Returns: контроллер окна или nil, если устройство/система его не поддерживает —
     ///   тогда остаёмся на зелёной плашке со счётчиком, ничего не ломая.
@@ -1593,9 +1631,13 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
         // Кого показывать: чужая демонстрация экрана важнее говорящего, говорящий
         // важнее первого попавшегося. Тот же порядок, что и в мини-окне на экране,
         // иначе при возврате из окна картинка «прыгает».
-        Publishers.CombineLatest(roomManager.$remoteParticipants, roomManager.$activeSpeakers)
+        // STMOB-277: следим и за СВОИМ треком — иначе включение/выключение своей
+        // камеры при открытом окне тайл в углу не заметит.
+        Publishers.CombineLatest3(roomManager.$remoteParticipants,
+                                  roomManager.$activeSpeakers,
+                                  roomManager.$localVideoTrack)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _, _ in
+            .sink { [weak self] _, _, _ in
                 guard let self, isWindowVisible else { return }
                 refreshTrack(fallbackTitle: self.fallbackTitle)
             }
@@ -1617,6 +1659,10 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
     private func refreshTrack(fallbackTitle: String) {
         guard let roomManager else { return }
         let participants = roomManager.displayParticipants
+
+        // STMOB-277: своё видео тайлом. `displayParticipants` для этого не годится —
+        // локального участника там нет никогда, берём трек напрямую у менеджера.
+        contentViewController.update(localTrack: roomManager.localVideoTrack)
 
         // 1. Демонстрация экрана
         for participant in participants {
@@ -1649,18 +1695,43 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
     nonisolated func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
         Task { @MainActor in
             isWindowVisible = true
+            isRestoringInterface = false
             refreshTrack(fallbackTitle: fallbackTitle)
             DiagLog.write("CallUI", "картинка в картинке: окно открылось, отдаю видео")
+            onWindowOpened?()
         }
     }
 
     nonisolated func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
         Task { @MainActor in
             isWindowVisible = false
-            // Отцепляем трек: пока окно закрыто, лишний приёмник только мешает
+            // Отцепляем ОБА трека: пока окно закрыто, лишний приёмник только мешает
             // согласованию качества с сервером.
             contentViewController.update(track: nil, title: fallbackTitle)
-            DiagLog.write("CallUI", "картинка в картинке: окно закрыто, видео отцеплено")
+            contentViewController.update(localTrack: nil)
+
+            // STMOB-277: различаем два выхода из окна. Возврат в приложение (тап по
+            // окну) система предваряет запросом на восстановление интерфейса —
+            // тогда звонок снова полноэкранный. Закрытие крестиком такого запроса
+            // не даёт: окна больше нет, а звонок продолжается, и приложению нужна
+            // своя плашка со счётчиком. Раньше оба случая приходили сюда
+            // неразличимыми, и приложение всё время считало звонок полноэкранным.
+            let restored = isRestoringInterface
+            isRestoringInterface = false
+            DiagLog.write("CallUI", "картинка в картинке: окно закрыто (\(restored ? "возврат в приложение" : "закрыто крестиком")), видео отцеплено")
+            onWindowClosed?(restored)
+        }
+    }
+
+    /// Система спрашивает разрешения вернуть наш интерфейс — значит пользователь
+    /// тапнул по окну, а не закрыл его.
+    nonisolated func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController,
+                                                restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
+        Task { @MainActor in
+            isRestoringInterface = true
+            DiagLog.write("CallUI", "картинка в картинке: пользователь возвращается в приложение")
+            onWindowWillRestore?()
+            completionHandler(true)
         }
     }
 
@@ -1678,6 +1749,10 @@ struct CallPictureInPictureSource: UIViewRepresentable {
     let roomManager: LiveKitRoomManager
     let title: String
     let onReady: (AVPictureInPictureController) -> Void
+    /// STMOB-277: окно открылось — звонок больше не полноэкранный.
+    var onWindowOpened: (() -> Void)?
+    /// Окно закрылось. `restoredToApp` — вернулись по тапу (true) или крестиком (false).
+    var onWindowClosed: ((_ restoredToApp: Bool) -> Void)?
 
     func makeUIView(context: Context) -> UIView {
         let view = UIView()
@@ -1687,10 +1762,19 @@ struct CallPictureInPictureSource: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
-        guard context.coordinator.manager.controller == nil else { return }
-        if let controller = context.coordinator.manager.start(sourceView: uiView,
-                                                              roomManager: roomManager,
-                                                              fallbackTitle: title) {
+        // STMOB-277: колбэки и заголовок обновляем ДО выхода по гарду. Иначе они
+        // замораживались на первом значении: гард отсекает всё, как только окно
+        // заведено, а имя комнаты часто подгружается позже — в заглушке окна
+        // оставался пустой или устаревший заголовок.
+        let manager = context.coordinator.manager
+        manager.onWindowOpened = onWindowOpened
+        manager.onWindowClosed = onWindowClosed
+        manager.fallbackTitle = title
+
+        guard manager.controller == nil else { return }
+        if let controller = manager.start(sourceView: uiView,
+                                          roomManager: roomManager,
+                                          fallbackTitle: title) {
             onReady(controller)
         }
     }

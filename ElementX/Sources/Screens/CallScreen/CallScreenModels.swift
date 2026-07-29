@@ -132,6 +132,11 @@ enum CallScreenViewAction {
     case pictureInPictureIsAvailable(AVPictureInPictureController)
     case navigateBack
     case pictureInPictureWillStop
+    /// STMOB-277: системное окно открылось — звонок больше не полноэкранный.
+    case pictureInPictureDidStart
+    /// Системное окно закрылось. `restoredToApp` — вернулись по тапу (true)
+    /// или закрыли крестиком (false, звонок продолжается свёрнутым).
+    case pictureInPictureDidStop(restoredToApp: Bool)
     case endCall
     case mediaCapturePermissionGranted
     case widgetAction(message: String)

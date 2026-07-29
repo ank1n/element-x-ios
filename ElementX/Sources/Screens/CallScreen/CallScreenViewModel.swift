@@ -446,6 +446,26 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             // Same keyboard-overlap glitch as .restoreFromMinimized (see below) — system PiP restore.
             dismissKeyboard()
             actionsSubject.send(.pictureInPictureStopped)
+        case .pictureInPictureDidStart:
+            // Окно системное, счётчика в нём нет и быть не может — значит плашку
+            // со счётчиком показывает приложение. Раньше об открытии окна никто
+            // не сообщал, и звонок всё это время считался полноэкранным.
+            isMinimized = true
+            state.isMinimized = true
+            actionsSubject.send(.pictureInPictureStarted)
+        case .pictureInPictureDidStop(let restoredToApp):
+            if restoredToApp {
+                // Тап по окну: система вернула нас вперёд, звонок снова на весь экран.
+                isMinimized = false
+                state.isMinimized = false
+                dismissKeyboard()
+                actionsSubject.send(.pictureInPictureStopped)
+            } else {
+                // Крестик: окна нет, а звонок ИДЁТ. Остаёмся свёрнутыми — плашка
+                // со счётчиком единственное, что о нём напоминает.
+                isMinimized = true
+                state.isMinimized = true
+            }
         case .endCall:
             stalkLog(">>> .endCall viewAction received, isEndingCall=\(isEndingCall)")
             Task { await endCall() }
