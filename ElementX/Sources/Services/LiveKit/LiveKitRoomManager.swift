@@ -38,6 +38,8 @@ final class LiveKitRoomManager: ObservableObject {
     // MARK: - Published State
 
     @Published private(set) var connectionState: ConnectionState = .disconnected
+    /// STMOB-282: съём метрик исходящего видео — что реально выдаёт кодировщик.
+    private let outboundStatsLogger = OutboundVideoStatsLogger()
     /// STMOB-262: режим переподключения, в котором сейчас находится SDK (nil — не
     /// переподключается). Quick-цикл в `connectionState` не виден вообще.
     @Published private(set) var sdkReconnectMode: ReconnectMode?
@@ -556,9 +558,16 @@ final class LiveKitRoomManager: ObservableObject {
         }
         if enabled {
             enableBackgroundCameraAccessIfPossible()
+            attachOutboundStatsLogger()
         }
         #endif
         updateState()
+    }
+
+    /// STMOB-282: повесить съём метрик на опубликованный видеотрек.
+    private func attachOutboundStatsLogger() {
+        guard let track = room.localParticipant.firstCameraPublication?.track else { return }
+        track.add(delegate: outboundStatsLogger)
     }
 
     /// STMOB-277: разрешить камере снимать, когда приложение свёрнуто.
@@ -1946,6 +1955,58 @@ struct LiveKitDiagLogBridge: LiveKit.Logger {
         guard !isRepeat else { return }
 
         DiagLog.write("LKSDK", "\(level) \(type): \(text.prefix(300))")
+    }
+}
+
+// MARK: - Метрики нашего энкодера (STMOB-282)
+
+/// Снимает статистику ИСХОДЯЩЕГО видео: что реально выдаёт кодировщик телефона.
+///
+/// Появился по запросу с серверной стороны: у собеседника на вебе картинка с
+/// айфона рассыпается, при этом канал отдаёт нормальные килобиты и потерь почти
+/// нет, а кадров мало — 8 в секунду при номинале 30. Это не сеть и не выбор слоя,
+/// это источник не выдаёт кадры. Причину показывает поле `qualityLimitationReason`:
+/// `cpu` означает, что кодировщик упирается в процессор — у Apple нет аппаратного
+/// VP8, а при шифровании звонка мы форсируем именно его.
+///
+/// Пишем ТОЛЬКО при изменении картины, а не каждый тик: статистика приходит
+/// секундными пачками на каждый слой, и посекундная запись смыла бы лог.
+final class OutboundVideoStatsLogger: NSObject, TrackDelegate, @unchecked Sendable {
+    private var lastSignature = ""
+    private let lock = NSLock()
+
+    nonisolated func track(_ track: Track, didUpdateStatistics statistics: TrackStatistics, simulcastStatistics _: [VideoCodec: TrackStatistics]) {
+        let streams = statistics.outboundRtpStream.filter { $0.kind == "video" }
+        guard !streams.isEmpty else { return }
+
+        let parts = streams
+            .sorted { ($0.rid ?? "") < ($1.rid ?? "") }
+            .map { stream -> String in
+                let rid = stream.rid ?? "—"
+                let size = "\(stream.frameWidth.map(String.init) ?? "?")x\(stream.frameHeight.map(String.init) ?? "?")"
+                let fps = stream.framesPerSecond.map { String(format: "%.0f", $0) } ?? "?"
+                let limit = stream.qualityLimitationReason?.rawValue ?? "—"
+                return "\(rid) \(size) fps=\(fps) предел=\(limit)"
+            }
+
+        let encoder = streams.compactMap(\.encoderImplementation).first ?? "?"
+        let thermal: String
+        switch ProcessInfo.processInfo.thermalState {
+        case .nominal: thermal = "норма"
+        case .fair: thermal = "тёплый"
+        case .serious: thermal = "горячий"
+        case .critical: thermal = "перегрев"
+        @unknown default: thermal = "?"
+        }
+
+        let signature = parts.joined(separator: " | ") + " enc=\(encoder) тепло=\(thermal)"
+        lock.lock()
+        let changed = signature != lastSignature
+        if changed { lastSignature = signature }
+        lock.unlock()
+        guard changed else { return }
+
+        DiagLog.write("Call", "энкодер: \(signature)")
     }
 }
 
