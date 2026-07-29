@@ -784,8 +784,17 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
             return
         }
         
-        MXLog.info("Starting picture in picture to hide the call screen overlay.")
-        callScreenPictureInPictureController.startPictureInPicture()
+        // STMOB-275: системное окно РУКАМИ здесь не запускаем.
+        // Сворачивание ВНУТРИ приложения должно давать нашу плашку — в ней есть
+        // управление звонком. Системное окно управления не содержит и содержать
+        // не может, поэтому раньше при сворачивании внутри приложения поверх всего
+        // появлялся безкнопочный прямоугольник с видео собеседника.
+        // Системное окно поднимается САМО при сворачивании ПРИЛОЖЕНИЯ — за это
+        // отвечает `canStartPictureInPictureAutomaticallyFromInline = true`,
+        // выставленный в CallPictureInPictureManager.start(). Ничего дополнительно
+        // вызывать не нужно; контроллер обязан лишь существовать, что и проверено выше.
+        MXLog.info("Minimizing call overlay; system PiP will start automatically on backgrounding.")
+        _ = callScreenPictureInPictureController
         navigationTabCoordinator.setOverlayPresentationMode(.minimized)
     }
     

@@ -1476,6 +1476,9 @@ import Combine
 final class CallPictureInPictureViewController: AVPictureInPictureVideoCallViewController {
     private let videoView = VideoView()
     private let placeholder = UILabel()
+    /// Пропорция, под которую уже подогнано окно. Нужна, чтобы не дёргать его
+    /// на каждом переключении слоя адаптивной подписки.
+    private var appliedAspect: CGFloat?
 
     override init(nibName: String?, bundle: Bundle?) {
         super.init(nibName: nibName, bundle: bundle)
@@ -1523,10 +1526,38 @@ final class CallPictureInPictureViewController: AVPictureInPictureVideoCallViewC
         placeholder.isHidden = track != nil
         placeholder.text = track == nil ? title : nil
 
-        if let dimensions = track?.dimensions, dimensions.width > 0, dimensions.height > 0 {
-            preferredContentSize = CGSize(width: CGFloat(dimensions.width), height: CGFloat(dimensions.height))
-        }
+        applyContentSize(for: track?.dimensions)
     }
+
+    /// STMOB-275: размер окна задаём по ПРОПОРЦИИ, а не по текущим размерам кадра.
+    /// Раньше сюда шли `dimensions` как есть — а они меняются на каждом переключении
+    /// слоя адаптивной подписки (320×180 → 640×360 → 1920×1080 и обратно, у веба
+    /// одновременно опубликованы все три). Системное окно послушно прыгало следом:
+    /// меняло и размер, и формат прямо во время разговора.
+    /// Пропорция при смене слоя не меняется, поэтому окно стоит на месте. А когда
+    /// собеседник реально поворачивает устройство, пропорция меняется скачком —
+    /// это учитываем.
+    private func applyContentSize(for dimensions: Dimensions?) {
+        guard let dimensions, dimensions.width > 0, dimensions.height > 0 else { return }
+
+        let aspect = CGFloat(dimensions.width) / CGFloat(dimensions.height)
+        if let lastAspect = appliedAspect, abs(aspect - lastAspect) < Self.aspectChangeThreshold {
+            return // тот же формат, другой слой — окно не трогаем
+        }
+        appliedAspect = aspect
+
+        // Фиксированная база: окно системное и маленькое, реальные пиксели кадра
+        // ему не нужны — важна только пропорция.
+        let base: CGFloat = 320
+        preferredContentSize = aspect >= 1
+            ? CGSize(width: base, height: (base / aspect).rounded())
+            : CGSize(width: (base * aspect).rounded(), height: base)
+    }
+
+    /// Разница пропорций, ниже которой считаем формат прежним. 16:9 против 4:3 —
+    /// это 1.78 против 1.33, так что порог отделяет реальный поворот от дрожания
+    /// округления при смене слоя.
+    private static let aspectChangeThreshold: CGFloat = 0.1
 }
 
 /// Заводит системное окно и держит в нём актуальный поток.
