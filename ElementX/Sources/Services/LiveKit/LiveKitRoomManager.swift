@@ -1877,7 +1877,13 @@ final class MediaEgressWatchdog: NSObject, TrackDelegate, @unchecked Sendable {
 /// сотрёт ровно тот лог, ради которого всё затевалось.
 struct LiveKitDiagLogBridge: LiveKit.Logger {
     /// Подстроки, ради которых мы вообще читаем info-уровень.
-    private static let allowList = ["[connect]", "ping", "pong", "transport", "reconnect", "republish", "[ice", "icestate", "ice restart", "signal"]
+    // STMOB-278: «[adaptivestream]» — единственное место, где видно, КАКОЙ слой мы
+    // просим у сервера. SDK печатает там итоговые размеры (`sending TrackSettings…`),
+    // посчитанные как максимум по всем приёмникам, участвующим в адаптивной подписке.
+    // Без этой строки вопрос «почему картинка 320×180, когда отправитель публикует
+    // 1920×1080» решается только гаданием: отправитель отдаёт ровно то, что попросили,
+    // а что именно просим мы — до сих пор не наблюдалось ниоткуда.
+    private static let allowList = ["[connect]", "ping", "pong", "transport", "reconnect", "republish", "[ice", "icestate", "ice restart", "signal", "[adaptivestream]"]
     /// Бюджет строк: не больше 20 в секунду на всё вместе, включая warning/error —
     /// иначе шторм переподключений сам вытрет лог этого шторма.
     private static let budgetLimit = 20
@@ -1915,7 +1921,14 @@ struct LiveKitDiagLogBridge: LiveKit.Logger {
         // Уровень проверяем ДО материализации autoclosure: строить строку для .debug —
         // чистая трата, а болтливый SDK смоет DiagLog (при переполнении он сносит файл
         // целиком, вместе с уликами, ради которых мост и делался).
-        guard level != LiveKit.LogLevel.debug, Self.allowBudget() else { return }
+        // STMOB-278: одно исключение из запрета на debug. Согласование качества
+        // (`[adaptiveStream] sending …`) SDK печатает именно этим уровнем, а это
+        // единственное место, где видно, какой слой мы просим у сервера.
+        // Фильтруем по ТИПУ-ИСТОЧНИКУ, а не по тексту: иначе пришлось бы
+        // материализовать сообщение у каждой debug-строки болтливого SDK — ровно та
+        // трата, от которой гард и защищает. Сам текст отсеет белый список ниже.
+        let isQualityNegotiation = "\(type)" == "RemoteTrackPublication"
+        guard level != LiveKit.LogLevel.debug || isQualityNegotiation, Self.allowBudget() else { return }
         let isProblem = level == LiveKit.LogLevel.error || level == LiveKit.LogLevel.warning
         let text = "\(message())"
         if !isProblem {
