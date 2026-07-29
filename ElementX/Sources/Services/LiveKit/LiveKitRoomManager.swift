@@ -1986,8 +1986,20 @@ final class OutboundVideoStatsLogger: NSObject, TrackDelegate, @unchecked Sendab
                 let size = "\(stream.frameWidth.map(String.init) ?? "?")x\(stream.frameHeight.map(String.init) ?? "?")"
                 let fps = stream.framesPerSecond.map { String(format: "%.0f", $0) } ?? "?"
                 let limit = stream.qualityLimitationReason?.rawValue ?? "—"
-                return "\(rid) \(size) fps=\(fps) предел=\(limit)"
+                // STMOB-282: `active` отличает «слой выключен» от «слой включён, но
+                // пуст» — без него не понять, кто именно погасил верхний слой.
+                // `targetBitrate` показывает, сколько кодировщику вообще выделено.
+                let active = stream.active.map { $0 ? "вкл" : "ВЫКЛ" } ?? "?"
+                let target = stream.targetBitrate.map { String(format: "%.0fк", $0 / 1000) } ?? "?"
+                return "\(rid) \(active) \(size) fps=\(fps) цель=\(target) предел=\(limit)"
             }
+
+        // Оценка исходящей полосы — то, во что упирается верхний слой. Живёт не в
+        // потоке, а в статистике выбранной пары ICE-кандидатов.
+        let uplink = statistics.iceCandidatePair
+            .compactMap(\.availableOutgoingBitrate)
+            .max()
+            .map { String(format: "%.0f кбит/с", $0 / 1000) } ?? "?"
 
         let encoder = streams.compactMap(\.encoderImplementation).first ?? "?"
         let thermal: String
@@ -1999,7 +2011,7 @@ final class OutboundVideoStatsLogger: NSObject, TrackDelegate, @unchecked Sendab
         @unknown default: thermal = "?"
         }
 
-        let signature = parts.joined(separator: " | ") + " enc=\(encoder) тепло=\(thermal)"
+        let signature = parts.joined(separator: " | ") + " аплинк=\(uplink) enc=\(encoder) тепло=\(thermal)"
         lock.lock()
         let changed = signature != lastSignature
         if changed { lastSignature = signature }
