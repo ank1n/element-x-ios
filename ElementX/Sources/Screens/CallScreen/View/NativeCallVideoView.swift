@@ -1620,18 +1620,26 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
             DiagLog.write("CallUI", "картинка в картинке не поддерживается устройством")
             return nil
         }
-        // STMOB-280: менеджер один на звонок, а подложка при пересборке дерева
-        // экрана — новая. Переносим окно на свежую подложку, но ТОЛЬКО когда оно
-        // закрыто: смена источника у открытого окна его роняет, а это ровно та
-        // болезнь, которую чиним.
-        if let existing = controller {
+        // STMOB-283: окно ОТКРЫТО — не трогаем ничего. Дерево экрана пересобирается
+        // при сворачивании, и подложка каждый раз новая; смена источника у открытого
+        // окна его роняет. Именно так окно «мелькало и пропадало» (STMOB-280).
+        if let existing = controller, isWindowVisible {
             self.roomManager = roomManager
             self.fallbackTitle = fallbackTitle
-            if !isWindowVisible {
-                existing.contentSource = AVPictureInPictureController.ContentSource(activeVideoCallSourceView: sourceView,
-                                                                                    contentViewController: contentViewController)
-            }
             return existing
+        }
+
+        // Окно ЗАКРЫТО — контроллер пересоздаём под текущую подложку.
+        // Переназначения contentSource недостаточно: менеджер общий на приложение
+        // и переживает завершение звонка вместе с контроллером, привязанным к уже
+        // мёртвой подложке. На следующем звонке система такое окно не поднимала
+        // вовсе — PiP просто переставал появляться (лог 190, звонок 16:06: ни
+        // одной строки об открытии окна).
+        if controller != nil {
+            cancellables.removeAll()
+            controller = nil
+            isWindowVisible = false
+            isRestoringInterface = false
         }
 
         self.roomManager = roomManager
