@@ -1591,6 +1591,10 @@ final class CallPictureInPictureViewController: AVPictureInPictureVideoCallViewC
 /// Заводит системное окно и держит в нём актуальный поток.
 @MainActor
 final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerDelegate {
+    /// Единственный на приложение: звонок одновременно может быть только один,
+    /// а пересборка дерева экрана не должна пересоздавать окно.
+    static let shared = CallPictureInPictureManager()
+
     private let contentViewController = CallPictureInPictureViewController()
     private var cancellables = Set<AnyCancellable>()
     private weak var roomManager: LiveKitRoomManager?
@@ -1616,7 +1620,19 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
             DiagLog.write("CallUI", "картинка в картинке не поддерживается устройством")
             return nil
         }
-        guard controller == nil else { return controller }
+        // STMOB-280: менеджер один на звонок, а подложка при пересборке дерева
+        // экрана — новая. Переносим окно на свежую подложку, но ТОЛЬКО когда оно
+        // закрыто: смена источника у открытого окна его роняет, а это ровно та
+        // болезнь, которую чиним.
+        if let existing = controller {
+            self.roomManager = roomManager
+            self.fallbackTitle = fallbackTitle
+            if !isWindowVisible {
+                existing.contentSource = AVPictureInPictureController.ContentSource(activeVideoCallSourceView: sourceView,
+                                                                                    contentViewController: contentViewController)
+            }
+            return existing
+        }
 
         self.roomManager = roomManager
         self.fallbackTitle = fallbackTitle
@@ -1648,6 +1664,12 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
         // в кадры 8×8 — чёрный прямоугольник вместо собеседника (лог 163).
         DiagLog.write("CallUI", "картинка в картинке готова")
         return controller
+    }
+
+    /// Звонок завершён — окно держать не на чем.
+    var isCallOver: Bool {
+        guard let roomManager else { return true }
+        return roomManager.connectionState == .disconnected
     }
 
     func stop() {
@@ -1780,7 +1802,18 @@ struct CallPictureInPictureSource: UIViewRepresentable {
     }
 
     static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
-        MainActor.assumeIsolated { coordinator.manager.stop() }
+        // STMOB-280: НЕ гасим окно, пока звонок идёт.
+        // Подложка живёт в дереве экрана звонка, а оно ПЕРЕСОБИРАЕТСЯ при
+        // сворачивании: SwiftUI сносит старую иерархию и строит новую. Раньше
+        // на этом сносе безусловно вызывался stop(), то есть система поднимала
+        // окно — и через долю секунды мы сами же его и закрывали. Снаружи это
+        // выглядело как «окно мелькнуло и пропало» (лог 186: четыре подряд
+        // «картинка в картинке готова» за 25 секунд одного звонка).
+        // Гасим только когда звонка больше нет.
+        MainActor.assumeIsolated {
+            guard coordinator.manager.isCallOver else { return }
+            coordinator.manager.stop()
+        }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -1789,6 +1822,8 @@ struct CallPictureInPictureSource: UIViewRepresentable {
 
     @MainActor
     final class Coordinator {
-        let manager = CallPictureInPictureManager()
+        /// Один на звонок: пересборка дерева экрана не должна ронять окно вместе
+        /// с менеджером. Звонок в приложении может быть только один.
+        let manager = CallPictureInPictureManager.shared
     }
 }
