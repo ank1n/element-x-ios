@@ -573,8 +573,7 @@ final class LiveKitRoomManager: ObservableObject {
     /// setCamera обходилась бы дороже, чем сама польза.
     private func enableBackgroundCameraAccessIfPossible() {
         #if !targetEnvironment(simulator)
-        guard let room,
-              let track = room.localParticipant.firstCameraPublication?.track as? LocalVideoTrack,
+        guard let track = room.localParticipant.firstCameraPublication?.track as? LocalVideoTrack,
               let capturer = track.capturer as? CameraCapturer else { return }
 
         if capturer.isMultitaskingAccessEnabled { return }
