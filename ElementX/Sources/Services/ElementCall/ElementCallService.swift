@@ -236,14 +236,17 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
             
             self.callProvider = CXProvider(configuration: configuration)
 
-            // Провайдер для обязательных «пустых» ответов на VoIP-пуши: всё то же
-            // самое, но БЕЗ записи в системные «Недавние» — иначе там оседают
-            // фантомные пропущенные звонки.
-            let silentConfiguration = CXProviderConfiguration()
-            silentConfiguration.supportsVideo = false
-            silentConfiguration.includesCallsInRecents = false
-            silentConfiguration.supportedHandleTypes = [.generic]
-            silentCallProvider = CXProvider(configuration: silentConfiguration)
+            // STMOB-276: ВТОРОЙ («тихий») провайдер УБРАН.
+            // Он заводился в 289, чтобы фантомная заглушка на пустой VoIP-пуш не
+            // оседала в системных «Недавних»: признака «не писать в Недавние» у
+            // отдельного звонка нет, он есть только у провайдера. Но CallKit не
+            // рассчитан на два провайдера в одном приложении — конфигурация
+            // применяется на уровне приложения, а «тихий» создавался последним и
+            // своим includesCallsInRecents = false гасил запись ВСЕХ звонков.
+            // В поле это выглядело как «системная история звонков пропала совсем».
+            // Размен очевиден: настоящая история важнее одной косметической записи.
+            // Фантом будем убирать иначе — не ценой всей истории.
+            silentCallProvider = nil
         }
         
         super.init()
