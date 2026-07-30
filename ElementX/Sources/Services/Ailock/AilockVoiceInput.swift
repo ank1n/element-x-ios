@@ -272,20 +272,51 @@ final class AilockVoiceTranscriber {
         }
     }
 
+    /// Тело запроса.
+    ///
+    /// Живая проба прода 31.07 показала, что задеплоенный маршрут принимает **сырые байты**
+    /// (`Content-Type: audio/wav`) и отвергает multipart с `400 invalid_audio` — хотя в
+    /// согласованном контракте описан multipart с полем `audio`. Поэтому основной путь —
+    /// сырое тело (проверено, отдаёт распознанный текст), а multipart остаётся запасным:
+    /// когда владелец выкатит окончательную версию, клиент подстроится без пересборки.
+    private enum Encoding {
+        case raw
+        case multipart
+    }
+
     private func upload(url: URL, audio: Data) async throws -> (Data, Int) {
-        let boundary = "Boundary-\(UUID().uuidString)"
-        var body = Data()
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"audio\"; filename=\"dictation.wav\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: audio/wav\r\n\r\n".data(using: .utf8)!)
-        body.append(audio)
-        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        let (data, status) = try await upload(url: url, audio: audio, encoding: .raw)
+        guard status == 400 || status == 415 else { return (data, status) }
+
+        DiagLog.write("AilockVoice", "raw -> \(status), пробую multipart")
+        return try await upload(url: url, audio: audio, encoding: .multipart)
+    }
+
+    private func upload(url: URL, audio: Data, encoding: Encoding) async throws -> (Data, Int) {
+        let contentType: String
+        let body: Data
+
+        switch encoding {
+        case .raw:
+            contentType = "audio/wav"
+            body = audio
+        case .multipart:
+            let boundary = "Boundary-\(UUID().uuidString)"
+            contentType = "multipart/form-data; boundary=\(boundary)"
+            var payload = Data()
+            payload.append("--\(boundary)\r\n".data(using: .utf8)!)
+            payload.append("Content-Disposition: form-data; name=\"audio\"; filename=\"dictation.wav\"\r\n".data(using: .utf8)!)
+            payload.append("Content-Type: audio/wav\r\n\r\n".data(using: .utf8)!)
+            payload.append(audio)
+            payload.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+            body = payload
+        }
 
         func attempt(refreshFirst: Bool) async throws -> (Data, Int) {
             if refreshFirst { await forceTokenRefresh?() }
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
-            request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+            request.setValue(contentType, forHTTPHeaderField: "Content-Type")
             try request.setValue("Bearer \(accessTokenProvider())", forHTTPHeaderField: "Authorization")
             let (data, response) = try await urlSession.upload(for: request, from: body)
             return (data, (response as? HTTPURLResponse)?.statusCode ?? 0)
