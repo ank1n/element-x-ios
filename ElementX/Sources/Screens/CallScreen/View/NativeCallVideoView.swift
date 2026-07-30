@@ -1760,6 +1760,21 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
         return controller
     }
 
+    /// STMOB-297: снять взвод и закрыть окно немедленно — вызывается по нажатию
+    /// «завершить звонок», до любой сетевой очистки. Дальше система окно уже не
+    /// поднимет, и пустое окно с именем собеседника на секунду не мелькнёт.
+    func disarm() {
+        guard let controller else { return }
+        controller.canStartPictureInPictureAutomaticallyFromInline = false
+        callHadVideo = false
+        if controller.isPictureInPictureActive {
+            DiagLog.write("CallUI", "картинка в картинке: отбой — закрываю окно")
+            forceStopWindow(attempt: 0)
+        } else {
+            DiagLog.write("CallUI", "картинка в картинке: отбой — взвод снят")
+        }
+    }
+
     /// Разобрать сессию окна при возврате в приложение. Повторяем: с первого раза
     /// система нередко не отпускает, и тогда следующее сворачивание окна не даёт.
     private func forceStopWindow(attempt: Int) {
