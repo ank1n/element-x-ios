@@ -47,6 +47,10 @@ struct DiskScreen: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
         }
+        // Высота задана явно. Без неё горизонтальная лента получала ноль:
+        // сосед снизу растягивается жадно, а у ScrollView своей высоты нет.
+        // `.fixedSize(vertical:)` тут не сработал — проверено на симуляторе.
+        .frame(height: 56)
     }
 
     private func chip(title: String, count: Int?, isSelected: Bool, action: @escaping () -> Void) -> some View {
@@ -62,7 +66,7 @@ struct DiskScreen: View {
             .foregroundStyle(isSelected ? Color.white : Color.primary)
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
-            .background(Capsule().fill(isSelected ? Color.accentColor : Color(.secondarySystemGroupedBackground)))
+            .background(Capsule().fill(isSelected ? Color.compound.bgActionPrimaryRest : Color(.secondarySystemGroupedBackground)))
         }
         .buttonStyle(.plain)
     }
@@ -140,9 +144,9 @@ struct DiskFileRow: View {
         HStack(spacing: 12) {
             Image(systemName: file.category.systemImage)
                 .font(.system(size: 20))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(Color.compound.iconAccentPrimary)
                 .frame(width: 36, height: 36)
-                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                .background(Color.compound.iconAccentPrimary.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(file.filename)
