@@ -143,8 +143,22 @@ enum AilockError: Error, LocalizedError {
         case .unavailable:
             return SL10n.ailockUnavailable
         case .http(let status, let code, _):
+            // Машинный код пользователю ничего не говорит: переводим известные в
+            // человеческую причину, а незнакомые показываем как есть — иначе при новой
+            // ошибке сервера в интерфейсе останется бессодержательное «не удалось».
+            switch code {
+            case "exchange_failed":
+                return SL10n.ailockNoAccess
+            case "no_subject_token":
+                return SL10n.ailockNoAccess
+            case "rate_limited":
+                return SL10n.ailockRateLimited
+            default:
+                break
+            }
             if status == 401 || status == 403 { return SL10n.ailockNoAccess }
             if status == 429 { return SL10n.ailockRateLimited }
+            if status >= 500 { return SL10n.ailockServerUnavailable }
             return code.map { "\(SL10n.ailockRequestFailed) (\($0))" } ?? SL10n.ailockRequestFailed
         case .missingTicket:
             return SL10n.ailockNoStreaming

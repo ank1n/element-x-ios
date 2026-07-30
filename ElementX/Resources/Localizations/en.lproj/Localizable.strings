@@ -1915,7 +1915,7 @@
 "stalk_ailock_delete" = "Delete";
 "stalk_ailock_retry" = "Retry";
 "stalk_ailock_unavailable" = "Ailock is not available on this server";
-"stalk_ailock_no_access" = "No access to Ailock";
+"stalk_ailock_no_access" = "The server did not grant access to the agent";
 "stalk_ailock_request_failed" = "Request failed";
 "stalk_ailock_rate_limited" = "Too many requests, try again later";
 "stalk_ailock_no_streaming" = "The server did not return a connection key";
@@ -1936,3 +1936,4 @@
 "stalk_ailock_transcribe_unavailable" = "Speech recognition is temporarily unavailable";
 "stalk_ailock_mic_busy" = "Microphone is busy with a call";
 "stalk_ailock_connection_lost" = "Connection lost — try sending again";
+"stalk_ailock_server_unavailable" = "Ailock is temporarily unavailable";

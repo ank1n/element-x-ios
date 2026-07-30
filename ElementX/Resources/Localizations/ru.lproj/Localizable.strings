@@ -1786,7 +1786,7 @@
 "stalk_ailock_delete" = "Удалить";
 "stalk_ailock_retry" = "Повторить";
 "stalk_ailock_unavailable" = "Айлок недоступен на этом сервере";
-"stalk_ailock_no_access" = "Нет доступа к Айлоку";
+"stalk_ailock_no_access" = "Сервер не выдал доступ к агенту";
 "stalk_ailock_request_failed" = "Не удалось выполнить запрос";
 "stalk_ailock_rate_limited" = "Слишком много запросов, попробуйте позже";
 "stalk_ailock_no_streaming" = "Сервер не выдал ключ подключения";
@@ -1807,3 +1807,4 @@
 "stalk_ailock_transcribe_unavailable" = "Распознавание временно недоступно";
 "stalk_ailock_mic_busy" = "Микрофон занят звонком";
 "stalk_ailock_connection_lost" = "Соединение потеряно — попробуйте отправить снова";
+"stalk_ailock_server_unavailable" = "Айлок временно недоступен";
