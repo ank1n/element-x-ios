@@ -1712,28 +1712,26 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
         roomManager.$connectionState
             .receive(on: DispatchQueue.main)
             .sink { [weak self] state in
-                guard let self, state == .disconnected else { return }
-                DiagLog.write("CallUI", "картинка в картинке: звонок завершён — гашу окно")
+                guard let self, state != .connected, state != .reconnecting else { return }
+                // STMOB-293: гасим на ЛЮБОМ не-живом состоянии, а не только на
+                // «отключено». Раньше отбой доезжал позже, чем система успевала
+                // поднять окно: в логе 198 окно открылось в 13:57:36.763, а
+                // «звонок завершён» пришло в .841 — пользователь видел, как окно
+                // мелькнуло и исчезло через секунду.
+                DiagLog.write("CallUI", "картинка в картинке: звонок не активен (\(state)) — гашу окно")
                 stop()
             }
             .store(in: &cancellables)
 
-        // STMOB-292: запускаем окно САМИ при уходе приложения в фон.
-        // Автозапуск системы оказался ненадёжным: первый раз поднимал, дальше нет,
-        // при этом все предпосылки (подложка в иерархии, свежий контроллер, флаг
-        // включён) были на месте. Явный вызов детерминирован и делается в момент,
-        // когда приложение ещё активно, — из фона система запуск не примет.
-        NotificationCenter.default
-            .publisher(for: UIApplication.willResignActiveNotification)
-            .sink { [weak self] _ in
-                // self.controller — именно у себя: в этой области видимости есть
-                // локальный `controller` из start(), и он не Optional.
-                guard let self, let active = self.controller,
-                      !isWindowVisible, callHadVideo, !isCallOver else { return }
-                DiagLog.write("CallUI", "картинка в картинке: запускаю окно (уход в фон)")
-                active.startPictureInPicture()
-            }
-            .store(in: &cancellables)
+        // STMOB-293: явный startPictureInPicture() УБРАН — он всегда падал.
+        // Лог 198, каждое сворачивание: «запускаю окно» → через 11 мс «не
+        // запустилась: Failed to start picture in picture». Система не принимает
+        // запуск в момент ухода в фон, а неудачная попытка, судя по ритму, ещё и
+        // мешала штатному автозапуску: первое сворачивание давало окно (автозапуск
+        // срабатывал через 5 мс после нашей неудачи), второе и третье — ничего,
+        // четвёртое, через 16 секунд, снова давало.
+        // Вывод: окно поднимает система, а повторно — не раньше чем через паузу
+        // после закрытия предыдущего. Ускорить это нашим вызовом нельзя.
 
         // ВАЖНО: трек в окно не отдаём, пока окно не открылось. Лишний приёмник
         // участвует в согласовании качества с сервером, и на экране это выливалось
