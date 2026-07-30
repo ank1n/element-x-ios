@@ -9,9 +9,8 @@ import Foundation
 import SwiftUI
 
 enum DiskScreenViewModelAction {
-    /// Пользователь выбрал файл. Открытие содержимого — следующий шаг, он
-    /// зависит от ответов по контракту скачивания (см. STMOB-275).
-    case openFile(DiskFile)
+    /// Файл зашифрован — открыть его можно только в чате, где есть ключи комнаты.
+    case openRoom(roomID: String, eventID: String)
     case dismiss
 }
 
@@ -28,7 +27,14 @@ final class DiskScreenViewModel: ObservableObject {
         }
     }
 
+    /// Файл, скачанный для просмотра. Показывается системным просмотрщиком —
+    /// тем же, что и вложения в чате.
+    @Published var previewItem: MediaPreviewItem?
+    /// Имя файла, который сейчас качается: показываем прогресс на его строке.
+    @Published private(set) var downloadingFileID: String?
+
     private let service: DiskService
+    private let mediaProvider: MediaProviderProtocol?
     private var nextBefore: String?
     private var isLoadingMore = false
 
@@ -37,8 +43,9 @@ final class DiskScreenViewModel: ObservableObject {
         actionsSubject.eraseToAnyPublisher()
     }
 
-    init(service: DiskService) {
+    init(service: DiskService, mediaProvider: MediaProviderProtocol?) {
         self.service = service
+        self.mediaProvider = mediaProvider
     }
 
     func onAppear() {
@@ -85,8 +92,39 @@ final class DiskScreenViewModel: ObservableObject {
         }
     }
 
+    /// Открыть файл.
+    ///
+    /// Зашифрованные вложения расшифровываются ключами КОМНАТЫ, и достать их можно
+    /// только через таймлайн — сервер ключей не имеет, а по одному mxc-адресу
+    /// содержимое не развернуть. Поэтому для таких файлов уводим в чат, где событие
+    /// уже расшифровано, вместо того чтобы показывать заведомо битую заглушку.
     func selectFile(_ file: DiskFile) {
-        actionsSubject.send(.openFile(file))
+        guard !file.isEncrypted else {
+            DiagLog.write("Disk", "файл \(file.filename) зашифрован → открываю в чате")
+            actionsSubject.send(.openRoom(roomID: file.roomID, eventID: file.eventID))
+            return
+        }
+
+        guard let mediaProvider, !file.mxcURL.isEmpty, let url = URL(string: file.mxcURL) else {
+            errorText = NSLocalizedString("stalk_disk_error_open", tableName: "Localizable",
+                                          value: "Этот файл пока нельзя открыть", comment: "Disk cannot open file")
+            return
+        }
+
+        downloadingFileID = file.id
+        Task { [weak self] in
+            defer { self?.downloadingFileID = nil }
+            guard let source = try? MediaSourceProxy(url: url, mimeType: file.mimetype) else { return }
+            let result = await mediaProvider.loadFileFromSource(source, filename: file.filename)
+            switch result {
+            case .success(let handle):
+                self?.previewItem = MediaPreviewItem(file: handle, title: file.filename)
+            case .failure(let error):
+                DiagLog.write("Disk", "не скачался \(file.filename): \(error)")
+                self?.errorText = NSLocalizedString("stalk_disk_error_download", tableName: "Localizable",
+                                                    value: "Не удалось загрузить файл", comment: "Disk download failed")
+            }
+        }
     }
 
     func dismiss() {

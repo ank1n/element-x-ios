@@ -9,6 +9,8 @@ import SwiftUI
 
 enum DiskScreenCoordinatorAction {
     case hideTabBar(Bool)
+    /// Зашифрованный файл открывается только в своей комнате — там есть ключи.
+    case openRoom(roomID: String, eventID: String)
 }
 
 struct DiskScreenCoordinatorParameters {
@@ -17,6 +19,7 @@ struct DiskScreenCoordinatorParameters {
     let baseURL: String
     let accessTokenProvider: () throws -> String
     let forceTokenRefresh: (() async -> Void)?
+    let mediaProvider: MediaProviderProtocol?
 }
 
 final class DiskScreenCoordinator: CoordinatorProtocol {
@@ -32,16 +35,13 @@ final class DiskScreenCoordinator: CoordinatorProtocol {
         let service = DiskService(baseURL: parameters.baseURL,
                                   accessTokenProvider: parameters.accessTokenProvider,
                                   forceTokenRefresh: parameters.forceTokenRefresh)
-        viewModel = DiskScreenViewModel(service: service)
+        viewModel = DiskScreenViewModel(service: service, mediaProvider: parameters.mediaProvider)
 
         viewModel.actionsPublisher
-            .sink { action in
+            .sink { [weak self] action in
                 switch action {
-                case .openFile(let file):
-                    // Открытие содержимого — следующий шаг. Для файлов из чатов
-                    // путь известен (roomId + eventId → событие через SDK), для
-                    // остальных ждём контракт скачивания от серверной стороны.
-                    DiagLog.write("Disk", "выбран файл \(file.filename) (\(file.isEncrypted ? "зашифрован" : "открытый"))")
+                case .openRoom(let roomID, let eventID):
+                    self?.actionsSubject.send(.openRoom(roomID: roomID, eventID: eventID))
                 case .dismiss:
                     break
                 }

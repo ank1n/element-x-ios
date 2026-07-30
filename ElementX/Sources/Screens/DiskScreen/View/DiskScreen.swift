@@ -19,6 +19,8 @@ struct DiskScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { context.onAppear() }
         .refreshable { await context.reload() }
+        // Тот же системный просмотрщик, что и для вложений в чате.
+        .interactiveQuickLook(item: $context.previewItem, allowEditing: false)
     }
 
     // MARK: - Категории
@@ -87,7 +89,7 @@ struct DiskScreen: View {
             Button {
                 context.selectFile(file)
             } label: {
-                DiskFileRow(file: file)
+                DiskFileRow(file: file, isDownloading: context.downloadingFileID == file.id)
             }
             .buttonStyle(.plain)
             .listRowBackground(Color(.secondarySystemGroupedBackground))
@@ -132,6 +134,7 @@ struct DiskScreen: View {
 
 struct DiskFileRow: View {
     let file: DiskFile
+    var isDownloading = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -157,6 +160,11 @@ struct DiskFileRow: View {
             }
 
             Spacer(minLength: 4)
+
+            if isDownloading {
+                ProgressView()
+                    .controlSize(.small)
+            }
 
             // Замок показывает, что файл зашифрован: такие лежат в чатах, и
             // расшифровать их может только клиент — сервер ключей не имеет.
