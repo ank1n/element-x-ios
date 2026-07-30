@@ -239,6 +239,8 @@ enum SL10n {
     static let ailockRecordTooShort = NSLocalizedString("stalk_ailock_record_too_short", tableName: "Localizable", value: "Слишком коротко — удерживайте дольше", comment: "Recording too short")
     static let ailockTranscribeFailed = NSLocalizedString("stalk_ailock_transcribe_failed", tableName: "Localizable", value: "Не удалось расшифровать запись", comment: "Transcription failed")
     static let ailockTranscribeEmpty = NSLocalizedString("stalk_ailock_transcribe_empty", tableName: "Localizable", value: "Речь не распознана", comment: "Nothing recognised")
+    static let ailockRecordTooLong = NSLocalizedString("stalk_ailock_record_too_long", tableName: "Localizable", value: "Запись слишком длинная", comment: "Recording too long")
+    static let ailockTranscribeUnavailable = NSLocalizedString("stalk_ailock_transcribe_unavailable", tableName: "Localizable", value: "Распознавание временно недоступно", comment: "STT unavailable")
 
     // MARK: - Auth
 

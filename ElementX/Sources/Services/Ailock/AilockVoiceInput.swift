@@ -21,8 +21,13 @@ final class AilockVoiceRecorder {
     private var recorder: AVAudioRecorder?
     private var fileURL: URL?
 
-    /// Клиентский предел — как у транскрибации голосовых (STMOB-265).
-    static let maxDuration: TimeInterval = 5 * 60
+    /// Клиентский предел записи.
+    ///
+    /// Серверные потолки (Molly, STMOB-274) — 25 МиБ и 300 с, причём 413 наступает
+    /// именно на них. Режем сильно раньше: диктовка в поле ввода длиннее двух минут
+    /// не имеет смысла, а до отказа доводить пользователя незачем.
+    /// Две минуты WAV PCM 16 кГц mono ≈ 3.8 МБ — с большим запасом по обеим границам.
+    static let maxDuration: TimeInterval = 2 * 60
 
     var isRecording: Bool {
         recorder?.isRecording == true
@@ -120,6 +125,9 @@ enum AilockVoiceError: Error, LocalizedError {
     case permissionDenied
     case recorderFailed
     case tooShort
+    case tooLarge
+    case rateLimited(retryAfter: Int?)
+    case unavailable
     case http(Int)
     case empty
 
@@ -128,22 +136,48 @@ enum AilockVoiceError: Error, LocalizedError {
         case .permissionDenied: return SL10n.ailockMicDenied
         case .recorderFailed: return SL10n.ailockRecordFailed
         case .tooShort: return SL10n.ailockRecordTooShort
+        case .tooLarge: return SL10n.ailockRecordTooLong
+        case .rateLimited(let retryAfter):
+            guard let retryAfter, retryAfter > 0 else { return SL10n.ailockRateLimited }
+            return "\(SL10n.ailockRateLimited) (\(retryAfter) с)"
+        case .unavailable: return SL10n.ailockTranscribeUnavailable
         case .http: return SL10n.ailockTranscribeFailed
         case .empty: return SL10n.ailockTranscribeEmpty
         }
     }
 }
 
+/// Единый конверт ошибок диктовки (Molly, STMOB-274): разнобой upstream
+/// нормализуется на сервере, наружу приходит всегда одна форма.
+private struct AilockDictateError: Decodable {
+    let error: String?
+    let message: String?
+    let retryAfterSeconds: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case error, message
+        case retryAfterSeconds = "retry_after_seconds"
+    }
+}
+
+private struct AilockDictateResponse: Decodable {
+    let text: String?
+}
+
 /// Расшифровка надиктованного через recording-api.
 ///
-/// STMOB-274. Второй раз STT не изобретаем: маршрут тот же, что у транскрибации
-/// голосовых сообщений (STMOB-265 / STALK-666) — сырые байты аудио на
-/// `POST /api/recording/transcribe-voice`, внутри сервер зовёт STT движка Айлока.
-///
-/// Отличие диктовки: у неё нет события Matrix, а `event_id`/`room_id` в контракте
-/// обязательны и служат ключом кэша. До ответа Molly шлём явно помеченный
-/// синтетический идентификатор — так запись диктовки видно в кэше сервера и её
-/// нельзя спутать с расшифровкой настоящего голосового.
+/// STMOB-274. Контракт Molly от 30.07 (отдельный маршрут именно под диктовку —
+/// у неё нет события Matrix, поэтому авторизуется ПОЛЬЗОВАТЕЛЬ, а не доступ к
+/// чужому медиа, в отличие от транскрибации голосовых по STALK-666):
+/// ```
+/// POST {homeserver}/api/recording/stt/dictate
+/// Authorization: Bearer <matrix access token>
+/// multipart/form-data, единственное поле `audio` — WAV PCM mono 16 кГц
+/// → 200 {"text": "..."}
+/// → 401 / 413 / 429 / 502 / 503 в конверте {error, message, retry_after_seconds}
+/// ```
+/// Ключ тенанта STT остаётся на сервере и в клиент не попадает.
+/// Серверные потолки — 25 МиБ и 300 с; мы режем запись раньше, чтобы до 413 не доводить.
 final class AilockVoiceTranscriber {
     private let baseURL: String
     private let accessTokenProvider: () throws -> String
@@ -166,36 +200,61 @@ final class AilockVoiceTranscriber {
     func transcribe(fileURL: URL) async throws -> String {
         defer { try? FileManager.default.removeItem(at: fileURL) }
 
-        guard var components = URLComponents(string: "\(baseURL)/api/recording/transcribe-voice") else {
+        guard let url = URL(string: "\(baseURL)/api/recording/stt/dictate") else {
             throw AilockVoiceError.http(0)
         }
-        components.queryItems = [URLQueryItem(name: "event_id", value: "ailock-dictation-\(UUID().uuidString)"),
-                                 URLQueryItem(name: "room_id", value: "ailock")]
-        guard let url = components.url else { throw AilockVoiceError.http(0) }
 
-        let (data, status) = try await upload(url: url, fileURL: fileURL)
-        DiagLog.write("AilockVoice", "POST transcribe-voice -> \(status)")
-        guard status == 200 else { throw AilockVoiceError.http(status) }
+        let audio = try Data(contentsOf: fileURL)
+        let (data, status) = try await upload(url: url, audio: audio)
+        DiagLog.write("AilockVoice", "POST stt/dictate -> \(status), \(audio.count) байт")
 
-        guard let decoded = try? JSONDecoder().decode(VoiceTranscribeResponse.self, from: data) else {
+        guard status == 200 else { throw Self.error(status: status, body: data) }
+
+        guard let decoded = try? JSONDecoder().decode(AilockDictateResponse.self, from: data) else {
             throw AilockVoiceError.http(status)
         }
-
-        // Готовность определяется статусом, а не непустотой текста: `completed` с пустым
-        // текстом — легитимное «речь не распознана» (на этом уже спотыкался веб, STMOB-265).
-        let text = (decoded.fullText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = (decoded.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        // Пустой текст при 200 — это «речь не распознана», а не сбой.
         guard !text.isEmpty else { throw AilockVoiceError.empty }
         return text
     }
 
-    private func upload(url: URL, fileURL: URL) async throws -> (Data, Int) {
+    /// Разбор нормализованного конверта ошибок.
+    private static func error(status: Int, body: Data) -> AilockVoiceError {
+        let decoded = try? JSONDecoder().decode(AilockDictateError.self, from: body)
+
+        switch decoded?.error {
+        case "payload_too_large": return .tooLarge
+        case "rate_limited": return .rateLimited(retryAfter: decoded?.retryAfterSeconds)
+        case "stt_capacity", "stt_unavailable": return .unavailable
+        case "invalid_audio": return .http(status)
+        default: break
+        }
+
+        switch status {
+        case 413: return .tooLarge
+        case 429: return .rateLimited(retryAfter: decoded?.retryAfterSeconds)
+        case 502, 503: return .unavailable
+        default: return .http(status)
+        }
+    }
+
+    private func upload(url: URL, audio: Data) async throws -> (Data, Int) {
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var body = Data()
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"audio\"; filename=\"dictation.wav\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: audio/wav\r\n\r\n".data(using: .utf8)!)
+        body.append(audio)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+
         func attempt(refreshFirst: Bool) async throws -> (Data, Int) {
             if refreshFirst { await forceTokenRefresh?() }
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
-            request.setValue("audio/wav", forHTTPHeaderField: "Content-Type")
+            request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
             try request.setValue("Bearer \(accessTokenProvider())", forHTTPHeaderField: "Authorization")
-            let (data, response) = try await urlSession.upload(for: request, fromFile: fileURL)
+            let (data, response) = try await urlSession.upload(for: request, from: body)
             return (data, (response as? HTTPURLResponse)?.statusCode ?? 0)
         }
 

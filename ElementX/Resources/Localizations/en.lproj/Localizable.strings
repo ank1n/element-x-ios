@@ -1932,3 +1932,5 @@
 "stalk_ailock_record_too_short" = "Too short — hold a bit longer";
 "stalk_ailock_transcribe_failed" = "Could not transcribe the recording";
 "stalk_ailock_transcribe_empty" = "No speech recognised";
+"stalk_ailock_record_too_long" = "Recording is too long";
+"stalk_ailock_transcribe_unavailable" = "Speech recognition is temporarily unavailable";
