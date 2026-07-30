@@ -179,6 +179,16 @@ final class LiveKitRoomManager: ObservableObject {
                            selector: #selector(handleAudioRouteChange(_:)),
                            name: AVAudioSession.routeChangeNotification,
                            object: nil)
+        // STMOB-289: причина остановки захвата камеры. Без неё «камера погасла в фоне»
+        // приходилось выводить по совпадению времени, а система сообщает причину сама.
+        center.addObserver(self,
+                           selector: #selector(handleCaptureInterruption(_:)),
+                           name: AVCaptureSession.wasInterruptedNotification,
+                           object: nil)
+        center.addObserver(self,
+                           selector: #selector(handleCaptureInterruptionEnded(_:)),
+                           name: AVCaptureSession.interruptionEndedNotification,
+                           object: nil)
     }
 
     #if canImport(UIKit)
@@ -260,6 +270,36 @@ final class LiveKitRoomManager: ObservableObject {
         }
     }
     #endif
+
+    /// STMOB-289: почему система остановила захват камеры.
+    /// Документация AVFoundation: флаг многозадачного доступа снимает ровно одно
+    /// прерывание — «камера недоступна при нескольких приложениях на переднем
+    /// плане». Уход в фон это ДРУГАЯ причина, и она флагом не покрывается. Пока это
+    /// вывод из текста, а не факт: система сообщает причину сама, и здесь мы её
+    /// печатаем. Если придёт «в фоне» — своё видео в системном окне без особого
+    /// разрешения Apple недостижимо, и надо говорить об этом прямо, а не пробовать
+    /// дальше наугад.
+    @objc private func handleCaptureInterruption(_ note: Notification) {
+        guard let raw = note.userInfo?[AVCaptureSessionInterruptionReasonKey] as? Int,
+              let reason = AVCaptureSession.InterruptionReason(rawValue: raw) else {
+            DiagLog.write("Call", "захват прерван: причина не указана")
+            return
+        }
+        let text: String
+        switch reason {
+        case .videoDeviceNotAvailableInBackground: text = "приложение в фоне (флагом многозадачности НЕ лечится)"
+        case .videoDeviceNotAvailableWithMultipleForegroundApps: text = "несколько приложений на переднем плане (это лечится флагом)"
+        case .videoDeviceNotAvailableDueToSystemPressure: text = "нагрузка на систему"
+        case .videoDeviceInUseByAnotherClient: text = "камеру занял другой клиент"
+        case .audioDeviceInUseByAnotherClient: text = "микрофон занял другой клиент"
+        @unknown default: text = "неизвестная причина \(raw)"
+        }
+        DiagLog.write("Call", "захват камеры прерван: \(text)")
+    }
+
+    @objc private func handleCaptureInterruptionEnded(_ note: Notification) {
+        DiagLog.write("Call", "захват камеры возобновлён")
+    }
 
     @objc private func handleAudioInterruption(_ note: Notification) {
         guard let userInfo = note.userInfo,
