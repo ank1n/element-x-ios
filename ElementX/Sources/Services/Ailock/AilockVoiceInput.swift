@@ -5,6 +5,7 @@
 //
 
 import AVFoundation
+import CallKit
 import Foundation
 import os.log
 
@@ -20,6 +21,13 @@ private let ailockVoiceLog = OSLog(subsystem: "ru.implica.stalk", category: "Ail
 final class AilockVoiceRecorder {
     private var recorder: AVAudioRecorder?
     private var fileURL: URL?
+
+    /// Категория и режим аудио-сессии до начала записи — возвращаем их как было.
+    /// Глухая деактивация ломала бы чужой сценарий, если он держит сессию.
+    private var previousCategory: AVAudioSession.Category?
+    private var previousMode: AVAudioSession.Mode?
+    private var previousOptions: AVAudioSession.CategoryOptions?
+    private var didActivateSession = false
 
     /// Клиентский предел записи.
     ///
@@ -44,7 +52,9 @@ final class AilockVoiceRecorder {
     }
 
     func start() throws {
-        stopSession()
+        // Во время звонка микрофон и маршрутизацию не забираем: переключение категории
+        // посреди разговора рвёт звук у обеих сторон.
+        guard !Self.isCallInProgress else { throw AilockVoiceError.callInProgress }
 
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("ailock-voice", isDirectory: true)
@@ -52,8 +62,12 @@ final class AilockVoiceRecorder {
         let url = directory.appendingPathComponent("\(UUID().uuidString).wav")
 
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.duckOthers, .defaultToSpeaker])
+        previousCategory = session.category
+        previousMode = session.mode
+        previousOptions = session.categoryOptions
+        try session.setCategory(.record, mode: .spokenAudio, options: [.duckOthers])
         try session.setActive(true)
+        didActivateSession = true
 
         let settings: [String: Any] = [
             AVFormatIDKey: Int(kAudioFormatLinearPCM),
@@ -114,8 +128,25 @@ final class AilockVoiceRecorder {
         return max(0, min(1, (decibels + 50) / 50))
     }
 
+    /// Идёт ли системный звонок (в том числе наш через CallKit).
+    private static var isCallInProgress: Bool {
+        CXCallObserver().calls.contains { !$0.hasEnded }
+    }
+
     private func stopSession() {
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        guard didActivateSession else { return }
+        didActivateSession = false
+
+        let session = AVAudioSession.sharedInstance()
+        try? session.setActive(false, options: .notifyOthersOnDeactivation)
+        // Возвращаем сессию в исходное состояние — следующий сценарий (звонок,
+        // голосовое сообщение, плеер) не должен получить наши настройки записи.
+        if let previousCategory {
+            try? session.setCategory(previousCategory, mode: previousMode ?? .default, options: previousOptions ?? [])
+        }
+        previousCategory = nil
+        previousMode = nil
+        previousOptions = nil
     }
 }
 
@@ -124,6 +155,7 @@ final class AilockVoiceRecorder {
 enum AilockVoiceError: Error, LocalizedError {
     case permissionDenied
     case recorderFailed
+    case callInProgress
     case tooShort
     case tooLarge
     case rateLimited(retryAfter: Int?)
@@ -135,6 +167,7 @@ enum AilockVoiceError: Error, LocalizedError {
         switch self {
         case .permissionDenied: return SL10n.ailockMicDenied
         case .recorderFailed: return SL10n.ailockRecordFailed
+        case .callInProgress: return SL10n.ailockMicBusy
         case .tooShort: return SL10n.ailockRecordTooShort
         case .tooLarge: return SL10n.ailockRecordTooLong
         case .rateLimited(let retryAfter):

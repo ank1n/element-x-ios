@@ -42,8 +42,16 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
 
     private var socket: AilockWebSocket?
     private var streamTask: Task<Void, Never>?
-    private var workTask: Task<Void, Never>?
     private var reconnectTask: Task<Void, Never>?
+
+    /// Разные задачи для истории и отправки: раньше они делили одно поле, и отправка
+    /// отменяла догрузку истории — беседа открывалась пустой с ложной ошибкой.
+    private var historyTask: Task<Void, Never>?
+    private var sendTask: Task<Void, Never>?
+
+    /// Соединение поднимается ровно один раз: без этого два быстрых сообщения подряд
+    /// создавали две сессии и два сокета, и первый оставался висеть.
+    private var connectTask: Task<Void, Error>?
 
     /// Буфер дельт: перерисовывать ленту на каждый токен слишком дорого.
     private var streamBuffer = ""
@@ -53,12 +61,19 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
     /// Локальные файлы, выбранные пользователем: id вложения → URL на диске.
     private var localAttachments: [String: URL] = [:]
 
-    private static let lastConversationKey = "ailock.lastConversationID"
+    private var reconnectAttemptCount = 0
+    /// Снимается при закрытии сокета: иначе отменённая попытка сама себя перезапускала
+    /// и цепочка переживала уход в фон и закрытие экрана.
+    private var isReconnectEnabled = false
 
-    init(service: AilockService, agentID: String, transcriber: AilockVoiceTranscriber?) {
+    /// Ключ последней беседы — свой на каждый аккаунт и домен.
+    private let lastConversationKey: String
+
+    init(service: AilockService, agentID: String, transcriber: AilockVoiceTranscriber?, sessionKey: String) {
         self.service = service
         self.agentID = agentID
         self.transcriber = transcriber
+        lastConversationKey = "ailock.lastConversationID.\(sessionKey)"
 
         super.init(initialViewState: AilockScreenViewState())
 
@@ -98,6 +113,53 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
         }
     }
 
+    /// Открыть существующую беседу (выбор из истории).
+    func open(conversation: AilockConversation) {
+        guard conversation.id != conversationID else { return }
+        resetConversationState()
+        conversationID = conversation.id
+        state.conversationTitle = conversation.title
+        UserDefaults.standard.set(conversation.id, forKey: lastConversationKey)
+        loadHistory()
+    }
+
+    /// Освободить ресурсы при закрытии экрана.
+    func stop() {
+        closeSocket()
+        historyTask?.cancel()
+        sendTask?.cancel()
+        flushTask?.cancel()
+        // Диктовка переживала закрытие экрана: запись продолжалась, аудио-сессия
+        // оставалась активной, временный файл не удалялся.
+        cancelVoiceInput()
+    }
+
+    /// Общий сброс при смене беседы. Раньше это делал только «новый чат», поэтому
+    /// после выбора беседы из истории терялся весь следующий ответ агента, а композер
+    /// оставался в режиме «стоп» без возможности что-либо отправить.
+    private func resetConversationState() {
+        closeSocket()
+        sendTask?.cancel()
+        historyTask?.cancel()
+        flushTask?.cancel()
+        flushTask = nil
+
+        conversationID = nil
+        streamingMessageID = nil
+        streamBuffer = ""
+        reconnectAttemptCount = 0
+        localAttachments.removeAll()
+
+        state.messages = []
+        state.pendingQuestion = nil
+        state.pendingAttachments = []
+        state.isUploadingAttachment = false
+        state.isRunning = false
+        state.isConnecting = false
+        state.errorMessage = nil
+        state.conversationTitle = nil
+    }
+
     // MARK: - Голосовой ввод
 
     /// Диктовка: пишем WAV, расшифровываем через recording-api и кладём текст в поле —
@@ -114,6 +176,9 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
 
             do {
                 try voiceRecorder.start()
+            } catch AilockVoiceError.callInProgress {
+                state.errorMessage = SL10n.ailockMicBusy
+                return
             } catch {
                 state.errorMessage = SL10n.ailockRecordFailed
                 return
@@ -181,25 +246,6 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
         state.voiceLevel = 0
     }
 
-    /// Открыть существующую беседу (выбор из истории).
-    func open(conversation: AilockConversation) {
-        guard conversation.id != conversationID else { return }
-        closeSocket()
-        conversationID = conversation.id
-        state.conversationTitle = conversation.title
-        state.messages = []
-        state.pendingQuestion = nil
-        UserDefaults.standard.set(conversation.id, forKey: Self.lastConversationKey)
-        loadHistory()
-    }
-
-    /// Освободить ресурсы при закрытии экрана.
-    func stop() {
-        closeSocket()
-        workTask?.cancel()
-        flushTask?.cancel()
-    }
-
     // MARK: - Отправка
 
     private func send() {
@@ -207,8 +253,16 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
         let attachments = state.pendingAttachments
         guard !text.isEmpty || !attachments.isEmpty else { return }
 
+        // Ответ на вопрос агента уходит отдельным кадром, в котором вложений нет вообще.
+        // Поэтому при наличии файлов отправляем обычное сообщение, а вопрос снимаем:
+        // иначе файл молча загружался бы на сервер и терялся.
+        let answering: AilockPendingQuestion? = attachments.isEmpty ? state.pendingQuestion : nil
+        // Пустой ответ на вопрос отправлять нечего.
+        if answering != nil, text.isEmpty { return }
+
         state.bindings.composerText = ""
         state.pendingAttachments = []
+        state.pendingQuestion = nil
         state.errorMessage = nil
 
         // Эхо от сервера не приходит — вставляем реплику пользователя оптимистично.
@@ -219,16 +273,16 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
                                         createdAt: Date())
         state.messages.append(userMessage)
 
-        let pendingQuestion = state.pendingQuestion
-        state.pendingQuestion = nil
-
-        workTask?.cancel()
-        workTask = Task { [weak self] in
-            await self?.performSend(text: text, attachments: attachments, answering: pendingQuestion)
+        sendTask?.cancel()
+        sendTask = Task { [weak self] in
+            await self?.performSend(message: userMessage, text: text, attachments: attachments, answering: answering)
         }
     }
 
-    private func performSend(text: String, attachments: [AilockFile], answering: AilockPendingQuestion?) async {
+    private func performSend(message: AilockMessage,
+                             text: String,
+                             attachments: [AilockFile],
+                             answering: AilockPendingQuestion?) async {
         do {
             try await ensureConnected()
 
@@ -255,12 +309,38 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
 
             beginStreamingPlaceholder()
         } catch {
+            guard !Task.isCancelled, !isCancellation(error) else { return }
+            // Сообщение не ушло — возвращаем текст и файлы пользователю, а не делаем вид,
+            // что отправка состоялась. Иначе набранное просто исчезало.
+            restoreComposer(after: message, text: text, attachments: attachments, question: answering)
             handle(error: error)
         }
     }
 
+    private func restoreComposer(after message: AilockMessage,
+                                 text: String,
+                                 attachments: [AilockFile],
+                                 question: AilockPendingQuestion?) {
+        state.messages.removeAll { $0.id == message.id }
+
+        let current = state.bindings.composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+        state.bindings.composerText = current.isEmpty ? text : text + " " + current
+        if state.pendingAttachments.isEmpty {
+            state.pendingAttachments = attachments
+        }
+        if let question, state.pendingQuestion == nil {
+            state.pendingQuestion = question
+        }
+    }
+
     private func stopGeneration() {
-        guard let socket else { return }
+        guard let socket else {
+            // Сокета нет (фон, обрыв, исчерпанный реконнект) — кнопка не должна быть
+            // мёртвой: гасим состояние локально, иначе выйти из режима «стоп» нечем.
+            finalizeStreamingMessage()
+            state.isRunning = false
+            return
+        }
         Task {
             try? await socket.cancelGeneration()
         }
@@ -273,49 +353,68 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
     private func ensureConnected() async throws {
         if socket != nil { return }
 
-        state.isConnecting = true
-        defer { state.isConnecting = false }
-
-        let session = try await service.createSession(agentID: agentID, conversationID: conversationID)
-        conversationID = session.conversationID
-        UserDefaults.standard.set(session.conversationID, forKey: Self.lastConversationKey)
-
-        guard let url = service.webSocketURL(conversationID: session.conversationID, ticket: session.wsTicket) else {
-            throw AilockError.badResponse
+        // Повторный вызов присоединяется к уже идущему подключению.
+        if let connectTask {
+            try await connectTask.value
+            return
         }
 
-        let socket = AilockWebSocket(url: url)
-        self.socket = socket
-        reconnectAttemptCount = 0
+        let task = Task { [weak self] in
+            guard let self else { return }
+            state.isConnecting = true
+            defer {
+                state.isConnecting = false
+                connectTask = nil
+            }
 
-        let stream = await socket.connect()
-        streamTask?.cancel()
-        streamTask = Task { [weak self] in
-            for await event in stream {
-                guard !Task.isCancelled else { break }
-                await self?.handle(event: event)
+            let session = try await service.createSession(agentID: agentID, conversationID: conversationID)
+            conversationID = session.conversationID
+            UserDefaults.standard.set(session.conversationID, forKey: lastConversationKey)
+
+            guard let url = service.webSocketURL(conversationID: session.conversationID, ticket: session.wsTicket) else {
+                throw AilockError.badResponse
+            }
+
+            let socket = AilockWebSocket(url: url)
+            self.socket = socket
+            isReconnectEnabled = true
+
+            let stream = await socket.connect()
+            streamTask?.cancel()
+            streamTask = Task { [weak self] in
+                for await event in stream {
+                    guard !Task.isCancelled else { break }
+                    await self?.handle(event: event)
+                }
             }
         }
+
+        connectTask = task
+        try await task.value
     }
 
     private func closeSocket() {
+        isReconnectEnabled = false
         streamTask?.cancel()
         streamTask = nil
         reconnectTask?.cancel()
         reconnectTask = nil
+        connectTask?.cancel()
+        connectTask = nil
         let socket = socket
         self.socket = nil
         Task { await socket?.close() }
     }
 
-    private var reconnectAttemptCount = 0
-
     /// Реконнект по схеме острова: до 5 попыток, задержки 1/2/4/8/8 с, перед каждой —
     /// проверка статуса беседы (вдруг ответ уже готов и переподключаться незачем).
     private func scheduleReconnect() {
-        guard let conversationID else { return }
+        guard isReconnectEnabled, let conversationID else { return }
         guard reconnectAttemptCount < 5 else {
+            // Попытки исчерпаны: экран не должен навсегда остаться в режиме «работает».
             finalizeStreamingMessage()
+            state.isRunning = false
+            state.errorMessage = SL10n.ailockConnectionLost
             return
         }
 
@@ -326,14 +425,16 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
         reconnectTask = Task { [weak self] in
             let delay = min(1_000_000_000 * UInt64(1 << attempt), 8_000_000_000)
             try? await Task.sleep(nanoseconds: delay)
-            guard let self, !Task.isCancelled else { return }
+            guard let self, !Task.isCancelled, isReconnectEnabled else { return }
 
             do {
                 let status = try await service.status(conversationID: conversationID)
+                guard !Task.isCancelled, isReconnectEnabled else { return }
 
                 if !status.running, status.pendingQuestion == nil {
                     // Ответ уже завершён — просто перечитываем историю.
                     finalizeStreamingMessage()
+                    state.isRunning = false
                     loadHistory()
                     return
                 }
@@ -344,6 +445,10 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
 
                 try await ensureConnected()
             } catch {
+                // Отмена (уход в фон, закрытие экрана, смена беседы) не должна
+                // перезапускать цепочку: иначе сокет поднимался в фоне и после ухода
+                // с экрана — ровно то, что запрещает правило 0xDEAD10CC.
+                guard !Task.isCancelled, !isCancellation(error), isReconnectEnabled else { return }
                 scheduleReconnect()
             }
         }
@@ -353,6 +458,16 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
 
     @MainActor
     private func handle(event: AilockStreamEvent) {
+        // Счётчик попыток обнуляет ФАКТ живого потока, а не факт рукопожатия: иначе
+        // сокет, который рвётся сразу после подключения (протухший тикет), давал
+        // бесконечный цикл переподключений с интервалом в секунду.
+        switch event {
+        case .disconnected:
+            break
+        default:
+            reconnectAttemptCount = 0
+        }
+
         switch event {
         case .runStarted:
             state.isRunning = true
@@ -374,7 +489,6 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
                                                     text: text ?? "",
                                                     createdAt: Date()))
                 state.isRunning = false
-                streamingMessageID = nil
                 return
             }
             // Для обычного ответа `text` — не источник истины (кит его не читает),
@@ -470,9 +584,13 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
         flushTask?.cancel()
         flushTask = nil
         guard !streamBuffer.isEmpty else { return }
-        if let index = streamingIndex() {
-            state.messages[index].text += streamBuffer
+        // Если целевого сообщения нет (беседу переключили), буфер не выбрасываем молча —
+        // он относится к прошлой беседе и просто отбрасывается вместе с ней.
+        guard let index = streamingIndex() else {
+            streamBuffer = ""
+            return
         }
+        state.messages[index].text += streamBuffer
         streamBuffer = ""
     }
 
@@ -497,7 +615,7 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
     // MARK: - История
 
     private func restoreLastConversation() {
-        guard let saved = UserDefaults.standard.string(forKey: Self.lastConversationKey), !saved.isEmpty else { return }
+        guard let saved = UserDefaults.standard.string(forKey: lastConversationKey), !saved.isEmpty else { return }
         conversationID = saved
         loadHistory()
     }
@@ -506,8 +624,8 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
         guard let conversationID else { return }
 
         state.isLoadingHistory = true
-        workTask?.cancel()
-        workTask = Task { [weak self] in
+        historyTask?.cancel()
+        historyTask = Task { [weak self] in
             guard let self else { return }
             do {
                 let messages = try await service.messages(conversationID: conversationID)
@@ -517,13 +635,21 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
 
                 // Беседа могла остаться в работе — подхватываем состояние.
                 let status = try await service.status(conversationID: conversationID)
+                guard !Task.isCancelled else { return }
+
                 if let question = status.pendingQuestion {
                     state.pendingQuestion = question
+                    state.isRunning = false
                 } else if status.running {
                     state.isRunning = true
                     try await ensureConnected()
+                } else {
+                    // Явный сброс: иначе флаг, поднятый до сворачивания приложения,
+                    // оставлял композер в режиме «стоп» навсегда.
+                    state.isRunning = false
                 }
             } catch {
+                guard !Task.isCancelled, !isCancellation(error) else { return }
                 state.isLoadingHistory = false
                 switch error as? AilockError {
                 case .unavailable:
@@ -531,7 +657,7 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
                 case .http(let status, _, _) where status == 404:
                     // Беседа могла быть удалена с другого клиента — начинаем с чистого листа.
                     self.conversationID = nil
-                    UserDefaults.standard.removeObject(forKey: Self.lastConversationKey)
+                    UserDefaults.standard.removeObject(forKey: lastConversationKey)
                     state.messages = []
                 default:
                     handle(error: error)
@@ -541,17 +667,8 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
     }
 
     private func startNewConversation() {
-        closeSocket()
-        conversationID = nil
-        streamingMessageID = nil
-        streamBuffer = ""
-        UserDefaults.standard.removeObject(forKey: Self.lastConversationKey)
-        state.messages = []
-        state.pendingQuestion = nil
-        state.pendingAttachments = []
-        state.conversationTitle = nil
-        state.isRunning = false
-        state.errorMessage = nil
+        resetConversationState()
+        UserDefaults.standard.removeObject(forKey: lastConversationKey)
     }
 
     // MARK: - Файлы
@@ -590,12 +707,17 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
                 let localURL = try await service.download(file: file, conversationID: conversationID)
                 state.bindings.sharedFile = AilockSharedFile(url: localURL)
             } catch {
+                guard !isCancellation(error) else { return }
                 handle(error: error)
             }
         }
     }
 
     // MARK: - Прочее
+
+    private func isCancellation(_ error: Error) -> Bool {
+        error is CancellationError || (error as? URLError)?.code == .cancelled
+    }
 
     private func handle(error: Error) {
         if case .unavailable = (error as? AilockError) {
@@ -606,15 +728,23 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
         DiagLog.write("Ailock", "error: \(error.localizedDescription)")
         state.errorMessage = (error as? LocalizedError)?.errorDescription ?? SL10n.ailockRequestFailed
         state.isRunning = false
-        removeEmptyStreamingPlaceholder()
+        // Активный стрим не трогаем: поздняя ошибка от другой задачи не должна
+        // осиротить сообщение, которое сейчас дописывается.
+        if let index = streamingIndex(), state.messages[index].isEmpty {
+            state.messages.remove(at: index)
+            streamingMessageID = nil
+        }
     }
 
     /// В фоне сеть не трогаем (правило 0xDEAD10CC): рвём сокет и поднимаем его при возврате.
     private func observeApplicationState() {
         NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)
             .sink { [weak self] _ in
-                self?.flushBuffer()
-                self?.closeSocket()
+                guard let self else { return }
+                flushBuffer()
+                closeSocket()
+                // Запись в фоне не продолжаем: сессия всё равно будет прервана системой.
+                if state.voicePhase == .recording { cancelVoiceInput() }
             }
             .store(in: &cancellables)
 
@@ -623,6 +753,7 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
                 guard let self, conversationID != nil, socket == nil else { return }
                 guard state.isRunning || state.pendingQuestion != nil else { return }
                 reconnectAttemptCount = 0
+                isReconnectEnabled = true
                 scheduleReconnect()
             }
             .store(in: &cancellables)

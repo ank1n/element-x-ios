@@ -125,7 +125,8 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
             let parameters = AilockScreenCoordinatorParameters(homeserver: sessionBaseURL,
                                                                accessTokenProvider: { try clientProxy.matrixAccessToken() },
                                                                forceTokenRefresh: { await concreteProxy?.forceTokenRefresh() },
-                                                               agentID: WidgetItem.ailockAgentID)
+                                                               agentID: WidgetItem.ailockAgentID,
+                                                               sessionKey: "\(clientProxy.userID)@\(clientProxy.homeserver)")
             let coordinator = AilockScreenCoordinator(parameters: parameters,
                                                       navigationStackCoordinator: navigationStackCoordinator)
             coordinator.actionsPublisher
@@ -153,7 +154,8 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
             let filesConcrete = filesProxy as? ClientProxy
             let diskCoordinator = DiskScreenCoordinator(parameters: .init(baseURL: sessionBaseURL,
                                                                           accessTokenProvider: { try filesProxy.matrixAccessToken() },
-                                                                          forceTokenRefresh: { await filesConcrete?.forceTokenRefresh() }))
+                                                                          forceTokenRefresh: { await filesConcrete?.forceTokenRefresh() },
+                                                                          mediaProvider: userSession.mediaProvider))
             navigationStackCoordinator.push(diskCoordinator)
 
         case "meetings-calendar":

@@ -1934,3 +1934,5 @@
 "stalk_ailock_transcribe_empty" = "No speech recognised";
 "stalk_ailock_record_too_long" = "Recording is too long";
 "stalk_ailock_transcribe_unavailable" = "Speech recognition is temporarily unavailable";
+"stalk_ailock_mic_busy" = "Microphone is busy with a call";
+"stalk_ailock_connection_lost" = "Connection lost — try sending again";

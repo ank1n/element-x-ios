@@ -58,7 +58,9 @@ struct AilockChatScreen: View {
                             .id(message.id)
                     }
 
-                    if context.viewState.isRunning, !isStreamingVisible {
+                    // Индикатор в ленте — только когда заготовки ответа ещё нет вовсе.
+                    // Иначе он дублировал такой же индикатор внутри пустого пузыря.
+                    if context.viewState.isRunning, context.viewState.messages.last?.isStreaming != true {
                         workingIndicator
                     }
 

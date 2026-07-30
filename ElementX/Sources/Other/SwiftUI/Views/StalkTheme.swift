@@ -241,6 +241,8 @@ enum SL10n {
     static let ailockTranscribeEmpty = NSLocalizedString("stalk_ailock_transcribe_empty", tableName: "Localizable", value: "Речь не распознана", comment: "Nothing recognised")
     static let ailockRecordTooLong = NSLocalizedString("stalk_ailock_record_too_long", tableName: "Localizable", value: "Запись слишком длинная", comment: "Recording too long")
     static let ailockTranscribeUnavailable = NSLocalizedString("stalk_ailock_transcribe_unavailable", tableName: "Localizable", value: "Распознавание временно недоступно", comment: "STT unavailable")
+    static let ailockMicBusy = NSLocalizedString("stalk_ailock_mic_busy", tableName: "Localizable", value: "Микрофон занят звонком", comment: "Mic busy with a call")
+    static let ailockConnectionLost = NSLocalizedString("stalk_ailock_connection_lost", tableName: "Localizable", value: "Соединение потеряно — попробуйте отправить снова", comment: "Connection lost")
 
     // MARK: - Auth
 

@@ -18,6 +18,9 @@ struct AilockScreenCoordinatorParameters {
     let forceTokenRefresh: (() async -> Void)?
     /// Идентификатор агента для POST /sessions.
     let agentID: String
+    /// Кто и куда залогинен: последняя открытая беседа запоминается отдельно
+    /// для каждого аккаунта и домена, иначе после смены сервера подтянулась бы чужая.
+    let sessionKey: String
 }
 
 /// Приложение «Айлок» во вкладке «Приложения»: чат с агентом + история бесед.
@@ -49,7 +52,8 @@ final class AilockScreenCoordinator: CoordinatorProtocol {
                                                  forceTokenRefresh: parameters.forceTokenRefresh)
         chatViewModel = AilockScreenViewModel(service: service,
                                               agentID: parameters.agentID,
-                                              transcriber: transcriber)
+                                              transcriber: transcriber,
+                                              sessionKey: parameters.sessionKey)
 
         chatViewModel.actionsPublisher
             .sink { [weak self] action in

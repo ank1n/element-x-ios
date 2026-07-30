@@ -1805,3 +1805,5 @@
 "stalk_ailock_transcribe_empty" = "Речь не распознана";
 "stalk_ailock_record_too_long" = "Запись слишком длинная";
 "stalk_ailock_transcribe_unavailable" = "Распознавание временно недоступно";
+"stalk_ailock_mic_busy" = "Микрофон занят звонком";
+"stalk_ailock_connection_lost" = "Соединение потеряно — попробуйте отправить снова";

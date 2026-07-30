@@ -95,11 +95,14 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
         Task { [weak self] in
             guard let self else { return }
 
-            // 1. Always show cache instantly (for fast UI)
+            // 1. Always show cache instantly (for fast UI).
+            // STMOB-274: кэш рисуем СРАЗУ, не дожидаясь пробы доступности встроенных
+            // приложений — иначе вкладка висела бы пустой всё время сетевого запроса.
             if let cached = await ServiceLocator.shared.cacheService?.load([WidgetItem].self, forKey: Self.widgetsCacheKey) {
-                self.state.widgets = await self.mergingLocalBuiltins(into: cached)
+                self.state.widgets = cached
                 self.state.isLoading = false
                 MXLog.info("sTalk: Loaded \(cached.count) widgets from cache")
+                self.state.widgets = await self.mergingLocalBuiltins(into: cached)
             }
 
             // 2. Always fetch from server to check for updates
@@ -195,8 +198,14 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
             }
     }
 
-    /// Кэш результата проверки door-2: одна проба на запуск приложения, не на каждый показ вкладки.
-    private static var ailockAvailability: Bool?
+    /// Кэш результата проверки door-2: одна проба на аккаунт+домен, а не на запуск
+    /// приложения. Общий статик пережил бы смену сервера в том же запуске и показал бы
+    /// Айлок там, где его нет (или спрятал там, где он есть).
+    private static var ailockAvailability: [String: Bool] = [:]
+
+    private var availabilityKey: String {
+        "\(userSession.clientProxy.userID)@\(serverBaseURL)"
+    }
 
     /// STMOB-274: подмешивает встроенные приложения, которых ещё нет в реестре apps-api.
     ///
@@ -205,37 +214,40 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
     /// и этот метод можно будет убрать целиком.
     private func mergingLocalBuiltins(into widgets: [WidgetItem]) async -> [WidgetItem] {
         var result = widgets
+        let key = availabilityKey
 
         // STMOB-275: «Диск». Подмешиваем, пока его нет в реестре apps-api. Наличие
-        // сервиса проверяем по живому ответу /api/files — иначе на доменах, где
-        // files-api не развёрнут, приложение открывалось бы в пустоту.
+        // сервиса проверяем живым запросом — иначе на доменах, где files-api не
+        // развёрнут, приложение открывалось бы в пустоту.
+        // Кэш по паре «аккаунт+домен», как у Айлока: общий статик пережил бы смену
+        // сервера в том же запуске и показал бы Диск там, где его нет.
         if !result.contains(where: { $0.id == WidgetItem.filesAppID }) {
-            if Self.filesAvailability == nil {
+            if Self.filesAvailability[key] == nil {
                 let token = try? userSession.clientProxy.matrixAccessToken()
-                Self.filesAvailability = await Self.probeFilesAvailability(baseURL: serverBaseURL, accessToken: token)
-                MXLog.info("sTalk: files-api available = \(Self.filesAvailability == true)")
+                Self.filesAvailability[key] = await Self.probeFilesAvailability(baseURL: serverBaseURL, accessToken: token)
+                MXLog.info("sTalk: files-api available = \(Self.filesAvailability[key] == true)")
             }
-            if Self.filesAvailability == true {
+            if Self.filesAvailability[key] == true {
                 result.append(WidgetItem.files)
             }
         }
 
         guard !result.contains(where: { $0.id == WidgetItem.ailockAppID }) else { return result }
 
-        if Self.ailockAvailability == nil {
+        if Self.ailockAvailability[key] == nil {
             let token = try? userSession.clientProxy.matrixAccessToken()
-            Self.ailockAvailability = await AilockService.probeAvailability(homeserver: serverBaseURL, accessToken: token)
-            MXLog.info("sTalk: Ailock door-2 available = \(Self.ailockAvailability == true)")
+            Self.ailockAvailability[key] = await AilockService.probeAvailability(homeserver: serverBaseURL, accessToken: token)
+            MXLog.info("sTalk: Ailock door-2 available = \(Self.ailockAvailability[key] == true)")
         }
 
-        guard Self.ailockAvailability == true else { return result }
+        guard Self.ailockAvailability[key] == true else { return result }
         return result + [WidgetItem.ailock]
     }
 
     /// Развёрнут ли files-api на этом домене. Один запрос за сессию, результат кэшируется.
     /// 200 или 401 одинаково означают «сервис есть»: 401 — это ответ живого маршрута,
     /// а не его отсутствие. Отсутствие даёт 404.
-    private static var filesAvailability: Bool?
+    private static var filesAvailability: [String: Bool] = [:]
 
     private static func probeFilesAvailability(baseURL: String, accessToken: String?) async -> Bool {
         guard let url = URL(string: "\(baseURL)/api/files/stats") else { return false }

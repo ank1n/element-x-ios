@@ -27,7 +27,8 @@ enum AilockHistoryParser {
     private static let filePrefix = "__FILE_URL__:"
 
     static func parse(rows: [[String: Any]]) -> [AilockMessage] {
-        let askUserCallIDs = askUserToolCallIDs(in: rows)
+        let askUserQuestions = askUserCalls(in: rows)
+        let askUserCallIDs = Set(askUserQuestions.keys)
 
         var messages: [AilockMessage] = []
         var index = 0
@@ -56,6 +57,15 @@ enum AilockHistoryParser {
             case "tool":
                 let callID = row["tool_call_id"] as? String
                 if let callID, askUserCallIDs.contains(callID) {
+                    // Сам вопрос агента в истории отдельной строкой не приходит — он лежит
+                    // в аргументах вызова. Без него в ленте оставались бы ответы пользователя
+                    // на вопросы, которых не видно.
+                    if let question = askUserQuestions[callID], !question.isEmpty {
+                        messages.append(AilockMessage(id: "ask-\(callID)",
+                                                      role: .assistant,
+                                                      text: question,
+                                                      createdAt: createdAt))
+                    }
                     // Ответ человека на вопрос агента — возвращаем его в ленту как реплику пользователя.
                     messages.append(AilockMessage(id: identifier, role: .user, text: content, createdAt: createdAt))
                     continue
@@ -104,12 +114,16 @@ enum AilockHistoryParser {
         return messages.filter { !$0.isEmpty }
     }
 
-    /// Идентификаторы вызовов `ask_user` — по ним ответы пользователя опознаются среди tool-строк.
+    /// Вызовы `ask_user`: идентификатор → текст вопроса.
+    ///
+    /// По идентификаторам ответы пользователя опознаются среди tool-строк, а текст нужен,
+    /// чтобы вернуть в ленту сам вопрос — отдельной строкой он в истории не приходит.
     ///
     /// `tool_calls` в истории имеет двойной тип: массив либо JSON-строка, а имя лежит
-    /// то в `function.name`, то в плоском `name`. Прямолинейный Codable здесь разваливается.
-    private static func askUserToolCallIDs(in rows: [[String: Any]]) -> Set<String> {
-        var result: Set<String> = []
+    /// то в `function.name`, то в плоском `name`; аргументы — то объект, то JSON-строка.
+    /// Прямолинейный Codable здесь разваливается.
+    private static func askUserCalls(in rows: [[String: Any]]) -> [String: String] {
+        var result: [String: String] = [:]
 
         for row in rows {
             guard row["role"] as? String == "assistant" else { continue }
@@ -126,14 +140,30 @@ enum AilockHistoryParser {
             }
 
             for call in calls {
-                let name = (call["function"] as? [String: Any])?["name"] as? String ?? call["name"] as? String
-                if name == "ask_user", let id = call["id"] as? String {
-                    result.insert(id)
-                }
+                let function = call["function"] as? [String: Any]
+                let name = (function?["name"] as? String) ?? (call["name"] as? String)
+                guard name == "ask_user", let id = call["id"] as? String else { continue }
+
+                let rawArguments = function?["arguments"] ?? call["arguments"]
+                result[id] = question(from: rawArguments) ?? ""
             }
         }
 
         return result
+    }
+
+    /// Текст вопроса из аргументов вызова `ask_user`: приходит и объектом, и JSON-строкой.
+    private static func question(from raw: Any?) -> String? {
+        let arguments: [String: Any]?
+        if let object = raw as? [String: Any] {
+            arguments = object
+        } else if let string = raw as? String,
+                  let data = string.data(using: .utf8) {
+            arguments = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        } else {
+            arguments = nil
+        }
+        return arguments?["question"] as? String
     }
 
     /// Вложения строки истории. Имена полей у движка ещё не зафиксированы (перенос
