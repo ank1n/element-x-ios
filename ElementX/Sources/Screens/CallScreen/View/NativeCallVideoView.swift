@@ -1614,9 +1614,13 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
     /// STMOB-285: подложка, на которой заведено окно. Нужна, чтобы ПЕРЕВЗВЕСТИ
     /// окно после его закрытия: SwiftUI не обязан пересобирать дерево при возврате
     /// из окна, и без своей ссылки перевзводить не от чего.
-    /// Сильная ссылка: слабая обнулялась при пересборке дерева экрана, и перевзводить
-    /// окно после закрытия было не от чего — в логе 193 строки о перевзведении нет вовсе.
-    /// Держим до конца звонка, отпускаем в stop().
+    /// STMOB-290: СВОЯ подложка, а не пришедшая из SwiftUI.
+    /// Система поднимает окно только от вью, которая РЕАЛЬНО в иерархии окна.
+    /// Подложка из дерева экрана звонка при сворачивании пересобирается: сильная
+    /// ссылка на неё оставалась живой, но из иерархии вью уже вышла — и второе
+    /// сворачивание окна не давало (лог 194: перевзведение прошло, «автозапуск
+    /// включён» есть, а «окно открылось» нет). Держим собственную вью в окне
+    /// приложения на весь звонок: пересборка дерева её не касается.
     private var sourceView: UIView?
 
     /// Окно открылось. Приложению нужно знать: пока оно висит, звонок не полноэкранный.
@@ -1657,8 +1661,12 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
 
         self.roomManager = roomManager
         self.fallbackTitle = fallbackTitle
-        self.sourceView = sourceView
-        let source = AVPictureInPictureController.ContentSource(activeVideoCallSourceView: sourceView,
+
+        // Своя подложка живёт в окне приложения и переживает пересборку дерева.
+        // Если окна ещё нет (редко, но бывает на старте), падаем назад на пришедшую.
+        let ownSource = ensureOwnSourceView() ?? sourceView
+        self.sourceView = ownSource
+        let source = AVPictureInPictureController.ContentSource(activeVideoCallSourceView: ownSource,
                                                                 contentViewController: contentViewController)
         let controller = AVPictureInPictureController(contentSource: source)
         // STMOB-284: автозапуск разрешаем ТОЛЬКО когда в звонке есть видео.
@@ -1694,6 +1702,27 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
         // в кадры 8×8 — чёрный прямоугольник вместо собеседника (лог 163).
         DiagLog.write("CallUI", "картинка в картинке готова")
         return controller
+    }
+
+    /// Невидимая вью 1×1 в окне приложения. Система требует, чтобы источник окна
+    /// находился в иерархии в момент ухода в фон, а наша собственная вью там и
+    /// остаётся — в отличие от подложки из SwiftUI-дерева.
+    private func ensureOwnSourceView() -> UIView? {
+        if let sourceView, sourceView.window != nil { return sourceView }
+
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        guard let window = scenes.flatMap(\.windows).first(where: \.isKeyWindow) ?? scenes.flatMap(\.windows).first else {
+            DiagLog.write("CallUI", "картинка в картинке: окна приложения ещё нет — беру подложку из дерева")
+            return nil
+        }
+
+        let view = UIView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
+        view.isUserInteractionEnabled = false
+        view.backgroundColor = .clear
+        view.alpha = 0.01
+        window.addSubview(view)
+        DiagLog.write("CallUI", "картинка в картинке: своя подложка добавлена в окно приложения")
+        return view
     }
 
     /// Завести контроллер заново на той же подложке — окно снова готово к запуску.
@@ -1734,6 +1763,7 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
         controller?.stopPictureInPicture()
         cancellables.removeAll()
         controller = nil
+        sourceView?.removeFromSuperview()
         sourceView = nil
         callHadVideo = false
     }
