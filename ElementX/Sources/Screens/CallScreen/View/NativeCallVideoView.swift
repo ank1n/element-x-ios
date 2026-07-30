@@ -1497,7 +1497,12 @@ final class CallPictureInPictureViewController: AVPictureInPictureVideoCallViewC
         view.backgroundColor = .black
 
         videoView.renderMode = .sampleBuffer
-        videoView.layoutMode = .fill
+        // STMOB-300: ВПИСЫВАЕМ, а не заполняем. Форму окна мы не контролируем —
+        // измерено на устройстве: preferredContentSize 3:4 её не изменил (сборка 304).
+        // А .fill при несовпадении формы окна и кадра обрезает по краям и увеличивает
+        // картинку — dp видел именно это: «обрезается и ещё зумится».
+        // .fit показывает кадр целиком; там, где форма не совпала, будет чёрное поле.
+        videoView.layoutMode = .fit
         videoView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(videoView)
 
@@ -1557,29 +1562,14 @@ final class CallPictureInPictureViewController: AVPictureInPictureVideoCallViewC
         applyContentSize(for: track?.dimensions)
     }
 
-    /// STMOB-298: пропорция окна ПОСТОЯННАЯ и вертикальная.
-    ///
-    /// Размер системного окна программно не задаётся — `preferredContentSize` для окна
-    /// видеозвонка управляет только пропорцией, размер выбирает система. Значит
-    /// пропорция и есть единственный рычаг: вертикальное окно узкое, и по площади
-    /// заметно меньше широкого. На телефоне это ещё и естественнее.
-    ///
-    /// Размен назван прямо: видео собеседника с веба горизонтальное, и в вертикальном
-    /// окне оно обрезается по краям (`layoutMode = .fill` — видно центр кадра). При
-    /// маленьком окне это выглядит лучше, чем чёрные полосы.
-    ///
-    /// Побочная польза: постоянная пропорция убирает прыжки окна насовсем. Раньше она
-    /// считалась по размерам входящего кадра, а те меняются на каждом переключении слоя
-    /// адаптивной подписки (h180/h360/h720) — окно дёргалось во время разговора.
-    private func applyContentSize(for dimensions: Dimensions?) {
-        guard appliedAspect == nil else { return }
-        appliedAspect = Self.windowAspect
-        let base: CGFloat = 160
-        preferredContentSize = CGSize(width: (base * Self.windowAspect).rounded(), height: base)
-    }
-
-    /// 3:4 — вертикальное. Меньше — уже окно; 9/16 = 0.5625 даёт совсем узкое.
-    private static let windowAspect: CGFloat = 3.0 / 4.0
+    /// STMOB-300: форму и размер системного окна задать НЕЛЬЗЯ — измерено.
+    /// `preferredContentSize` со значением 3:4 на устройстве (сборка 304) форму окна
+    /// не изменил вовсе. Прежние попытки — база 320 → 160, затем вертикальная
+    /// пропорция — не дали ничего, кроме обрезки картинки внутри.
+    /// Поэтому размер не трогаем: окно рисует система, пользователь меняет его жестом.
+    /// Кадр показываем целиком (`layoutMode = .fit`), чтобы несовпадение формы давало
+    /// чёрное поле, а не подрезанное и увеличенное видео.
+    private func applyContentSize(for dimensions: Dimensions?) { }
 }
 
 /// Заводит системное окно и держит в нём актуальный поток.
@@ -1608,6 +1598,13 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
     /// прямо сейчас камера погашена системой из-за ухода в фон. Сбрасывается
     /// вместе с окончанием звонка (stop()).
     private var callHadVideo = false
+    /// STMOB-299: отбой уже нажат — взводить окно больше НЕЛЬЗЯ до конца звонка.
+    /// Без этого признака подписка на треки отменяла снятие взвода: треки при
+    /// нажатии «завершить» ещё живы, updateAutomaticStart() видел видео и включал
+    /// автозапуск обратно. В логе 200 ровно это: «отбой — взвод снят» в 16:26:27.542,
+    /// «автозапуск включён» в 16:26:28.197, окно открылось в .480 и погасло в 31.598 —
+    /// пользователь видел чёрную карточку, пропадающую через секунду.
+    private var isDisarmed = false
     /// Наблюдение за готовностью системы поднять окно.
     private var possibleObservation: NSKeyValueObservation?
     /// STMOB-285: подложка, на которой заведено окно. Нужна, чтобы ПЕРЕВЗВЕСТИ
@@ -1672,6 +1669,7 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
         // STMOB-296: значение считаем ДО создания контроллера и ставим сразу.
         // Переключение по подписке давало гонку: при подложке, по которой система и
         // так могла отказать, любое опоздание флага означало «окна нет».
+        isDisarmed = false
         callHadVideo = hasVideoNow(roomManager)
         // STMOB-284: автозапуск разрешаем ТОЛЬКО когда в звонке есть видео.
         // Для аудиозвонка системное окно бесполезно и вредно: показывать в нём
@@ -1756,6 +1754,7 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
     /// «завершить звонок», до любой сетевой очистки. Дальше система окно уже не
     /// поднимет, и пустое окно с именем собеседника на секунду не мелькнёт.
     func disarm() {
+        isDisarmed = true
         guard let controller else { return }
         controller.canStartPictureInPictureAutomaticallyFromInline = false
         callHadVideo = false
@@ -1830,7 +1829,7 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
     }
 
     private func updateAutomaticStart() {
-        guard let controller, let roomManager else { return }
+        guard let controller, let roomManager, !isDisarmed else { return }
         let hasVideoNow = hasVideoNow(roomManager)
 
         // STMOB-287: признак ЛИПКИЙ — звонок, в котором видео было хоть раз, до конца
@@ -1854,6 +1853,7 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
     func stop() {
         controller?.stopPictureInPicture()
         cancellables.removeAll()
+        isDisarmed = false
         possibleObservation = nil
         controller = nil
         sourceView?.removeFromSuperview()
