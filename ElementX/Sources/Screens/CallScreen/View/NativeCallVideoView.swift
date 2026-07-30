@@ -1607,10 +1607,17 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
     /// STMOB-277: система запросила восстановление интерфейса — значит закрытие
     /// окна это возврат в приложение, а не «крестик».
     private var isRestoringInterface = false
+    /// STMOB-287: в этом звонке видео уже было — значит звонок видео, даже если
+    /// прямо сейчас камера погашена системой из-за ухода в фон. Сбрасывается
+    /// вместе с окончанием звонка (stop()).
+    private var callHadVideo = false
     /// STMOB-285: подложка, на которой заведено окно. Нужна, чтобы ПЕРЕВЗВЕСТИ
     /// окно после его закрытия: SwiftUI не обязан пересобирать дерево при возврате
     /// из окна, и без своей ссылки перевзводить не от чего.
-    private weak var sourceView: UIView?
+    /// Сильная ссылка: слабая обнулялась при пересборке дерева экрана, и перевзводить
+    /// окно после закрытия было не от чего — в логе 193 строки о перевзведении нет вовсе.
+    /// Держим до конца звонка, отпускаем в stop().
+    private var sourceView: UIView?
 
     /// Окно открылось. Приложению нужно знать: пока оно висит, звонок не полноэкранный.
     var onWindowOpened: (() -> Void)?
@@ -1703,10 +1710,18 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
     private func updateAutomaticStart() {
         guard let controller, let roomManager else { return }
         let hasRemoteVideo = roomManager.displayParticipants.contains { $0.firstCameraVideoTrack != nil }
-        let hasVideo = hasRemoteVideo || roomManager.localVideoTrack != nil
-        guard controller.canStartPictureInPictureAutomaticallyFromInline != hasVideo else { return }
-        controller.canStartPictureInPictureAutomaticallyFromInline = hasVideo
-        DiagLog.write("CallUI", "картинка в картинке: автозапуск \(hasVideo ? "включён (есть видео)" : "выключен (звонок без видео)")")
+        let hasVideoNow = hasRemoteVideo || roomManager.localVideoTrack != nil
+
+        // STMOB-287: признак ЛИПКИЙ — звонок, в котором видео было хоть раз, до конца
+        // считается видеозвонком. Мгновенное состояние трека для этого не годится:
+        // при уходе в фон камера гаснет (система останавливает захват, лог 193:
+        // didEnterBackground 08:40:00.182 → localVideoTrack → nil через 300 мс).
+        // Считая по мгновенному состоянию, мы запрещали автозапуск ровно в тот момент,
+        // когда окно и нужно, и повторное сворачивание окна уже не давало.
+        if hasVideoNow { callHadVideo = true }
+        guard controller.canStartPictureInPictureAutomaticallyFromInline != callHadVideo else { return }
+        controller.canStartPictureInPictureAutomaticallyFromInline = callHadVideo
+        DiagLog.write("CallUI", "картинка в картинке: автозапуск \(callHadVideo ? "включён (в звонке есть видео)" : "выключен (звонок без видео)")")
     }
 
     /// Звонок завершён — окно держать не на чем.
@@ -1719,6 +1734,8 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
         controller?.stopPictureInPicture()
         cancellables.removeAll()
         controller = nil
+        sourceView = nil
+        callHadVideo = false
     }
 
     private func refreshTrack(fallbackTitle: String) {

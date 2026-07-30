@@ -527,6 +527,7 @@ final class LiveKitRoomManager: ObservableObject {
             // обработки кадров. Фон при этом не применяется — это осознанный размен
             // на время звонка: видео без фона лучше, чем чёрный экран у собеседника.
             let track = LocalVideoTrack.createCameraTrack(options: Self.cameraCaptureOptions)
+            enableBackgroundCameraAccess(on: track)
             _ = try await room.localParticipant.publish(videoTrack: track)
             blurProcessor = nil
             orientationProcessor = nil
@@ -545,6 +546,7 @@ final class LiveKitRoomManager: ObservableObject {
                 processor = stamp
             }
             let track = LocalVideoTrack.createCameraTrack(options: Self.cameraCaptureOptions, processor: processor)
+            enableBackgroundCameraAccess(on: track)
             _ = try await room.localParticipant.publish(videoTrack: track)
             DeviceOrientationTracker.shared.setFrontCamera(Self.cameraCaptureOptions.position != .back)
             MXLog.info("sTalk LiveKit: Camera published with pre-attached processor")
@@ -580,21 +582,38 @@ final class LiveKitRoomManager: ObservableObject {
     /// Проверку поддержки делаем ПОСЛЕ проверки «уже включено»: она перенастраивает
     /// сессию захвата (beginConfiguration/commitConfiguration) и на каждом вызове
     /// setCamera обходилась бы дороже, чем сама польза.
-    private func enableBackgroundCameraAccessIfPossible() {
+    /// STMOB-288: ставим ДО публикации, на свежесозданном треке.
+    /// Раньше вызывалось после publish — то есть на уже запущенной сессии захвата.
+    /// Такие настройки применяются при конфигурации сессии, и на работающей запись
+    /// скорее всего ничего не делала: в логе строка «доступ включён» была, а камера
+    /// при сворачивании всё равно гасла (лог 193: didEnterBackground 08:40:00.182 →
+    /// localVideoTrack → nil через 300 мс). Показательно, что в самом SDK проверка
+    /// поддержки обёрнута в beginConfiguration/commitConfiguration, а установка — нет.
+    private func enableBackgroundCameraAccess(on track: LocalVideoTrack) {
         #if !targetEnvironment(simulator)
-        guard let track = room.localParticipant.firstCameraPublication?.track as? LocalVideoTrack,
-              let capturer = track.capturer as? CameraCapturer else { return }
-
-        if capturer.isMultitaskingAccessEnabled { return }
-
+        guard let capturer = track.capturer as? CameraCapturer else { return }
         guard capturer.isMultitaskingAccessSupported else {
             DiagLog.write("Call", "камера в фоне: устройство не поддерживает — своё видео при сворачивании замрёт")
             return
         }
-
         capturer.isMultitaskingAccessEnabled = true
-        DiagLog.write("Call", "камера в фоне: доступ включён")
-        MXLog.info("sTalk LiveKit: multitasking camera access enabled")
+        DiagLog.write("Call", "камера в фоне: доступ запрошен ДО публикации, поддержка есть")
+        MXLog.info("sTalk LiveKit: multitasking camera access requested before publish")
+        #endif
+    }
+
+    /// Подстраховка для пути unmute (когда publication уже есть и трек не пересоздаётся).
+    private func enableBackgroundCameraAccessIfPossible() {
+        #if !targetEnvironment(simulator)
+        guard let track = room.localParticipant.firstCameraPublication?.track as? LocalVideoTrack,
+              let capturer = track.capturer as? CameraCapturer else { return }
+        if capturer.isMultitaskingAccessEnabled {
+            DiagLog.write("Call", "камера в фоне: доступ активен")
+            return
+        }
+        guard capturer.isMultitaskingAccessSupported else { return }
+        capturer.isMultitaskingAccessEnabled = true
+        DiagLog.write("Call", "камера в фоне: доступ включён на живой сессии (может не примениться)")
         #endif
     }
 
