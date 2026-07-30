@@ -1629,6 +1629,10 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
     /// - Returns: контроллер окна или nil, если устройство/система его не поддерживает —
     ///   тогда остаёмся на зелёной плашке со счётчиком, ничего не ломая.
     func start(sourceView: UIView, roomManager: LiveKitRoomManager, fallbackTitle: String) -> AVPictureInPictureController? {
+        guard !isDisarmed else {
+            DiagLog.write("CallUI", "картинка в картинке: отбой был — окно не завожу")
+            return nil
+        }
         guard AVPictureInPictureController.isPictureInPictureSupported() else {
             DiagLog.write("CallUI", "картинка в картинке не поддерживается устройством")
             return nil
@@ -1754,16 +1758,15 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
     /// «завершить звонок», до любой сетевой очистки. Дальше система окно уже не
     /// поднимет, и пустое окно с именем собеседника на секунду не мелькнёт.
     func disarm() {
+        guard controller != nil else { isDisarmed = true; return }
+        // STMOB-301: снятого флага НЕДОСТАТОЧНО. Лог 201: «взвод снят» в 17:27:27.380,
+        // и всё равно «окно открылось» в 17:27:28.446 — система к этому моменту уже
+        // решила его поднять. Поэтому не запрещаем, а УБИРАЕМ то, что поднимается:
+        // освобождаем контроллер и подложку целиком. Признак isDisarmed переживает
+        // teardown и не даёт завести окно заново до начала следующего звонка.
+        DiagLog.write("CallUI", "картинка в картинке: отбой — освобождаю окно целиком")
+        stop()
         isDisarmed = true
-        guard let controller else { return }
-        controller.canStartPictureInPictureAutomaticallyFromInline = false
-        callHadVideo = false
-        if controller.isPictureInPictureActive {
-            DiagLog.write("CallUI", "картинка в картинке: отбой — закрываю окно")
-            forceStopWindow(attempt: 0)
-        } else {
-            DiagLog.write("CallUI", "картинка в картинке: отбой — взвод снят")
-        }
     }
 
     /// Разобрать сессию окна при возврате в приложение. Повторяем: с первого раза
