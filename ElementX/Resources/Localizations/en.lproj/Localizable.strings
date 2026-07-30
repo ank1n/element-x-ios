@@ -1894,3 +1894,31 @@
 "stalk_notification_call_started_dm" = "Started a call";
 "stalk_notification_call_started_in_room" = "%1$@ started a call in “%2$@”";
 "stalk_notification_call_caller_unknown" = "Call";
+
+
+/* Ailock (STMOB-274) */
+"stalk_ailock_title" = "Ailock";
+"stalk_ailock_description" = "Chat with the AI agent";
+"stalk_ailock_composer_placeholder" = "Ask Ailock";
+"stalk_ailock_empty_title" = "How can I help?";
+"stalk_ailock_empty_subtitle" = "Ask a question or attach a file — the agent will answer here";
+"stalk_ailock_working" = "Working…";
+"stalk_ailock_question_waiting" = "The agent is waiting for your answer";
+"stalk_ailock_history_title" = "History";
+"stalk_ailock_history_empty" = "No conversations yet";
+"stalk_ailock_search_placeholder" = "Search conversations";
+"stalk_ailock_untitled" = "New chat";
+"stalk_ailock_today" = "Today";
+"stalk_ailock_yesterday" = "Yesterday";
+"stalk_ailock_previous_7_days" = "Previous 7 days";
+"stalk_ailock_earlier" = "Earlier";
+"stalk_ailock_delete" = "Delete";
+"stalk_ailock_retry" = "Retry";
+"stalk_ailock_unavailable" = "Ailock is not available on this server";
+"stalk_ailock_no_access" = "No access to Ailock";
+"stalk_ailock_request_failed" = "Request failed";
+"stalk_ailock_rate_limited" = "Too many requests, try again later";
+"stalk_ailock_no_streaming" = "The server did not return a connection key";
+"stalk_ailock_file_too_large" = "File is too large";
+"stalk_ailock_file_unsupported" = "File type is not supported";
+"stalk_ailock_attach_failed" = "Could not attach the file";

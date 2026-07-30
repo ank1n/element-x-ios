@@ -80,6 +80,29 @@ struct WidgetItem: Identifiable, Equatable, Codable {
         type == "builtin"
     }
 
+    // MARK: - Айлок (STMOB-274)
+
+    /// Идентификатор записи приложения. Должен совпасть с тем, что Molly заведёт в apps-api.
+    static let ailockAppID = "ailock"
+
+    /// Агент по умолчанию: то же значение, что стоит в конфиге веб-клиента (`defaultAgentId`).
+    /// Когда apps-api начнёт отдавать агента, значение приедет оттуда.
+    static let ailockAgentID = "925edd2e-e9e5-44bb-b2e9-d40ae299b381"
+
+    /// Локальная запись приложения — нужна, пока Айлока нет в реестре apps-api.
+    /// Подмешивается только если door-2 реально развёрнут на текущем домене,
+    /// и уступает серверной записи с тем же id (дублей не будет).
+    static var ailock: WidgetItem {
+        WidgetItem(id: ailockAppID,
+                   name: SL10n.ailockTitle,
+                   description: SL10n.ailockDescription,
+                   icon: "sparkles",
+                   url: "",
+                   apiURL: nil,
+                   type: "builtin",
+                   category: .tools)
+    }
+
     init(id: String, name: String, description: String, icon: String = "", iconURL: URL? = nil, url: String, apiURL: String? = nil, type: String = "widget", category: WidgetCategory = .tools) {
         self.id = id
         self.name = name

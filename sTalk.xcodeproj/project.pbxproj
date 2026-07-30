@@ -1374,6 +1374,15 @@
 		E182A8BACF227CA5D7FAD76E /* RoomScreenModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C82518FC6A2FB514E66C0715 /* RoomScreenModels.swift */; };
 		E239FE3CF2BA766BDC3460EC /* GZIP in Frameworks */ = {isa = PBXBuildFile; productRef = 0843F43A34F91E767E7613AF /* GZIP */; };
 		E2488F93C259187EED3E58EC /* MeetingsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8E38360A841AE32C76A28B7 /* MeetingsService.swift */; };
+		76FBC124B27EB7AE2DBC534B /* AilockService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22B8AF7E7FEB55C85C0E626A /* AilockService.swift */; };
+		902D8DAA906F5C505C20BAAF /* AilockHistoryParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F4D4BD4BAF59227E3C51ACD /* AilockHistoryParser.swift */; };
+		1AAF18FA30A8C2ED807FC420 /* AilockWebSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09BCAB39BB7AE669AAD9D5B6 /* AilockWebSocket.swift */; };
+		58D363C6D572C132BA5DBBB2 /* AilockScreenCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C557AB1692BDB317F779E74 /* AilockScreenCoordinator.swift */; };
+		1D255A0166A54C6F2A44AD8F /* AilockScreenViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B338CF11E364B76D35EBC8F1 /* AilockScreenViewModel.swift */; };
+		94C137A3C4E741EB4D2888B3 /* AilockConversationsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 758F0A7109AF3074B6BC6FB5 /* AilockConversationsViewModel.swift */; };
+		7B88D41B6548F86C446AC67A /* AilockScreenModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D35704F71D5129ADE5188C9E /* AilockScreenModels.swift */; };
+		EF9B052ED2CA7BD45A426135 /* AilockChatScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BA8B5BF96F956DC8154FE76 /* AilockChatScreen.swift */; };
+		FC6D3D0C9A3D3D65C808E361 /* AilockConversationsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1C764C290CEEA537AE76EBE /* AilockConversationsScreen.swift */; };
 		E268CB69D3FE94B994F33E14 /* MessageForwardingScreenViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB066FA7B9061417DCEF8670 /* MessageForwardingScreenViewModelTests.swift */; };
 		E2A381A5D98943F9C9E52AEF /* test_animated_image.gif in Resources */ = {isa = PBXBuildFile; fileRef = D0FD66598AB5EE034F960074 /* test_animated_image.gif */; };
 		E2EDF9092DA02C9C2D95F7A7 /* FileRoomTimelineItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A583C37281963988CB5D935 /* FileRoomTimelineItem.swift */; };
@@ -2992,6 +3001,15 @@
 		E8A67511F14227588FCD778F /* CreateRoomScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateRoomScreen.swift; sourceTree = "<group>"; };
 		E8DA21EEB02F07C7D0143F54 /* MeetingsScreenViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingsScreenViewModel.swift; sourceTree = "<group>"; };
 		E8E38360A841AE32C76A28B7 /* MeetingsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingsService.swift; sourceTree = "<group>"; };
+		22B8AF7E7FEB55C85C0E626A /* AilockService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AilockService.swift; sourceTree = "<group>"; };
+		4F4D4BD4BAF59227E3C51ACD /* AilockHistoryParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AilockHistoryParser.swift; sourceTree = "<group>"; };
+		09BCAB39BB7AE669AAD9D5B6 /* AilockWebSocket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AilockWebSocket.swift; sourceTree = "<group>"; };
+		4C557AB1692BDB317F779E74 /* AilockScreenCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AilockScreenCoordinator.swift; sourceTree = "<group>"; };
+		B338CF11E364B76D35EBC8F1 /* AilockScreenViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AilockScreenViewModel.swift; sourceTree = "<group>"; };
+		758F0A7109AF3074B6BC6FB5 /* AilockConversationsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AilockConversationsViewModel.swift; sourceTree = "<group>"; };
+		D35704F71D5129ADE5188C9E /* AilockScreenModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AilockScreenModels.swift; sourceTree = "<group>"; };
+		5BA8B5BF96F956DC8154FE76 /* AilockChatScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AilockChatScreen.swift; sourceTree = "<group>"; };
+		C1C764C290CEEA537AE76EBE /* AilockConversationsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AilockConversationsScreen.swift; sourceTree = "<group>"; };
 		E8E3B88F42904B8147735F3F /* AppLockScreenViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLockScreenViewModel.swift; sourceTree = "<group>"; };
 		E91D1F15534B32FF4CAF4AF7 /* libMatrixRustSDKMocks.a */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = archive.ar; path = libMatrixRustSDKMocks.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		E937C289E28A8AF29DFAD52B /* ReadReceipt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadReceipt.swift; sourceTree = "<group>"; };
@@ -6022,6 +6040,7 @@
 				CB4B108367D107EF7C9B7F11 /* MediaEventsTimelineScreen */,
 				61D450E54C25A18DC2E80B87 /* MediaPickerScreen */,
 				61F236AA417E13C3A49B60D7 /* MediaUploadPreviewScreen */,
+				78AAFA4E748C19AB84110C74 /* AilockScreen */,
 				54807CB3A646C2A854EC4933 /* MeetingsScreen */,
 				58F9F6F256851A6072B5BB21 /* MessageForwardingScreen */,
 				42C60993B13F5636C503E34F /* MessageSearchScreen */,
@@ -6599,6 +6618,7 @@
 				D42A381B4E533223F3E1A5DB /* LiveKit */,
 				BE6AD94411C5CE83610B3787 /* Media */,
 				466D98D50DC77011CF1D2B1E /* MediaPlayer */,
+				F9CE012D23F910C8999C0AC6 /* Ailock */,
 				F2AAE275E305143B1548C078 /* Meetings */,
 				C66F5E77D2E08C55DD5BE52C /* NativeCall */,
 				55717205FC9E6C7821E80A21 /* Notification */,
@@ -7162,6 +7182,37 @@
 				343B455C2087C55ED66100B3 /* TimelineItemMenuActionProvider.swift */,
 			);
 			path = ItemMenu;
+			sourceTree = "<group>";
+		};
+		F9CE012D23F910C8999C0AC6 /* Ailock */ = {
+			isa = PBXGroup;
+			children = (
+				22B8AF7E7FEB55C85C0E626A /* AilockService.swift */,
+				4F4D4BD4BAF59227E3C51ACD /* AilockHistoryParser.swift */,
+				09BCAB39BB7AE669AAD9D5B6 /* AilockWebSocket.swift */,
+			);
+			path = Ailock;
+			sourceTree = "<group>";
+		};
+		78AAFA4E748C19AB84110C74 /* AilockScreen */ = {
+			isa = PBXGroup;
+			children = (
+				4C557AB1692BDB317F779E74 /* AilockScreenCoordinator.swift */,
+				B338CF11E364B76D35EBC8F1 /* AilockScreenViewModel.swift */,
+				758F0A7109AF3074B6BC6FB5 /* AilockConversationsViewModel.swift */,
+				D35704F71D5129ADE5188C9E /* AilockScreenModels.swift */,
+				B485DCC61906F5EE25210F74 /* View */,
+			);
+			path = AilockScreen;
+			sourceTree = "<group>";
+		};
+		B485DCC61906F5EE25210F74 /* View */ = {
+			isa = PBXGroup;
+			children = (
+				5BA8B5BF96F956DC8154FE76 /* AilockChatScreen.swift */,
+				C1C764C290CEEA537AE76EBE /* AilockConversationsScreen.swift */,
+			);
+			path = View;
 			sourceTree = "<group>";
 		};
 		F2AAE275E305143B1548C078 /* Meetings */ = {
@@ -8658,6 +8709,15 @@
 				39922E2F364F22F74D79F86A /* MeetingsScreenModels.swift in Sources */,
 				CC119E139B3FE440CA1BA15E /* MeetingsScreenViewModel.swift in Sources */,
 				E2488F93C259187EED3E58EC /* MeetingsService.swift in Sources */,
+				76FBC124B27EB7AE2DBC534B /* AilockService.swift in Sources */,
+				902D8DAA906F5C505C20BAAF /* AilockHistoryParser.swift in Sources */,
+				1AAF18FA30A8C2ED807FC420 /* AilockWebSocket.swift in Sources */,
+				58D363C6D572C132BA5DBBB2 /* AilockScreenCoordinator.swift in Sources */,
+				1D255A0166A54C6F2A44AD8F /* AilockScreenViewModel.swift in Sources */,
+				94C137A3C4E741EB4D2888B3 /* AilockConversationsViewModel.swift in Sources */,
+				7B88D41B6548F86C446AC67A /* AilockScreenModels.swift in Sources */,
+				EF9B052ED2CA7BD45A426135 /* AilockChatScreen.swift in Sources */,
+				FC6D3D0C9A3D3D65C808E361 /* AilockConversationsScreen.swift in Sources */,
 				01B728887F431B8062913490 /* MentionBuilder.swift in Sources */,
 				970636B1D7FF4CD886396B7D /* MentionSuggestionItemView.swift in Sources */,
 				891691366ABEA6BFF28647F8 /* MenuSheetLabelStyle.swift in Sources */,

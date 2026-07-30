@@ -1765,3 +1765,31 @@
 "stalk_notification_call_started_dm" = "Начал звонок";
 "stalk_notification_call_started_in_room" = "%1$@ начал звонок в «%2$@»";
 "stalk_notification_call_caller_unknown" = "Звонок";
+
+
+/* Ailock (STMOB-274) */
+"stalk_ailock_title" = "Айлок";
+"stalk_ailock_description" = "Чат с ИИ-агентом";
+"stalk_ailock_composer_placeholder" = "Спросите Айлок";
+"stalk_ailock_empty_title" = "Чем помочь?";
+"stalk_ailock_empty_subtitle" = "Задайте вопрос или приложите файл — агент ответит здесь";
+"stalk_ailock_working" = "Работает…";
+"stalk_ailock_question_waiting" = "Агент ждёт ответа";
+"stalk_ailock_history_title" = "История";
+"stalk_ailock_history_empty" = "Бесед пока нет";
+"stalk_ailock_search_placeholder" = "Поиск по беседам";
+"stalk_ailock_untitled" = "Новый чат";
+"stalk_ailock_today" = "Сегодня";
+"stalk_ailock_yesterday" = "Вчера";
+"stalk_ailock_previous_7_days" = "Предыдущие 7 дней";
+"stalk_ailock_earlier" = "Ранее";
+"stalk_ailock_delete" = "Удалить";
+"stalk_ailock_retry" = "Повторить";
+"stalk_ailock_unavailable" = "Айлок недоступен на этом сервере";
+"stalk_ailock_no_access" = "Нет доступа к Айлоку";
+"stalk_ailock_request_failed" = "Не удалось выполнить запрос";
+"stalk_ailock_rate_limited" = "Слишком много запросов, попробуйте позже";
+"stalk_ailock_no_streaming" = "Сервер не выдал ключ подключения";
+"stalk_ailock_file_too_large" = "Файл слишком большой";
+"stalk_ailock_file_unsupported" = "Тип файла не поддерживается";
+"stalk_ailock_attach_failed" = "Не удалось приложить файл";

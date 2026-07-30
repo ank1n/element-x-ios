@@ -97,7 +97,7 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
 
             // 1. Always show cache instantly (for fast UI)
             if let cached = await ServiceLocator.shared.cacheService?.load([WidgetItem].self, forKey: Self.widgetsCacheKey) {
-                self.state.widgets = cached
+                self.state.widgets = await self.mergingLocalBuiltins(into: cached)
                 self.state.isLoading = false
                 MXLog.info("sTalk: Loaded \(cached.count) widgets from cache")
             }
@@ -105,14 +105,16 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
             // 2. Always fetch from server to check for updates
             do {
                 let widgets = try await self.fetchWidgetsFromAPI()
+                let merged = await self.mergingLocalBuiltins(into: widgets)
 
                 // Update only if different
-                if self.state.widgets != widgets {
-                    self.state.widgets = widgets
+                if self.state.widgets != merged {
+                    self.state.widgets = merged
                 }
                 self.state.isLoading = false
 
-                // Save to cache
+                // Save to cache. Локальные записи в кэш НЕ попадают — иначе осядут там на TTL
+                // и переживут появление настоящей записи на сервере.
                 await ServiceLocator.shared.cacheService?.save(widgets, forKey: Self.widgetsCacheKey, ttl: Self.widgetsCacheTTL)
                 MXLog.info("sTalk: Updated \(widgets.count) widgets from server")
             } catch {
@@ -120,6 +122,8 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
                 // STMOB-246: graceful degrade. apps-api may be absent on a non-sTalk homeserver
                 // (404 / -1011), so never sit on an infinite spinner — drop the loading state and
                 // show whatever we have (cache) or the empty state instead of erroring.
+                // STMOB-274: встроенные приложения от реестра не зависят — показываем их и здесь.
+                self.state.widgets = await self.mergingLocalBuiltins(into: self.state.widgets)
                 self.state.isLoading = false
             }
         }
@@ -189,6 +193,27 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
                                   type: app.type,
                                   category: WidgetCategory(apiCategory: app.category))
             }
+    }
+
+    /// Кэш результата проверки door-2: одна проба на запуск приложения, не на каждый показ вкладки.
+    private static var ailockAvailability: Bool?
+
+    /// STMOB-274: подмешивает встроенные приложения, которых ещё нет в реестре apps-api.
+    ///
+    /// Сейчас это только Айлок. Серверная запись с тем же id имеет приоритет — как только
+    /// Molly заведёт `ailock` в apps-api, локальная запись перестанет использоваться,
+    /// и этот метод можно будет убрать целиком.
+    private func mergingLocalBuiltins(into widgets: [WidgetItem]) async -> [WidgetItem] {
+        guard !widgets.contains(where: { $0.id == WidgetItem.ailockAppID }) else { return widgets }
+
+        if Self.ailockAvailability == nil {
+            let token = try? userSession.clientProxy.matrixAccessToken()
+            Self.ailockAvailability = await AilockService.probeAvailability(homeserver: serverBaseURL, accessToken: token)
+            MXLog.info("sTalk: Ailock door-2 available = \(Self.ailockAvailability == true)")
+        }
+
+        guard Self.ailockAvailability == true else { return widgets }
+        return widgets + [WidgetItem.ailock]
     }
 
     /// STMOB-196: apps-api (`/apps-api/apps`) пока отдаёт name/description только на

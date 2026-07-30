@@ -104,8 +104,46 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
         navigationStackCoordinator.push(coordinator)
     }
 
+    /// База для наших серверных сервисов — всегда домен текущей сессии (STMOB-246).
+    /// Хардкод .ru ломает вход на других доменах семейства sTalk.
+    private var sessionBaseURL: String {
+        let homeserver = userSession.clientProxy.homeserver
+        let normalized = homeserver.hasPrefix("http") ? homeserver : "https://\(homeserver)"
+        if let url = URL(string: normalized), let scheme = url.scheme, let host = url.host {
+            return "\(scheme)://\(host)"
+        }
+        return normalized
+    }
+
     private func presentBuiltinApp(_ widget: WidgetItem) {
         switch widget.id {
+        case WidgetItem.ailockAppID:
+            // STMOB-274: чат с агентом Айлок. apiURL из apps-api намеренно не используем —
+            // путь door-2 фиксирован во всём семействе sTalk, а база берётся от homeserver.
+            let clientProxy = userSession.clientProxy
+            let concreteProxy = clientProxy as? ClientProxy
+            let parameters = AilockScreenCoordinatorParameters(homeserver: sessionBaseURL,
+                                                               accessTokenProvider: { try clientProxy.matrixAccessToken() },
+                                                               forceTokenRefresh: { await concreteProxy?.forceTokenRefresh() },
+                                                               agentID: WidgetItem.ailockAgentID)
+            let coordinator = AilockScreenCoordinator(parameters: parameters,
+                                                      navigationStackCoordinator: navigationStackCoordinator)
+            coordinator.actionsPublisher
+                .sink { [weak self] action in
+                    switch action {
+                    case .hideTabBar(let hidden):
+                        self?.actionsSubject.send(.hideTabBar(hidden))
+                    }
+                }
+                .store(in: &cancellables)
+
+            // Чат живёт с клавиатурой — оверлейный таб-бар перекрыл бы композер.
+            actionsSubject.send(.hideTabBar(true))
+            navigationStackCoordinator.push(coordinator, dismissalCallback: { [weak self] in
+                coordinator.stop()
+                self?.actionsSubject.send(.hideTabBar(false))
+            })
+
         case "meetings-calendar":
             guard let apiURL = widget.apiURL, !apiURL.isEmpty else {
                 MXLog.error("sTalk: Missing apiURL for meetings-calendar")
