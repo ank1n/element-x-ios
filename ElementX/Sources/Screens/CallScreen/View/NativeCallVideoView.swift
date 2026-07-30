@@ -1704,6 +1704,37 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
             }
             .store(in: &cancellables)
 
+        // STMOB-292: окно ОБЯЗАНО умереть вместе со звонком.
+        // Раньше его гасил только dismantleUIView, а он приходит не всегда и не
+        // вовремя: в логе 196 звонок завершился в 11:34:21, а окно продолжало
+        // подниматься — и в 11:34:26 открылось снова, уже пустым. Пользователь видел
+        // висящий чёрный прямоугольник с именем того, кому звонил.
+        roomManager.$connectionState
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] state in
+                guard let self, state == .disconnected else { return }
+                DiagLog.write("CallUI", "картинка в картинке: звонок завершён — гашу окно")
+                stop()
+            }
+            .store(in: &cancellables)
+
+        // STMOB-292: запускаем окно САМИ при уходе приложения в фон.
+        // Автозапуск системы оказался ненадёжным: первый раз поднимал, дальше нет,
+        // при этом все предпосылки (подложка в иерархии, свежий контроллер, флаг
+        // включён) были на месте. Явный вызов детерминирован и делается в момент,
+        // когда приложение ещё активно, — из фона система запуск не примет.
+        NotificationCenter.default
+            .publisher(for: UIApplication.willResignActiveNotification)
+            .sink { [weak self] _ in
+                // self.controller — именно у себя: в этой области видимости есть
+                // локальный `controller` из start(), и он не Optional.
+                guard let self, let active = self.controller,
+                      !isWindowVisible, callHadVideo, !isCallOver else { return }
+                DiagLog.write("CallUI", "картинка в картинке: запускаю окно (уход в фон)")
+                active.startPictureInPicture()
+            }
+            .store(in: &cancellables)
+
         // ВАЖНО: трек в окно не отдаём, пока окно не открылось. Лишний приёмник
         // участвует в согласовании качества с сервером, и на экране это выливалось
         // в кадры 8×8 — чёрный прямоугольник вместо собеседника (лог 163).
