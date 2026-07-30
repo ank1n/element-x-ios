@@ -16,8 +16,8 @@ struct AilockScreenCoordinatorParameters {
     let homeserver: String
     let accessTokenProvider: () throws -> String
     let forceTokenRefresh: (() async -> Void)?
-    /// Идентификатор агента для POST /sessions.
-    let agentID: String
+    /// Идентификатор агента для POST /sessions. nil — агента выбирает gateway.
+    let agentID: String?
     /// Кто и куда залогинен: последняя открытая беседа запоминается отдельно
     /// для каждого аккаунта и домена, иначе после смены сервера подтянулась бы чужая.
     let sessionKey: String

@@ -244,8 +244,12 @@ final class AilockService {
     ///
     /// Важно: в ките этот вызов идёт мимо общего транспорта и НЕ рефрешит токен на 401.
     /// Мы делаем ретрай сами — иначе протухший MAS-токен молча ломает весь чат.
-    func createSession(agentID: String, conversationID: String? = nil) async throws -> AilockSession {
-        var body: [String: Any] = ["agent_id": agentID]
+    /// - Parameter agentID: nil — агента выбирает сам gateway (server-side default).
+    ///   Так и надо: по контракту gateway (подтверждено Shelly 31.07) клиент агента не
+    ///   назначает, а подставлять свой — значит однажды разойтись с сервером.
+    func createSession(agentID: String?, conversationID: String? = nil) async throws -> AilockSession {
+        var body: [String: Any] = [:]
+        if let agentID, !agentID.isEmpty { body["agent_id"] = agentID }
         if let conversationID { body["conversation_id"] = conversationID }
 
         let data = try await request(path: "/sessions",

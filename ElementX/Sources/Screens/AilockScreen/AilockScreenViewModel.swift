@@ -25,7 +25,8 @@ protocol AilockScreenViewModelProtocol {
 /// * вложения загружаются в уже существующую беседу, т.е. после создания сессии.
 class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelProtocol {
     private let service: AilockService
-    private let agentID: String
+    /// nil — агента назначает gateway своим дефолтом.
+    private let agentID: String?
 
     /// Голосовой ввод. `nil` — если расшифровка на этом сервере недоступна.
     private let transcriber: AilockVoiceTranscriber?
@@ -69,7 +70,7 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
     /// Ключ последней беседы — свой на каждый аккаунт и домен.
     private let lastConversationKey: String
 
-    init(service: AilockService, agentID: String, transcriber: AilockVoiceTranscriber?, sessionKey: String) {
+    init(service: AilockService, agentID: String?, transcriber: AilockVoiceTranscriber?, sessionKey: String) {
         self.service = service
         self.agentID = agentID
         self.transcriber = transcriber

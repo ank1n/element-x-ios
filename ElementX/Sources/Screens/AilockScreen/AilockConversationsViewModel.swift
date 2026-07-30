@@ -20,7 +20,8 @@ protocol AilockConversationsViewModelProtocol {
 /// последнего элемента уже загруженного списка, а признак «есть ещё» = страница пришла полной.
 class AilockConversationsViewModel: AilockConversationsViewModelType, AilockConversationsViewModelProtocol {
     private let service: AilockService
-    private let agentID: String
+    /// nil — фильтра по агенту нет, список отдаёт беседы пользователя как есть.
+    private let agentID: String?
 
     private let actionsSubject: PassthroughSubject<AilockConversationsViewModelAction, Never> = .init()
     var actionsPublisher: AnyPublisher<AilockConversationsViewModelAction, Never> {
@@ -32,7 +33,7 @@ class AilockConversationsViewModel: AilockConversationsViewModelType, AilockConv
 
     private static let pageSize = 50
 
-    init(service: AilockService, agentID: String) {
+    init(service: AilockService, agentID: String?) {
         self.service = service
         self.agentID = agentID
 
