@@ -488,11 +488,11 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
     }
 
     private func open(file: AilockFile) {
-        guard file.url != nil else { return }
+        guard file.isDownloadable else { return }
         Task { [weak self] in
             guard let self else { return }
             do {
-                let localURL = try await service.download(file: file)
+                let localURL = try await service.download(file: file, conversationID: conversationID)
                 state.bindings.sharedFile = AilockSharedFile(url: localURL)
             } catch {
                 handle(error: error)

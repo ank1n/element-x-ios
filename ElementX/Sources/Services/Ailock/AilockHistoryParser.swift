@@ -41,9 +41,17 @@ enum AilockHistoryParser {
             let identifier = (row["id"] as? String) ?? "hist-\(index)"
             index += 1
 
+            // AIBOL-13 ч.1: вложения пользователя приезжают отдельным полем строки.
+            // Формат полей не зафиксирован, поэтому читаем терпимо — по нескольким именам.
+            let rowAttachments = parseAttachments(row["attachments"])
+
             switch role {
             case "user":
-                messages.append(AilockMessage(id: identifier, role: .user, text: content, createdAt: createdAt))
+                messages.append(AilockMessage(id: identifier,
+                                              role: .user,
+                                              text: content,
+                                              files: rowAttachments,
+                                              createdAt: createdAt))
 
             case "tool":
                 let callID = row["tool_call_id"] as? String
@@ -79,6 +87,9 @@ enum AilockHistoryParser {
                     messages[last].createdAt = createdAt
                 } else {
                     messages.append(AilockMessage(id: identifier, role: .assistant, text: content, createdAt: createdAt))
+                }
+                if !rowAttachments.isEmpty, let last = messages.indices.last {
+                    messages[last].files.append(contentsOf: rowAttachments)
                 }
 
             case "system":
@@ -123,6 +134,31 @@ enum AilockHistoryParser {
         }
 
         return result
+    }
+
+    /// Вложения строки истории. Имена полей у движка ещё не зафиксированы (перенос
+    /// агентских файлов в `chat_attachments` — M24 Ф3), поэтому принимаем несколько
+    /// вариантов и молча пропускаем то, что не опознали.
+    static func parseAttachments(_ raw: Any?) -> [AilockFile] {
+        guard let items = raw as? [[String: Any]] else { return [] }
+
+        return items.compactMap { item in
+            let attachmentID = (item["attachment_id"] as? String) ?? (item["id"] as? String)
+            let url = item["url"] as? String
+            guard attachmentID != nil || url != nil else { return nil }
+
+            let filename = (item["filename"] as? String) ?? (item["name"] as? String) ?? "file"
+            let mime = (item["mime_type"] as? String)
+                ?? (item["mimetype"] as? String)
+                ?? (item["content_type"] as? String)
+                ?? "application/octet-stream"
+
+            return AilockFile(id: attachmentID ?? url ?? filename,
+                              filename: filename,
+                              mimeType: mime,
+                              url: url,
+                              attachmentID: attachmentID)
+        }
     }
 
     /// Разбор строк-маркеров вложений. Хвост после второго двоеточия — это URL,

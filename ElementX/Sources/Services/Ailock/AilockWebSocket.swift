@@ -179,10 +179,19 @@ actor AilockWebSocket {
                                           severity: payload["severity"] as? String))
 
         case "agent.file":
-            guard let url = payload["url"] as? String else { break }
+            // По текущему коду движка событие несёт только url/filename/mime_type/conversation_id.
+            // `attachment_id` читаем на будущее: когда агентские файлы переедут в chat_attachments
+            // (M24 Ф3), скачивание заработает без правок клиента.
+            let attachmentID = payload["attachment_id"] as? String
+            let url = payload["url"] as? String
+            guard url != nil || attachmentID != nil else { break }
             let filename = payload["filename"] as? String ?? "file"
             let mime = payload["mime_type"] as? String ?? "application/octet-stream"
-            continuation?.yield(.file(AilockFile(id: url, filename: filename, mimeType: mime, url: url)))
+            continuation?.yield(.file(AilockFile(id: url ?? attachmentID ?? UUID().uuidString,
+                                                 filename: filename,
+                                                 mimeType: mime,
+                                                 url: url,
+                                                 attachmentID: attachmentID)))
 
         case "agent.ask_user":
             guard let id = payload["question_id"] as? String,

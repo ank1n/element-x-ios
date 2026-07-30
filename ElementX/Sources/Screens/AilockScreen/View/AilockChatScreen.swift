@@ -220,7 +220,7 @@ struct AilockChatScreen: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .foregroundStyle(.primary)
-                if file.url != nil {
+                if file.isDownloadable {
                     Image(systemName: "arrow.down.circle")
                         .font(.system(size: 14))
                         .foregroundStyle(.secondary)
@@ -231,7 +231,7 @@ struct AilockChatScreen: View {
             .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
-        .disabled(file.url == nil)
+        .disabled(!file.isDownloadable)
     }
 
     // MARK: - Состояния

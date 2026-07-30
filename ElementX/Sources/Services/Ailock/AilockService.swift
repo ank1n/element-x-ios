@@ -59,9 +59,34 @@ struct AilockFile: Identifiable, Equatable {
     /// Для файлов агента — ссылка из события `agent.file` либо из истории.
     /// Для только что загруженных вложений пользователя ссылки нет.
     let url: String?
+    /// Идентификатор вложения внутри беседы. Если он есть — качаем по owner-scoped пути.
+    let attachmentID: String?
+
+    init(id: String, filename: String, mimeType: String, url: String?, attachmentID: String? = nil) {
+        self.id = id
+        self.filename = filename
+        self.mimeType = mimeType
+        self.url = url
+        self.attachmentID = attachmentID
+    }
 
     var isImage: Bool {
         mimeType.hasPrefix("image/")
+    }
+
+    /// Можно ли файл скачать.
+    ///
+    /// STMOB-274, вердикт Shelly 30.07: файлы, произведённые агентом, движок пока кладёт
+    /// в локальный uploads-контур и отдаёт ссылкой `/api/v1/uploads/{uuid}`. Этот путь
+    /// door-2 сознательно НЕ проксирует (адресация по имени, владение не проверить —
+    /// решение STALK-653). Переписать ссылку на owner-scoped путь на клиенте нельзя:
+    /// в событии `agent.file` нет `attachment_id`. Перенос агентских файлов в
+    /// `chat_attachments` — M24 Ф3, ориентир 10.08. До тех пор такой файл показываем,
+    /// но кнопку скачивания не предлагаем — мёртвых кнопок в интерфейсе быть не должно.
+    var isDownloadable: Bool {
+        if attachmentID != nil { return true }
+        guard let url else { return false }
+        return !url.contains("/uploads/")
     }
 }
 
@@ -345,13 +370,25 @@ final class AilockService {
         guard let id = (json?["id"] as? String) ?? (json?["attachment_id"] as? String) else {
             throw AilockError.badResponse
         }
-        return AilockFile(id: id, filename: filename, mimeType: mimeType, url: nil)
+        return AilockFile(id: id, filename: filename, mimeType: mimeType, url: nil, attachmentID: id)
     }
 
-    /// Скачивание файла, присланного агентом, во временную директорию.
-    /// Ссылка может прийти относительной — тогда достраиваем от базы движка.
-    func download(file: AilockFile) async throws -> URL {
-        guard let raw = file.url, let url = absoluteURL(from: raw) else { throw AilockError.badResponse }
+    /// Скачивание файла во временную директорию.
+    ///
+    /// Приоритет — owner-scoped путь по `attachment_id` внутри беседы (единственный,
+    /// который door-2 пропускает). Если его нет, идём по ссылке из события; она может
+    /// прийти относительной — тогда достраиваем от базы движка.
+    func download(file: AilockFile, conversationID: String?) async throws -> URL {
+        let source: URL?
+        if let attachmentID = file.attachmentID, let conversationID {
+            source = URL(string: "\(apiBase)/conversations/\(Self.escape(conversationID))/attachments/\(Self.escape(attachmentID))")
+        } else if let raw = file.url {
+            source = absoluteURL(from: raw)
+        } else {
+            source = nil
+        }
+
+        guard let url = source else { throw AilockError.badResponse }
 
         var request = URLRequest(url: url)
         request.timeoutInterval = 60
