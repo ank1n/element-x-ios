@@ -475,8 +475,17 @@ final class AilockService {
                 }
 
                 if (200...299).contains(http.statusCode) {
+                    // Контролируемый замер door-2 (запрошен Shelly 30.07): в лог идут только
+                    // метод, путь и HTTP-статус — ни токена, ни тела, ни ПДн.
+                    os_log(.default, log: ailockLog, "%{public}@ %{public}@ -> %{public}d",
+                           method, path, http.statusCode)
+                    DiagLog.write("Ailock", "\(method) \(path) -> \(http.statusCode)")
                     return (data, http)
                 }
+
+                os_log(.error, log: ailockLog, "%{public}@ %{public}@ -> %{public}d",
+                       method, path, http.statusCode)
+                DiagLog.write("Ailock", "\(method) \(path) -> \(http.statusCode)")
 
                 let body = try? JSONDecoder().decode(AilockErrorBody.self, from: data)
 
