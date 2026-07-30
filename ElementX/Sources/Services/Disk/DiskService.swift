@@ -174,9 +174,16 @@ final class DiskService {
         var components = URLComponents(string: "\(baseURL)/api/files")
         var query: [URLQueryItem] = []
         if let category, category != .other {
-            query.append(URLQueryItem(name: "category", value: category.rawValue))
+            // Имя параметра — `filter`, НЕ `category`. Проверено на проде: с
+            // `category=images` сервер молча отдаёт всё (14 записей, обе категории),
+            // с `filter=images` — только изображения (8). Молчаливое игнорирование
+            // означало бы, что любая вкладка показывает одно и то же.
+            query.append(URLQueryItem(name: "filter", value: category.rawValue))
         }
         if let before, !before.isEmpty {
+            // `nextBefore` — не непрозрачный курсор, а метка времени события
+            // (например 1783922871243). Параметр `before` проверен: вторая страница
+            // возвращает другие файлы, `until`/`since`/`from` игнорируются.
             query.append(URLQueryItem(name: "before", value: before))
         }
         components?.queryItems = query.isEmpty ? nil : query
