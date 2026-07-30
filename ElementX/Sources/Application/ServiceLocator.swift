@@ -88,6 +88,27 @@ class ServiceLocator {
         voiceTranscriptionStore = nil
     }
 
+    // MARK: - Индекс «Диска» (STMOB-275)
+
+    private(set) var diskIndexService: DiskIndexService?
+
+    /// Создаём только при живой сессии и только по её домену — по той же причине,
+    /// что и транскрибацию: настроечный URL захардкожен на .ru, и метаданные чужого
+    /// сервера ушли бы туда вместе с нашим токеном.
+    @MainActor
+    func setupDiskIndex(homeserver: String,
+                        userID: String,
+                        accessTokenProvider: @escaping () throws -> String) {
+        guard let url = URL(string: homeserver.hasPrefix("http") ? homeserver : "https://\(homeserver)"),
+              let scheme = url.scheme, let host = url.host else {
+            diskIndexService = nil
+            return
+        }
+        diskIndexService = DiskIndexService(baseURL: "\(scheme)://\(host)",
+                                            accessTokenProvider: accessTokenProvider,
+                                            seen: DiskIndexSeenStore(userID: userID))
+    }
+
     // MARK: - Cache Service
 
     private(set) var cacheService: STalkCacheService?

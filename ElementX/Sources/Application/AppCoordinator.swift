@@ -809,6 +809,13 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
                                                       forceTokenRefresh: { [weak clientProxy = userSession.clientProxy] in
                                                           await clientProxy?.forceTokenRefresh()
                                                       })
+        // STMOB-275: индекс «Диска» наполняет клиент — сервер шифртекст не видит.
+        // Без этого в Диске виден только срез, проиндексированный вебом.
+        ServiceLocator.shared.setupDiskIndex(homeserver: userSession.clientProxy.homeserver,
+                                             userID: userSession.clientProxy.userID,
+                                             accessTokenProvider: { [weak clientProxy = userSession.clientProxy] in
+                                                 try clientProxy?.matrixAccessToken() ?? ""
+                                             })
 
         let flowParameters = CommonFlowParameters(userSession: userSession,
                                                   bugReportService: bugReportService,

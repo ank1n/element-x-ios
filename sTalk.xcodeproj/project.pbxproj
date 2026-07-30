@@ -16,8 +16,6 @@
 			dependencies = (
 			);
 			name = Periphery;
-			packageProductDependencies = (
-			);
 			productName = Periphery;
 		};
 /* End PBXAggregateTarget section */
@@ -119,6 +117,7 @@
 		10DB20E417B94D0EEFEE4C50 /* KnockRequestsListScreenViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AD22AD5DEC41574B9201882 /* KnockRequestsListScreenViewModel.swift */; };
 		11595A794B18DD509BB831A3 /* ComposerDisabledView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B25C3EDCB7D828CE355D0E1E /* ComposerDisabledView.swift */; };
 		11ABA5633ADC4D268C3AB08F /* AudioRecorderState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A373490CD5196571D6D04E4 /* AudioRecorderState.swift */; };
+		11C644FC3E170D22C2C2A4A1 /* AilockVoiceInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF61650A9C69569543CE5B7B /* AilockVoiceInput.swift */; };
 		1230E82BC8209AE669566F4D /* OIDCConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0820AC8E09E485753D9C33E7 /* OIDCConfiguration.swift */; };
 		1230EC90D2D9490298CBC0D5 /* UserDetailsEditScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AFEA1BAFE85FABF9D6A1142 /* UserDetailsEditScreen.swift */; };
 		1243A9A27A43B0B925AF048C /* AppLockSetupPINScreenViewModelProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 075E7AFF0C827601DB22C72C /* AppLockSetupPINScreenViewModelProtocol.swift */; };
@@ -1129,7 +1128,6 @@
 		B7D9FBA199CAC267DD078F45 /* TimelineScrollToBottomButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 150187D31A5E37DE0EB6E21A /* TimelineScrollToBottomButton.swift */; };
 		B7E091DE79A2A4E4E0A51769 /* AccessibilityIdentifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79E9C62EDD8C9B712E312746 /* AccessibilityIdentifiers.swift */; };
 		B7FF9F4C2932B1DEE4803EBF /* AilockWebSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = E808C1B1C4A069A276FBC65F /* AilockWebSocket.swift */; };
-		11C644FC3E170D22C2C2A4A1 /* AilockVoiceInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF61650A9C69569543CE5B7B /* AilockVoiceInput.swift */; };
 		B80EBA59E35A103BFC00E2F0 /* OnboardingFlowCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8767A4FE3EE8892014B06514 /* OnboardingFlowCoordinator.swift */; };
 		B83D5B9E0398440E11CAD099 /* VideoRoomTimelineItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A84F5E6BEC6ED6A015E7E5AB /* VideoRoomTimelineItem.swift */; };
 		B89D6CCCC9B67074935BD688 /* IdentityConfirmedScreenViewModelProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = A02D881A7F483C35842A98DF /* IdentityConfirmedScreenViewModelProtocol.swift */; };
@@ -1427,6 +1425,7 @@
 		E7B63F0D833EB1B1CDE5640F /* AudioConverterProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A317C70CEB385A15BA46965 /* AudioConverterProtocol.swift */; };
 		E7BF9FD66C6921C2C9E9215D /* DeveloperOptionsScreenHook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DC797732F0BAF744ABB15FB /* DeveloperOptionsScreenHook.swift */; };
 		E7D94E0672BDB0046AF8309C /* EmojiProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FBED967B4E8F004CDCEB4A7 /* EmojiProviderTests.swift */; };
+		E7FFFF0246CBBE232B21EA70 /* DiskIndexService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D94F8634D3DAB182CE9B757 /* DiskIndexService.swift */; };
 		E802BC5CD0F5923023987D13 /* EncryptionResetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A17E27CD05644F82221CED8 /* EncryptionResetTests.swift */; };
 		E80855613B99D1B4BD94D7C7 /* TombstonedAvatarImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A9FD2030EC24C31D73C6D67 /* TombstonedAvatarImage.swift */; };
 		E8BCDDBCC08BDE5F8ACA0343 /* CallScreenModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D2159741E13FD4B0B7C09E0 /* CallScreenModels.swift */; };
@@ -1736,6 +1735,7 @@
 		0D01FEA9A99F15C9EFEFA4CC /* IdentityConfirmationScreenCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdentityConfirmationScreenCoordinator.swift; sourceTree = "<group>"; };
 		0D29C3294F03500FF9897118 /* NoticeRoomTimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoticeRoomTimelineView.swift; sourceTree = "<group>"; };
 		0D652CBE6D401AD69DBED8D8 /* DeveloperOptionsScreenViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperOptionsScreenViewModel.swift; sourceTree = "<group>"; };
+		0D94F8634D3DAB182CE9B757 /* DiskIndexService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiskIndexService.swift; sourceTree = "<group>"; };
 		0DA2831D0952023D8A77C863 /* SessionVerificationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionVerificationTests.swift; sourceTree = "<group>"; };
 		0DE29677183BC918D3BAC7B2 /* MeetingsListScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingsListScreen.swift; sourceTree = "<group>"; };
 		0E2AD164BA3F3AE02E0039FA /* ReadableFrameModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadableFrameModifier.swift; sourceTree = "<group>"; };
@@ -2859,6 +2859,7 @@
 		CEFCDC2EE06F05DD2998A4C1 /* RoomInfoProxy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomInfoProxy.swift; sourceTree = "<group>"; };
 		CF253FACDE929CF4DC71D41C /* Search.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Search.swift; sourceTree = "<group>"; };
 		CF2B75EBECF657388A9231BE /* pt-BR */ = {isa = PBXFileReference; lastKnownFileType = text.plist.stringsdict; name = "pt-BR"; path = "pt-BR.lproj/Localizable.stringsdict"; sourceTree = "<group>"; };
+		CF61650A9C69569543CE5B7B /* AilockVoiceInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AilockVoiceInput.swift; sourceTree = "<group>"; };
 		CF77051DC995ADA032891543 /* CreateRoomScreenViewModelProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateRoomScreenViewModelProtocol.swift; sourceTree = "<group>"; };
 		CF7CDBC8EE30173B6D121A55 /* project.yml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = project.yml; sourceTree = "<group>"; };
 		CFB4AA9D6A39876AE1BF74DB /* HomeScreenCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeScreenCoordinator.swift; sourceTree = "<group>"; };
@@ -3011,7 +3012,6 @@
 		E7DDAFA4489F7CCFB1985AB9 /* Label.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Label.swift; sourceTree = "<group>"; };
 		E7F3E0FE58B431E18A3E23F4 /* SecureBackupScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureBackupScreen.swift; sourceTree = "<group>"; };
 		E808C1B1C4A069A276FBC65F /* AilockWebSocket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AilockWebSocket.swift; sourceTree = "<group>"; };
-		CF61650A9C69569543CE5B7B /* AilockVoiceInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AilockVoiceInput.swift; sourceTree = "<group>"; };
 		E846784780E8B9D6CFB1CB01 /* RoomRolesAndPermissionsScreenModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomRolesAndPermissionsScreenModels.swift; sourceTree = "<group>"; };
 		E848A143CDBB5B107CD7A178 /* ru */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ru; path = ru.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		E85FB949F3C07F845E4DD478 /* PillTextAttachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PillTextAttachment.swift; sourceTree = "<group>"; };
@@ -5613,6 +5613,7 @@
 			isa = PBXGroup;
 			children = (
 				BECF2798CDF654B24E495701 /* DiskService.swift */,
+				0D94F8634D3DAB182CE9B757 /* DiskIndexService.swift */,
 			);
 			path = Disk;
 			sourceTree = "<group>";
@@ -7833,6 +7834,7 @@
 				EBD1FCDCEBB9F013EF196870 /* XCLocalSwiftPackageReference "compound-ios" */,
 			);
 			preferredProjectObjectVersion = 77;
+			productRefGroup = C152295BF92679E832610435 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -9392,6 +9394,7 @@
 				1709B6582C12679355DB5490 /* WidgetsTabFlowCoordinator.swift in Sources */,
 				48132BB230710AF93DFE7941 /* WindowManager.swift in Sources */,
 				E6BF410E88024A799B23929C /* WindowManagerProtocol.swift in Sources */,
+				E7FFFF0246CBBE232B21EA70 /* DiskIndexService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -9836,9 +9839,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				OTHER_SWIFT_FLAGS = (
-					"-DRELEASE",
-				);
+				OTHER_SWIFT_FLAGS = "-DRELEASE";
 				PRODUCT_BUNDLE_IDENTIFIER = "${BASE_BUNDLE_IDENTIFIER}.ui.tests";
 				PRODUCT_NAME = UITests;
 				SDKROOT = iphoneos;
@@ -9875,9 +9876,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				OTHER_SWIFT_FLAGS = (
-					"-DDEBUG",
-				);
+				OTHER_SWIFT_FLAGS = "-DDEBUG";
 				PRODUCT_BUNDLE_IDENTIFIER = "${BASE_BUNDLE_IDENTIFIER}.accessibility.tests";
 				PRODUCT_NAME = AccessibilityTests;
 				SDKROOT = iphoneos;
@@ -9920,9 +9919,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				OTHER_SWIFT_FLAGS = (
-					"-DDEBUG",
-				);
+				OTHER_SWIFT_FLAGS = "-DDEBUG";
 				PRODUCT_BUNDLE_IDENTIFIER = "${BASE_BUNDLE_IDENTIFIER}.ui.tests";
 				PRODUCT_NAME = UITests;
 				SDKROOT = iphoneos;
@@ -10098,9 +10095,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = "$(MARKETING_VERSION)";
-				OTHER_SWIFT_FLAGS = (
-					"-DIS_NSE",
-				);
+				OTHER_SWIFT_FLAGS = "-DIS_NSE";
 				PRODUCT_BUNDLE_IDENTIFIER = "${BASE_BUNDLE_IDENTIFIER}.nse";
 				PRODUCT_DISPLAY_NAME = "$(APP_DISPLAY_NAME)";
 				PRODUCT_NAME = NSE;
@@ -10258,9 +10253,7 @@
 					"$(inherited)",
 					"-ObjC",
 				);
-				OTHER_SWIFT_FLAGS = (
-					"-DIS_MAIN_APP",
-				);
+				OTHER_SWIFT_FLAGS = "-DIS_MAIN_APP";
 				PILLS_UT_TYPE_IDENTIFIER = "$(BASE_BUNDLE_IDENTIFIER).pills";
 				PRODUCT_BUNDLE_IDENTIFIER = "$(BASE_BUNDLE_IDENTIFIER)";
 				PRODUCT_NAME = "$(APP_NAME)";
@@ -10282,9 +10275,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				OTHER_SWIFT_FLAGS = (
-					"-DRELEASE",
-				);
+				OTHER_SWIFT_FLAGS = "-DRELEASE";
 				PRODUCT_BUNDLE_IDENTIFIER = "${BASE_BUNDLE_IDENTIFIER}.accessibility.tests";
 				PRODUCT_NAME = AccessibilityTests;
 				SDKROOT = iphoneos;
@@ -10313,9 +10304,7 @@
 					"$(inherited)",
 					"-ObjC",
 				);
-				OTHER_SWIFT_FLAGS = (
-					"-DIS_MAIN_APP",
-				);
+				OTHER_SWIFT_FLAGS = "-DIS_MAIN_APP";
 				PILLS_UT_TYPE_IDENTIFIER = "$(BASE_BUNDLE_IDENTIFIER).pills";
 				PRODUCT_BUNDLE_IDENTIFIER = "$(BASE_BUNDLE_IDENTIFIER)";
 				PRODUCT_NAME = "$(APP_NAME)";
@@ -10366,9 +10355,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = "$(MARKETING_VERSION)";
-				OTHER_SWIFT_FLAGS = (
-					"-DIS_NSE",
-				);
+				OTHER_SWIFT_FLAGS = "-DIS_NSE";
 				PRODUCT_BUNDLE_IDENTIFIER = "${BASE_BUNDLE_IDENTIFIER}.nse";
 				PRODUCT_DISPLAY_NAME = "$(APP_DISPLAY_NAME)";
 				PRODUCT_NAME = NSE;

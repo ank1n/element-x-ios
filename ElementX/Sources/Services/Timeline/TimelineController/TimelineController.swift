@@ -479,7 +479,29 @@ class TimelineController: TimelineControllerProtocol {
         callbacks.send(.updatedTimelineItems(timelineItems: newTimelineItems, isSwitchingTimelines: isNewTimeline))
         self.paginationState = paginationState
 
+        indexFilesForDisk(items: newTimelineItems)
+
         recoverEmptyRoomIfNeeded(items: newTimelineItems, paginationState: paginationState)
+    }
+
+    /// STMOB-275: отдать метаданные файлов в индекс «Диска».
+    ///
+    /// Индексируем то, что отрисовали, — так же, как это делает веб. Иначе никак:
+    /// сервер files-api шифртекст не видит, и заполнить индекс может только клиент
+    /// с ключами комнаты. Пока этого не было, файл, отправленный с айфона в
+    /// зашифрованную комнату, в «Диске» не появлялся вовсе.
+    ///
+    /// Здесь только отбор; отсев уже отправленного, склейка в батчи и сеть — внутри
+    /// сервиса, поэтому звать на каждое обновление таймлайна дёшево.
+    private func indexFilesForDisk(items: [RoomTimelineItemProtocol]) {
+        guard let service = ServiceLocator.shared.diskIndexService else { return }
+
+        let records = DiskIndexService.records(from: items,
+                                               roomID: roomProxy.id,
+                                               isRoomEncrypted: roomProxy.infoPublisher.value.isEncrypted)
+        guard !records.isEmpty else { return }
+
+        Task { await service.note(records) }
     }
 
     /// STMOB-222: event-cache auto-shrink workaround.
