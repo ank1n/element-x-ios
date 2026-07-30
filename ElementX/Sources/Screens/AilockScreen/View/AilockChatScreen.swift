@@ -285,30 +285,128 @@ struct AilockChatScreen: View {
                 attachmentsRow
             }
 
-            HStack(alignment: .bottom, spacing: 8) {
-                Button {
-                    context.showFileImporter = true
-                } label: {
-                    Image(systemName: "paperclip")
-                        .font(.system(size: 18))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 34, height: 34)
+            if context.viewState.voicePhase == .recording {
+                recordingBar
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
+            } else {
+                HStack(alignment: .bottom, spacing: 8) {
+                    Button {
+                        context.showFileImporter = true
+                    } label: {
+                        Image(systemName: "paperclip")
+                            .font(.system(size: 18))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 34, height: 34)
+                    }
+                    .disabled(context.viewState.isUploadingAttachment || context.viewState.voicePhase == .transcribing)
+
+                    TextField(composerPlaceholder, text: $context.composerText, axis: .vertical)
+                        .lineLimit(1...6)
+                        .textFieldStyle(.plain)
+                        .disabled(context.viewState.voicePhase == .transcribing)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+
+                    // Микрофон показываем, пока поле пустое — как в мобильных LLM-клиентах:
+                    // начал печатать, кнопка уступает место отправке.
+                    if showsMicButton {
+                        micButton
+                    } else {
+                        sendButton
+                    }
                 }
-                .disabled(context.viewState.isUploadingAttachment)
-
-                TextField(SL10n.ailockComposerPlaceholder, text: $context.composerText, axis: .vertical)
-                    .lineLimit(1...6)
-                    .textFieldStyle(.plain)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
-                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-
-                sendButton
+                .padding(.horizontal, 12)
+                .padding(.bottom, 8)
             }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 8)
         }
         .background(.bar)
+    }
+
+    private var composerPlaceholder: String {
+        context.viewState.voicePhase == .transcribing ? SL10n.ailockTranscribing : SL10n.ailockComposerPlaceholder
+    }
+
+    private var showsMicButton: Bool {
+        !context.viewState.isVoiceUnavailable &&
+            context.viewState.bindings.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            context.viewState.pendingAttachments.isEmpty &&
+            !context.viewState.isRunning
+    }
+
+    private var micButton: some View {
+        Button {
+            context.send(viewAction: .startVoiceInput)
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(Color(.tertiarySystemFill))
+                    .frame(width: 34, height: 34)
+                if context.viewState.voicePhase == .transcribing {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: "mic.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(StalkTheme.accent)
+                }
+            }
+        }
+        .disabled(context.viewState.voicePhase == .transcribing)
+        .accessibilityLabel(SL10n.ailockVoiceInput)
+    }
+
+    /// Панель записи вместо поля ввода: отменить, таймер с индикатором уровня, готово.
+    private var recordingBar: some View {
+        HStack(spacing: 12) {
+            Button {
+                context.send(viewAction: .cancelVoiceInput)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 34, height: 34)
+            }
+
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(.red)
+                    .frame(width: 8, height: 8)
+                    .opacity(0.4 + Double(context.viewState.voiceLevel) * 0.6)
+                    .animation(.easeOut(duration: 0.2), value: context.viewState.voiceLevel)
+
+                Text(Self.timecode(context.viewState.voiceDuration))
+                    .font(.body.monospacedDigit())
+
+                Spacer(minLength: 0)
+
+                Text(SL10n.ailockRecording)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+
+            Button {
+                context.send(viewAction: .finishVoiceInput)
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(StalkTheme.accent)
+                        .frame(width: 34, height: 34)
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+            }
+        }
+    }
+
+    private static func timecode(_ seconds: TimeInterval) -> String {
+        let total = Int(seconds)
+        return String(format: "%d:%02d", total / 60, total % 60)
     }
 
     private var sendButton: some View {

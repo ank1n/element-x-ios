@@ -20,6 +20,16 @@ enum AilockScreenViewAction {
     case openFile(AilockFile)
     case retry
     case dismissError
+    case startVoiceInput
+    case finishVoiceInput
+    case cancelVoiceInput
+}
+
+/// Состояние голосового ввода: диктовка → расшифровка → текст в поле.
+enum AilockVoicePhase: Equatable {
+    case idle
+    case recording
+    case transcribing
 }
 
 enum AilockScreenViewModelAction {
@@ -42,6 +52,14 @@ struct AilockScreenViewState: BindableState {
     var errorMessage: String?
     /// Айлок не развёрнут на этом домене — экран показывает заглушку, а не ошибку.
     var isUnavailable = false
+
+    /// Голосовой ввод.
+    var voicePhase: AilockVoicePhase = .idle
+    var voiceDuration: TimeInterval = 0
+    /// Уровень сигнала 0…1 — для «живого» индикатора записи.
+    var voiceLevel: Float = 0
+    /// Расшифровки на этом домене нет — прячем микрофон, а не показываем ошибку каждый раз.
+    var isVoiceUnavailable = false
 
     var bindings = AilockScreenViewStateBindings()
 

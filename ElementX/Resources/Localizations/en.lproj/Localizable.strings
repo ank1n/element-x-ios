@@ -1922,3 +1922,13 @@
 "stalk_ailock_file_too_large" = "File is too large";
 "stalk_ailock_file_unsupported" = "File type is not supported";
 "stalk_ailock_attach_failed" = "Could not attach the file";
+
+/* Ailock voice input (STMOB-274) */
+"stalk_ailock_voice_input" = "Voice input";
+"stalk_ailock_recording" = "Speak now";
+"stalk_ailock_transcribing" = "Transcribing…";
+"stalk_ailock_mic_denied" = "No microphone access — enable it in Settings";
+"stalk_ailock_record_failed" = "Could not start recording";
+"stalk_ailock_record_too_short" = "Too short — hold a bit longer";
+"stalk_ailock_transcribe_failed" = "Could not transcribe the recording";
+"stalk_ailock_transcribe_empty" = "No speech recognised";

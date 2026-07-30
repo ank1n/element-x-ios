@@ -231,6 +231,14 @@ enum SL10n {
     static let ailockFileTooLarge = NSLocalizedString("stalk_ailock_file_too_large", tableName: "Localizable", value: "Файл слишком большой", comment: "Attachment too large")
     static let ailockFileUnsupported = NSLocalizedString("stalk_ailock_file_unsupported", tableName: "Localizable", value: "Тип файла не поддерживается", comment: "Attachment type unsupported")
     static let ailockAttachFailed = NSLocalizedString("stalk_ailock_attach_failed", tableName: "Localizable", value: "Не удалось приложить файл", comment: "Attach failed")
+    static let ailockVoiceInput = NSLocalizedString("stalk_ailock_voice_input", tableName: "Localizable", value: "Голосовой ввод", comment: "Voice input button")
+    static let ailockRecording = NSLocalizedString("stalk_ailock_recording", tableName: "Localizable", value: "Говорите", comment: "Recording in progress")
+    static let ailockTranscribing = NSLocalizedString("stalk_ailock_transcribing", tableName: "Localizable", value: "Расшифровываю…", comment: "Transcribing")
+    static let ailockMicDenied = NSLocalizedString("stalk_ailock_mic_denied", tableName: "Localizable", value: "Нет доступа к микрофону — включите его в настройках", comment: "Mic permission denied")
+    static let ailockRecordFailed = NSLocalizedString("stalk_ailock_record_failed", tableName: "Localizable", value: "Не удалось начать запись", comment: "Recording failed")
+    static let ailockRecordTooShort = NSLocalizedString("stalk_ailock_record_too_short", tableName: "Localizable", value: "Слишком коротко — удерживайте дольше", comment: "Recording too short")
+    static let ailockTranscribeFailed = NSLocalizedString("stalk_ailock_transcribe_failed", tableName: "Localizable", value: "Не удалось расшифровать запись", comment: "Transcription failed")
+    static let ailockTranscribeEmpty = NSLocalizedString("stalk_ailock_transcribe_empty", tableName: "Localizable", value: "Речь не распознана", comment: "Nothing recognised")
 
     // MARK: - Auth
 

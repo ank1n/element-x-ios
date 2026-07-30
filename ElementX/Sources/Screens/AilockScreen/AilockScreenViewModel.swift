@@ -27,6 +27,11 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
     private let service: AilockService
     private let agentID: String
 
+    /// Голосовой ввод. `nil` — если расшифровка на этом сервере недоступна.
+    private let transcriber: AilockVoiceTranscriber?
+    private let voiceRecorder = AilockVoiceRecorder()
+    private var voiceTickerTask: Task<Void, Never>?
+
     private let actionsSubject: PassthroughSubject<AilockScreenViewModelAction, Never> = .init()
     var actionsPublisher: AnyPublisher<AilockScreenViewModelAction, Never> {
         actionsSubject.eraseToAnyPublisher()
@@ -50,9 +55,10 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
 
     private static let lastConversationKey = "ailock.lastConversationID"
 
-    init(service: AilockService, agentID: String) {
+    init(service: AilockService, agentID: String, transcriber: AilockVoiceTranscriber?) {
         self.service = service
         self.agentID = agentID
+        self.transcriber = transcriber
 
         super.init(initialViewState: AilockScreenViewState())
 
@@ -83,7 +89,96 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
             restoreLastConversation()
         case .dismissError:
             state.errorMessage = nil
+        case .startVoiceInput:
+            startVoiceInput()
+        case .finishVoiceInput:
+            finishVoiceInput()
+        case .cancelVoiceInput:
+            cancelVoiceInput()
         }
+    }
+
+    // MARK: - Голосовой ввод
+
+    /// Диктовка: пишем WAV, расшифровываем через recording-api и кладём текст в поле —
+    /// не отправляя. Пользователь должен успеть поправить распознанное перед отправкой.
+    private func startVoiceInput() {
+        guard state.voicePhase == .idle, transcriber != nil else { return }
+
+        Task { [weak self] in
+            guard let self else { return }
+            guard await AilockVoiceRecorder.requestPermission() else {
+                state.errorMessage = SL10n.ailockMicDenied
+                return
+            }
+
+            do {
+                try voiceRecorder.start()
+            } catch {
+                state.errorMessage = SL10n.ailockRecordFailed
+                return
+            }
+
+            state.voicePhase = .recording
+            state.voiceDuration = 0
+            state.voiceLevel = 0
+            startVoiceTicker()
+        }
+    }
+
+    private func startVoiceTicker() {
+        voiceTickerTask?.cancel()
+        voiceTickerTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                guard let self, state.voicePhase == .recording else { return }
+                state.voiceDuration = voiceRecorder.duration
+                state.voiceLevel = voiceRecorder.level()
+                // Длинную диктовку закрываем сами: это поле ввода, а не голосовое сообщение.
+                if state.voiceDuration >= AilockVoiceRecorder.maxDuration {
+                    finishVoiceInput()
+                    return
+                }
+            }
+        }
+    }
+
+    private func finishVoiceInput() {
+        guard state.voicePhase == .recording else { return }
+        voiceTickerTask?.cancel()
+
+        guard let fileURL = voiceRecorder.finish() else {
+            state.voicePhase = .idle
+            state.errorMessage = SL10n.ailockRecordTooShort
+            return
+        }
+
+        state.voicePhase = .transcribing
+        Task { [weak self] in
+            guard let self, let transcriber else { return }
+            do {
+                let text = try await transcriber.transcribe(fileURL: fileURL)
+                let existing = state.bindings.composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+                state.bindings.composerText = existing.isEmpty ? text : existing + " " + text
+            } catch {
+                state.errorMessage = (error as? LocalizedError)?.errorDescription ?? SL10n.ailockTranscribeFailed
+                MXLog.error("sTalk Ailock: диктовка не расшифрована: \(error)")
+                // Маршрута нет или он не наш (другой домен, выключенный recording-api) —
+                // прячем микрофон до конца сессии, чтобы не предлагать заведомо мёртвую кнопку.
+                if case AilockVoiceError.http(let status) = error, status == 403 || status == 404 || status == 405 {
+                    state.isVoiceUnavailable = true
+                }
+            }
+            state.voicePhase = .idle
+        }
+    }
+
+    private func cancelVoiceInput() {
+        voiceTickerTask?.cancel()
+        voiceRecorder.cancel()
+        state.voicePhase = .idle
+        state.voiceDuration = 0
+        state.voiceLevel = 0
     }
 
     /// Открыть существующую беседу (выбор из истории).

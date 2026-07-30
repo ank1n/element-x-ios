@@ -42,7 +42,14 @@ final class AilockScreenCoordinator: CoordinatorProtocol {
         service = AilockService(homeserver: parameters.homeserver,
                                 accessTokenProvider: parameters.accessTokenProvider,
                                 forceTokenRefresh: parameters.forceTokenRefresh)
-        chatViewModel = AilockScreenViewModel(service: service, agentID: parameters.agentID)
+        // Диктовка идёт через recording-api того же домена (STMOB-265 / STALK-666),
+        // а не через door-2: STT-ключ тенанта серверный и в клиент не попадает.
+        let transcriber = AilockVoiceTranscriber(homeserver: parameters.homeserver,
+                                                 accessTokenProvider: parameters.accessTokenProvider,
+                                                 forceTokenRefresh: parameters.forceTokenRefresh)
+        chatViewModel = AilockScreenViewModel(service: service,
+                                              agentID: parameters.agentID,
+                                              transcriber: transcriber)
 
         chatViewModel.actionsPublisher
             .sink { [weak self] action in

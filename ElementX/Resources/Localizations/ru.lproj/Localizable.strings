@@ -1793,3 +1793,13 @@
 "stalk_ailock_file_too_large" = "Файл слишком большой";
 "stalk_ailock_file_unsupported" = "Тип файла не поддерживается";
 "stalk_ailock_attach_failed" = "Не удалось приложить файл";
+
+/* Ailock voice input (STMOB-274) */
+"stalk_ailock_voice_input" = "Голосовой ввод";
+"stalk_ailock_recording" = "Говорите";
+"stalk_ailock_transcribing" = "Расшифровываю…";
+"stalk_ailock_mic_denied" = "Нет доступа к микрофону — включите его в настройках";
+"stalk_ailock_record_failed" = "Не удалось начать запись";
+"stalk_ailock_record_too_short" = "Слишком коротко — удерживайте дольше";
+"stalk_ailock_transcribe_failed" = "Не удалось расшифровать запись";
+"stalk_ailock_transcribe_empty" = "Речь не распознана";
