@@ -224,8 +224,16 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
         if !result.contains(where: { $0.id == WidgetItem.filesAppID }) {
             if Self.filesAvailability[key] == nil {
                 let token = try? userSession.clientProxy.matrixAccessToken()
-                Self.filesAvailability[key] = await Self.probeFilesAvailability(baseURL: serverBaseURL, accessToken: token)
-                MXLog.info("sTalk: files-api available = \(Self.filesAvailability[key] == true)")
+                let available = await Self.probeFilesAvailability(baseURL: serverBaseURL, accessToken: token)
+                // Кэшируем только положительный ответ — как у Айлока. Разовый сбой сети
+                // иначе прячет «Диск» до перезапуска приложения, и выглядит это как
+                // «приложение пропало», хотя сервис на месте.
+                if available { Self.filesAvailability[key] = true }
+                MXLog.info("sTalk: files-api available = \(available)")
+                // В тестерскую выгрузку — тоже. Без этой строки причину отсутствия
+                // плитки на устройстве не установить: MXLog в выгрузку не попадает.
+                // Тот же урок, что со сборкой 307 по Айлоку.
+                DiagLog.write("Disk", "probe \(serverBaseURL) -> available=\(available)")
             }
             if Self.filesAvailability[key] == true {
                 result.append(WidgetItem.files)

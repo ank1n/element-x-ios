@@ -211,7 +211,17 @@ final class DiskService {
             var request = URLRequest(url: url)
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
-            let (data, response) = try await session.data(for: request)
+            let data: Data
+            let response: URLResponse
+            do {
+                (data, response) = try await session.data(for: request)
+            } catch {
+                // Сетевой сбой раньше не попадал в выгрузку вовсе: писался только
+                // ненулевой HTTP-статус. На устройстве это выглядело как «Диск пустой
+                // и молчит» — без единой строки, по которой видно, что запрос вообще был.
+                DiagLog.write("Disk", "запрос \(url.path) не дошёл: \(error.localizedDescription)")
+                throw error
+            }
             let status = (response as? HTTPURLResponse)?.statusCode ?? -1
 
             if status == 200 { return data }
