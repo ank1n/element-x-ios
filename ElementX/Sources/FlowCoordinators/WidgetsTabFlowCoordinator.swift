@@ -144,6 +144,18 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
                 self?.actionsSubject.send(.hideTabBar(false))
             })
 
+        case WidgetItem.filesAppID:
+            // STMOB-275: «Диск». База — домен сессии, путь /api/files одинаков во всём
+            // семействе sTalk (тот же принцип, что для встреч, STMOB-246).
+            // Авторизация — Matrix-токен: проверено живым запросом, без заголовка
+            // сервис отвечает 401 «Authorization required».
+            let filesProxy = userSession.clientProxy
+            let filesConcrete = filesProxy as? ClientProxy
+            let diskCoordinator = DiskScreenCoordinator(parameters: .init(baseURL: sessionBaseURL,
+                                                                          accessTokenProvider: { try filesProxy.matrixAccessToken() },
+                                                                          forceTokenRefresh: { await filesConcrete?.forceTokenRefresh() }))
+            navigationStackCoordinator.push(diskCoordinator)
+
         case "meetings-calendar":
             guard let apiURL = widget.apiURL, !apiURL.isEmpty else {
                 MXLog.error("sTalk: Missing apiURL for meetings-calendar")

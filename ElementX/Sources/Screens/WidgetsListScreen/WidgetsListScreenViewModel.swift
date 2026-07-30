@@ -204,7 +204,23 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
     /// Molly заведёт `ailock` в apps-api, локальная запись перестанет использоваться,
     /// и этот метод можно будет убрать целиком.
     private func mergingLocalBuiltins(into widgets: [WidgetItem]) async -> [WidgetItem] {
-        guard !widgets.contains(where: { $0.id == WidgetItem.ailockAppID }) else { return widgets }
+        var result = widgets
+
+        // STMOB-275: «Диск». Подмешиваем, пока его нет в реестре apps-api. Наличие
+        // сервиса проверяем по живому ответу /api/files — иначе на доменах, где
+        // files-api не развёрнут, приложение открывалось бы в пустоту.
+        if !result.contains(where: { $0.id == WidgetItem.filesAppID }) {
+            if Self.filesAvailability == nil {
+                let token = try? userSession.clientProxy.matrixAccessToken()
+                Self.filesAvailability = await Self.probeFilesAvailability(baseURL: serverBaseURL, accessToken: token)
+                MXLog.info("sTalk: files-api available = \(Self.filesAvailability == true)")
+            }
+            if Self.filesAvailability == true {
+                result.append(WidgetItem.files)
+            }
+        }
+
+        guard !result.contains(where: { $0.id == WidgetItem.ailockAppID }) else { return result }
 
         if Self.ailockAvailability == nil {
             let token = try? userSession.clientProxy.matrixAccessToken()
@@ -212,8 +228,29 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
             MXLog.info("sTalk: Ailock door-2 available = \(Self.ailockAvailability == true)")
         }
 
-        guard Self.ailockAvailability == true else { return widgets }
-        return widgets + [WidgetItem.ailock]
+        guard Self.ailockAvailability == true else { return result }
+        return result + [WidgetItem.ailock]
+    }
+
+    /// Развёрнут ли files-api на этом домене. Один запрос за сессию, результат кэшируется.
+    /// 200 или 401 одинаково означают «сервис есть»: 401 — это ответ живого маршрута,
+    /// а не его отсутствие. Отсутствие даёт 404.
+    private static var filesAvailability: Bool?
+
+    private static func probeFilesAvailability(baseURL: String, accessToken: String?) async -> Bool {
+        guard let url = URL(string: "\(baseURL)/api/files/stats") else { return false }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 8
+        if let accessToken {
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        }
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+            return status == 200 || status == 401
+        } catch {
+            return false
+        }
     }
 
     /// STMOB-196: apps-api (`/apps-api/apps`) пока отдаёт name/description только на

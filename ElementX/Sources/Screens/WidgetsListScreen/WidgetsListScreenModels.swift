@@ -103,6 +103,27 @@ struct WidgetItem: Identifiable, Equatable, Codable {
                    category: .tools)
     }
 
+    // MARK: - Диск (STMOB-275)
+
+    /// Идентификатор записи приложения. Должен совпасть с тем, что заведут в apps-api.
+    /// ВАЖНО: тип обязан быть `builtin` — веб-виджеты отрезаются фильтром выше после
+    /// реджекта Apple по гайдлайну 2.1(a) на сборке 193.
+    static let filesAppID = "files"
+
+    /// Локальная запись, пока «Диска» нет в реестре apps-api. Уступает серверной
+    /// записи с тем же id, поэтому дублей не будет.
+    static var files: WidgetItem {
+        WidgetItem(id: filesAppID,
+                   name: NSLocalizedString("stalk_disk_title", tableName: "Localizable", value: "Диск", comment: "Disk app name"),
+                   description: NSLocalizedString("stalk_disk_app_description", tableName: "Localizable",
+                                                  value: "Файлы из чатов и документы", comment: "Disk app description"),
+                   icon: "folder.fill",
+                   url: "",
+                   apiURL: nil,
+                   type: "builtin",
+                   category: .tools)
+    }
+
     init(id: String, name: String, description: String, icon: String = "", iconURL: URL? = nil, url: String, apiURL: String? = nil, type: String = "widget", category: WidgetCategory = .tools) {
         self.id = id
         self.name = name
