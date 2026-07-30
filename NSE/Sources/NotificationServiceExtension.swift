@@ -195,6 +195,7 @@ class NotificationServiceExtension: UNNotificationServiceExtension {
                                               contentHandler: contentHandler,
                                               notificationContent: mutableContent,
                                               tag: tag,
+                                              requestID: requestID,
                                               fetchDeadline: fetchDeadline)
             setPendingHandler(requestID, handler)
 

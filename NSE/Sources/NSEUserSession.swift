@@ -24,7 +24,7 @@ final class NSEUserSession: NSEUserSessionProtocol {
     private let appSettings: CommonSettingsProtocol
     private let baseClient: Client
     private let notificationClient: NotificationClient
-    private let userID: String
+    let userID: String
     private(set) lazy var mediaProvider: MediaProviderProtocol = MediaProvider(mediaLoader: MediaLoader(client: baseClient),
                                                                                imageCache: .onlyOnDisk,
                                                                                homeserverReachabilityPublisher: nil)

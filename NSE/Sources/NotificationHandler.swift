@@ -94,6 +94,15 @@ private enum NSEEventDedupCache {
         return false
     }
 
+    /// Снять отметку по eventID: фетч не удался и вместо контента показана
+    /// заглушка. Повторная доставка того же event_id (Sygnal/APNs retry) —
+    /// второй шанс скачать настоящий контент, а не «дубликат показанного».
+    /// Семантические ключи (`sem-*`) не трогаем — их подавление намеренное.
+    static func unmark(eventID: String) {
+        guard let dir = dedupDirectory else { return }
+        try? FileManager.default.removeItem(atPath: dir.appending(component: "evt-\(sanitize(eventID))").path)
+    }
+
     /// Sanitize key для безопасного file name (Matrix IDs содержат `:`, `!`, `$`).
     private static func sanitize(_ raw: String) -> String {
         let allowed = CharacterSet.alphanumerics.union(.init(charactersIn: "._-"))
@@ -119,17 +128,24 @@ class NotificationHandler {
     /// холодном ините остаток честно меньше — финализация не страдает.
     private let fetchDeadline: Date
 
+    /// request.identifier текущего пуша — им же iOS ключует доставленное
+    /// уведомление. Нужен, чтобы зачистка заглушек НИКОГДА не сняла доставку
+    /// собственного запроса (гонка с expiration-путём).
+    private let requestID: String
+
     init(userSession: NSEUserSession,
          settings: CommonSettingsProtocol,
          contentHandler: @escaping (UNNotificationContent) -> Void,
          notificationContent: UNMutableNotificationContent,
          tag: String,
+         requestID: String,
          fetchDeadline: Date = Date().addingTimeInterval(24)) {
         self.userSession = userSession
         self.settings = settings
         self.contentHandler = contentHandler
         self.notificationContent = notificationContent
         self.tag = tag
+        self.requestID = requestID
         self.fetchDeadline = fetchDeadline
         
         let eventStringBuilder = RoomMessageEventStringBuilder(attributedStringBuilder: AttributedStringBuilder(mentionBuilder: PlainMentionBuilder()),
@@ -140,7 +156,10 @@ class NotificationHandler {
     }
     
     func processEvent(_ eventID: String, roomID: String) async {
-        currentRoomID = roomID
+        stateLock.withLock {
+            currentRoomID = roomID
+            currentEventID = eventID
+        }
         MXLog.info("\(tag) Processing event: \(eventID) in room: \(roomID)")
         NSEDiagLog.write("processEvent eventID=\(eventID) roomID=\(roomID) tag=\(tag)")
 
@@ -220,8 +239,10 @@ class NotificationHandler {
             }
             NSEDiagLog.write("  → failed/timeout retrieving notification item, SHOW GENERIC")
             // Не пустышка: событие существует, но не скачалось в бюджет NSE.
-            // Показываем «Новое сообщение» — тап откроет приложение с реальным
-            // содержимым. Пустой «sTalk/Уведомление» юзеры читают как баг.
+            // Заглушка несёт room_id/event_id (тап открывает чат) и снимает
+            // дедуп-отметку — retry-пуш этого события получит второй шанс.
+            // Если ретрай тоже таймаутится — заглушки не копим: прошлую убираем.
+            await removeDeliveredNotifications(for: eventID)
             showGenericMessageNotification()
             return
         }
@@ -245,8 +266,44 @@ class NotificationHandler {
                 return
             }
 
+            // Retry после fetch-таймаута: по этому событию в Центре уведомлений
+            // может висеть заглушка «Новое сообщение» от прошлой попытки —
+            // реальный контент её суперсидит (тот же приём, что у redaction).
+            // EmptyProxy (SDK-ошибка вместо контента) не суперсидит ничего:
+            // затирать информативную заглушку баннером «sTalk/Уведомление» хуже,
+            // чем оставить как есть, — при висящей заглушке его гасим.
+            if notificationItemProxy.event != nil {
+                await removeDeliveredNotifications(for: eventID)
+            } else if await hasDeliveredNotification(for: eventID) {
+                NSEDiagLog.write("  → EmptyProxy при висящей заглушке этого события — DISCARD")
+                discardNotification()
+                return
+            }
+
             deliverNotification()
         }
+    }
+
+    /// Убрать уже доставленные уведомления этого события — заглушку прошлой
+    /// попытки или дубль. Собственный запрос исключён по request.identifier:
+    /// expiration-путь мог доставить баннер ЭТОГО же пуша, пока билдер ещё
+    /// работал, — снять его нельзя, once-гард молча съест повторную доставку
+    /// и юзер не получит ничего.
+    private func removeDeliveredNotifications(for eventID: String) async {
+        let delivered = await UNUserNotificationCenter.current().deliveredNotifications()
+        let stale = delivered
+            .filter { $0.request.content.eventID == eventID && $0.request.identifier != requestID }
+            .map(\.request.identifier)
+        guard !stale.isEmpty else { return }
+        NSEDiagLog.write("  → снимаю прежние уведомления события (\(stale.count) шт.)")
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: stale)
+    }
+
+    /// Висит ли в Центре уведомлений доставленное уведомление этого события
+    /// от ДРУГОГО запроса (заглушка прошлой попытки).
+    private func hasDeliveredNotification(for eventID: String) async -> Bool {
+        await UNUserNotificationCenter.current().deliveredNotifications()
+            .contains { $0.request.content.eventID == eventID && $0.request.identifier != requestID }
     }
 
     /// Проверка cross-process marker от main app (используется и в processEvent,
@@ -288,16 +345,22 @@ class NotificationHandler {
     
     // MARK: - Private
 
+    /// Замок состояния хендлера: processEvent пишет из своей Task, expiration
+    /// читает из системного потока. Поля ниже — только под ним.
+    private let stateLock = NSLock()
     /// ⚠️ iOS считает поведение неопределённым (дубль-баннер/краш) при повторном
     /// вызове contentHandler. На cold-Synapse (наш кейс: NSE-фетч 28-29с) expiration
     /// и fetch-timeout могут дёрнуть его дважды. Один-и-только-один гард.
     private var contentHandlerCalled = false
     private func callContentHandlerOnce(_ content: UNNotificationContent) {
-        guard !contentHandlerCalled else {
+        let alreadyCalled = stateLock.withLock {
+            defer { contentHandlerCalled = true }
+            return contentHandlerCalled
+        }
+        guard !alreadyCalled else {
             MXLog.info("\(tag) contentHandler already called — ignoring duplicate")
             return
         }
-        contentHandlerCalled = true
         contentHandler(content)
     }
 
@@ -311,23 +374,43 @@ class NotificationHandler {
         callContentHandlerOnce(Self.makePassiveContent())
     }
 
-    /// roomID текущего события — для generic-уведомления на expiration-пути.
+    /// roomID/eventID текущего события — для generic-уведомления на
+    /// fetch-таймауте и expiration-пути. Доступ только под stateLock.
     private var currentRoomID: String?
+    private var currentEventID: String?
 
     /// Fetch-таймаут: событие есть, но не скачалось в бюджет NSE. Показываем
     /// осмысленное уведомление (имя комнаты из ЛОКАЛЬНОГО стора + «Новое
     /// сообщение») вместо пустой заглушки. Синапс после простоя отвечает NSE
     /// >27с (лог dp 129) — с именем комнаты такой пуш хотя бы информативен.
+    ///
+    /// STMOB-277: заглушка обязана нести room_id — notificationTapped без него
+    /// no-op, тап открывал приложение «в никуда». Дедуп-отметку события снимаем:
+    /// показанная заглушка ≠ показанный контент, retry должен пройти фетч заново
+    /// (а успех уберёт заглушку — см. removeDeliveredNotifications).
     private func showGenericMessageNotification() {
+        let (roomID, eventID) = stateLock.withLock { (currentRoomID, currentEventID) }
         let content = UNMutableNotificationContent()
         let isRussian = Locale.preferredLanguages.first?.hasPrefix("ru") ?? false
-        if let roomID = currentRoomID,
+        if let roomID,
            let roomName = roomNameWithTimeout(roomID),
            !roomName.isEmpty {
             content.title = roomName
         }
         content.body = isRussian ? "Новое сообщение" : "New message"
         content.sound = .default
+        if let roomID {
+            content.roomID = roomID
+            // Тот же формат, что у NotificationContentBuilder (receiver+room,
+            // без «@» из-за бага iOS с кнопкой mute) — заглушка группируется
+            // с реальными уведомлениями комнаты.
+            content.threadIdentifier = "\(userSession.userID)\(roomID)".replacingOccurrences(of: "@", with: "")
+        }
+        if let eventID {
+            content.eventID = eventID
+            content.receiverID = userSession.userID
+            NSEEventDedupCache.unmark(eventID: eventID)
+        }
         callContentHandlerOnce(content)
     }
 
