@@ -11,4 +11,8 @@ import UIKit
 struct NoticeRoomTimelineItemContent: Hashable {
     let body: String
     var formattedBody: AttributedString?
+    /// STMOB-275: карточка «поделился файлом». Приходит кастомным полем на этом же
+    /// уведомлении, поэтому отдельного типа события заводить не нужно: не разобрали —
+    /// показываем `body`, там осмысленный текст со ссылкой.
+    var fileShare: StalkFileShare?
 }

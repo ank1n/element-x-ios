@@ -92,21 +92,31 @@ class ServiceLocator {
 
     private(set) var diskIndexService: DiskIndexService?
 
+    /// Клиент files-api для ленты: карточка «поделился файлом» открывается из
+    /// блоб-хранилища, а не из Matrix-медиа, и экрану Диска он не принадлежит.
+    private(set) var diskService: DiskService?
+
     /// Создаём только при живой сессии и только по её домену — по той же причине,
     /// что и транскрибацию: настроечный URL захардкожен на .ru, и метаданные чужого
     /// сервера ушли бы туда вместе с нашим токеном.
     @MainActor
     func setupDiskIndex(homeserver: String,
                         userID: String,
-                        accessTokenProvider: @escaping () throws -> String) {
+                        accessTokenProvider: @escaping () throws -> String,
+                        forceTokenRefresh: @escaping () async -> Void) {
         guard let url = URL(string: homeserver.hasPrefix("http") ? homeserver : "https://\(homeserver)"),
               let scheme = url.scheme, let host = url.host else {
             diskIndexService = nil
+            diskService = nil
             return
         }
-        diskIndexService = DiskIndexService(baseURL: "\(scheme)://\(host)",
+        let baseURL = "\(scheme)://\(host)"
+        diskIndexService = DiskIndexService(baseURL: baseURL,
                                             accessTokenProvider: accessTokenProvider,
                                             seen: DiskIndexSeenStore(userID: userID))
+        diskService = DiskService(baseURL: baseURL,
+                                  accessTokenProvider: accessTokenProvider,
+                                  forceTokenRefresh: forceTokenRefresh)
     }
 
     // MARK: - Cache Service

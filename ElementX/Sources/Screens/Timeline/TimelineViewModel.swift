@@ -164,6 +164,8 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
             Task { await timelineController.processItemDisappearance(id) }
         case .mediaTapped(let id):
             Task { await handleMediaTapped(with: id) }
+        case .stalkFileShareTapped(let id):
+            Task { await handleStalkFileShareTapped(with: id) }
         case .itemSendInfoTapped(let itemID):
             handleItemSendInfoTapped(itemID: itemID)
         case .toggleReaction(let emoji, let itemID):
@@ -647,6 +649,39 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
         guard appMediator.appState == .active else { return }
                 
         await timelineController.sendReadReceipt(for: lastVisibleItemID)
+    }
+
+    /// STMOB-275: открыть файл из карточки «поделился файлом».
+    ///
+    /// Содержимое лежит в блоб-хранилище Диска, а не в Matrix-медиа, поэтому обычный
+    /// путь вложения здесь не годится: у события нет ни mxc-адреса, ни ключей.
+    private func handleStalkFileShareTapped(with itemID: TimelineItemIdentifier) async {
+        guard let item = state.timelineState.itemViewStates.first(where: { $0.identifier == itemID })?.type,
+              case .notice(let noticeItem) = item,
+              let fileShare = noticeItem.content.fileShare else {
+            return
+        }
+
+        guard let service = ServiceLocator.shared.diskService else {
+            MXLog.warning("STMOB-275: файл из карточки не открыть — сервис Диска не поднят")
+            return
+        }
+
+        state.showLoading = true
+        defer { state.showLoading = false }
+
+        do {
+            let data = try await service.fetchBlob(id: fileShare.blobID)
+            let directory = URL.temporaryDirectory.appending(path: "stalk-disk", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            // Имя как в карточке: его же показывают просмотрщик и «Поделиться».
+            let url = directory.appending(path: fileShare.name.isEmpty ? fileShare.blobID : fileShare.name)
+            try data.write(to: url, options: .atomic)
+            state.bindings.stalkFileSharePreview = MediaPreviewItem(file: .unmanaged(url: url), title: fileShare.name)
+        } catch {
+            DiagLog.write("Disk", "файл из карточки не скачался (\(fileShare.blobID)): \(error)")
+            userIndicatorController.submitIndicator(.init(title: L10n.errorUnknown))
+        }
     }
 
     private func handleMediaTapped(with itemID: TimelineItemIdentifier) async {

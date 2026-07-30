@@ -12,22 +12,33 @@ import SwiftUI
 struct NoticeRoomTimelineView: View, TextBasedRoomTimelineViewProtocol {
     let timelineItem: NoticeRoomTimelineItem
     
+    @EnvironmentObject private var context: TimelineViewModel.Context
+
     var body: some View {
         TimelineStyler(timelineItem: timelineItem) {
-            // Spacing: 6 = label spacing - formatted text padding
-            
-            Label {
-                if let attributedString = timelineItem.content.formattedBody {
-                    FormattedBodyText(attributedString: attributedString, additionalWhitespacesCount: timelineItem.additionalWhitespaces())
-                } else {
-                    FormattedBodyText(text: timelineItem.content.body, additionalWhitespacesCount: timelineItem.additionalWhitespaces())
+            // STMOB-275: у «поделился файлом» вместо строки-уведомления своя карточка.
+            // Текст события при этом никуда не девается — он остаётся фолбэком, если
+            // кастомное поле не разобралось.
+            if let fileShare = timelineItem.content.fileShare {
+                StalkFileShareView(fileShare: fileShare) {
+                    context.send(viewAction: .stalkFileShareTapped(itemID: timelineItem.id))
                 }
-            } icon: {
-                CompoundIcon(\.info, size: .small, relativeTo: .compound.bodyLG)
-                    .foregroundColor(.compound.iconSecondary)
+            } else {
+                // Spacing: 6 = label spacing - formatted text padding
+
+                Label {
+                    if let attributedString = timelineItem.content.formattedBody {
+                        FormattedBodyText(attributedString: attributedString, additionalWhitespacesCount: timelineItem.additionalWhitespaces())
+                    } else {
+                        FormattedBodyText(text: timelineItem.content.body, additionalWhitespacesCount: timelineItem.additionalWhitespaces())
+                    }
+                } icon: {
+                    CompoundIcon(\.info, size: .small, relativeTo: .compound.bodyLG)
+                        .foregroundColor(.compound.iconSecondary)
+                }
+                .labelStyle(.custom(spacing: 6.0, alignment: .top))
+                .padding(.leading, 4) // Trailing padding is provided by FormattedBodyText
             }
-            .labelStyle(.custom(spacing: 6.0, alignment: .top))
-            .padding(.leading, 4) // Trailing padding is provided by FormattedBodyText
         }
     }
 }

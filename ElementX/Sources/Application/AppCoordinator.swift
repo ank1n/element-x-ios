@@ -815,6 +815,9 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
                                              userID: userSession.clientProxy.userID,
                                              accessTokenProvider: { [weak clientProxy = userSession.clientProxy] in
                                                  try clientProxy?.matrixAccessToken() ?? ""
+                                             },
+                                             forceTokenRefresh: { [weak clientProxy = userSession.clientProxy] in
+                                                 await (clientProxy as? ClientProxy)?.forceTokenRefresh()
                                              })
 
         let flowParameters = CommonFlowParameters(userSession: userSession,

@@ -54,6 +54,9 @@ enum TimelineViewAction {
     case itemDisappeared(itemID: TimelineItemIdentifier)
     
     case mediaTapped(itemID: TimelineItemIdentifier)
+    /// STMOB-275: тап по карточке «поделился файлом» — содержимое лежит не в
+    /// Matrix-медиа, а в блоб-хранилище Диска, поэтому путь свой.
+    case stalkFileShareTapped(itemID: TimelineItemIdentifier)
     case itemSendInfoTapped(itemID: TimelineItemIdentifier)
     case toggleReaction(key: String, itemID: TimelineItemIdentifier)
     case sendReadReceiptIfNeeded(TimelineItemIdentifier)
@@ -180,6 +183,11 @@ struct TimelineViewStateBindings {
 
     var showTranslation = false
     var textToBeTranslated: String?
+
+    /// STMOB-275: файл из карточки «поделился файлом». Показываем тем же системным
+    /// просмотрщиком, что и вложения, но путь к содержимому свой — блоб-хранилище
+    /// Диска, а не Matrix-медиа.
+    var stalkFileSharePreview: MediaPreviewItem?
 }
 
 struct TimelineItemActionMenuInfo: Equatable, Identifiable {

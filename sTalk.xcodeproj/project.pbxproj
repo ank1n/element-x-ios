@@ -618,6 +618,7 @@
 		66BA1BCA24E7E7DF7635BB54 /* RoomSelectionScreenCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043277413E589588F496D986 /* RoomSelectionScreenCoordinator.swift */; };
 		66E2AD16A64EB0651A1E2BC4 /* InfoPlistReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FD87D0FE7774D90E0B12E6A /* InfoPlistReader.swift */; };
 		66FC2923ED8A799BAC765813 /* AudioRoomTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DCB53D1CB9CDFDB13030D8C /* AudioRoomTimelineView.swift */; };
+		6701823347886BBD8BC91B3F /* StalkFileShare.swift in Sources */ = {isa = PBXBuildFile; fileRef = B71E6477F1892C540AEF6DF5 /* StalkFileShare.swift */; };
 		6706165155AB1F63A53A6A8F /* AnalyticsSettingsScreenCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 876230D6812456048B2DBC39 /* AnalyticsSettingsScreenCoordinator.swift */; };
 		6724B9927E8EEEA07E31FDD0 /* UITestsSignalling.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D05B402A7F671986AC37246 /* UITestsSignalling.swift */; };
 		6748A5EABBFB74E3EB606B71 /* ViewFrameReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3A67AD623DA2217848D917E /* ViewFrameReader.swift */; };
@@ -1525,6 +1526,7 @@
 		F90B3042C29F79EA00297CD1 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = 549AB9DA7C02186C2F401802 /* SwiftSoup */; };
 		F94BCF3A8DACEAB1C278A195 /* UserProfileListRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2245B4C1BB41F76D1F9A571E /* UserProfileListRow.swift */; };
 		F982B534EC70AAEC433E062A /* AnalyticsEvents in Frameworks */ = {isa = PBXBuildFile; productRef = 2E5C15138B1E19C0D3645E06 /* AnalyticsEvents */; };
+		F99EAE5EDDC1D045052FAF4F /* StalkFileShareView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55754F4F5FC2A383B8485E94 /* StalkFileShareView.swift */; };
 		F99F95F614520538ACA17615 /* PaginationIndicatorRoomTimelineItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74E19D02A0B67F4675A9F894 /* PaginationIndicatorRoomTimelineItem.swift */; };
 		F9F5F27C0906617221A7612F /* KeychainController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44F697183A9C91630A9554A7 /* KeychainController.swift */; };
 		FA003B84BB1BA8B4C302432B /* RoomScreenTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E43BB3AEA72C1BD4F165F45A /* RoomScreenTests.swift */; };
@@ -2170,6 +2172,7 @@
 		5525743EBD54D729FD80F240 /* tr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = tr; path = tr.lproj/Localizable.strings; sourceTree = "<group>"; };
 		554444D5E4AD38D9AD919711 /* RoomChangeRolesScreenModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomChangeRolesScreenModels.swift; sourceTree = "<group>"; };
 		555A7CE1B6AB1DCE5A883130 /* NoticeRoomTimelineItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoticeRoomTimelineItem.swift; sourceTree = "<group>"; };
+		55754F4F5FC2A383B8485E94 /* StalkFileShareView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StalkFileShareView.swift; sourceTree = "<group>"; };
 		55998AA9A510D4A41A4A482F /* KnockRequestsListScreenCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnockRequestsListScreenCoordinator.swift; sourceTree = "<group>"; };
 		55F197D12C720CA86B6A917F /* ManageRoomMemberSheetViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManageRoomMemberSheetViewModel.swift; sourceTree = "<group>"; };
 		5607BA9FE78C809746907547 /* RemoveItemButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoveItemButton.swift; sourceTree = "<group>"; };
@@ -2728,6 +2731,7 @@
 		B6629949F9ADF4A4964F9AC7 /* AudioPlayerState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayerState.swift; sourceTree = "<group>"; };
 		B6833B26D740AE1F9C738E5D /* AudioFileEventsTimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioFileEventsTimelineView.swift; sourceTree = "<group>"; };
 		B6903DC1D13AAC1209CF4B53 /* SpaceAddRoomsScreenModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceAddRoomsScreenModels.swift; sourceTree = "<group>"; };
+		B71E6477F1892C540AEF6DF5 /* StalkFileShare.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StalkFileShare.swift; sourceTree = "<group>"; };
 		B7423D06970918C85C206ABD /* FormattedBodyText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormattedBodyText.swift; sourceTree = "<group>"; };
 		B7D07CB9AF509EEA4D5A2C51 /* PollFormScreenModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PollFormScreenModels.swift; sourceTree = "<group>"; };
 		B7D6C711B4340D37D1E91B06 /* SecureBackupRecoveryKeyScreenViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureBackupRecoveryKeyScreenViewModel.swift; sourceTree = "<group>"; };
@@ -5449,6 +5453,7 @@
 				B23B8D7081D8D0D22DB34E59 /* ReadMarkerRoomTimelineView.swift */,
 				F9653017FDBC3DBE7F24AEEA /* RedactedRoomTimelineView.swift */,
 				C73A9EE8DFAC7ABBA23C1A2A /* SeparatorRoomTimelineView.swift */,
+				55754F4F5FC2A383B8485E94 /* StalkFileShareView.swift */,
 				078714C80700241E059389DB /* StateRoomTimelineView.swift */,
 				1FE691478E7836A5F7EAFDE5 /* StickerRoomTimelineView.swift */,
 				EB393F235F3142B191B060F6 /* TextBasedRoomTimelineViewProtocol.swift */,
@@ -5616,6 +5621,7 @@
 			children = (
 				0202AFFB353345BEE433D197 /* DiskIndexService.swift */,
 				BECF2798CDF654B24E495701 /* DiskService.swift */,
+				B71E6477F1892C540AEF6DF5 /* StalkFileShare.swift */,
 			);
 			path = Disk;
 			sourceTree = "<group>";
@@ -9192,6 +9198,8 @@
 				90ED8E7F76DF0F7246334BD4 /* SpacesTabFlowCoordinator.swift in Sources */,
 				6158B41ECCAB9C1D54BCB98D /* SplashScreenCoordinator.swift in Sources */,
 				2CE554FA591C8B3DE5E382B2 /* StackedAvatarsView.swift in Sources */,
+				6701823347886BBD8BC91B3F /* StalkFileShare.swift in Sources */,
+				F99EAE5EDDC1D045052FAF4F /* StalkFileShareView.swift in Sources */,
 				C688B2C3E14E8CB37382945C /* StalkTabBar.swift in Sources */,
 				0B141205EA1B8F18AB44826E /* StalkTheme.swift in Sources */,
 				6EA665CCC1D8F5B07325CA37 /* StartChatFlowCoordinator.swift in Sources */,
@@ -9975,7 +9983,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 310;
+				CURRENT_PROJECT_VERSION = 309;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = Z44H678J3R;
 				ENABLE_BITCODE = NO;
@@ -10211,7 +10219,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 310;
+				CURRENT_PROJECT_VERSION = 309;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = Z44H678J3R;
 				ENABLE_BITCODE = NO;

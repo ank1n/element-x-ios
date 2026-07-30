@@ -27,6 +27,10 @@ struct TimelineView: View {
                 ManageRoomMemberSheetView(context: $0.context)
             }
             .sheet(item: $timelineContext.debugInfo) { TimelineItemDebugView(info: $0) }
+            // STMOB-275: файл из карточки «поделился файлом» — тот же системный
+            // просмотрщик, что и у вложений, только содержимое приходит из
+            // блоб-хранилища Диска.
+            .interactiveQuickLook(item: $timelineContext.stalkFileSharePreview, allowEditing: false)
             .sheet(item: $timelineContext.actionMenuInfo) { info in
                 let actions = TimelineItemMenuActionProvider(timelineItem: info.item,
                                                              canCurrentUserSendMessage: timelineContext.viewState.canCurrentUserSendMessage,

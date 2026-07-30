@@ -262,7 +262,11 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
                                isEditable: eventItemProxy.isEditable,
                                canBeRepliedTo: eventItemProxy.canBeRepliedTo,
                                sender: eventItemProxy.sender,
-                               content: buildNoticeTimelineItemContent(noticeMessageContent),
+                               // STMOB-275: карточка «поделился файлом» лежит кастомным
+                               // полем, а его Rust SDK наружу не отдаёт — достаём из сырого
+                               // JSON. Он ленивый и дёргается только здесь, на уведомлениях.
+                               content: buildNoticeTimelineItemContent(noticeMessageContent,
+                                                                       fileShare: StalkFileShare.parse(originalJSON: eventItemProxy.debugInfo.originalJSON)),
                                properties: .init(replyDetails: buildTimelineItemReplyDetails(messageLikeContent.inReplyTo),
                                                  isThreaded: messageLikeContent.threadRoot != nil,
                                                  threadSummary: buildTimelineItemThreadSummary(messageLikeContent.threadSummary),
@@ -604,11 +608,12 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
                      contentType: UTType(mimeType: messageContent.info?.mimetype, fallbackFilename: messageContent.filename))
     }
     
-    private func buildNoticeTimelineItemContent(_ messageContent: NoticeMessageContent) -> NoticeRoomTimelineItemContent {
+    private func buildNoticeTimelineItemContent(_ messageContent: NoticeMessageContent,
+                                                fileShare: StalkFileShare? = nil) -> NoticeRoomTimelineItemContent {
         let htmlBody = messageContent.formatted?.format == .html ? messageContent.formatted?.body : nil
         let formattedBody = (htmlBody != nil ? attributedStringBuilder.fromHTML(htmlBody) : attributedStringBuilder.fromPlain(messageContent.body))
-        
-        return .init(body: messageContent.body, formattedBody: formattedBody)
+
+        return .init(body: messageContent.body, formattedBody: formattedBody, fileShare: fileShare)
     }
     
     private func buildEmoteTimelineItemContent(senderDisplayName: String?, senderID: String, messageContent: EmoteMessageContent) -> EmoteRoomTimelineItemContent {
