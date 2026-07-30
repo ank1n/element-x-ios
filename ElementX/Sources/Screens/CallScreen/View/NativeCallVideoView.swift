@@ -1597,7 +1597,12 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
     /// а пересборка дерева экрана не должна пересоздавать окно.
     static let shared = CallPictureInPictureManager()
 
-    private let contentViewController = CallPictureInPictureViewController()
+    /// STMOB-291: объект содержимого окна ПЕРЕСОЗДАЁМ вместе с контроллером.
+    /// Переиспользование одного экземпляра — последнее, что оставалось необследованным:
+    /// подложка своя и в иерархии, контроллер свежий, автозапуск включён, а окно на
+    /// втором сворачивании не поднималось (лог 195). Система, судя по поведению,
+    /// считает объект содержимого всё ещё занятым предыдущим контроллером.
+    private var contentViewController = CallPictureInPictureViewController()
     private var cancellables = Set<AnyCancellable>()
     private weak var roomManager: LiveKitRoomManager?
     private(set) var controller: AVPictureInPictureController?
@@ -1657,6 +1662,8 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
             controller = nil
             isWindowVisible = false
             isRestoringInterface = false
+            // Свежий объект содержимого под свежий контроллер.
+            contentViewController = CallPictureInPictureViewController()
         }
 
         self.roomManager = roomManager
