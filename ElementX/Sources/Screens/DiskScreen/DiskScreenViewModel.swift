@@ -99,9 +99,19 @@ final class DiskScreenViewModel: ObservableObject {
     /// содержимое не развернуть. Поэтому для таких файлов уводим в чат, где событие
     /// уже расшифровано, вместо того чтобы показывать заведомо битую заглушку.
     func selectFile(_ file: DiskFile) {
-        guard !file.isEncrypted else {
+        // Уводим в чат только когда там ЕСТЬ что открывать: у Диск-документов и
+        // копий для шаринга Matrix-события нет вовсе, и переход вёл бы в никуда.
+        if file.isEncrypted, let roomID = file.roomID, let eventID = file.eventID {
             DiagLog.write("Disk", "файл \(file.filename) зашифрован → открываю в чате")
-            actionsSubject.send(.openRoom(roomID: file.roomID, eventID: file.eventID))
+            actionsSubject.send(.openRoom(roomID: roomID, eventID: eventID))
+            return
+        }
+
+        // Правило Molly: есть mxcUrl — тянем из Matrix; нет — из блоб-хранилища
+        // по blobId. Раньше вторая половина показывала «нельзя открыть», хотя
+        // содержимое доступно.
+        if file.mxcURL.isEmpty, let blobID = file.blobID {
+            downloadBlob(file, blobID: blobID)
             return
         }
 
@@ -123,6 +133,30 @@ final class DiskScreenViewModel: ObservableObject {
                 DiagLog.write("Disk", "не скачался \(file.filename): \(error)")
                 self?.errorText = NSLocalizedString("stalk_disk_error_download", tableName: "Localizable",
                                                     value: "Не удалось загрузить файл", comment: "Disk download failed")
+            }
+        }
+    }
+
+    /// Скачать содержимое из блоб-хранилища и показать тем же просмотрщиком, что
+    /// и вложения чата. Пишем во временный файл: просмотрщику нужен путь на диске,
+    /// а не байты в памяти.
+    private func downloadBlob(_ file: DiskFile, blobID: String) {
+        downloadingFileID = file.id
+        Task { [weak self] in
+            defer { self?.downloadingFileID = nil }
+            guard let self else { return }
+            do {
+                let data = try await service.fetchBlob(id: blobID)
+                let directory = URL.temporaryDirectory.appending(path: "stalk-disk", directoryHint: .isDirectory)
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                // Имя как у файла: просмотрщик и «Поделиться» показывают именно его.
+                let url = directory.appending(path: file.filename.isEmpty ? blobID : file.filename)
+                try data.write(to: url, options: .atomic)
+                previewItem = MediaPreviewItem(file: .unmanaged(url: url), title: file.filename)
+            } catch {
+                DiagLog.write("Disk", "блоб \(blobID) не скачался: \(error)")
+                errorText = NSLocalizedString("stalk_disk_error_download", tableName: "Localizable",
+                                              value: "Не удалось загрузить файл", comment: "Disk download failed")
             }
         }
     }

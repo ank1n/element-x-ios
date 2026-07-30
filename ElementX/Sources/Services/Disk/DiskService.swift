@@ -54,8 +54,16 @@ struct DiskFile: Identifiable, Codable, Equatable {
     /// Событие Matrix, из которого файл попал в индекс. Вместе с `roomID` это
     /// единственный способ получить содержимое ЗАШИФРОВАННОГО вложения: ключи
     /// комнаты есть только у нативного клиента, сервер расшифровать не может.
-    let eventID: String
-    let roomID: String
+    ///
+    /// Необязательные: Диск-нативные документы и не-E2EE копии для шаринга живут
+    /// БЕЗ Matrix-события вовсе. Пока эти поля были обязательными, одна такая
+    /// запись роняла разбор всей страницы, и список не открывался целиком.
+    let eventID: String?
+    let roomID: String?
+    /// Идентификатор блоба. У записей без `mxcURL` содержимое достаётся только
+    /// по нему: `GET /api/files/blob/:id` (правило Molly — есть mxcUrl, тяни из
+    /// Matrix; нет — из блоб-хранилища).
+    let blobID: String?
     let sender: String
     let filename: String
     let mimetype: String
@@ -70,8 +78,11 @@ struct DiskFile: Identifiable, Codable, Equatable {
     let starred: Bool
     let sharedWith: [String]?
 
+    /// Ключ строки. У файлов из чата это событие, у Диск-документов — блоб.
+    /// Оба сразу отсутствовать не могут: тогда запись нечем открыть, и разбор
+    /// её отбрасывает (см. `DiskFilesResponse`).
     var id: String {
-        eventID
+        eventID ?? blobID ?? mxcURL
     }
 
     var date: Date {
@@ -81,6 +92,7 @@ struct DiskFile: Identifiable, Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case eventID = "eventId"
         case roomID = "roomId"
+        case blobID = "blobId"
         case sender, filename, mimetype, size, msgtype, category
         case mxcURL = "mxcUrl"
         case ts
@@ -92,8 +104,9 @@ struct DiskFile: Identifiable, Codable, Equatable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        eventID = try c.decode(String.self, forKey: .eventID)
-        roomID = try c.decode(String.self, forKey: .roomID)
+        eventID = try c.decodeIfPresent(String.self, forKey: .eventID)
+        roomID = try c.decodeIfPresent(String.self, forKey: .roomID)
+        blobID = try c.decodeIfPresent(String.self, forKey: .blobID)
         sender = try c.decodeIfPresent(String.self, forKey: .sender) ?? ""
         filename = try c.decodeIfPresent(String.self, forKey: .filename) ?? ""
         mimetype = try c.decodeIfPresent(String.self, forKey: .mimetype) ?? ""
@@ -111,9 +124,41 @@ struct DiskFile: Identifiable, Codable, Equatable {
 }
 
 /// Ответ списка. `nextBefore` — курсор постраничной выдачи.
+///
+/// Записи разбираются ПОШТУЧНО, и непонятая пропускается вместе со своей строкой,
+/// а не роняет страницу. Строгий разбор массива стоил нам пустого экрана «Не
+/// удалось загрузить список файлов» на аккаунте с 536 файлами: счётчики приходили
+/// (они считаются на сервере), а список падал целиком из-за записей, у которых
+/// нет Matrix-события. Схема files-api ещё меняется, и одно новое поле не должно
+/// стирать весь Диск.
 private struct DiskFilesResponse: Decodable {
     let files: [DiskFile]
     let nextBefore: String?
+    /// Сколько записей не разобралось. Ноль в норме; ненулевое пишем в лог.
+    let skipped: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case files, nextBefore
+    }
+
+    /// Обёртка, превращающая ошибку разбора элемента в `nil` вместо броска.
+    private struct Lenient: Decodable {
+        let file: DiskFile?
+
+        init(from decoder: Decoder) throws {
+            file = try? DiskFile(from: decoder)
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let raw = try c.decode([Lenient].self, forKey: .files)
+        let parsed = raw.compactMap(\.file)
+        // Запись без единого идентификатора открыть нечем — показывать её нельзя.
+        files = parsed.filter { !$0.id.isEmpty }
+        skipped = raw.count - files.count
+        nextBefore = try c.decodeIfPresent(String.self, forKey: .nextBefore)
+    }
 }
 
 /// Счётчики по категориям: `{"all":28,"documents":12,"images":16,"media":0}`.
@@ -189,14 +234,32 @@ final class DiskService {
         components?.queryItems = query.isEmpty ? nil : query
 
         let data = try await get(components?.url)
-        let decoded = try JSONDecoder().decode(DiskFilesResponse.self, from: data)
-        DiagLog.write("Disk", "список: \(decoded.files.count) файлов\(decoded.nextBefore == nil ? "" : ", есть ещё")")
+        let decoded: DiskFilesResponse
+        do {
+            decoded = try JSONDecoder().decode(DiskFilesResponse.self, from: data)
+        } catch {
+            // Раньше сюда попадала любая нераспознанная запись и экран пустел молча:
+            // в выгрузке не оставалось ни строки, и причину было не установить.
+            DiagLog.write("Disk", "список не разобрался (\(data.count) байт): \(error)")
+            throw error
+        }
+        let tail = decoded.nextBefore == nil ? "" : ", есть ещё"
+        let lost = decoded.skipped == 0 ? "" : ", пропущено непонятых: \(decoded.skipped)"
+        DiagLog.write("Disk", "список: \(decoded.files.count) файлов\(tail)\(lost)")
         return (decoded.files, decoded.nextBefore)
     }
 
     func fetchStats() async throws -> DiskStats {
         let data = try await get(URL(string: "\(baseURL)/api/files/stats"))
         return try JSONDecoder().decode(DiskStats.self, from: data)
+    }
+
+    /// Содержимое записи, у которой нет `mxcURL`: Диск-нативные документы и
+    /// не-E2EE копии для шаринга лежат не в Matrix-медиа, а в блоб-хранилище.
+    /// Отдаёт сырые байты (контракт Molly, #ops 30.07).
+    func fetchBlob(id: String) async throws -> Data {
+        let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        return try await get(URL(string: "\(baseURL)/api/files/blob/\(encoded)"))
     }
 
     // MARK: - Транспорт
