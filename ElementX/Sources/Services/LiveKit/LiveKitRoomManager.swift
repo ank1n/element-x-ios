@@ -397,6 +397,19 @@ final class LiveKitRoomManager: ObservableObject {
                                                                            dtx: true),
                            adaptiveStream: true,
                            dynacast: true,
+                           // STMOB-294: НЕ гасить своё видео при уходе в фон.
+                           // По умолчанию в SDK это true, и мы его не переопределяли —
+                           // поэтому при сворачивании LiveKit сам мьютил и останавливал
+                           // наш видеотрек (Room.appDidEnterBackground → publication
+                           // .suspend() → track.mute() → stopCapture()). Отсюда были те
+                           // самые ~300 мс до «localVideoTrack → nil» и пустое место
+                           // вместо своего видео в системном окне звонка.
+                           // Причина была НАША, не в системе: ни флаг многозадачного
+                           // доступа к камере, ни особые разрешения Apple тут ни при чём.
+                           // Официальный пример LiveKit для PiP ставит ровно это значение.
+                           // Побочно: mute уходил на сервер (shouldSendSignal: true),
+                           // то есть собеседник тоже терял нашу картинку.
+                           suspendLocalVideoTracksInBackground: false,
                            encryptionOptions: encryptionOptions)
     }
 

@@ -1657,14 +1657,13 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
         // мёртвой подложке. На следующем звонке система такое окно не поднимала
         // вовсе — PiP просто переставал появляться (лог 190, звонок 16:06: ни
         // одной строки об открытии окна).
-        if controller != nil {
-            cancellables.removeAll()
-            controller = nil
-            isWindowVisible = false
-            isRestoringInterface = false
-            // Свежий объект содержимого под свежий контроллер.
-            contentViewController = CallPictureInPictureViewController()
-        }
+        // STMOB-295: контроллер и объект содержимого НЕ пересоздаём.
+        // Apple прямо предупреждает не обнулять contentSource и не отпускать
+        // контроллер по ходу звонка («Adopting Picture in Picture for video calls»).
+        // Во всех прочитанных рабочих реализациях они создаются ОДИН раз на звонок —
+        // включая наш собственный апстрим element-x-ios. Пересоздание было моей
+        // гипотезой («система считает содержимое занятым»), она ничем не
+        // подтвердилась и уводила в сторону от рабочего кода.
 
         self.roomManager = roomManager
         self.fallbackTitle = fallbackTitle
@@ -1723,21 +1722,45 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
             }
             .store(in: &cancellables)
 
-        // STMOB-293: явный startPictureInPicture() УБРАН — он всегда падал.
-        // Лог 198, каждое сворачивание: «запускаю окно» → через 11 мс «не
-        // запустилась: Failed to start picture in picture». Система не принимает
-        // запуск в момент ухода в фон, а неудачная попытка, судя по ритму, ещё и
-        // мешала штатному автозапуску: первое сворачивание давало окно (автозапуск
-        // срабатывал через 5 мс после нашей неудачи), второе и третье — ничего,
-        // четвёртое, через 16 секунд, снова давало.
-        // Вывод: окно поднимает система, а повторно — не раньше чем через паузу
-        // после закрытия предыдущего. Ускорить это нашим вызовом нельзя.
+        // STMOB-295: при ВОЗВРАТЕ в приложение сессию окна надо гасить ПРИНУДИТЕЛЬНО.
+        // Это и есть причина «второй раз окно не выходит»: система не поднимает новое
+        // окно, пока считает предыдущую сессию неразобранной, а делегата
+        // didStopPictureInPicture для этого недостаточно. Так сделано во всех рабочих
+        // реализациях, которые удалось прочитать (Telegram — лестница повторов
+        // 0.5/0.2/0.3 c, GetStream — stop на каждом кадре до isPictureInPictureActive
+        // == false, Zoom — stop на appBecameActive). С первого раза не срабатывает,
+        // поэтому повторяем.
+        //
+        // Прежнее объяснение «система не даёт открыть окно повторно раньше чем через
+        // паузу» было НЕВЕРНЫМ: документированного ограничения нет, а ритм 1-4
+        // объяснялся именно неразобранной сессией.
+        NotificationCenter.default
+            .publisher(for: UIApplication.didBecomeActiveNotification)
+            .sink { [weak self] _ in
+                self?.forceStopWindow(attempt: 0)
+            }
+            .store(in: &cancellables)
 
         // ВАЖНО: трек в окно не отдаём, пока окно не открылось. Лишний приёмник
         // участвует в согласовании качества с сервером, и на экране это выливалось
         // в кадры 8×8 — чёрный прямоугольник вместо собеседника (лог 163).
         DiagLog.write("CallUI", "картинка в картинке готова")
         return controller
+    }
+
+    /// Разобрать сессию окна при возврате в приложение. Повторяем: с первого раза
+    /// система нередко не отпускает, и тогда следующее сворачивание окна не даёт.
+    private func forceStopWindow(attempt: Int) {
+        guard let controller, controller.isPictureInPictureActive else { return }
+        controller.stopPictureInPicture()
+        guard attempt < 3 else {
+            DiagLog.write("CallUI", "картинка в картинке: сессия не разобралась за 3 попытки")
+            return
+        }
+        let delays: [TimeInterval] = [0.5, 0.2, 0.3]
+        DispatchQueue.main.asyncAfter(deadline: .now() + delays[attempt]) { [weak self] in
+            self?.forceStopWindow(attempt: attempt + 1)
+        }
     }
 
     /// Невидимая вью 1×1 в окне приложения. Система требует, чтобы источник окна
@@ -1875,7 +1898,8 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
             // из updateUIView, а SwiftUI не обязан пересобирать дерево при возврате
             // из окна. В поле это выглядело так: окно показалось один раз, вернулся
             // в приложение, свернул снова — окна больше нет.
-            rearmAfterClose()
+            // Перевзведение убрано: пересоздавать контроллер не нужно и вредно,
+            // а сессию разбирает forceStopWindow на возврате в приложение.
         }
     }
 
