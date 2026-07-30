@@ -265,6 +265,7 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
 
     private static let appTextRuToEn: [String: String] = [
         // Названия
+        "Айлок": "Ailock",
         "Календарь": "Calendar",
         "Статистика": "Statistics",
         "Погода": "Weather",
@@ -272,7 +273,10 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
         "Планирование встреч, RSVP, повторяющиеся события": "Meeting scheduling, RSVP, recurring events",
         "Статистика использования системы": "System usage statistics",
         "Прогноз погоды": "Weather forecast",
-        "Мониторинг производительности звонков": "Call performance monitoring"
+        "Мониторинг производительности звонков": "Call performance monitoring",
+        // STMOB-274: пока apps-api отдаёт описания только по-русски, серверная запись
+        // Айлока в английском интерфейсе иначе осталась бы русской.
+        "Чат с ИИ-агентом": "Chat with the AI agent"
     ]
 
     /// Fallback widgets when API is unreachable.
