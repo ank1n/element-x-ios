@@ -612,7 +612,13 @@ final class LiveKitRoomManager: ObservableObject {
             }
         }
         if enabled {
-            enableBackgroundCameraAccessIfPossible()
+            // STMOB-296: установку флага многозадачного доступа на ЖИВОЙ сессии убрали —
+            // это no-op. Документация AVCaptureSession: «This property must be set before
+            // the session starts running». Контрибьютор LiveKit подтверждает то же
+            // (issue #504): «the problem is just that it's doing the config after the
+            // camera session has already started». Оставили только диагностику: видно,
+            // активен ли доступ, но записи больше не делаем.
+            reportBackgroundCameraAccessState()
             attachOutboundStatsLogger()
         }
         #endif
@@ -655,18 +661,12 @@ final class LiveKitRoomManager: ObservableObject {
         #endif
     }
 
-    /// Подстраховка для пути unmute (когда publication уже есть и трек не пересоздаётся).
-    private func enableBackgroundCameraAccessIfPossible() {
+    /// Только диагностика: активен ли многозадачный доступ у текущего трека.
+    private func reportBackgroundCameraAccessState() {
         #if !targetEnvironment(simulator)
         guard let track = room.localParticipant.firstCameraPublication?.track as? LocalVideoTrack,
               let capturer = track.capturer as? CameraCapturer else { return }
-        if capturer.isMultitaskingAccessEnabled {
-            DiagLog.write("Call", "камера в фоне: доступ активен")
-            return
-        }
-        guard capturer.isMultitaskingAccessSupported else { return }
-        capturer.isMultitaskingAccessEnabled = true
-        DiagLog.write("Call", "камера в фоне: доступ включён на живой сессии (может не примениться)")
+        DiagLog.write("Call", "камера в фоне: доступ \(capturer.isMultitaskingAccessEnabled ? "активен" : "НЕ активен")")
         #endif
     }
 

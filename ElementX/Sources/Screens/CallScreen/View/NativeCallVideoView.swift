@@ -1616,6 +1616,8 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
     /// прямо сейчас камера погашена системой из-за ухода в фон. Сбрасывается
     /// вместе с окончанием звонка (stop()).
     private var callHadVideo = false
+    /// Наблюдение за готовностью системы поднять окно.
+    private var possibleObservation: NSKeyValueObservation?
     /// STMOB-285: подложка, на которой заведено окно. Нужна, чтобы ПЕРЕВЗВЕСТИ
     /// окно после его закрытия: SwiftUI не обязан пересобирать дерево при возврате
     /// из окна, и без своей ссылки перевзводить не от чего.
@@ -1675,6 +1677,10 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
         let source = AVPictureInPictureController.ContentSource(activeVideoCallSourceView: ownSource,
                                                                 contentViewController: contentViewController)
         let controller = AVPictureInPictureController(contentSource: source)
+        // STMOB-296: значение считаем ДО создания контроллера и ставим сразу.
+        // Переключение по подписке давало гонку: при подложке, по которой система и
+        // так могла отказать, любое опоздание флага означало «окна нет».
+        callHadVideo = hasVideoNow(roomManager)
         // STMOB-284: автозапуск разрешаем ТОЛЬКО когда в звонке есть видео.
         // Для аудиозвонка системное окно бесполезно и вредно: показывать в нём
         // нечего (чёрный прямоугольник с именем), кнопок в нём не бывает, а место
@@ -1682,7 +1688,7 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
         // dp поймал это скриншотом: звонок с телефона на веб (окно не открылось) —
         // счётчик есть; входящий аудио с веба (окно открылось) — счётчика нет.
         // Стартовое значение false, включаем ниже по факту появления видео.
-        controller.canStartPictureInPictureAutomaticallyFromInline = false
+        controller.canStartPictureInPictureAutomaticallyFromInline = callHadVideo
         controller.delegate = self
         self.controller = controller
 
@@ -1744,6 +1750,12 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
         // ВАЖНО: трек в окно не отдаём, пока окно не открылось. Лишний приёмник
         // участвует в согласовании качества с сервером, и на экране это выливалось
         // в кадры 8×8 — чёрный прямоугольник вместо собеседника (лог 163).
+        // STMOB-296: наблюдаем «возможно ли окно» — именно этого не хватало, чтобы
+        // понять, почему автозапуск молчит. Так делает GetStream в своей реализации.
+        possibleObservation = controller.observe(\.isPictureInPicturePossible, options: [.initial, .new]) { controller, _ in
+            DiagLog.write("CallUI", "картинка в картинке: возможна = \(controller.isPictureInPicturePossible)")
+        }
+
         DiagLog.write("CallUI", "картинка в картинке готова")
         return controller
     }
@@ -1775,12 +1787,21 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
             return nil
         }
 
-        let view = UIView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
+        // STMOB-296: подложка ВИДИМАЯ и во весь экран.
+        // Заголовок SDK: «AVPictureInPictureController uses this view's layout frame
+        // and visibility to determine whether or not Picture in Picture should begin
+        // automatically when the app moves to background». То есть вью 1×1 с alpha 0.01
+        // — ровно тот вход, по которому система имеет право отказать; наше «предпосылки
+        // в порядке» было неверным. У всех прочитанных рабочих реализаций подложка во
+        // весь экран: Telegram отдаёт сам экран звонка, наш апстрим — обёртку webView.
+        // Прозрачная и не перехватывающая касания, вставлена самым нижним слоем.
+        let view = UIView(frame: window.bounds)
+        view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.isUserInteractionEnabled = false
         view.backgroundColor = .clear
-        view.alpha = 0.01
-        window.addSubview(view)
-        DiagLog.write("CallUI", "картинка в картинке: своя подложка добавлена в окно приложения")
+        view.alpha = 1
+        window.insertSubview(view, at: 0)
+        DiagLog.write("CallUI", "картинка в картинке: своя подложка во весь экран добавлена (\(Int(window.bounds.width))x\(Int(window.bounds.height)))")
         return view
     }
 
@@ -1795,10 +1816,15 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
 
     /// STMOB-284: окно имеет смысл только когда есть что показывать.
     /// Видео своё или чужое — оба годятся: в окне и главный слой, и тайл в углу.
+    /// Есть ли в звонке видео прямо сейчас — своё или чужое.
+    private func hasVideoNow(_ roomManager: LiveKitRoomManager) -> Bool {
+        let hasRemoteVideo = roomManager.displayParticipants.contains { $0.firstCameraVideoTrack != nil }
+        return hasRemoteVideo || roomManager.localVideoTrack != nil
+    }
+
     private func updateAutomaticStart() {
         guard let controller, let roomManager else { return }
-        let hasRemoteVideo = roomManager.displayParticipants.contains { $0.firstCameraVideoTrack != nil }
-        let hasVideoNow = hasRemoteVideo || roomManager.localVideoTrack != nil
+        let hasVideoNow = hasVideoNow(roomManager)
 
         // STMOB-287: признак ЛИПКИЙ — звонок, в котором видео было хоть раз, до конца
         // считается видеозвонком. Мгновенное состояние трека для этого не годится:
@@ -1821,6 +1847,7 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
     func stop() {
         controller?.stopPictureInPicture()
         cancellables.removeAll()
+        possibleObservation = nil
         controller = nil
         sourceView?.removeFromSuperview()
         sourceView = nil
