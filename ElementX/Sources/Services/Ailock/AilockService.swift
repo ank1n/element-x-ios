@@ -205,10 +205,18 @@ final class AilockService {
 
     /// Развёрнут ли door-2 на этом домене.
     ///
-    /// STMOB-274: пока Айлока нет в реестре apps-api, вкладка «Приложения» подмешивает
-    /// запись локально — но только там, где сервис реально есть. На домене без door-2
-    /// (например .uz, где контур на HOLD) запрос уходит в SPA и роут не отвечает как API,
-    /// поэтому приложение просто не появится — это и есть тихая деградация.
+    /// STMOB-274. Проба отвечает на вопрос «есть ли здесь сервис», а НЕ «пустят ли меня».
+    /// Это разные вещи, и их смешение уже стоило нам сборки 307: на мисти door-2 отдаёт
+    /// `502 exchange_failed` (шлюз есть, обмен токена не проходит), проба считала это
+    /// отсутствием сервиса — и приложение не показывалось вовсе. В итоге неисправность
+    /// стала невидимой: пользователь не видит ни Айлока, ни причины.
+    ///
+    /// Правило теперь такое: сервисом считается всё, что ответило как API.
+    /// * 200 / 401 / 403 — маршрут жив, вопрос только в доступе;
+    /// * 5xx с JSON-телом — ответил сам шлюз, значит он развёрнут;
+    /// * 404 (в т.ч. `{"error":"not_found"}` от Express) — door-2 здесь не смонтирован;
+    /// * HTML — запрос ушёл в SPA, сервиса нет;
+    /// * сетевая ошибка — не знаем, считаем, что нет, но результат не кэшируем.
     static func probeAvailability(homeserver: String, accessToken: String?) async -> Bool {
         let trimmed = homeserver.hasSuffix("/") ? String(homeserver.dropLast()) : homeserver
         guard let url = URL(string: "\(trimmed)/api/ailock/v1/api/v1/conversations?limit=1") else { return false }
@@ -221,11 +229,22 @@ final class AilockService {
         }
 
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse else { return false }
-            // 200 — доступ есть; 401/403 — роут живой, но токен не принят (это тоже «сервис есть»).
-            // 404 приходит и от gateway (not_found), и от SPA — считаем, что сервиса нет.
-            return http.statusCode == 200 || http.statusCode == 401 || http.statusCode == 403
+
+            switch http.statusCode {
+            case 200, 401, 403:
+                return true
+            case 404, 405:
+                return false
+            default:
+                // Всё прочее — только если ответил API, а не страница приложения.
+                let isJSON = (http.value(forHTTPHeaderField: "Content-Type") ?? "").contains("json")
+                    || data.first == UInt8(ascii: "{")
+                os_log(.default, log: ailockLog, "probe -> %{public}d, json=%{public}@",
+                       http.statusCode, isJSON ? "yes" : "no")
+                return isJSON
+            }
         } catch {
             return false
         }

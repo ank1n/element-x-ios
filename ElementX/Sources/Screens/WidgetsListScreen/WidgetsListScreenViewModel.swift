@@ -236,8 +236,14 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
 
         if Self.ailockAvailability[key] == nil {
             let token = try? userSession.clientProxy.matrixAccessToken()
-            Self.ailockAvailability[key] = await AilockService.probeAvailability(homeserver: serverBaseURL, accessToken: token)
-            MXLog.info("sTalk: Ailock door-2 available = \(Self.ailockAvailability[key] == true)")
+            let available = await AilockService.probeAvailability(homeserver: serverBaseURL, accessToken: token)
+            // Кэшируем только положительный ответ: отрицательный мог быть разовым сбоем
+            // сети, и запомнить его — значит спрятать приложение до перезапуска.
+            if available { Self.ailockAvailability[key] = true }
+            MXLog.info("sTalk: Ailock door-2 available = \(available)")
+            // В тестерскую выгрузку — тоже: без этой строки причину отсутствия плитки
+            // на устройстве не установить, MXLog в неё не попадает (урок сборки 307).
+            DiagLog.write("Ailock", "probe \(serverBaseURL) -> available=\(available)")
         }
 
         guard Self.ailockAvailability[key] == true else { return result }
