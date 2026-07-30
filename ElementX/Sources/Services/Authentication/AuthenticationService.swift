@@ -191,11 +191,24 @@ class AuthenticationService: AuthenticationServiceProtocol {
             MatrixDeviceIDKeychain.clearStoredDeviceID()
             let storedDeviceID: String? = nil
             DiagLog.write("STMOB98", "device_id не переиспользуем — сервер сам чистит неактивные устройства")
+            // STMOB-274: запрашиваем ещё и `openid`.
+            //
+            // SDK по умолчанию просит только матричные скоупы (`urn:matrix:client:api:*`
+            // и `urn:matrix:client:device:<id>`) — OIDC-идентичности в токене нет.
+            // Веб-клиент через свою OIDC-библиотеку `openid` запрашивает всегда, и именно
+            // его токен успешно проходит обмен в Keycloak, а наш падает с `kc=400 invalid
+            // token` на door-2 Айлока. Без `openid` MAS не отдаёт по токену OIDC-профиль,
+            // и внешний провайдер не может его провалидировать.
+            //
+            // Проверено запросом к `/authorize` с нашим статическим client_id: MAS
+            // принимает `openid` (303 на форму входа, не `invalid_scope`).
+            // ВАЖНО: скоуп выдаётся в момент авторизации — на уже выданные токены это
+            // не действует, нужен повторный вход.
             let oidcData = try await client.urlForOauth(oauthConfiguration: appSettings.oidcConfiguration(for: homeserverSubject.value.address).rustValue,
                                                         prompt: prompt,
                                                         loginHint: loginHint,
                                                         deviceId: storedDeviceID,
-                                                        additionalScopes: nil)
+                                                        additionalScopes: ["openid"])
             return .success(OIDCAuthorizationDataProxy(underlyingData: oidcData))
         } catch {
             MXLog.error("Failed to get URL for OIDC login: \(error)")
