@@ -227,41 +227,65 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
         // развёрнут, приложение открывалось бы в пустоту.
         // Кэш по паре «аккаунт+домен», как у Айлока: общий статик пережил бы смену
         // сервера в том же запуске и показал бы Диск там, где его нет.
-        if !result.contains(where: { $0.id == WidgetItem.filesAppID }) {
-            if Self.filesAvailability[key] == nil {
-                let token = try? userSession.clientProxy.matrixAccessToken()
-                let available = await Self.probeFilesAvailability(baseURL: serverBaseURL, accessToken: token)
-                // Кэшируем только положительный ответ — как у Айлока. Разовый сбой сети
-                // иначе прячет «Диск» до перезапуска приложения, и выглядит это как
-                // «приложение пропало», хотя сервис на месте.
-                if available { Self.filesAvailability[key] = true }
-                MXLog.info("sTalk: files-api available = \(available)")
-                // В тестерскую выгрузку — тоже. Без этой строки причину отсутствия
-                // плитки на устройстве не установить: MXLog в выгрузку не попадает.
-                // Тот же урок, что со сборкой 307 по Айлоку.
-                DiagLog.write("Disk", "probe \(serverBaseURL) -> available=\(available)")
-            }
-            if Self.filesAvailability[key] == true {
-                result.append(WidgetItem.files)
-            }
+        // STMOB-275: «Диск».
+        let filesAvailable = await probeIfNeeded(cache: \.filesAvailability, key: key, category: "Disk") {
+            let token = try? self.userSession.clientProxy.matrixAccessToken()
+            return await Self.probeFilesAvailability(baseURL: self.serverBaseURL, accessToken: token)
+        }
+        result = applying(availability: filesAvailable, to: result, id: WidgetItem.filesAppID, local: WidgetItem.files)
+
+        // STMOB-274: Айлок.
+        let ailockAvailable = await probeIfNeeded(cache: \.ailockAvailability, key: key, category: "Ailock") {
+            let token = try? self.userSession.clientProxy.matrixAccessToken()
+            return await AilockService.probeAvailability(homeserver: self.serverBaseURL, accessToken: token)
+        }
+        result = applying(availability: ailockAvailable, to: result, id: WidgetItem.ailockAppID, local: WidgetItem.ailock)
+
+        return result
+    }
+
+    /// Проба доступности сервиса с кэшом на пару «аккаунт+домен».
+    ///
+    /// Кэшируем ТОЛЬКО положительный ответ: отрицательный мог быть разовым сбоем сети,
+    /// и запомнить его — значит спрятать приложение до перезапуска. Результат пишем и
+    /// в тестерскую выгрузку: без этой строки причину отсутствия плитки на устройстве
+    /// не установить, MXLog в выгрузку не попадает (урок сборки 307).
+    private func probeIfNeeded(cache: ReferenceWritableKeyPath<WidgetsListScreenViewModel.Type, [String: Bool]>,
+                               key: String,
+                               category: String,
+                               probe: () async -> Bool) async -> Bool {
+        if Self.self[keyPath: cache][key] == true {
+            return true
         }
 
-        guard !result.contains(where: { $0.id == WidgetItem.ailockAppID }) else { return result }
-
-        if Self.ailockAvailability[key] == nil {
-            let token = try? userSession.clientProxy.matrixAccessToken()
-            let available = await AilockService.probeAvailability(homeserver: serverBaseURL, accessToken: token)
-            // Кэшируем только положительный ответ: отрицательный мог быть разовым сбоем
-            // сети, и запомнить его — значит спрятать приложение до перезапуска.
-            if available { Self.ailockAvailability[key] = true }
-            MXLog.info("sTalk: Ailock door-2 available = \(available)")
-            // В тестерскую выгрузку — тоже: без этой строки причину отсутствия плитки
-            // на устройстве не установить, MXLog в неё не попадает (урок сборки 307).
-            DiagLog.write("Ailock", "probe \(serverBaseURL) -> available=\(available)")
+        let available = await probe()
+        if available {
+            Self.self[keyPath: cache][key] = true
         }
+        MXLog.info("sTalk: \(category) available = \(available)")
+        DiagLog.write(category, "probe \(serverBaseURL) -> available=\(available)")
+        return available
+    }
 
-        guard Self.ailockAvailability[key] == true else { return result }
-        return result + [WidgetItem.ailock]
+    /// Свести список с результатом пробы.
+    ///
+    /// Проба решает судьбу плитки НЕЗАВИСИМО от того, откуда она взялась. Реестр
+    /// apps-api — каталог установленных возможностей, а не проверка их живости
+    /// (решение @shelly): запись `ailock` приходит и на домены, где door-2 не
+    /// развёрнут. Пока гейт стоял только на локальной подмешке, серверная запись его
+    /// обходила, и на market плитка появлялась, ведя в неработающий раздел.
+    private func applying(availability: Bool,
+                          to widgets: [WidgetItem],
+                          id: String,
+                          local: @autoclosure () -> WidgetItem) -> [WidgetItem] {
+        guard availability else {
+            return widgets.filter { $0.id != id }
+        }
+        guard !widgets.contains(where: { $0.id == id }) else {
+            // Серверная запись имеет приоритет: у неё локализованные тексты и логотип.
+            return widgets
+        }
+        return widgets + [local()]
     }
 
     /// Развёрнут ли files-api на этом домене. Один запрос за сессию, результат кэшируется.
