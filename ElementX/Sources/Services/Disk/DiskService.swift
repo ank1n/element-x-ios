@@ -157,7 +157,16 @@ private struct DiskFilesResponse: Decodable {
         // Запись без единого идентификатора открыть нечем — показывать её нельзя.
         files = parsed.filter { !$0.id.isEmpty }
         skipped = raw.count - files.count
-        nextBefore = try c.decodeIfPresent(String.self, forKey: .nextBefore)
+        // Курсор приходит ЧИСЛОМ — это метка времени события (1783922871243).
+        // Объявленный строкой, он ронял разбор всего ответа с typeMismatch, и экран
+        // уходил в «Не удалось загрузить список файлов». Заметно это было только на
+        // полной странице: когда файлов мало, курсора нет вовсе и всё работало.
+        // Читаем оба типа: строку сервер тоже вправе прислать, и гадать больше не хочу.
+        if let number = try? c.decodeIfPresent(Int64.self, forKey: .nextBefore) {
+            nextBefore = String(number)
+        } else {
+            nextBefore = try? c.decodeIfPresent(String.self, forKey: .nextBefore)
+        }
     }
 }
 
@@ -279,10 +288,15 @@ final class DiskService {
             do {
                 (data, response) = try await session.data(for: request)
             } catch {
-                // Сетевой сбой раньше не попадал в выгрузку вовсе: писался только
-                // ненулевой HTTP-статус. На устройстве это выглядело как «Диск пустой
-                // и молчит» — без единой строки, по которой видно, что запрос вообще был.
-                DiagLog.write("Disk", "запрос \(url.path) не дошёл: \(error.localizedDescription)")
+                // Отмену не логируем: её вызывает обычное переключение фильтра, и
+                // в выгрузке она выглядит как поток ошибок там, где ничего не сломано.
+                let isCancelled = error is CancellationError || (error as? URLError)?.code == .cancelled
+                if !isCancelled {
+                    // Сетевой сбой раньше не попадал в выгрузку вовсе: писался только
+                    // ненулевой HTTP-статус. На устройстве это выглядело как «Диск пустой
+                    // и молчит» — без единой строки, по которой видно, что запрос вообще был.
+                    DiagLog.write("Disk", "запрос \(url.path) не дошёл: \(error.localizedDescription)")
+                }
                 throw error
             }
             let status = (response as? HTTPURLResponse)?.statusCode ?? -1

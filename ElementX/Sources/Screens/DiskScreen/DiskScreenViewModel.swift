@@ -64,6 +64,13 @@ final class DiskScreenViewModel: ObservableObject {
             let page = try await service.fetchFiles(category: selectedCategory)
             files = page.files
             nextBefore = page.nextBefore
+        } catch is CancellationError {
+            // Переключение фильтра отменяет предыдущий запрос. Это не сбой, и
+            // показывать по нему баннер — значит давать ложную ошибку на каждом
+            // втором тапе по категориям.
+            return
+        } catch let error as URLError where error.code == .cancelled {
+            return
         } catch {
             errorText = Self.describe(error)
             files = []
