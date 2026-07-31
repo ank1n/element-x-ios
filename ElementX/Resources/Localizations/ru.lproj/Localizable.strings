@@ -1810,3 +1810,11 @@
 "stalk_ailock_server_unavailable" = "Айлок временно недоступен";
 "stalk_ailock_attach_photo" = "Фото";
 "stalk_ailock_attach_file" = "Файл";
+"stalk_ailock_attach_from_disk" = "Из Диска";
+"stalk_ailock_disk_picker_title" = "Выбор файла";
+"stalk_ailock_disk_search" = "Поиск по файлам";
+"stalk_ailock_disk_empty" = "Файлов нет";
+"stalk_ailock_disk_load_failed" = "Не удалось загрузить файлы";
+"stalk_ailock_disk_file_failed" = "Не удалось получить файл";
+"stalk_ailock_disk_file_unsupported" = "Этот файл нельзя приложить";
+"stalk_ailock_cancel" = "Отмена";

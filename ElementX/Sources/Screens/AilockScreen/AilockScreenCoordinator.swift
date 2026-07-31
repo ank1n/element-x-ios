@@ -50,9 +50,18 @@ final class AilockScreenCoordinator: CoordinatorProtocol {
         let transcriber = AilockVoiceTranscriber(homeserver: parameters.homeserver,
                                                  accessTokenProvider: parameters.accessTokenProvider,
                                                  forceTokenRefresh: parameters.forceTokenRefresh)
+        // Вложения из «Диска» берём тем же сервисом, что и само приложение «Диск» —
+        // второй клиент к тому же API писать незачем.
+        let diskPicker = AilockDiskPickerContext(service: DiskService(baseURL: parameters.homeserver,
+                                                                      accessTokenProvider: parameters.accessTokenProvider,
+                                                                      forceTokenRefresh: parameters.forceTokenRefresh),
+                                                 baseURL: parameters.homeserver,
+                                                 accessTokenProvider: parameters.accessTokenProvider)
+
         chatViewModel = AilockScreenViewModel(service: service,
                                               agentID: parameters.agentID,
                                               transcriber: transcriber,
+                                              diskPicker: diskPicker,
                                               sessionKey: parameters.sessionKey)
 
         chatViewModel.actionsPublisher

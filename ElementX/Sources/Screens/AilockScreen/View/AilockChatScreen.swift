@@ -35,11 +35,13 @@ struct AilockChatScreen: View {
         .navigationTitle(context.viewState.conversationTitle ?? SL10n.ailockTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbar }
-        .fileImporter(isPresented: $context.showFileImporter,
-                      allowedContentTypes: [.item],
-                      allowsMultipleSelection: true) { result in
-            if case .success(let urls) = result {
-                context.send(viewAction: .attachFiles(urls))
+        .sheet(isPresented: $context.showDiskPicker) {
+            if let picker = context.viewState.diskPicker {
+                AilockDiskPickerScreen(service: picker.service,
+                                       baseURL: picker.baseURL,
+                                       accessTokenProvider: picker.accessTokenProvider) { url in
+                    context.send(viewAction: .attachFiles([url]))
+                }
             }
         }
         .photosPicker(isPresented: $context.showPhotosPicker,
@@ -318,9 +320,9 @@ struct AilockChatScreen: View {
                             Label(SL10n.ailockAttachPhoto, systemImage: "photo.on.rectangle")
                         }
                         Button {
-                            context.showFileImporter = true
+                            context.showDiskPicker = true
                         } label: {
-                            Label(SL10n.ailockAttachFile, systemImage: "doc")
+                            Label(SL10n.ailockAttachFromDisk, systemImage: "folder")
                         }
                     } label: {
                         Image(systemName: "paperclip")

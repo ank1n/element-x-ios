@@ -70,13 +70,19 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
     /// Ключ последней беседы — свой на каждый аккаунт и домен.
     private let lastConversationKey: String
 
-    init(service: AilockService, agentID: String?, transcriber: AilockVoiceTranscriber?, sessionKey: String) {
+    init(service: AilockService,
+         agentID: String?,
+         transcriber: AilockVoiceTranscriber?,
+         diskPicker: AilockDiskPickerContext?,
+         sessionKey: String) {
         self.service = service
         self.agentID = agentID
         self.transcriber = transcriber
         lastConversationKey = "ailock.lastConversationID.\(sessionKey)"
 
-        super.init(initialViewState: AilockScreenViewState())
+        var initialState = AilockScreenViewState()
+        initialState.diskPicker = diskPicker
+        super.init(initialViewState: initialState)
 
         observeApplicationState()
         restoreLastConversation()

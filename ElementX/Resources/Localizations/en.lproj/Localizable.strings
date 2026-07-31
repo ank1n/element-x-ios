@@ -1939,3 +1939,11 @@
 "stalk_ailock_server_unavailable" = "Ailock is temporarily unavailable";
 "stalk_ailock_attach_photo" = "Photo";
 "stalk_ailock_attach_file" = "File";
+"stalk_ailock_attach_from_disk" = "From Disk";
+"stalk_ailock_disk_picker_title" = "Choose a file";
+"stalk_ailock_disk_search" = "Search files";
+"stalk_ailock_disk_empty" = "No files";
+"stalk_ailock_disk_load_failed" = "Could not load files";
+"stalk_ailock_disk_file_failed" = "Could not fetch the file";
+"stalk_ailock_disk_file_unsupported" = "This file can't be attached";
+"stalk_ailock_cancel" = "Cancel";

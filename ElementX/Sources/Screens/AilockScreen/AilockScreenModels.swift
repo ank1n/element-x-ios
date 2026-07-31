@@ -61,6 +61,9 @@ struct AilockScreenViewState: BindableState {
     /// Расшифровки на этом домене нет — прячем микрофон, а не показываем ошибку каждый раз.
     var isVoiceUnavailable = false
 
+    /// Доступ к «Диску» для выбора вложения. nil — пункт меню не показываем.
+    var diskPicker: AilockDiskPickerContext?
+
     var bindings = AilockScreenViewStateBindings()
 
     var canSend: Bool {
@@ -74,12 +77,21 @@ struct AilockScreenViewState: BindableState {
     }
 }
 
+/// Всё, что нужно экрану выбора файла из «Диска». Держим в состоянии, как
+/// `mediaProvider` в календаре: вью не должна сама собирать сервис.
+struct AilockDiskPickerContext {
+    let service: DiskService
+    let baseURL: String
+    let accessTokenProvider: () throws -> String
+}
+
 struct AilockScreenViewStateBindings {
     var composerText = ""
-    var showFileImporter = false
-    /// Выбор из медиатеки — отдельно от «Файлов»: доставать фото через файловый
-    /// пикер неудобно, а снимок приложить хотят чаще, чем документ.
+    /// Выбор из медиатеки: снимок прикладывают чаще документа.
     var showPhotosPicker = false
+    /// Выбор файла из нашего «Диска». Системный файловый пикер убран намеренно
+    /// (решение dp): прикладываем только из галереи и из Диска.
+    var showDiskPicker = false
     /// Скачанный файл, который показываем системным листом «Поделиться».
     var sharedFile: AilockSharedFile?
 }
