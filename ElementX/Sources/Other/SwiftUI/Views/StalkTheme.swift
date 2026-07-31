@@ -231,6 +231,8 @@ enum SL10n {
     static let ailockNoStreaming = NSLocalizedString("stalk_ailock_no_streaming", tableName: "Localizable", value: "Сервер не выдал ключ подключения", comment: "No ws ticket")
     static let ailockFileTooLarge = NSLocalizedString("stalk_ailock_file_too_large", tableName: "Localizable", value: "Файл слишком большой", comment: "Attachment too large")
     static let ailockFileUnsupported = NSLocalizedString("stalk_ailock_file_unsupported", tableName: "Localizable", value: "Тип файла не поддерживается", comment: "Attachment type unsupported")
+    static let ailockAttachPhoto = NSLocalizedString("stalk_ailock_attach_photo", tableName: "Localizable", value: "Фото", comment: "Attach a photo")
+    static let ailockAttachFile = NSLocalizedString("stalk_ailock_attach_file", tableName: "Localizable", value: "Файл", comment: "Attach a file")
     static let ailockAttachFailed = NSLocalizedString("stalk_ailock_attach_failed", tableName: "Localizable", value: "Не удалось приложить файл", comment: "Attach failed")
     static let ailockVoiceInput = NSLocalizedString("stalk_ailock_voice_input", tableName: "Localizable", value: "Голосовой ввод", comment: "Voice input button")
     static let ailockRecording = NSLocalizedString("stalk_ailock_recording", tableName: "Localizable", value: "Говорите", comment: "Recording in progress")

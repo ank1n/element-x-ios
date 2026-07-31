@@ -1808,3 +1808,5 @@
 "stalk_ailock_mic_busy" = "Микрофон занят звонком";
 "stalk_ailock_connection_lost" = "Соединение потеряно — попробуйте отправить снова";
 "stalk_ailock_server_unavailable" = "Айлок временно недоступен";
+"stalk_ailock_attach_photo" = "Фото";
+"stalk_ailock_attach_file" = "Файл";

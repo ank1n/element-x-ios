@@ -1937,3 +1937,5 @@
 "stalk_ailock_mic_busy" = "Microphone is busy with a call";
 "stalk_ailock_connection_lost" = "Connection lost — try sending again";
 "stalk_ailock_server_unavailable" = "Ailock is temporarily unavailable";
+"stalk_ailock_attach_photo" = "Photo";
+"stalk_ailock_attach_file" = "File";

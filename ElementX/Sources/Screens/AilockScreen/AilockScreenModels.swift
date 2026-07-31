@@ -77,6 +77,9 @@ struct AilockScreenViewState: BindableState {
 struct AilockScreenViewStateBindings {
     var composerText = ""
     var showFileImporter = false
+    /// Выбор из медиатеки — отдельно от «Файлов»: доставать фото через файловый
+    /// пикер неудобно, а снимок приложить хотят чаще, чем документ.
+    var showPhotosPicker = false
     /// Скачанный файл, который показываем системным листом «Поделиться».
     var sharedFile: AilockSharedFile?
 }

@@ -171,6 +171,10 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
         Task { [weak self] in
             guard let self else { return }
             guard await AilockVoiceRecorder.requestPermission() else {
+                // Каждая ветка отказа пишется в выгрузку: без этого «микрофон не
+                // работает» неотличимо от «нет разрешения», «занято звонком» и
+                // «сессия не поднялась» (урок сборок 307 и 310).
+                DiagLog.write("AilockVoice", "старт отменён: нет разрешения на микрофон")
                 state.errorMessage = SL10n.ailockMicDenied
                 return
             }
@@ -178,13 +182,16 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
             do {
                 try voiceRecorder.start()
             } catch AilockVoiceError.callInProgress {
+                DiagLog.write("AilockVoice", "старт отменён: идёт звонок (CallKit)")
                 state.errorMessage = SL10n.ailockMicBusy
                 return
             } catch {
+                DiagLog.write("AilockVoice", "старт не удался: \(error.localizedDescription)")
                 state.errorMessage = SL10n.ailockRecordFailed
                 return
             }
 
+            DiagLog.write("AilockVoice", "запись начата")
             state.voicePhase = .recording
             state.voiceDuration = 0
             state.voiceLevel = 0
@@ -214,10 +221,13 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
         voiceTickerTask?.cancel()
 
         guard let fileURL = voiceRecorder.finish() else {
+            DiagLog.write("AilockVoice", "запись отброшена: короче секунды")
             state.voicePhase = .idle
             state.errorMessage = SL10n.ailockRecordTooShort
             return
         }
+        let bytes = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? Int) ?? nil
+        DiagLog.write("AilockVoice", "запись готова: \(Int(state.voiceDuration)) с, \(bytes ?? 0) байт")
 
         state.voicePhase = .transcribing
         Task { [weak self] in

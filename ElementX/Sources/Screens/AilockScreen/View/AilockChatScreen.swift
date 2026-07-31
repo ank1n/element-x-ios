@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
+import PhotosUI
 import SwiftUI
 
 /// Чат с агентом Айлок.
@@ -16,6 +17,10 @@ struct AilockChatScreen: View {
 
     /// Пользователь сам прокрутил ленту вверх — не дёргаем её обратно на каждый токен.
     @State private var userScrolledUp = false
+
+    /// Выбранное в медиатеке. Очищается сразу после переноса во временные файлы,
+    /// иначе повторный выбор того же снимка не вызовет обработку.
+    @State private var pickedPhotos: [PhotosPickerItem] = []
 
     private let bottomAnchor = "ailock-bottom"
 
@@ -36,6 +41,15 @@ struct AilockChatScreen: View {
             if case .success(let urls) = result {
                 context.send(viewAction: .attachFiles(urls))
             }
+        }
+        .photosPicker(isPresented: $context.showPhotosPicker,
+                      selection: $pickedPhotos,
+                      maxSelectionCount: 5,
+                      matching: .any(of: [.images, .videos]))
+        .onChange(of: pickedPhotos) { _, items in
+            guard !items.isEmpty else { return }
+            pickedPhotos = []
+            Task { await attach(photos: items) }
         }
         .sheet(item: $context.sharedFile) { file in
             AppActivityView(activityItems: [file.url])
@@ -295,8 +309,19 @@ struct AilockChatScreen: View {
                     .padding(.bottom, Self.composerBottomInset)
             } else {
                 HStack(alignment: .bottom, spacing: 8) {
-                    Button {
-                        context.showFileImporter = true
+                    // Скрепка даёт выбор источника: снимок прикладывают чаще документа,
+                    // а доставать фото через файловый пикер неудобно.
+                    Menu {
+                        Button {
+                            context.showPhotosPicker = true
+                        } label: {
+                            Label(SL10n.ailockAttachPhoto, systemImage: "photo.on.rectangle")
+                        }
+                        Button {
+                            context.showFileImporter = true
+                        } label: {
+                            Label(SL10n.ailockAttachFile, systemImage: "doc")
+                        }
                     } label: {
                         Image(systemName: "paperclip")
                             .font(.system(size: 18))
@@ -326,6 +351,34 @@ struct AilockChatScreen: View {
             }
         }
         .background(.bar)
+    }
+
+    /// Переносит выбранное в медиатеке во временные файлы и отдаёт их вью-модели —
+    /// дальше путь тот же, что у документов из «Файлов».
+    private func attach(photos items: [PhotosPickerItem]) async {
+        var urls: [URL] = []
+
+        for item in items {
+            guard let data = try? await item.loadTransferable(type: Data.self) else { continue }
+
+            let type = item.supportedContentTypes.first
+            let ext = type?.preferredFilenameExtension ?? "dat"
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            do {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                // Имени снимка в медиатеке нет — собираем читаемое, чтобы в ленте
+                // и на сервере он не назывался случайным набором символов.
+                let url = directory.appendingPathComponent("photo-\(urls.count + 1).\(ext)")
+                try data.write(to: url)
+                urls.append(url)
+            } catch {
+                MXLog.error("sTalk Ailock: не удалось сохранить снимок: \(error)")
+            }
+        }
+
+        guard !urls.isEmpty else { return }
+        context.send(viewAction: .attachFiles(urls))
     }
 
     /// Отступ композера от нижней кромки. Ниже него — только системная область
