@@ -319,12 +319,17 @@ struct AilockChatScreen: View {
                         Button {
                             context.showPhotosPicker = true
                         } label: {
-                            Label(SL10n.ailockAttachPhoto, systemImage: "photo.on.rectangle")
+                            // Иконку системного «Фото» приложение использовать не может:
+                            // Apple не даёт доступа к иконкам чужих приложений. Берём
+                            // ближайший системный глиф той же метафоры.
+                            Label(SL10n.ailockAttachPhoto, systemImage: "photo.stack")
                         }
                         Button {
                             context.showDiskPicker = true
                         } label: {
-                            Label(SL10n.ailockAttachFromDisk, systemImage: "folder")
+                            // Тот же глиф, что у плитки «Диска» в «Приложениях», —
+                            // чтобы источник вложения читался с первого взгляда.
+                            Label(SL10n.ailockAttachFromDisk, systemImage: WidgetItem.files.icon)
                         }
                     } label: {
                         Image(systemName: "paperclip")
