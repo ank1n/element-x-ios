@@ -64,6 +64,11 @@ struct AilockScreenViewState: BindableState {
     /// Доступ к «Диску» для выбора вложения. nil — пункт меню не показываем.
     var diskPicker: AilockDiskPickerContext?
 
+    /// Текущий уровень микрофона. Индикатор читает его сам в момент отрисовки —
+    /// гнать уровень через публикуемое состояние на каждом кадре нельзя, иначе
+    /// перерисовывается весь композер (разбор Molly по вебу).
+    var voiceLevelProvider: (() -> Float)?
+
     var bindings = AilockScreenViewStateBindings()
 
     var canSend: Bool {

@@ -84,6 +84,8 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
         initialState.diskPicker = diskPicker
         super.init(initialViewState: initialState)
 
+        state.voiceLevelProvider = { [weak self] in self?.voiceRecorder.level() ?? 0 }
+
         observeApplicationState()
         restoreLastConversation()
     }
@@ -211,8 +213,9 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 200_000_000)
                 guard let self, state.voicePhase == .recording else { return }
+                // Уровень индикатор читает сам, здесь только время: публиковать
+                // уровень пять раз в секунду через состояние экрана незачем.
                 state.voiceDuration = voiceRecorder.duration
-                state.voiceLevel = voiceRecorder.level()
                 // Длинную диктовку закрываем сами: это поле ввода, а не голосовое сообщение.
                 if state.voiceDuration >= AilockVoiceRecorder.maxDuration {
                     finishVoiceInput()

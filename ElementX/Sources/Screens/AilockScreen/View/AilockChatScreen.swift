@@ -433,12 +433,12 @@ struct AilockChatScreen: View {
                     .frame(width: 34, height: 34)
             }
 
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(.red)
-                    .frame(width: 8, height: 8)
-                    .opacity(0.4 + Double(context.viewState.voiceLevel) * 0.6)
-                    .animation(.easeOut(duration: 0.2), value: context.viewState.voiceLevel)
+            HStack(spacing: 10) {
+                // Показываем не факт записи, а уровень: пользователь должен видеть,
+                // что микрофон его слышит (требование dp, паритет с вебом).
+                if let provider = context.viewState.voiceLevelProvider {
+                    AilockLevelMeter(level: provider)
+                }
 
                 Text(Self.timecode(context.viewState.voiceDuration))
                     .font(.body.monospacedDigit())
