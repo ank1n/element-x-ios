@@ -29,7 +29,9 @@ struct AilockLevelMeter: View {
     private let maxHeight: CGFloat = 18
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { _ in
+        // Полное имя обязательно: в проекте есть свой `TimelineView` — лента
+        // сообщений, и без уточнения компилятор берёт именно её.
+        SwiftUI.TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { _ in
             HStack(alignment: .center, spacing: barSpacing) {
                 let value = CGFloat(max(0, min(1, level())))
                 ForEach(0..<barCount, id: \.self) { index in
