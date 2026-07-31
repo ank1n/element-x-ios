@@ -293,9 +293,6 @@ struct AilockChatScreen: View {
 
     private var composer: some View {
         VStack(spacing: 8) {
-            // Зазор сверху: без него последняя строка сообщения упирается в панель
-            // ввода. Раньше отступ стоял снизу — не там, где он был нужен.
-            Color.clear.frame(height: Self.composerTopInset)
             if let error = context.viewState.errorMessage {
                 errorBanner(error)
             }
@@ -357,6 +354,9 @@ struct AilockChatScreen: View {
                 .padding(.bottom, Self.composerBottomInset)
             }
         }
+        // Просвет между верхней кромкой панели и капсулой поля: без него овал
+        // выглядит обрезанным сверху.
+        .padding(.top, Self.composerTopInset)
         .background(.bar)
     }
 
@@ -392,8 +392,9 @@ struct AilockChatScreen: View {
     /// домашнего индикатора (или таб-бар, если экран открыт без его скрытия),
     /// и вплотную к ним поле ввода выглядит прижатым.
     private static let composerBottomInset: CGFloat = 14
-    /// Зазор между лентой сообщений и панелью ввода.
-    private static let composerTopInset: CGFloat = 6
+    /// Просвет между верхней границей панели ввода и капсулой поля.
+    /// Без него овал упирается в кромку панели и выглядит обрезанным.
+    private static let composerTopInset: CGFloat = 10
 
     private var composerPlaceholder: String {
         context.viewState.voicePhase == .transcribing ? SL10n.ailockTranscribing : SL10n.ailockComposerPlaceholder
