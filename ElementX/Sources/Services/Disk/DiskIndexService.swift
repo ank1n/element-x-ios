@@ -137,8 +137,15 @@ actor DiskIndexService {
                 scheduleFlush()
             }
         } catch {
+            // Отмена — не сбой: запрос обрывается при уходе приложения в фон или
+            // при смене комнаты. Записи остаются в очереди и уйдут со следующим
+            // обновлением ленты, поэтому пугать этим выгрузку незачем. В логе
+            // dp такая строка стояла рядом с успешными и читалась как потеря.
+            let isCancelled = error is CancellationError || (error as? URLError)?.code == .cancelled
+            guard !isCancelled else { return }
+
             os_log(.error, log: indexLog, "не отправилось %{public}d записей: %{public}@", batch.count, "\(error)")
-            DiagLog.write("DiskIndex", "батч из \(batch.count) не ушёл: \(error)")
+            DiagLog.write("DiskIndex", "батч из \(batch.count) не ушёл: \(error.localizedDescription)")
         }
     }
 
