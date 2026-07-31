@@ -35,14 +35,21 @@ struct StalkFileShareView: View {
 
                 Spacer(minLength: 4)
 
-                // Явная кнопка — то же действие, что и тап по карточке. В вебе она
-                // есть, и без неё непонятно, что карточка вообще кликабельна.
+                // Кнопка залитая, с горизонтальным градиентом — как в вебе. Сначала
+                // была синей надписью, и карточка не читалась как действие: цвета
+                // сняты пипеткой со скриншота прода, а не подобраны.
                 Text(NSLocalizedString("stalk_file_share_open_in_disk", tableName: "Localizable",
                                        value: "Открыть в Диске", comment: "File share card action"))
-                    .font(.system(size: 11.5, weight: .semibold))
-                    .foregroundStyle(Color.stalkFileSharePermissionText)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.white)
                     .lineLimit(1)
                     .fixedSize()
+                    .padding(.vertical, 7)
+                    .padding(.horizontal, 12)
+                    .background(LinearGradient(colors: [.stalkFileShareButtonStart, .stalkFileShareButtonEnd],
+                                               startPoint: .leading,
+                                               endPoint: .trailing),
+                                in: RoundedRectangle(cornerRadius: 10))
             }
             .padding(.vertical, 9)
             .padding(.horizontal, 11)
@@ -174,7 +181,9 @@ private struct BadgeKind {
         case "ZIP", "RAR", "7Z", "TAR", "GZ":
             Color(red: 0.50, green: 0.50, blue: 0.55)
         case "TXT", "MD", "LOG":
-            Color(red: 0.35, green: 0.45, blue: 0.55)
+            // Снято с прода: у `.log` веб рисует именно этот сине-фиолетовый,
+            // а не серый, как я предположила сначала.
+            Color(red: 0x6A / 255, green: 0x9A / 255, blue: 0xF8 / 255) // #6a9af8
         default:
             mimetype.contains("sheet") ? Color(red: 0.13, green: 0.60, blue: 0.35)
                 : Color(red: 0.0, green: 0.53, blue: 0.73)
@@ -184,8 +193,13 @@ private struct BadgeKind {
 
 // MARK: - С кем поделились
 
-/// Кружки с инициалами. Аватарок в событии нет — только идентификатор и имя,
-/// поэтому рисуем инициалы, а не пустые заглушки.
+/// С кем поделились. Штатный аватар приложения: тот же кружок и тот же
+/// детерминированный цвет по идентификатору, что и везде в ленте.
+///
+/// Ссылки на аватар в событии нет — только `user` и `display`, поэтому картинку
+/// не грузим: тянуть профиль на каждого получателя в ячейке ленты означало бы
+/// сетевой запрос на каждую отрисовку. Компонент в этом случае рисует букву на
+/// цветном фоне, и это ровно тот же вид, что у собеседника без фото.
 private struct SharedWithAvatars: View {
     let recipients: [StalkFileShare.Recipient]
 
@@ -194,14 +208,11 @@ private struct SharedWithAvatars: View {
     var body: some View {
         HStack(spacing: -5) {
             ForEach(recipients.prefix(Self.visibleLimit), id: \.user) { recipient in
-                Circle()
-                    .fill(Color.stalkFileShareAccent)
-                    .frame(width: 16, height: 16)
-                    .overlay {
-                        Text(initial(for: recipient))
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(Color.stalkFileSharePermissionText)
-                    }
+                LoadableAvatarImage(url: nil,
+                                    name: recipient.displayName,
+                                    contentID: recipient.user,
+                                    avatarSize: .custom(17),
+                                    mediaProvider: nil)
                     .overlay(Circle().stroke(Color.stalkFileShareBackground, lineWidth: 1))
             }
 
@@ -212,11 +223,6 @@ private struct SharedWithAvatars: View {
                     .padding(.leading, 7)
             }
         }
-    }
-
-    private func initial(for recipient: StalkFileShare.Recipient) -> String {
-        let source = recipient.displayName ?? recipient.user.drop(while: { $0 == "@" }).description
-        return source.first.map { String($0).uppercased() } ?? "?"
     }
 }
 
@@ -231,4 +237,8 @@ private extension Color {
     static let stalkFileShareMeta = Color(red: 0x7E / 255, green: 0x96 / 255, blue: 0xA9 / 255) // #7e96a9
     static let stalkFileShareAccent = Color(red: 0xE3 / 255, green: 0xF2 / 255, blue: 0xFB / 255) // #e3f2fb
     static let stalkFileSharePermissionText = Color(red: 0x00, green: 0x88 / 255, blue: 0xBB / 255) // #0088bb
+    // Градиент кнопки — снят пипеткой со скриншота прода: слева сине-бирюзовый,
+    // справа зелёный. В описании вёрстки его не было, а разница заметная.
+    static let stalkFileShareButtonStart = Color(red: 0x3D / 255, green: 0x89 / 255, blue: 0xB2 / 255) // #3d89b2
+    static let stalkFileShareButtonEnd = Color(red: 0x55 / 255, green: 0xA5 / 255, blue: 0x8F / 255) // #55a58f
 }
