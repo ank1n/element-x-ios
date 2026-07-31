@@ -365,11 +365,22 @@ struct WidgetsListScreen: View {
             AsyncImage(url: iconURL) { phase in
                 switch phase {
                 case .success(let image):
+                    // Белая подложка-плитка с мягкой тенью (решение dp, 01.08):
+                    // прозрачные глифы (Диск) без неё висят прямо на карточке и
+                    // выглядят инородно рядом с цветными плитками. У иконок со
+                    // своим фоном (Айлок) подложка не видна. Белая в обеих темах —
+                    // как карточки референс-дизайна.
                     image
                         .resizable()
                         .scaledToFill()
                         .frame(width: size, height: size)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .background(Color.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(Color.black.opacity(0.08), lineWidth: 0.5)
+                        }
+                        .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
                 default:
                     sfSymbolIcon(widget, size: size)
                 }
