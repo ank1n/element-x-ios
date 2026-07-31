@@ -510,7 +510,13 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
         let htmlBody = messageContent.formatted?.format == .html ? messageContent.formatted?.body : nil
         let formattedBody = (htmlBody != nil ? attributedStringBuilder.fromHTML(htmlBody) : attributedStringBuilder.fromPlain(messageContent.body))
         
-        return .init(body: messageContent.body, formattedBody: formattedBody, formattedBodyHTMLString: htmlBody)
+        // STMOB-274: сообщение, целиком состоящее из ссылки на встречу, рисуется
+        // карточкой. Ссылка, лишь упомянутая в тексте, карточкой не становится —
+        // иначе любое сообщение со ссылкой превращалось бы в плашку.
+        return .init(body: messageContent.body,
+                     formattedBody: formattedBody,
+                     formattedBodyHTMLString: htmlBody,
+                     meetingCode: StalkMeetingLink.code(in: messageContent.body))
     }
     
     private func buildAudioTimelineItemContent(_ messageContent: AudioMessageContent) -> AudioRoomTimelineItemContent {

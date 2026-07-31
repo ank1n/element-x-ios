@@ -88,6 +88,26 @@ class ServiceLocator {
         voiceTranscriptionStore = nil
     }
 
+    // MARK: - Встречи по коду для карточки в ленте (STMOB-274)
+
+    private(set) var meetingLookup: MeetingLookupService?
+
+    /// Как и расшифровка голосовых: только при живой сессии и строго на её домене.
+    @MainActor
+    func setupMeetingLookup(homeserver: String,
+                            accessTokenProvider: @escaping () throws -> String,
+                            forceTokenRefresh: @escaping () async -> Void) {
+        let service = MeetingsService(homeserver: homeserver,
+                                      accessTokenProvider: accessTokenProvider,
+                                      forceTokenRefresh: forceTokenRefresh)
+        meetingLookup = MeetingLookupService(service: service)
+    }
+
+    @MainActor
+    func teardownMeetingLookup() {
+        meetingLookup = nil
+    }
+
     // MARK: - Индекс «Диска» (STMOB-275)
 
     private(set) var diskIndexService: DiskIndexService?

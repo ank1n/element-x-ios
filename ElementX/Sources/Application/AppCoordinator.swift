@@ -809,6 +809,14 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
                                                       forceTokenRefresh: { [weak clientProxy = userSession.clientProxy] in
                                                           await clientProxy?.forceTokenRefresh()
                                                       })
+        // STMOB-274: поиск встречи по коду для карточки в ленте — тот же домен сессии.
+        ServiceLocator.shared.setupMeetingLookup(homeserver: userSession.clientProxy.homeserver,
+                                                 accessTokenProvider: { [weak clientProxy = userSession.clientProxy] in
+                                                     try clientProxy?.matrixAccessToken() ?? ""
+                                                 },
+                                                 forceTokenRefresh: { [weak clientProxy = userSession.clientProxy] in
+                                                     await clientProxy?.forceTokenRefresh()
+                                                 })
         // STMOB-275: индекс «Диска» наполняет клиент — сервер шифртекст не видит.
         // Без этого в Диске виден только срез, проиндексированный вебом.
         ServiceLocator.shared.setupDiskIndex(homeserver: userSession.clientProxy.homeserver,

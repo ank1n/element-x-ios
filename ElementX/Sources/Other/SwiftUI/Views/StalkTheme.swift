@@ -181,6 +181,7 @@ enum SL10n {
     static let meetingEndBeforeStart = NSLocalizedString("stalk_meeting_end_before_start", tableName: "Localizable", value: "Время конца раньше начала — будет перенесено на следующий день", comment: "End before start warning")
     static let meetingAllowGuests = NSLocalizedString("stalk_meeting_allow_guests", tableName: "Localizable", value: "Разрешить гостей", comment: "Allow guests toggle")
     static let meetingAddParticipant = NSLocalizedString("stalk_meeting_add_participant", tableName: "Localizable", value: "Добавить участника...", comment: "Add participant placeholder")
+    static let meetingJoin = NSLocalizedString("stalk_meeting_join", tableName: "Localizable", value: "Присоединиться", comment: "Join meeting button")
     static let meetingSaveError = NSLocalizedString("stalk_meeting_save_error", tableName: "Localizable", value: "Не удалось сохранить встречу", comment: "Save meeting error")
 
     static func meetingParticipants(_ count: Int) -> String {

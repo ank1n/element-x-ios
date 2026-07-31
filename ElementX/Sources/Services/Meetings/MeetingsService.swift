@@ -92,6 +92,11 @@ struct Meeting: Identifiable, Equatable, Codable {
     let updatedAt: Date?
     let participants: [MeetingParticipant]
     let attachments: [MeetingAttachment]?
+    /// STMOB-274: нужны карточке встречи в ленте — бейджи «зашифрована» и «гости».
+    /// Необязательные: старые ответы сервиса их не содержат, и падать из-за этого
+    /// разбор всего списка не должен.
+    let isEncrypted: Bool
+    let guestAccess: Bool
 
     /// Decode only known fields, ignore any extras from API
     init(from decoder: Decoder) throws {
@@ -112,6 +117,8 @@ struct Meeting: Identifiable, Equatable, Codable {
         endTime = try c.decodeIfPresent(Date.self, forKey: .endTime) ?? startTime
         isIndefinite = try c.decodeIfPresent(Bool.self, forKey: .isIndefinite) ?? false
         accessLevel = try c.decodeIfPresent(String.self, forKey: .accessLevel) ?? "private"
+        isEncrypted = try c.decodeIfPresent(Bool.self, forKey: .isEncrypted) ?? false
+        guestAccess = try c.decodeIfPresent(Bool.self, forKey: .guestAccess) ?? false
         recordingAccess = try c.decodeIfPresent(String.self, forKey: .recordingAccess)
         status = try c.decodeIfPresent(MeetingStatus.self, forKey: .status) ?? .scheduled
         colorLabel = try c.decodeIfPresent(String.self, forKey: .colorLabel) ?? "green"
@@ -131,9 +138,16 @@ struct Meeting: Identifiable, Equatable, Codable {
         case endTime = "end_time"
         case isIndefinite = "is_indefinite"
         case accessLevel = "access_level"
+        case isEncrypted = "encrypted"
+        case guestAccess = "guest_access"
         case recordingAccess = "recording_access"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
+    }
+
+    /// Гости разрешены: правило веба — либо явный флаг, либо публичный доступ.
+    var allowsGuests: Bool {
+        guestAccess || accessLevel == "public"
     }
 
     var isUpcoming: Bool {

@@ -13,4 +13,7 @@ struct TextRoomTimelineItemContent: Hashable {
     var formattedBody: AttributedString?
     /// The original textual representation of the formatted body directly from the event (usually HTML code)
     var formattedBodyHTMLString: String?
+    /// STMOB-274: код встречи, если тело сообщения ЦЕЛИКОМ — ссылка `/meet/s/<код>`.
+    /// Тогда вместо строки рисуется карточка встречи, как в вебе.
+    var meetingCode: String?
 }

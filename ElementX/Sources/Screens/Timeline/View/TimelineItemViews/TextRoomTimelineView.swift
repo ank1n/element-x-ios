@@ -25,25 +25,31 @@ struct TextRoomTimelineView: View, TextBasedRoomTimelineViewProtocol {
     
     var body: some View {
         TimelineStyler(timelineItem: timelineItem) {
-            VStack(alignment: .leading, spacing: 8) {
-                if let attributedString = timelineItem.content.formattedBody {
-                    FormattedBodyText(attributedString: attributedString,
-                                      additionalWhitespacesCount: timelineItem.additionalWhitespaces(),
-                                      boostFontSize: timelineItem.shouldBoost)
-                } else {
-                    FormattedBodyText(text: timelineItem.body,
-                                      additionalWhitespacesCount: timelineItem.additionalWhitespaces(),
-                                      boostFontSize: timelineItem.shouldBoost)
-                }
-                
-                if context?.viewState.linkPreviewsEnabled ?? false, !linkMetadata.keys.isEmpty {
-                    VStack(spacing: 8) {
-                        ForEach(linkMetadata.keys, id: \.absoluteString) { url in
-                            let metadata = linkMetadata[url]?.metadata ?? context?.viewState.linkMetadataProvider?.metadataItems[url]?.metadata
-                            LinkPreviewView(url: url, metadata: metadata)
-                        }
+            // STMOB-274: ссылка на встречу разворачивается в карточку, как в вебе.
+            // Пока встреча грузится или не нашлась — остаётся сама ссылка.
+            if let code = timelineItem.content.meetingCode {
+                StalkMeetingCardView(code: code, fallbackText: timelineItem.content.body)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    if let attributedString = timelineItem.content.formattedBody {
+                        FormattedBodyText(attributedString: attributedString,
+                                          additionalWhitespacesCount: timelineItem.additionalWhitespaces(),
+                                          boostFontSize: timelineItem.shouldBoost)
+                    } else {
+                        FormattedBodyText(text: timelineItem.body,
+                                          additionalWhitespacesCount: timelineItem.additionalWhitespaces(),
+                                          boostFontSize: timelineItem.shouldBoost)
                     }
-                    .padding(.bottom, 16)
+                
+                    if context?.viewState.linkPreviewsEnabled ?? false, !linkMetadata.keys.isEmpty {
+                        VStack(spacing: 8) {
+                            ForEach(linkMetadata.keys, id: \.absoluteString) { url in
+                                let metadata = linkMetadata[url]?.metadata ?? context?.viewState.linkMetadataProvider?.metadataItems[url]?.metadata
+                                LinkPreviewView(url: url, metadata: metadata)
+                            }
+                        }
+                        .padding(.bottom, 16)
+                    }
                 }
             }
         }
