@@ -187,10 +187,16 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
                 // Use SF Symbol name from API, fallback to generic
                 let sfSymbol = app.icon.sf ?? "app.fill"
 
+                // STMOB-277: настоящий логотип, если реестр его отдаёт. Экран умеет
+                // рисовать картинку по ссылке и сам откатывается на глиф, пока её нет,
+                // так что появление поля на сервере не требует релиза клиента.
+                let logoURL = app.icon.logoURL ?? app.iconUrl.flatMap { $0.isEmpty ? nil : URL(string: $0) }
+
                 return WidgetItem(id: app.id,
                                   name: Self.localizedAppText(app.name),
                                   description: Self.localizedAppText(app.description),
                                   icon: sfSymbol,
+                                  iconURL: logoURL,
                                   url: fullURL,
                                   apiURL: app.apiUrl,
                                   type: app.type,

@@ -157,10 +157,37 @@ struct AppsAPIApp: Decodable {
     let category: String // "productivity", "tools"
     let type: String // "builtin", "widget", "smartapp"
     let enabled: Bool
+    /// Логотип приложения на уровне записи — второе место, где его разумно ждать.
+    /// Необязательное: реестр его пока не отдаёт (STMOB-277).
+    let iconUrl: String?
 }
 
 /// Icon object with platform-specific names
+///
+/// STMOB-277: реестр отдаёт `sf`/`material`/`emoji`/`web`, то есть глиф на iOS и
+/// эмодзи в вебе — из-за этого одно и то же приложение выглядит по-разному на двух
+/// клиентах. Настоящий логотип должен приходить ссылкой; поля для него пока нет.
+/// Читаем ЛЮБОЕ из правдоподобных имён, чтобы иконки подхватились в день, когда
+/// Molly заведёт поле, и без релиза клиента — тот же приём, что с `attachment_id`
+/// у Айлока.
 struct AppsAPIIcon: Decodable {
     let sf: String? // SF Symbols name (iOS)
     let material: String? // Material Icons name (Android)
+    let emoji: String?
+    let web: String?
+
+    private let url: String?
+    private let png: String?
+    private let svg: String?
+    private let image: String?
+
+    /// Ссылка на логотип, если реестр её уже отдаёт.
+    var logoURL: URL? {
+        for candidate in [url, png, svg, image] {
+            if let candidate, !candidate.isEmpty, let parsed = URL(string: candidate) {
+                return parsed
+            }
+        }
+        return nil
+    }
 }
