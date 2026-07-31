@@ -1629,6 +1629,19 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
     /// - Returns: контроллер окна или nil, если устройство/система его не поддерживает —
     ///   тогда остаёмся на зелёной плашке со счётчиком, ничего не ломая.
     func start(sourceView: UIView, roomManager: LiveKitRoomManager, fallbackTitle: String) -> AVPictureInPictureController? {
+        // STMOB-278: засов «отбой был» принадлежит ТОМУ звонку, где нажали отбой.
+        // Менеджер — синглтон, а сброс засова жил только в stop(); когда экран
+        // сносится РАНЬШЕ фоновой очистки LiveKit (endCall: dismiss сразу, cleanup
+        // до ~16с в фоне), dismantle видит старый roomManager ещё .connected,
+        // пропускает stop() — и засов молча убивал окно на ВЕСЬ следующий звонок
+        // (в логе: «отбой был — окно не завожу» подряд, без единой «готова»).
+        // Каждый звонок создаёт СВОЙ LiveKitRoomManager, поэтому чужой инстанс —
+        // это новый звонок: засов снимаем. Для того же звонка (пересборка дерева
+        // после отбоя, STMOB-301) инстанс тот же — засов держится, как и задумано.
+        if isDisarmed, self.roomManager !== roomManager {
+            DiagLog.write("CallUI", "картинка в картинке: новый звонок — снимаю засов отбоя")
+            isDisarmed = false
+        }
         guard !isDisarmed else {
             DiagLog.write("CallUI", "картинка в картинке: отбой был — окно не завожу")
             return nil
@@ -1827,7 +1840,14 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
     /// Видео своё или чужое — оба годятся: в окне и главный слой, и тайл в углу.
     /// Есть ли в звонке видео прямо сейчас — своё или чужое.
     private func hasVideoNow(_ roomManager: LiveKitRoomManager) -> Bool {
-        let hasRemoteVideo = roomManager.displayParticipants.contains { $0.firstCameraVideoTrack != nil }
+        // STMOB-278: демонстрация экрана — тоже видео. Групповой звонок, где никто
+        // не включил камеру, но идёт чья-то демка, оставался «звонком без видео» —
+        // автозапуск окна не взводился, хотя показывать в окне ровно есть что
+        // (демка и так первая по приоритету в refreshTrack).
+        let hasRemoteVideo = roomManager.displayParticipants.contains { participant in
+            participant.firstCameraVideoTrack != nil
+                || participant.videoTracks.contains { $0.isScreenShareTrack && $0.isSubscribed && !$0.isMuted }
+        }
         return hasRemoteVideo || roomManager.localVideoTrack != nil
     }
 
