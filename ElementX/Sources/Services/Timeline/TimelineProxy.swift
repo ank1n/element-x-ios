@@ -80,6 +80,26 @@ final class TimelineProxy: TimelineProxyProtocol {
         }
     }
     
+    /// Содержимое события по его идентификатору, без опоры на то, что оно уже
+    /// загружено в ленту.
+    ///
+    /// STMOB-275: нужно для пересылки из «Диска». Там открыт список файлов, а не
+    /// комната, и таймлайна с этим событием в памяти нет — обычный поиск по
+    /// загруженным элементам вернул бы nil для всего, кроме последних сообщений.
+    func messageEventContent(forEventID eventID: String) async -> RoomMessageEventContentWithoutRelation? {
+        do {
+            let item = try await timeline.getEventTimelineItemByEventId(eventId: eventID)
+            guard case let .msgLike(messageLikeContent) = item.content,
+                  case let .message(messageContent) = messageLikeContent.kind else {
+                return nil
+            }
+            return try contentWithoutRelationFromMessage(message: messageContent)
+        } catch {
+            MXLog.error("Failed retrieving event content for forwarding: \(error)")
+            return nil
+        }
+    }
+
     func messageEventContent(for timelineItemID: TimelineItemIdentifier) async -> RoomMessageEventContentWithoutRelation? {
         guard let content = await timelineItemProvider.itemProxies.firstEventTimelineItemUsingStableID(timelineItemID)?.content,
               case let .msgLike(messageLikeContent) = content,

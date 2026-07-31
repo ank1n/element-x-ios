@@ -286,6 +286,12 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                     Task { await self.presentCallScreen(roomID: roomID) }
                 case .hideTabBar(let hide):
                     appsTabDetails.barVisibilityOverride = hide ? .hidden : .visible
+                case .openEvent(let roomID, let eventID):
+                    // Тем же маршрутом, что и внешняя ссылка на сообщение: он сам
+                    // переключит вкладку на чаты и наведёт ленту на событие.
+                    handleAppRoute(.event(eventID: eventID, roomID: roomID, via: []), animated: true)
+                case .forwardEvent(let roomID, let eventID):
+                    Task { await self.presentForwarding(roomID: roomID, eventID: eventID) }
                 }
             }
             .store(in: &cancellables)
@@ -483,6 +489,52 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
             DiagLog.write("Meeting", "meeting link ensureRoom FAILED code=\(code): \(error.localizedDescription)")
             flowParameters.userIndicatorController.submitIndicator(.init(title: L10n.errorUnknown))
         }
+    }
+
+    /// STMOB-275: переслать файл из «Диска» в другой чат.
+    ///
+    /// Содержимое события достаём по его идентификатору, а не ищем в загруженной
+    /// ленте: комната здесь не открыта, и обычный поиск нашёл бы только последние
+    /// сообщения. Дальше — тот же экран выбора чата, что и при пересылке из ленты,
+    /// чтобы поведение не разъезжалось.
+    private func presentForwarding(roomID: String, eventID: String) async {
+        guard case .joined(let roomProxy) = await userSession.clientProxy.roomForIdentifier(roomID) else {
+            ServiceLocator.shared.userIndicatorController.submitIndicator(.init(title: L10n.errorUnknown))
+            return
+        }
+
+        // Метод есть только у конкретного класса: добавлять его в протокол значит
+        // перегенерировать моки, а Sourcery в этой копии не поднят.
+        guard let timeline = roomProxy.timeline as? TimelineProxy,
+              let content = await timeline.messageEventContent(forEventID: eventID) else {
+            ServiceLocator.shared.userIndicatorController.submitIndicator(.init(title: L10n.errorUnknown))
+            return
+        }
+
+        let stackCoordinator = NavigationStackCoordinator()
+        let parameters = MessageForwardingScreenCoordinatorParameters(forwardingItem: .init(id: .event(uniqueID: .init(eventID),
+                                                                                                       eventOrTransactionID: .eventID(eventID)),
+                                                                                            roomID: roomID,
+                                                                                            content: content),
+                                                                      userSession: userSession,
+                                                                      roomSummaryProvider: userSession.clientProxy.alternateRoomSummaryProvider,
+                                                                      userIndicatorController: ServiceLocator.shared.userIndicatorController)
+        let coordinator = MessageForwardingScreenCoordinator(parameters: parameters)
+        coordinator.actions
+            .sink { [weak self] action in
+                switch action {
+                case .dismiss:
+                    self?.navigationTabCoordinator.setSheetCoordinator(nil)
+                case .sent(let roomID):
+                    self?.navigationTabCoordinator.setSheetCoordinator(nil)
+                    // Переход в чат, куда переслали: иначе непонятно, ушло ли вообще.
+                    self?.handleAppRoute(.room(roomID: roomID, via: []), animated: true)
+                }
+            }
+            .store(in: &cancellables)
+
+        stackCoordinator.setRootCoordinator(coordinator)
+        navigationTabCoordinator.setSheetCoordinator(stackCoordinator)
     }
 
     private func presentCallScreen(roomID: String) async {

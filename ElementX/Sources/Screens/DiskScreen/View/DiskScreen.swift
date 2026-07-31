@@ -17,6 +17,17 @@ struct DiskScreen: View {
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
         .navigationTitle(NSLocalizedString("stalk_disk_title", tableName: "Localizable", value: "Диск", comment: "Disk screen title"))
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    context.layout = context.layout.toggled
+                } label: {
+                    Image(systemName: context.layout.toggleIcon)
+                }
+                .accessibilityLabel(NSLocalizedString("stalk_disk_toggle_layout", tableName: "Localizable",
+                                                      value: "Вид списка", comment: "Disk layout toggle"))
+            }
+        }
         .onAppear { context.onAppear() }
         .refreshable { await context.reload() }
         // Тот же системный просмотрщик, что и для вложений в чате.
@@ -83,8 +94,10 @@ struct DiskScreen: View {
             errorState(errorText)
         } else if context.files.isEmpty {
             emptyState
-        } else {
+        } else if context.layout == .list {
             list
+        } else {
+            grid
         }
     }
 
@@ -97,9 +110,60 @@ struct DiskScreen: View {
             }
             .buttonStyle(.plain)
             .listRowBackground(Color(.secondarySystemGroupedBackground))
+            .contextMenu { actions(for: file) }
             .task { await context.loadMoreIfNeeded(currentItem: file) }
         }
         .listStyle(.insetGrouped)
+    }
+
+    /// Карточки. Две колонки: на трёх имя файла обрезается до бессмысленного
+    /// огрызка, а по имени здесь и опознают документ.
+    private var grid: some View {
+        ScrollView {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
+                ForEach(context.files) { file in
+                    Button {
+                        context.selectFile(file)
+                    } label: {
+                        DiskFileCard(file: file, isDownloading: context.downloadingFileID == file.id)
+                    }
+                    .buttonStyle(.plain)
+                    .contextMenu { actions(for: file) }
+                    .task { await context.loadMoreIfNeeded(currentItem: file) }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 16)
+        }
+    }
+
+    /// Меню действий. Пункты, которые некуда вести, не показываем вовсе:
+    /// у Диск-документов и копий для шаринга Matrix-события нет, и «найти в чате»
+    /// с «переслать» были бы мёртвыми кнопками.
+    @ViewBuilder
+    private func actions(for file: DiskFile) -> some View {
+        Button {
+            context.selectFile(file)
+        } label: {
+            Label(NSLocalizedString("stalk_disk_action_open", tableName: "Localizable",
+                                    value: "Открыть", comment: "Disk action"), systemImage: "eye")
+        }
+
+        if context.hasChatEvent(file) {
+            Button {
+                context.findInChat(file)
+            } label: {
+                Label(NSLocalizedString("stalk_disk_action_find_in_chat", tableName: "Localizable",
+                                        value: "Найти в чате", comment: "Disk action"), systemImage: "bubble.left.and.text.bubble.right")
+            }
+
+            Button {
+                context.forward(file)
+            } label: {
+                Label(NSLocalizedString("stalk_disk_action_forward", tableName: "Localizable",
+                                        value: "Переслать", comment: "Disk action"), systemImage: "arrowshape.turn.up.right")
+            }
+        }
     }
 
     private var emptyState: some View {
@@ -187,7 +251,7 @@ struct DiskFileRow: View {
         .contentShape(Rectangle())
     }
 
-    private static let sizeFormatter: ByteCountFormatter = {
+    static let sizeFormatter: ByteCountFormatter = {
         let f = ByteCountFormatter()
         f.countStyle = .file
         return f
@@ -199,4 +263,61 @@ struct DiskFileRow: View {
         f.timeStyle = .none
         return f
     }()
+}
+
+// MARK: - Карточка
+
+/// Плитка в режиме карточек: крупный значок, имя в две строки, размер и дата.
+struct DiskFileCard: View {
+    let file: DiskFile
+    var isDownloading = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.compound.iconAccentPrimary.opacity(0.12))
+                    .frame(height: 96)
+
+                Image(systemName: file.category.systemImage)
+                    .font(.system(size: 32))
+                    .foregroundStyle(Color.compound.iconAccentPrimary)
+
+                if isDownloading {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                // Те же метки, что и в списке: замок у зашифрованных, звезда у
+                // избранных. Иначе при переключении вида часть сведений исчезает.
+                HStack(spacing: 4) {
+                    if file.starred {
+                        Image(systemName: "star.fill").foregroundStyle(.yellow)
+                    }
+                    if file.isEncrypted {
+                        Image(systemName: "lock.fill").foregroundStyle(.secondary)
+                    }
+                }
+                .font(.caption2)
+                .padding(6)
+            }
+
+            Text(file.filename)
+                .font(.subheadline)
+                .lineLimit(2)
+                .truncationMode(.middle)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 8)
+
+            Text(DiskFileRow.sizeFormatter.string(fromByteCount: file.size))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.top, 2)
+        }
+        .padding(10)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+        .contentShape(Rectangle())
+    }
 }

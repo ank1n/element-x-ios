@@ -10,8 +10,32 @@ import SwiftUI
 
 enum DiskScreenViewModelAction {
     /// Файл зашифрован — открыть его можно только в чате, где есть ключи комнаты.
+    /// Это же действие и «найти в чате»: перейти к сообщению, которым файл прислали.
     case openRoom(roomID: String, eventID: String)
+    /// Переслать в другой чат. Содержимого события здесь нет — только ссылка на
+    /// него; достаёт его флоу, у которого есть доступ к комнатам.
+    case forward(roomID: String, eventID: String)
     case dismiss
+}
+
+/// Как показывать файлы. Список плотнее и удобнее для документов, карточки — для
+/// изображений, где решает превью, а не имя.
+enum DiskLayout: String {
+    case list
+    case grid
+
+    /// Кнопка показывает то, ВО ЧТО переключит, а не текущее состояние: иначе
+    /// пользователь читает её как индикатор и жмёт не туда.
+    var toggleIcon: String {
+        switch self {
+        case .list: "square.grid.2x2"
+        case .grid: "list.bullet"
+        }
+    }
+
+    var toggled: DiskLayout {
+        self == .list ? .grid : .list
+    }
 }
 
 @MainActor
@@ -33,6 +57,17 @@ final class DiskScreenViewModel: ObservableObject {
     /// Имя файла, который сейчас качается: показываем прогресс на его строке.
     @Published private(set) var downloadingFileID: String?
 
+    /// Режим отображения. Выбор запоминаем: переключать его при каждом заходе —
+    /// раздражение, а не настройка.
+    @Published var layout: DiskLayout {
+        didSet {
+            guard oldValue != layout else { return }
+            UserDefaults.standard.set(layout.rawValue, forKey: Self.layoutKey)
+        }
+    }
+
+    private static let layoutKey = "ru.implica.stalk.diskLayout"
+
     private let service: DiskService
     private let mediaProvider: MediaProviderProtocol?
     private var nextBefore: String?
@@ -46,6 +81,30 @@ final class DiskScreenViewModel: ObservableObject {
     init(service: DiskService, mediaProvider: MediaProviderProtocol?) {
         self.service = service
         self.mediaProvider = mediaProvider
+        let saved = UserDefaults.standard.string(forKey: Self.layoutKey)
+        layout = saved.flatMap(DiskLayout.init(rawValue:)) ?? .list
+    }
+
+    // MARK: - Действия над файлом
+
+    /// Перейти к сообщению, которым файл прислали.
+    ///
+    /// Доступно только для файлов из чата: у Диск-документов и копий для шаринга
+    /// Matrix-события нет вовсе, и переходить некуда.
+    func findInChat(_ file: DiskFile) {
+        guard let roomID = file.roomID, let eventID = file.eventID else { return }
+        actionsSubject.send(.openRoom(roomID: roomID, eventID: eventID))
+    }
+
+    func forward(_ file: DiskFile) {
+        guard let roomID = file.roomID, let eventID = file.eventID else { return }
+        actionsSubject.send(.forward(roomID: roomID, eventID: eventID))
+    }
+
+    /// Есть ли у файла событие в чате — от этого зависят «найти в чате» и
+    /// «переслать». Мёртвых пунктов в меню быть не должно.
+    func hasChatEvent(_ file: DiskFile) -> Bool {
+        file.roomID != nil && file.eventID != nil
     }
 
     func onAppear() {

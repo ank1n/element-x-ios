@@ -10,7 +10,10 @@ import SwiftUI
 enum DiskScreenCoordinatorAction {
     case hideTabBar(Bool)
     /// Зашифрованный файл открывается только в своей комнате — там есть ключи.
+    /// Он же переход «найти в чате».
     case openRoom(roomID: String, eventID: String)
+    /// Переслать файл в другой чат.
+    case forward(roomID: String, eventID: String)
 }
 
 struct DiskScreenCoordinatorParameters {
@@ -42,6 +45,8 @@ final class DiskScreenCoordinator: CoordinatorProtocol {
                 switch action {
                 case .openRoom(let roomID, let eventID):
                     self?.actionsSubject.send(.openRoom(roomID: roomID, eventID: eventID))
+                case .forward(let roomID, let eventID):
+                    self?.actionsSubject.send(.forward(roomID: roomID, eventID: eventID))
                 case .dismiss:
                     break
                 }

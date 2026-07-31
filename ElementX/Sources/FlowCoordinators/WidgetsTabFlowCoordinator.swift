@@ -12,6 +12,11 @@ enum WidgetsTabFlowCoordinatorAction {
     case showSettings
     case startCall(roomID: String)
     case hideTabBar(Bool)
+    /// STMOB-275: «найти в чате» из «Диска» — открыть сообщение, которым файл
+    /// прислали. Вкладка сама этого не умеет: комната живёт во вкладке чатов.
+    case openEvent(roomID: String, eventID: String)
+    /// STMOB-275: переслать файл из «Диска» в другой чат.
+    case forwardEvent(roomID: String, eventID: String)
 }
 
 class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
@@ -156,6 +161,19 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
                                                                           accessTokenProvider: { try filesProxy.matrixAccessToken() },
                                                                           forceTokenRefresh: { await filesConcrete?.forceTokenRefresh() },
                                                                           mediaProvider: userSession.mediaProvider))
+            diskCoordinator.actionsPublisher
+                .sink { [weak self] action in
+                    switch action {
+                    case .openRoom(let roomID, let eventID):
+                        self?.actionsSubject.send(.openEvent(roomID: roomID, eventID: eventID))
+                    case .forward(let roomID, let eventID):
+                        self?.actionsSubject.send(.forwardEvent(roomID: roomID, eventID: eventID))
+                    case .hideTabBar(let hide):
+                        self?.actionsSubject.send(.hideTabBar(hide))
+                    }
+                }
+                .store(in: &cancellables)
+
             navigationStackCoordinator.push(diskCoordinator)
 
         case "meetings-calendar":
