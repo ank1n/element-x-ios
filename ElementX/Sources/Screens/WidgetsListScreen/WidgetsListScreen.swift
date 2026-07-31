@@ -355,7 +355,13 @@ struct WidgetsListScreen: View {
 
     @ViewBuilder
     private func widgetIcon(_ widget: WidgetItem, size: CGFloat = 48) -> some View {
-        if let iconURL = widget.iconURL {
+        // Календарь: живая плитка-дата (решение dp, 01.08) — день недели и
+        // сегодняшнее число, как у виджета системного календаря. Статичная
+        // картинка из iconUrl так не умеет, поэтому для этого id рисуем сами;
+        // цвет — teal референс-дизайна (#2FA98C).
+        if widget.id == "meetings-calendar" {
+            calendarDateIcon(size: size)
+        } else if let iconURL = widget.iconURL {
             AsyncImage(url: iconURL) { phase in
                 switch phase {
                 case .success(let image):
@@ -371,6 +377,29 @@ struct WidgetsListScreen: View {
         } else {
             sfSymbolIcon(widget, size: size)
         }
+    }
+
+    /// Плитка-«отрывной календарь»: аббревиатура дня недели сверху, число крупно.
+    /// Локаль системная («Пт» / «Fri»), число с ведущим нулём — как в образце dp.
+    /// Дата считается при каждой отрисовке — список пересобирается при каждом
+    /// открытии вкладки, протяжённых сессий с «вчерашним» числом не бывает.
+    private func calendarDateIcon(size: CGFloat) -> some View {
+        let now = Date()
+        let weekday = now.formatted(.dateTime.weekday(.abbreviated)).capitalized
+        let day = Calendar.current.component(.day, from: now)
+        return ZStack {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(red: 0.184, green: 0.663, blue: 0.549)) // #2FA98C — teal референса
+            VStack(spacing: size * 0.02) {
+                Text(weekday)
+                    .font(.system(size: size * 0.24, weight: .medium))
+                    .foregroundColor(.white.opacity(0.92))
+                Text(String(format: "%02d", day))
+                    .font(.system(size: size * 0.4, weight: .bold))
+                    .foregroundColor(.white)
+            }
+        }
+        .frame(width: size, height: size)
     }
 
     private func sfSymbolIcon(_ widget: WidgetItem, size: CGFloat = 48) -> some View {
