@@ -30,15 +30,21 @@ struct StalkFileShare: Hashable {
             case "read": self = .read
             case "write": self = .write
             case "full": self = .full
+            // Поля нет или оно пустое — по контракту это чтение. Пустая пилюля
+            // читалась бы как «прав нет вовсе», а это другое утверждение.
+            case "": self = .read
             default: self = .other(raw)
             }
         }
 
+        /// Подписи дословно как в вебе (Molly, #ops 31.07): «Чтение» / «Запись» /
+        /// «Полный». Свои формулировки здесь были бы расхождением на ровном месте —
+        /// одно и то же право называлось бы по-разному на двух клиентах.
         var title: String {
             switch self {
             case .read: NSLocalizedString("stalk_file_share_permission_read", tableName: "Localizable", value: "Чтение", comment: "File share permission")
-            case .write: NSLocalizedString("stalk_file_share_permission_write", tableName: "Localizable", value: "Редактирование", comment: "File share permission")
-            case .full: NSLocalizedString("stalk_file_share_permission_full", tableName: "Localizable", value: "Полный доступ", comment: "File share permission")
+            case .write: NSLocalizedString("stalk_file_share_permission_write", tableName: "Localizable", value: "Запись", comment: "File share permission")
+            case .full: NSLocalizedString("stalk_file_share_permission_full", tableName: "Localizable", value: "Полный", comment: "File share permission")
             case .other(let raw): raw
             }
         }
