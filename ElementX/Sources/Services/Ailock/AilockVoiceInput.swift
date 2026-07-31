@@ -65,11 +65,14 @@ final class AilockVoiceRecorder {
         previousCategory = session.category
         previousMode = session.mode
         previousOptions = session.categoryOptions
-        // ⚠️ `.duckOthers` допустима ТОЛЬКО для playAndRecord / playback / multiRoute.
-        // С категорией `.record` система бросает ошибку, запись не стартует вовсе —
-        // ровно так диктовка сломалась в сборке 310. Для диктовки нужна чистая запись,
-        // а из опций — только Bluetooth, чтобы работал микрофон гарнитуры.
-        try session.setCategory(.record, mode: .spokenAudio, options: [.allowBluetooth])
+        // Конфигурация сессии — минимально возможная, и это выстрадано двумя сборками.
+        // 310: `.record` + `.duckOthers` → OSStatus -50 (опция допустима только для
+        // playAndRecord / playback / multiRoute).
+        // 311: опцию убрала, но осталась `.spokenAudio` — этот режим предназначен для
+        // ВОСПРОИЗВЕДЕНИЯ речи и с категорией записи тоже даёт -50 (лог 211).
+        // Правило на будущее: для диктовки — только `.record` + `.default`, любые
+        // «улучшения» режима и опций проверять на устройстве, а не по смыслу названия.
+        try session.setCategory(.record, mode: .default, options: [.allowBluetooth])
         try session.setActive(true)
         didActivateSession = true
 
@@ -81,6 +84,8 @@ final class AilockVoiceRecorder {
             AVLinearPCMIsFloatKey: false,
             AVLinearPCMIsBigEndianKey: false
         ]
+
+        DiagLog.write("AilockVoice", "сессия: category=\(session.category.rawValue) mode=\(session.mode.rawValue)")
 
         let recorder = try AVAudioRecorder(url: url, settings: settings)
         recorder.isMeteringEnabled = true

@@ -384,7 +384,7 @@ struct AilockChatScreen: View {
     /// Отступ композера от нижней кромки. Ниже него — только системная область
     /// домашнего индикатора (или таб-бар, если экран открыт без его скрытия),
     /// и вплотную к ним поле ввода выглядит прижатым.
-    private static let composerBottomInset: CGFloat = 14
+    private static let composerBottomInset: CGFloat = 24
 
     private var composerPlaceholder: String {
         context.viewState.voicePhase == .transcribing ? SL10n.ailockTranscribing : SL10n.ailockComposerPlaceholder
