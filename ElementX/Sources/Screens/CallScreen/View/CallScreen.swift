@@ -208,24 +208,7 @@ struct CallScreen: View {
                 // быть в иерархии в момент сворачивания приложения, иначе система
                 // окно не откроет. Невидимая и не перехватывает касания.
                 .overlay(alignment: .topLeading) {
-                    CallPictureInPictureSource(roomManager: roomManager,
-                                               title: context.viewState.roomDisplayName ?? SL10n.callDefault,
-                                               onReady: { controller in
-                                                   context.send(viewAction: .pictureInPictureIsAvailable(controller))
-                                               },
-                                               // STMOB-277: пока системное окно висит, звонок НЕ полноэкранный —
-                                               // приложению нужна своя плашка со счётчиком. Раньше об открытии
-                                               // окна никто не сообщал, и приложение считало звонок развёрнутым:
-                                               // счётчика не было ни в приложении, ни в системном окне.
-                                               onWindowOpened: {
-                                                   context.send(viewAction: .pictureInPictureDidStart)
-                                               },
-                                               onWindowClosed: { restoredToApp in
-                                                   context.send(viewAction: .pictureInPictureDidStop(restoredToApp: restoredToApp))
-                                               })
-                                               .frame(width: 1, height: 1)
-                                               .allowsHitTesting(false)
-                                               .opacity(0.001)
+                    pictureInPictureSource(roomManager: roomManager)
                 }
         } else if context.viewState.url == nil {
             // Экран набора: до подключения показываем, кого вызываем, + «Вызов»
@@ -259,6 +242,17 @@ struct CallScreen: View {
                 Spacer()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // STMOB-278: подложка окна и на экране набора (решение dp: «окно во
+            // время гудков — нормально для видеозвонка»). Свернул приложение,
+            // пока идут гудки видеозвонка, — окно с твоей камерой появляется, и
+            // при ответе собеседника его видео доедет прямо в окно. Голосовой
+            // набор окна НЕ даёт: автозапуск взводится только при живом видео
+            // (hasVideoNow, STMOB-284), без камеры подложка безвредна.
+            .overlay(alignment: .topLeading) {
+                if let roomManager = context.viewState.liveKitRoomManager {
+                    pictureInPictureSource(roomManager: roomManager)
+                }
+            }
         } else {
             ZStack {
                 // sTalk: WebView renders Element Call video fullscreen.
@@ -271,6 +265,28 @@ struct CallScreen: View {
         }
     }
     
+    /// Невидимая подложка системного окна «картинка в картинке» (1×1, касания не
+    /// перехватывает). Одна на обе ветки — разговора и набора: система требует,
+    /// чтобы источник окна был в иерархии в момент сворачивания приложения.
+    /// STMOB-277: об открытии/закрытии окна сообщаем вью-модели — пока окно висит,
+    /// звонок не полноэкранный, приложению нужна своя плашка со счётчиком.
+    private func pictureInPictureSource(roomManager: LiveKitRoomManager) -> some View {
+        CallPictureInPictureSource(roomManager: roomManager,
+                                   title: context.viewState.roomDisplayName ?? SL10n.callDefault,
+                                   onReady: { controller in
+                                       context.send(viewAction: .pictureInPictureIsAvailable(controller))
+                                   },
+                                   onWindowOpened: {
+                                       context.send(viewAction: .pictureInPictureDidStart)
+                                   },
+                                   onWindowClosed: { restoredToApp in
+                                       context.send(viewAction: .pictureInPictureDidStop(restoredToApp: restoredToApp))
+                                   })
+                                   .frame(width: 1, height: 1)
+                                   .allowsHitTesting(false)
+                                   .opacity(0.001)
+    }
+
     // sTalk: Native call control buttons
     var callControlButtons: some View {
         HStack(spacing: context.viewState.isDirect ? 20 : 14) {
