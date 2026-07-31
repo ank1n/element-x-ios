@@ -65,7 +65,11 @@ final class AilockVoiceRecorder {
         previousCategory = session.category
         previousMode = session.mode
         previousOptions = session.categoryOptions
-        try session.setCategory(.record, mode: .spokenAudio, options: [.duckOthers])
+        // ⚠️ `.duckOthers` допустима ТОЛЬКО для playAndRecord / playback / multiRoute.
+        // С категорией `.record` система бросает ошибку, запись не стартует вовсе —
+        // ровно так диктовка сломалась в сборке 310. Для диктовки нужна чистая запись,
+        // а из опций — только Bluetooth, чтобы работал микрофон гарнитуры.
+        try session.setCategory(.record, mode: .spokenAudio, options: [.allowBluetooth])
         try session.setActive(true)
         didActivateSession = true
 
@@ -129,8 +133,12 @@ final class AilockVoiceRecorder {
     }
 
     /// Идёт ли системный звонок (в том числе наш через CallKit).
+    /// Наблюдатель CallKit держим живым: созданный на лету и тут же отпущенный
+    /// объект может не успеть наполнить список звонков — Apple прямо требует его удерживать.
+    private static let callObserver = CXCallObserver()
+
     private static var isCallInProgress: Bool {
-        CXCallObserver().calls.contains { !$0.hasEnded }
+        callObserver.calls.contains { !$0.hasEnded }
     }
 
     private func stopSession() {
