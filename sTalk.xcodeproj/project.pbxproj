@@ -1492,6 +1492,7 @@
 		F0CC9594E0323D2598980ACA /* EmoteRoomTimelineItemContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24C225CBB80AD308E703FFF9 /* EmoteRoomTimelineItemContent.swift */; };
 		F0CCC53E2779A0DFEA763B14 /* CallsListScreenCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89899851E23E7DEB108C5878 /* CallsListScreenCoordinator.swift */; };
 		F0CF4E9BD59B18DAC80AA703 /* ServerConfirmationScreenViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3BC963F478A422D9B0724BA /* ServerConfirmationScreenViewModel.swift */; };
+		F0F073E8EDC44281AEC4E778 /* ContactAvatarLookup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F2E501CB2E4218C10467285 /* ContactAvatarLookup.swift */; };
 		F0FEFA04EF91E48A3B3A2DA9 /* TimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF71A54D7A64DCC15F307346 /* TimelineView.swift */; };
 		F11E7594034C81B16E914DAB /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 4ADCB5DFEE36F9AA95306BB6 /* PrivacyInfo.xcprivacy */; };
 		F13B99635F4164AD1E556298 /* BlockedUsersScreenCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 647EA935E64CDAB286F0A9B4 /* BlockedUsersScreenCoordinator.swift */; };
@@ -2234,6 +2235,7 @@
 		5EF19EEAE135DB5D178D6198 /* AccessibilityTests.xctestplan */ = {isa = PBXFileReference; path = AccessibilityTests.xctestplan; sourceTree = "<group>"; };
 		5F0A9478261D9E641C680B0F /* Duration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Duration.swift; sourceTree = "<group>"; };
 		5F1361B8C6A428BDC19F3506 /* MessageSearchScreenModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageSearchScreenModels.swift; sourceTree = "<group>"; };
+		5F2E501CB2E4218C10467285 /* ContactAvatarLookup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactAvatarLookup.swift; sourceTree = "<group>"; };
 		5F332BF4FA74B67536E82745 /* BannedRoomProxy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BannedRoomProxy.swift; sourceTree = "<group>"; };
 		5F7907791281ADCA7287C1D1 /* WidgetsTabFlowCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetsTabFlowCoordinator.swift; sourceTree = "<group>"; };
 		5F82CEBB10BFF262A9827952 /* RoomPollsHistoryScreenModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomPollsHistoryScreenModels.swift; sourceTree = "<group>"; };
@@ -6083,6 +6085,14 @@
 			path = View;
 			sourceTree = "<group>";
 		};
+		ABA2035D25376B59C6DA669C /* Contacts */ = {
+			isa = PBXGroup;
+			children = (
+				5F2E501CB2E4218C10467285 /* ContactAvatarLookup.swift */,
+			);
+			path = Contacts;
+			sourceTree = "<group>";
+		};
 		AC907EB676BD0CA4B347DE10 /* View */ = {
 			isa = PBXGroup;
 			children = (
@@ -6713,6 +6723,7 @@
 				A0AB06D030991F666B365461 /* CallHistory */,
 				9E2CA87B87146940DB69B6CB /* Client */,
 				5359DBAE24CD707EFB974BF6 /* ComposerDraft */,
+				ABA2035D25376B59C6DA669C /* Contacts */,
 				9170F2F153B2F6B9860619D9 /* Disk */,
 				61E9B1F056216E44B209331E /* ElementCall */,
 				06F763EC36C253E39F2DF3F7 /* Emojis */,
@@ -8510,6 +8521,7 @@
 				2783C9BABB9D6FB4F2CEFB25 /* CompoundIcon.swift in Sources */,
 				96B06CE19EEF757155BEFD99 /* ConfirmationDialog.swift in Sources */,
 				A23CF12CE579315697FBCB1A /* Consumable.swift in Sources */,
+				F0F073E8EDC44281AEC4E778 /* ContactAvatarLookup.swift in Sources */,
 				2AAF57705265BE36F0C3E32B /* ContactsListScreen.swift in Sources */,
 				004D39A0039A0A289D544C9C /* ContactsListScreenCoordinator.swift in Sources */,
 				9DEE790FA8200D6CC38FB7F6 /* ContactsListScreenModels.swift in Sources */,

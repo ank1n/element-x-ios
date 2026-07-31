@@ -193,14 +193,16 @@ private struct BadgeKind {
 
 // MARK: - С кем поделились
 
-/// С кем поделились. Штатный аватар приложения: тот же кружок и тот же
-/// детерминированный цвет по идентификатору, что и везде в ленте.
+/// С кем поделились — настоящими аватарками, как в вебе.
 ///
-/// Ссылки на аватар в событии нет — только `user` и `display`, поэтому картинку
-/// не грузим: тянуть профиль на каждого получателя в ячейке ленты означало бы
-/// сетевой запрос на каждую отрисовку. Компонент в этом случае рисует букву на
-/// цветном фоне, и это ровно тот же вид, что у собеседника без фото.
+/// Ссылки на аватар в событии нет, только `user` и `display`. Но она уже есть у
+/// нас локально: список контактов хранит `avatarURL` рядом с matrix-идентификатором
+/// и кэшируется между запусками. Берём оттуда — ни одного сетевого запроса, а саму
+/// картинку дальше кэширует медиапровайдер. Кого нет в контактах, компонент рисует
+/// буквой на цветном фоне, как и везде в приложении.
 private struct SharedWithAvatars: View {
+    @Environment(\.timelineContext) private var context
+
     let recipients: [StalkFileShare.Recipient]
 
     private static let visibleLimit = 3
@@ -208,11 +210,11 @@ private struct SharedWithAvatars: View {
     var body: some View {
         HStack(spacing: -5) {
             ForEach(recipients.prefix(Self.visibleLimit), id: \.user) { recipient in
-                LoadableAvatarImage(url: nil,
+                LoadableAvatarImage(url: avatarURL(for: recipient),
                                     name: recipient.displayName,
                                     contentID: recipient.user,
                                     avatarSize: .custom(17),
-                                    mediaProvider: nil)
+                                    mediaProvider: context?.mediaProvider)
                     .overlay(Circle().stroke(Color.stalkFileShareBackground, lineWidth: 1))
             }
 
@@ -223,6 +225,11 @@ private struct SharedWithAvatars: View {
                     .padding(.leading, 7)
             }
         }
+    }
+
+    private func avatarURL(for recipient: StalkFileShare.Recipient) -> URL? {
+        guard let ownUserID = context?.viewState.ownUserID else { return nil }
+        return ContactAvatarLookup.avatarURL(for: recipient.user, ownUserID: ownUserID)
     }
 }
 
