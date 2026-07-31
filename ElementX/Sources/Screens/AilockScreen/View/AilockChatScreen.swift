@@ -186,9 +186,7 @@ struct AilockChatScreen: View {
                         .font(.body)
                         .textSelection(.enabled)
                 } else {
-                    Text(Self.markdown(message.text))
-                        .font(.body)
-                        .textSelection(.enabled)
+                    AilockMarkdownText(text: message.text)
                 }
             }
 
@@ -362,7 +360,15 @@ struct AilockChatScreen: View {
         // Просвет между верхней кромкой панели и капсулой поля: без него овал
         // выглядит обрезанным сверху.
         .padding(.top, Self.composerTopInset)
-        .background(.bar)
+        // Карточный стиль референса (dp: «низ плоский»): панель — карточка со
+        // скруглённым верхом и мягкой тенью, а не слепой срез во всю ширину.
+        // Вниз форма продолжается под домашний индикатор — там скругление не нужно.
+        .background {
+            UnevenRoundedRectangle(topLeadingRadius: 18, topTrailingRadius: 18, style: .continuous)
+                .fill(Material.bar)
+                .ignoresSafeArea(edges: .bottom)
+                .shadow(color: .black.opacity(0.06), radius: 8, y: -2)
+        }
     }
 
     /// Переносит выбранное в медиатеке во временные файлы и отдаёт их вью-модели —
@@ -606,14 +612,6 @@ struct AilockChatScreen: View {
 
     // MARK: - Хелперы
 
-    /// Разметка считается один раз — на завершённом сообщении.
-    /// Инлайновый режим сохраняет переводы строк и не ломается на произвольном тексте.
-    private static func markdown(_ text: String) -> AttributedString {
-        (try? AttributedString(markdown: text,
-                               options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-            ?? AttributedString(text)
-    }
-
     private static func color(for severity: String) -> Color {
         switch severity {
         case "danger": return .red
@@ -630,5 +628,232 @@ struct AilockChatScreen: View {
         case "success": return "checkmark.circle"
         default: return "info.circle"
         }
+    }
+}
+
+// MARK: - Блочный markdown ответа агента
+
+/// Ответ движка приходит полноценным markdown: ###-заголовки, списки, ```-код.
+/// `AttributedString(markdown:)` в inline-режиме понимает только **жирный**/`код`,
+/// блочные конструкции оставались сырым текстом (скрин dp, 31.07). SwiftUI
+/// блочные intents из full-режима тоже не рисует, поэтому блоки разбираем сами;
+/// инлайн внутри блока — прежним системным парсером.
+/// Живёт в этом же файле сознательно: новый файл = регистрация в pbxproj,
+/// а его прямо сейчас параллельно двигает второй инстанс.
+struct AilockMarkdownText: View {
+    let text: String
+
+    var body: some View {
+        let blocks = Self.parse(text)
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(blocks) { block in
+                blockView(block)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func blockView(_ block: Block) -> some View {
+        switch block.kind {
+        case .heading(let level, let text):
+            Text(Self.inline(text))
+                .font(level <= 2 ? .title3.bold() : .headline)
+                .textSelection(.enabled)
+                .padding(.top, 4)
+        case .bullets(let items):
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("•").font(.body).foregroundStyle(.secondary)
+                        Text(Self.inline(item)).font(.body).textSelection(.enabled)
+                    }
+                }
+            }
+        case .ordered(let items):
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("\(item.number).").font(.body.monospacedDigit()).foregroundStyle(.secondary)
+                        Text(Self.inline(item.text)).font(.body).textSelection(.enabled)
+                    }
+                }
+            }
+        case .code(let code):
+            // Без горизонтального скролла: длинные строки переносим — внутри
+            // ленты вложенная прокрутка мешает листать сам чат.
+            Text(code)
+                .font(.system(.callout, design: .monospaced))
+                .textSelection(.enabled)
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        case .quote(let text):
+            HStack(alignment: .top, spacing: 8) {
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(Color(.systemFill))
+                    .frame(width: 3)
+                Text(Self.inline(text)).font(.body).foregroundStyle(.secondary).textSelection(.enabled)
+            }
+        case .rule:
+            Divider()
+        case .paragraph(let text):
+            Text(Self.inline(text))
+                .font(.body)
+                .textSelection(.enabled)
+        }
+    }
+
+    // MARK: разбор
+
+    struct Block: Identifiable {
+        enum Kind {
+            case heading(level: Int, text: String)
+            case bullets([String])
+            case ordered([(number: String, text: String)])
+            case code(String)
+            case quote(String)
+            case rule
+            case paragraph(String)
+        }
+
+        let id: Int
+        let kind: Kind
+    }
+
+    /// Инлайн-разметка внутри блока. Сохраняет переводы строк, на произвольном
+    /// тексте не падает — при ошибке отдаёт как есть.
+    private static func inline(_ text: String) -> AttributedString {
+        (try? AttributedString(markdown: text,
+                               options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+            ?? AttributedString(text)
+    }
+
+    private static func parse(_ text: String) -> [Block] {
+        var blocks: [Block.Kind] = []
+        var paragraph: [String] = []
+        var codeLines: [String] = []
+        var inCode = false
+        // Список «открыт» = предыдущая строка была его пунктом. Пустая строка или
+        // любой другой блок закрывают список — без этого абзац после списка
+        // приклеивался бы к последнему пункту как «ленивое продолжение».
+        var listOpen = false
+
+        func flushParagraph() {
+            guard !paragraph.isEmpty else { return }
+            blocks.append(.paragraph(paragraph.joined(separator: "\n")))
+            paragraph = []
+        }
+
+        for rawLine in text.components(separatedBy: "\n") {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+
+            if inCode {
+                if line.hasPrefix("```") {
+                    inCode = false
+                    blocks.append(.code(codeLines.joined(separator: "\n")))
+                    codeLines = []
+                } else {
+                    codeLines.append(rawLine)
+                }
+                continue
+            }
+
+            if line.hasPrefix("```") {
+                flushParagraph()
+                listOpen = false
+                inCode = true
+                continue
+            }
+
+            if line.isEmpty {
+                flushParagraph()
+                listOpen = false
+                continue
+            }
+
+            // Заголовок: 1-6 решёток и пробел.
+            if let match = line.range(of: "^#{1,6} +", options: .regularExpression) {
+                flushParagraph()
+                listOpen = false
+                let level = line.prefix(while: { $0 == "#" }).count
+                blocks.append(.heading(level: level, text: String(line[match.upperBound...])))
+                continue
+            }
+
+            // Линейка: только --- / *** на всей строке.
+            if line.range(of: "^([-*_]){3,}$", options: .regularExpression) != nil {
+                flushParagraph()
+                listOpen = false
+                blocks.append(.rule)
+                continue
+            }
+
+            if line.hasPrefix("> ") {
+                flushParagraph()
+                listOpen = false
+                let content = String(line.dropFirst(2))
+                if case .quote(let existing) = blocks.last {
+                    blocks[blocks.count - 1] = .quote(existing + "\n" + content)
+                } else {
+                    blocks.append(.quote(content))
+                }
+                continue
+            }
+
+            // Маркированный список: -, *, • + пробел.
+            if let match = line.range(of: "^[-*•] +", options: .regularExpression) {
+                flushParagraph()
+                let item = String(line[match.upperBound...])
+                if listOpen, case .bullets(var items) = blocks.last {
+                    items.append(item)
+                    blocks[blocks.count - 1] = .bullets(items)
+                } else {
+                    blocks.append(.bullets([item]))
+                }
+                listOpen = true
+                continue
+            }
+
+            // Нумерованный список: цифры + точка/скобка. Номер сохраняем исходный —
+            // движок может нумеровать с произвольного места, перенумерация соврёт.
+            if let match = line.range(of: #"^\d{1,3}[.)] +"#, options: .regularExpression) {
+                flushParagraph()
+                let number = String(line[..<match.upperBound].prefix(while: \.isNumber))
+                let item = String(line[match.upperBound...])
+                if listOpen, case .ordered(var items) = blocks.last {
+                    items.append((number, item))
+                    blocks[blocks.count - 1] = .ordered(items)
+                } else {
+                    blocks.append(.ordered([(number, item)]))
+                }
+                listOpen = true
+                continue
+            }
+
+            // Ленивое продолжение пункта списка: строка без маркера СРАЗУ после
+            // пункта (список ещё открыт) — перенос его текста, не новый абзац.
+            // После пустой строки список закрыт — это уже обычный абзац.
+            if listOpen, case .bullets(var items) = blocks.last, !items.isEmpty {
+                items[items.count - 1] += " " + line
+                blocks[blocks.count - 1] = .bullets(items)
+                continue
+            }
+            if listOpen, case .ordered(var items) = blocks.last, !items.isEmpty {
+                items[items.count - 1].text += " " + line
+                blocks[blocks.count - 1] = .ordered(items)
+                continue
+            }
+
+            paragraph.append(rawLine)
+        }
+
+        // Незакрытый код-блок — не повод потерять текст.
+        if inCode, !codeLines.isEmpty {
+            blocks.append(.code(codeLines.joined(separator: "\n")))
+        }
+        flushParagraph()
+
+        return blocks.enumerated().map { Block(id: $0.offset, kind: $0.element) }
     }
 }
