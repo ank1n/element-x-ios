@@ -388,8 +388,13 @@ struct WidgetsListScreen: View {
         let weekday = now.formatted(.dateTime.weekday(.abbreviated)).capitalized
         let day = Calendar.current.component(.day, from: now)
         return ZStack {
+            // Градиент hero-кнопки референса: linear-gradient(120deg, #0088BB, #2FA98C).
+            // 120° CSS ≈ диагональ с лёгким наклоном вниз — точки подобраны под неё.
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(red: 0.184, green: 0.663, blue: 0.549)) // #2FA98C — teal референса
+                .fill(LinearGradient(colors: [Color(red: 0.0, green: 0.533, blue: 0.733), // #0088BB
+                                              Color(red: 0.184, green: 0.663, blue: 0.549)], // #2FA98C
+                                     startPoint: UnitPoint(x: 0, y: 0.2),
+                                     endPoint: UnitPoint(x: 1, y: 0.8)))
             VStack(spacing: size * 0.02) {
                 Text(weekday)
                     .font(.system(size: size * 0.24, weight: .medium))
