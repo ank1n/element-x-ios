@@ -290,7 +290,9 @@ struct AilockChatScreen: View {
             if context.viewState.voicePhase == .recording {
                 recordingBar
                     .padding(.horizontal, 12)
-                    .padding(.bottom, 8)
+                    // Отступ снизу: без него композер упирается в самый край —
+                    // на устройстве это читается как «подпирает» нижнюю кромку.
+                    .padding(.bottom, Self.composerBottomInset)
             } else {
                 HStack(alignment: .bottom, spacing: 8) {
                     Button {
@@ -320,11 +322,16 @@ struct AilockChatScreen: View {
                     }
                 }
                 .padding(.horizontal, 12)
-                .padding(.bottom, 8)
+                .padding(.bottom, Self.composerBottomInset)
             }
         }
         .background(.bar)
     }
+
+    /// Отступ композера от нижней кромки. Ниже него — только системная область
+    /// домашнего индикатора (или таб-бар, если экран открыт без его скрытия),
+    /// и вплотную к ним поле ввода выглядит прижатым.
+    private static let composerBottomInset: CGFloat = 14
 
     private var composerPlaceholder: String {
         context.viewState.voicePhase == .transcribing ? SL10n.ailockTranscribing : SL10n.ailockComposerPlaceholder
