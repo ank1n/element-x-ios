@@ -12,8 +12,24 @@ import SwiftUI
 /// Раскладка как в мобильных LLM-клиентах: реплика пользователя — компактный пузырь справа,
 /// ответ агента — во всю ширину без пузыря (длинный текст в пузыре нечитаем).
 /// Кнопка отправки во время генерации превращается в «стоп».
+/// Палитра референс-дизайна (Robodoc concept.html) — токены оттуда дословно.
+/// Экран Айлока в светлой теме следует ему; в тёмной держимся системных
+/// материалов: референс светлый, белая карточка в тёмной теме слепит.
+private enum AilockPalette {
+    static let card = Color.white // --card
+    static let border = Color(red: 0.863, green: 0.910, blue: 0.933) // --border #DCE8EE
+    static let ice = Color(red: 0.918, green: 0.957, blue: 0.980) // --ice #EAF4FA
+    static let iceBorder = Color(red: 0.796, green: 0.894, blue: 0.949) // #CBE4F2
+    static let sky = Color(red: 0.0, green: 0.533, blue: 0.733) // --sky #0088BB
+    static let skySoft = Color(red: 0.890, green: 0.949, blue: 0.984) // --sky-soft #E3F2FB
+    static let teal = Color(red: 0.184, green: 0.663, blue: 0.549) // --teal #2FA98C
+    static let muted = Color(red: 0.494, green: 0.588, blue: 0.663) // --muted #7E96A9
+    static let shadow = Color(red: 0.086, green: 0.196, blue: 0.306).opacity(0.07) // --shadow
+}
+
 struct AilockChatScreen: View {
     @ObservedObject var context: AilockScreenViewModelType.Context
+    @Environment(\.colorScheme) private var colorScheme
 
     /// Пользователь сам прокрутил ленту вверх — не дёргаем её обратно на каждый токен.
     @State private var userScrolledUp = false
@@ -332,7 +348,7 @@ struct AilockChatScreen: View {
                     } label: {
                         Image(systemName: "paperclip")
                             .font(.system(size: 18))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(colorScheme == .dark ? AnyShapeStyle(.secondary) : AnyShapeStyle(AilockPalette.muted))
                             .frame(width: 34, height: 34)
                     }
                     .disabled(context.viewState.isUploadingAttachment || context.viewState.voicePhase == .transcribing)
@@ -343,7 +359,15 @@ struct AilockChatScreen: View {
                         .disabled(context.viewState.voicePhase == .transcribing)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 9)
-                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        // Поле = --ice с рамкой, как .fmid референса; тёмная — системное.
+                        .background(colorScheme == .dark ? Color(.secondarySystemBackground) : AilockPalette.ice,
+                                    in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .overlay {
+                            if colorScheme != .dark {
+                                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                    .stroke(AilockPalette.iceBorder, lineWidth: 1)
+                            }
+                        }
 
                     // Микрофон показываем, пока поле пустое — как в мобильных LLM-клиентах:
                     // начал печатать, кнопка уступает место отправке.
@@ -360,14 +384,23 @@ struct AilockChatScreen: View {
         // Просвет между верхней кромкой панели и капсулой поля: без него овал
         // выглядит обрезанным сверху.
         .padding(.top, Self.composerTopInset)
-        // Карточный стиль референса (dp: «низ плоский»): панель — карточка со
-        // скруглённым верхом и мягкой тенью, а не слепой срез во всю ширину.
-        // Вниз форма продолжается под домашний индикатор — там скругление не нужно.
+        // Карточный стиль референса (dp: «низ плоский» + «соответствие референсу»):
+        // белая карточка со скруглённым верхом, волосяной рамкой --border и тенью
+        // --shadow — как .tile/.scene в concept.html. Вниз форма продолжается под
+        // домашний индикатор — там скругление не нужно. Тёмная тема — материал.
         .background {
-            UnevenRoundedRectangle(topLeadingRadius: 18, topTrailingRadius: 18, style: .continuous)
-                .fill(Material.bar)
+            let shape = UnevenRoundedRectangle(topLeadingRadius: 18, topTrailingRadius: 18, style: .continuous)
+            shape
+                .fill(colorScheme == .dark ? AnyShapeStyle(Material.bar) : AnyShapeStyle(AilockPalette.card))
+                .overlay {
+                    if colorScheme != .dark {
+                        shape.stroke(AilockPalette.border, lineWidth: 1)
+                    }
+                }
                 .ignoresSafeArea(edges: .bottom)
-                .shadow(color: .black.opacity(0.06), radius: 8, y: -2)
+                .shadow(color: colorScheme == .dark ? .black.opacity(0.06) : AilockPalette.shadow,
+                        radius: colorScheme == .dark ? 8 : 18,
+                        y: colorScheme == .dark ? -2 : -4)
         }
     }
 
@@ -424,7 +457,7 @@ struct AilockChatScreen: View {
         } label: {
             ZStack {
                 Circle()
-                    .fill(Color(.tertiarySystemFill))
+                    .fill(colorScheme == .dark ? Color(.tertiarySystemFill) : AilockPalette.skySoft)
                     .frame(width: 34, height: 34)
                 if context.viewState.voicePhase == .transcribing {
                     ProgressView()
@@ -432,7 +465,7 @@ struct AilockChatScreen: View {
                 } else {
                     Image(systemName: "mic.fill")
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(StalkTheme.accent)
+                        .foregroundStyle(colorScheme == .dark ? StalkTheme.accent : AilockPalette.sky)
                 }
             }
         }
@@ -501,8 +534,14 @@ struct AilockChatScreen: View {
             }
         } label: {
             ZStack {
+                // Активная отправка = градиент hero-кнопки референса (sky→teal),
+                // тот же, что на плитке Календаря. Неактивная — системная.
                 Circle()
-                    .fill(buttonEnabled ? StalkTheme.accent : Color(.tertiarySystemFill))
+                    .fill(buttonEnabled
+                        ? AnyShapeStyle(LinearGradient(colors: [AilockPalette.sky, AilockPalette.teal],
+                                                       startPoint: UnitPoint(x: 0, y: 0.2),
+                                                       endPoint: UnitPoint(x: 1, y: 0.8)))
+                        : AnyShapeStyle(Color(.tertiarySystemFill)))
                     .frame(width: 34, height: 34)
                 if context.viewState.isConnecting || context.viewState.isUploadingAttachment {
                     ProgressView()
