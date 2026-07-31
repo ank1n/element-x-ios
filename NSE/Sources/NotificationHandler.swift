@@ -214,17 +214,43 @@ class NotificationHandler {
         // дедлайна (didReceive+24с), финализация всегда успевает.
         let fetchBudget = max(5.0, fetchDeadline.timeIntervalSinceNow)
         NSEDiagLog.write("  fetch budget \(Int(fetchBudget))s")
-        let item: NotificationItemProxyProtocol? = await withTaskGroup(of: NotificationItemProxyProtocol?.self) { group in
-            group.addTask { [weak self] in
-                await self?.userSession.notificationItemProxy(roomID: roomID, eventID: eventID)
+
+        // STMOB-277: раньше здесь была одна попытка, и «пустые пуши» списывались на
+        // нехватку бюджета. Лог 212 показал обратное: неудачные попытки возвращались
+        // РОВНО через 13.5 с при бюджете 23 с — то есть отваливался сам запрос SDK
+        // (`requestTimeout` сессии), а девять с лишним секунд бюджета оставались
+        // неиспользованными. Поэтому: замеряем фактическое время и, если бюджет ещё
+        // позволяет, делаем второй заход — по прежним наблюдениям повторная попытка
+        // нередко скачивает событие за пару секунд.
+        var item: NotificationItemProxyProtocol?
+        var attempt = 0
+
+        while attempt < 2 {
+            attempt += 1
+            let remaining = max(0, fetchDeadline.timeIntervalSinceNow)
+            guard remaining >= 3 else { break }
+
+            let started = Date()
+            item = await withTaskGroup(of: NotificationItemProxyProtocol?.self) { group in
+                group.addTask { [weak self] in
+                    await self?.userSession.notificationItemProxy(roomID: roomID, eventID: eventID)
+                }
+                group.addTask {
+                    try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+                    return nil
+                }
+                let first = await group.next() ?? nil
+                group.cancelAll()
+                return first
             }
-            group.addTask {
-                try? await Task.sleep(nanoseconds: UInt64(fetchBudget * 1_000_000_000))
-                return nil
-            }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
+
+            let elapsed = Date().timeIntervalSince(started)
+            NSEDiagLog.write(String(format: "  fetch attempt %d: %@ за %.1fs (осталось %.1fs)",
+                                    attempt,
+                                    item == nil ? "пусто" : "событие",
+                                    elapsed,
+                                    max(0, fetchDeadline.timeIntervalSinceNow)))
+            if item != nil { break }
         }
 
         guard let notificationItemProxy = item else {
