@@ -19,6 +19,16 @@ struct DiskScreen: View {
         .navigationTitle(NSLocalizedString("stalk_disk_title", tableName: "Localizable", value: "Диск", comment: "Disk screen title"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            // Переключатель «по папкам» (dp): отдельный режим, а не лента.
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    context.showsFolders.toggle()
+                } label: {
+                    Image(systemName: context.showsFolders ? "folder.fill" : "folder")
+                }
+                .accessibilityLabel(NSLocalizedString("stalk_disk_toggle_folders", tableName: "Localizable",
+                                                      value: "По папкам", comment: "Disk folders toggle"))
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     context.layout = context.layout.toggled
@@ -96,62 +106,100 @@ struct DiskScreen: View {
 
     // MARK: - Папки
 
-    /// Представление по папкам (dp): лента карточек-папок над списком, как
-    /// карусель на вебе. Внутри папки лента сменяется строкой «назад» с именем.
-    /// При активном поиске ленты нет — ищем по файлам, папки только мешали бы.
+    /// Строка «назад» над списком, когда открыта папка или «Вне папок».
     @ViewBuilder
     private var folderStrip: some View {
         if let folder = context.selectedFolder {
-            Button {
+            backRow(icon: "folder.fill", name: folder.name, count: folder.count) {
                 context.selectedFolder = nil
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                    Image(systemName: "folder.fill")
-                        .foregroundStyle(Color(red: 0.0, green: 0.533, blue: 0.733))
-                    Text(folder.name)
-                        .font(.subheadline.weight(.semibold))
-                    Text("\(folder.count)")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
             }
-            .buttonStyle(.plain)
-        } else if !context.folders.isEmpty, context.searchQuery.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(context.folders) { folder in
-                        Button {
-                            context.selectedFolder = folder
-                        } label: {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Image(systemName: "folder.fill")
-                                    .font(.system(size: 22))
-                                    .foregroundStyle(Color(red: 0.0, green: 0.533, blue: 0.733))
-                                Text(folder.name)
-                                    .font(.footnote.weight(.semibold))
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(1)
-                                Text("\(folder.count)")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .padding(10)
-                            .frame(width: 124, alignment: .leading)
-                            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 8)
+        } else if context.showingNoFolder {
+            backRow(icon: "tray.full", name: NSLocalizedString("stalk_disk_no_folder", tableName: "Localizable",
+                                                               value: "Вне папок", comment: "Disk: files without folder"),
+                    count: nil) {
+                context.showingNoFolder = false
             }
         }
+    }
+
+    private func backRow(icon: String, name: String, count: Int?, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Image(systemName: icon)
+                    .foregroundStyle(Color(red: 0.0, green: 0.533, blue: 0.733))
+                Text(name)
+                    .font(.subheadline.weight(.semibold))
+                if let count {
+                    Text("\(count)")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Режим «по папкам»: сетка карточек-папок + «Вне папок» для остального.
+    private var foldersGrid: some View {
+        ScrollView {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
+                ForEach(context.folders) { folder in
+                    Button {
+                        context.selectedFolder = folder
+                    } label: {
+                        folderCard(icon: "folder.fill", name: folder.name, count: folder.count)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Button {
+                    context.showingNoFolder = true
+                } label: {
+                    folderCard(icon: "tray.full",
+                               name: NSLocalizedString("stalk_disk_no_folder", tableName: "Localizable",
+                                                       value: "Вне папок", comment: "Disk: files without folder"),
+                               count: noFolderCount)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 16)
+        }
+    }
+
+    /// Сколько файлов вне папок: всё минус суммы папок. Оценка из счётчиков
+    /// сервера; отрицательное не показываем.
+    private var noFolderCount: Int? {
+        guard let all = context.stats?.all else { return nil }
+        let inFolders = context.folders.map(\.count).reduce(0, +)
+        return max(0, all - inFolders)
+    }
+
+    private func folderCard(icon: String, name: String, count: Int?) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 28))
+                .foregroundStyle(Color(red: 0.0, green: 0.533, blue: 0.733))
+            Text(name)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+            if let count {
+                Text("\(count)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+        .contentShape(Rectangle())
     }
 
     // MARK: - Содержимое
@@ -164,6 +212,11 @@ struct DiskScreen: View {
             Spacer()
         } else if let errorText = context.errorText {
             errorState(errorText)
+        } else if context.showsFolders, context.selectedFolder == nil, !context.showingNoFolder, context.searchQuery.isEmpty {
+            // Режим «по папкам»: сетка папок вместо общего списка. Открытая папка
+            // и «Вне папок» показываются обычным списком со строкой «назад»,
+            // активный поиск — всегда по файлам.
+            foldersGrid
         } else if context.displayedFiles.isEmpty {
             if context.searchQuery.isEmpty {
                 emptyState

@@ -57,8 +57,23 @@ final class DiskScreenViewModel: ObservableObject {
         }
     }
 
-    /// Папки Диска — лента над списком (dp: «представление с разбитием по папкам»).
+    /// Папки Диска (dp: «представление с разбитием по папкам» + переключатель).
     @Published private(set) var folders: [DiskFolder] = []
+    /// Режим «по папкам»: экран показывает карточки папок вместо общего списка.
+    /// Запоминается, как и список/карточки.
+    @Published var showsFolders: Bool {
+        didSet {
+            guard oldValue != showsFolders else { return }
+            UserDefaults.standard.set(showsFolders, forKey: Self.foldersKey)
+            // Выход из режима сбрасывает открытую папку — иначе «Все» показывали
+            // бы хвост последней папки.
+            if !showsFolders {
+                selectedFolder = nil
+                showingNoFolder = false
+            }
+        }
+    }
+
     /// Открытая папка: список показывает только её содержимое, сверху — «назад».
     @Published var selectedFolder: DiskFolder? {
         didSet {
@@ -66,6 +81,12 @@ final class DiskScreenViewModel: ObservableObject {
             Task { await reload() }
         }
     }
+
+    /// Псевдо-папка «Вне папок»: файлы без folderId. Серверного фильтра под неё
+    /// нет — фильтруем на клиенте поверх общего списка.
+    @Published var showingNoFolder = false
+
+    private static let foldersKey = "ru.implica.stalk.diskShowsFolders"
 
     /// Поиск по имени. При первом непустом запросе докачиваем ВСЕ страницы
     /// пагинации: иначе поиск молча ищет только по загруженному куску и врёт.
@@ -125,15 +146,21 @@ final class DiskScreenViewModel: ObservableObject {
         self.profileResolver = profileResolver
         let saved = UserDefaults.standard.string(forKey: Self.layoutKey)
         layout = saved.flatMap(DiskLayout.init(rawValue:)) ?? .list
+        showsFolders = UserDefaults.standard.bool(forKey: Self.foldersKey)
     }
 
     // MARK: - Поиск
 
     /// Файлы после фильтра поиска — то, что реально видит экран.
     var displayedFiles: [DiskFile] {
+        var result = files
+        // «Вне папок» — клиентский срез: серверного фильтра под него нет.
+        if showingNoFolder {
+            result = result.filter { $0.folderID == nil }
+        }
         let query = searchQuery.trimmingCharacters(in: .whitespaces)
-        guard !query.isEmpty else { return files }
-        return files.filter { $0.filename.localizedCaseInsensitiveContains(query) }
+        guard !query.isEmpty else { return result }
+        return result.filter { $0.filename.localizedCaseInsensitiveContains(query) }
     }
 
     /// Докачать весь список для честного поиска. Кап страниц — защита от
