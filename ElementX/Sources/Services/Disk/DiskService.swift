@@ -327,12 +327,16 @@ final class DiskService {
     }
 
     /// Список файлов. `before` — курсор из `nextBefore` предыдущей страницы.
-    func fetchFiles(category: DiskFileCategory? = nil, before: String? = nil, folder: String? = nil) async throws -> (files: [DiskFile], nextBefore: String?) {
+    func fetchFiles(category: DiskFileCategory? = nil, before: String? = nil, folder: String? = nil, roomID: String? = nil) async throws -> (files: [DiskFile], nextBefore: String?) {
         var components = URLComponents(string: "\(baseURL)/api/files")
         var query: [URLQueryItem] = []
         if let folder {
             // Содержимое конкретной папки (контракт Molly, 02.08).
             query.append(URLQueryItem(name: "folder", value: folder))
+        }
+        if let roomID {
+            // Файлы конкретного чата (dp: чаты как папки; параметр из контракта).
+            query.append(URLQueryItem(name: "room_id", value: roomID))
         }
         if let category, category != .other {
             // Имя параметра — `filter`, НЕ `category`. Проверено на проде: с

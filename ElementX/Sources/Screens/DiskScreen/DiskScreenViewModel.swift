@@ -92,9 +92,12 @@ final class DiskScreenViewModel: ObservableObject {
             UserDefaults.standard.set(showsFolders, forKey: Self.foldersKey)
             // Выход из режима сбрасывает открытую папку — иначе «Все» показывали
             // бы хвост последней папки.
-            if !showsFolders {
+            if showsFolders {
+                prepareFoldersMode()
+            } else {
                 selectedFolder = nil
                 showingNoFolder = false
+                selectedChatRoomID = nil
             }
         }
     }
@@ -110,6 +113,52 @@ final class DiskScreenViewModel: ObservableObject {
     /// Псевдо-папка «Вне папок»: файлы без folderId. Серверного фильтра под неё
     /// нет — фильтруем на клиенте поверх общего списка.
     @Published var showingNoFolder = false
+
+    /// Открытый «чат-как-папка» (dp): показываются только файлы этой комнаты,
+    /// серверным фильтром room_id. Имя — для строки «назад».
+    @Published var selectedChatRoomID: String? {
+        didSet {
+            guard oldValue != selectedChatRoomID else { return }
+            Task { await reload() }
+        }
+    }
+
+    /// Чаты, в которых есть файлы: roomID → счётчик. Собирается по ПОЛНОМУ
+    /// списку (ensureAllLoaded при входе в режим папок) — иначе счётчики врут.
+    var chatGroups: [(roomID: String, name: String?, count: Int)] {
+        var counts: [String: Int] = [:]
+        for file in files {
+            guard let roomID = file.roomID else { continue }
+            counts[roomID, default: 0] += 1
+        }
+        return counts
+            .map { (roomID: $0.key, name: roomNames[$0.key], count: $0.value) }
+            .sorted { ($0.name ?? $0.roomID) < ($1.name ?? $1.roomID) }
+    }
+
+    /// Имена комнат для режима папок — резолвим пачкой по загруженным файлам.
+    func ensureChatNames() {
+        guard let roomNameResolver else { return }
+        let ids = Set(files.compactMap(\.roomID))
+        for roomID in ids where roomNames[roomID] == nil && !roomNamesInFlight.contains(roomID) {
+            roomNamesInFlight.insert(roomID)
+            Task { [weak self] in
+                let name = await roomNameResolver(roomID)
+                guard let self else { return }
+                if let name { roomNames[roomID] = name }
+                roomNamesInFlight.remove(roomID)
+            }
+        }
+    }
+
+    /// Вход в режим папок: докачиваем весь список, чтобы чаты и счётчики были
+    /// полными, и резолвим имена.
+    func prepareFoldersMode() {
+        Task { [weak self] in
+            await self?.ensureAllLoaded()
+            self?.ensureChatNames()
+        }
+    }
 
     /// «Доступно мне» — файлы, расшаренные пользователю. Отдельный чип и
     /// отдельный список: в /api/files их нет по построению (контракт Molly).
@@ -139,7 +188,7 @@ final class DiskScreenViewModel: ObservableObject {
             return displayedSharedFiles.map { .shared($0) }
         }
         var entries: [DiskListEntry] = displayedFiles.map { .own($0) }
-        if selectedCategory == nil, selectedFolder == nil, !showingNoFolder, !sharedFiles.isEmpty {
+        if selectedCategory == nil, selectedFolder == nil, !showingNoFolder, selectedChatRoomID == nil, !sharedFiles.isEmpty {
             let query = searchQuery.trimmingCharacters(in: .whitespaces)
             let shared = query.isEmpty ? sharedFiles : sharedFiles.filter { $0.name.localizedCaseInsensitiveContains(query) }
             entries.append(contentsOf: shared.map { .shared($0) })
@@ -293,7 +342,7 @@ final class DiskScreenViewModel: ObservableObject {
         var pages = 0
         while let before = nextBefore, pages < 25 {
             do {
-                let page = try await service.fetchFiles(category: selectedCategory, before: before, folder: selectedFolder?.id)
+                let page = try await service.fetchFiles(category: selectedCategory, before: before, folder: selectedFolder?.id, roomID: selectedChatRoomID)
                 let known = Set(files.map(\.id))
                 files.append(contentsOf: page.files.filter { !known.contains($0.id) })
                 nextBefore = page.nextBefore
@@ -472,7 +521,7 @@ final class DiskScreenViewModel: ObservableObject {
         async let statsTask = try? service.fetchStats()
         async let foldersTask = try? service.fetchFolders()
         do {
-            let page = try await service.fetchFiles(category: selectedCategory, folder: selectedFolder?.id)
+            let page = try await service.fetchFiles(category: selectedCategory, folder: selectedFolder?.id, roomID: selectedChatRoomID)
             files = page.files
             nextBefore = page.nextBefore
         } catch is CancellationError {
@@ -502,7 +551,7 @@ final class DiskScreenViewModel: ObservableObject {
         defer { isLoadingMore = false }
 
         do {
-            let page = try await service.fetchFiles(category: selectedCategory, before: nextBefore, folder: selectedFolder?.id)
+            let page = try await service.fetchFiles(category: selectedCategory, before: nextBefore, folder: selectedFolder?.id, roomID: selectedChatRoomID)
             // Дубликаты возможны, если между страницами что-то добавилось.
             let known = Set(files.map(\.id))
             let fresh = page.files.filter { !known.contains($0.id) }

@@ -122,6 +122,13 @@ struct DiskScreen: View {
             backRow(icon: "folder.fill", name: folder.name, count: folder.count) {
                 context.selectedFolder = nil
             }
+        } else if let roomID = context.selectedChatRoomID {
+            backRow(icon: "bubble.left.fill",
+                    name: context.roomNames[roomID] ?? NSLocalizedString("stalk_disk_chat_unnamed", tableName: "Localizable",
+                                                                         value: "Чат", comment: "Unnamed chat"),
+                    count: nil) {
+                context.selectedChatRoomID = nil
+            }
         } else if context.showingNoFolder {
             backRow(icon: "tray.full", name: NSLocalizedString("stalk_disk_no_folder", tableName: "Localizable",
                                                                value: "Вне папок", comment: "Disk: files without folder"),
@@ -154,32 +161,66 @@ struct DiskScreen: View {
         .buttonStyle(.plain)
     }
 
-    /// Режим «по папкам»: сетка карточек-папок + «Вне папок» для остального.
+    /// Режим «по папкам» (dp: «сразу списком, чаты как папки»): строки —
+    /// Диск-папки, затем чаты с файлами, затем «Вне папок». Тап — содержимое.
     private var foldersGrid: some View {
-        ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
-                ForEach(context.folders) { folder in
-                    Button {
-                        context.selectedFolder = folder
-                    } label: {
-                        folderCard(icon: "folder.fill", name: folder.name, count: folder.count)
+        List {
+            if !context.folders.isEmpty {
+                Section(NSLocalizedString("stalk_disk_section_folders", tableName: "Localizable",
+                                          value: "Папки", comment: "Disk folders section")) {
+                    ForEach(context.folders) { folder in
+                        folderListRow(icon: "folder.fill", name: folder.name, count: folder.count) {
+                            context.selectedFolder = folder
+                        }
                     }
-                    .buttonStyle(.plain)
                 }
-
-                Button {
-                    context.showingNoFolder = true
-                } label: {
-                    folderCard(icon: "tray.full",
-                               name: NSLocalizedString("stalk_disk_no_folder", tableName: "Localizable",
-                                                       value: "Вне папок", comment: "Disk: files without folder"),
-                               count: noFolderCount)
-                }
-                .buttonStyle(.plain)
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 16)
+
+            Section(NSLocalizedString("stalk_disk_section_chats", tableName: "Localizable",
+                                      value: "Чаты", comment: "Disk chats section")) {
+                ForEach(context.chatGroups, id: \.roomID) { chat in
+                    folderListRow(icon: "bubble.left.fill",
+                                  name: chat.name ?? NSLocalizedString("stalk_disk_chat_unnamed", tableName: "Localizable",
+                                                                       value: "Чат", comment: "Unnamed chat"),
+                                  count: chat.count) {
+                        context.selectedChatRoomID = chat.roomID
+                    }
+                }
+            }
+
+            Section {
+                folderListRow(icon: "tray.full",
+                              name: NSLocalizedString("stalk_disk_no_folder", tableName: "Localizable",
+                                                      value: "Вне папок", comment: "Disk: files without folder"),
+                              count: noFolderCount) {
+                    context.showingNoFolder = true
+                }
+            }
         }
+        .listStyle(.insetGrouped)
+    }
+
+    private func folderListRow(icon: String, name: String, count: Int?, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 18))
+                    .foregroundStyle(Color(red: 0.0, green: 0.533, blue: 0.733))
+                    .frame(width: 28)
+                Text(name)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Spacer()
+                if let count {
+                    Text("\(count)")
+                        .foregroundStyle(.secondary)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color(.tertiaryLabel))
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     /// Сколько файлов вне папок: всё минус суммы папок. Оценка из счётчиков
@@ -223,7 +264,7 @@ struct DiskScreen: View {
             errorState(errorText)
         } else if context.showingShared {
             sharedList
-        } else if context.showsFolders, context.selectedFolder == nil, !context.showingNoFolder, context.searchQuery.isEmpty {
+        } else if context.showsFolders, context.selectedFolder == nil, !context.showingNoFolder, context.selectedChatRoomID == nil, context.searchQuery.isEmpty {
             // Режим «по папкам»: сетка папок вместо общего списка. Открытая папка
             // и «Вне папок» показываются обычным списком со строкой «назад»,
             // активный поиск — всегда по файлам.
