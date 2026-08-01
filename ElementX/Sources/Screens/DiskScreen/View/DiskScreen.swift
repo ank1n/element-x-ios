@@ -339,12 +339,12 @@ struct MarqueeText: View {
                 dragBase = offsetX
             })
         .mask {
-            // Затухание края — подсказка «имя длиннее, потяни». У коротких имён
-            // маски нет, чтобы правый край не «подтаивал» зря.
+            // Затухание ТОЛЬКО справа (решение dp: слева имя должно начинаться
+            // чётко) — подсказка «имя длиннее, потяни». У коротких имён маски
+            // нет, чтобы правый край не «подтаивал» зря.
             if overflow > 0 {
-                LinearGradient(stops: [.init(color: .clear, location: 0),
-                                       .init(color: .black, location: 0.04),
-                                       .init(color: .black, location: 0.96),
+                LinearGradient(stops: [.init(color: .black, location: 0),
+                                       .init(color: .black, location: 0.94),
                                        .init(color: .clear, location: 1)],
                                startPoint: .leading, endPoint: .trailing)
             } else {
