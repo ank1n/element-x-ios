@@ -27,6 +27,8 @@ struct DiskScreenCoordinatorParameters {
     let mediaProvider: MediaProviderProtocol?
     /// Профиль по userID — для аватарок получателей шаринга в списке.
     let profileResolver: ((String) async -> UserProfileProxy?)?
+    /// Имя комнаты по roomID — «в какой группе запощен файл» (dp).
+    let roomNameResolver: ((String) async -> String?)?
 }
 
 final class DiskScreenCoordinator: CoordinatorProtocol {
@@ -44,7 +46,8 @@ final class DiskScreenCoordinator: CoordinatorProtocol {
                                   forceTokenRefresh: parameters.forceTokenRefresh)
         viewModel = DiskScreenViewModel(service: service,
                                         mediaProvider: parameters.mediaProvider,
-                                        profileResolver: parameters.profileResolver)
+                                        profileResolver: parameters.profileResolver,
+                                        roomNameResolver: parameters.roomNameResolver)
 
         viewModel.actionsPublisher
             .sink { [weak self] action in

@@ -263,6 +263,7 @@ struct DiskScreen: View {
                 DiskFileRow(file: file,
                             isDownloading: context.downloadingFileID == file.id,
                             sharedProfiles: context.sharedProfiles,
+                            roomNames: context.roomNames,
                             mediaProvider: context.mediaProvider)
             }
             .buttonStyle(.plain)
@@ -672,6 +673,7 @@ struct DiskFileRow: View {
     let file: DiskFile
     var isDownloading = false
     var sharedProfiles: [String: UserProfileProxy] = [:]
+    var roomNames: [String: String] = [:]
     var mediaProvider: MediaProviderProtocol?
 
     var body: some View {
@@ -686,9 +688,26 @@ struct DiskFileRow: View {
                 // размер · дата, затем звезда, замок шифрования и аватарки
                 // получателей шаринга. Хвост строки остаётся только спиннеру.
                 HStack(spacing: 6) {
+                    // «Кто запостил» — аватаркой (dp: имена не нужны). Файлы без
+                    // отправителя (Диск-документы) метки не несут.
+                    if !file.sender.isEmpty {
+                        LoadableAvatarImage(url: sharedProfiles[file.sender]?.avatarURL,
+                                            name: sharedProfiles[file.sender]?.displayName,
+                                            contentID: file.sender,
+                                            avatarSize: .custom(16),
+                                            mediaProvider: mediaProvider)
+                    }
                     Text(Self.sizeFormatter.string(fromByteCount: file.size))
                     Text("·")
                     Text(Self.dateFormatter.string(from: file.date))
+
+                    // «В какой группе» — имя комнаты, резолвится лениво с кэшем.
+                    if let roomID = file.roomID, let roomName = roomNames[roomID] {
+                        HStack(spacing: 3) {
+                            Image(systemName: "bubble.left")
+                            Text(roomName).lineLimit(1)
+                        }
+                    }
 
                     if file.starred {
                         Image(systemName: "star.fill")

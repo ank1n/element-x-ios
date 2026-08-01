@@ -166,6 +166,14 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
                                                                           mediaProvider: userSession.mediaProvider,
                                                                           profileResolver: { userID in
                                                                               try? await filesProxy.profile(for: userID).get()
+                                                                          },
+                                                                          roomNameResolver: { roomID in
+                                                                              // Имя группы, где запощен файл. Только joined:
+                                                                              // остальные состояния для Диска не встречаются.
+                                                                              if case .joined(let room) = await filesProxy.roomForIdentifier(roomID) {
+                                                                                  return room.infoPublisher.value.displayName
+                                                                              }
+                                                                              return nil
                                                                           }))
             diskCoordinator.actionsPublisher
                 .sink { [weak self] action in

@@ -244,6 +244,11 @@ final class DiskScreenViewModel: ObservableObject {
     private let service: DiskService
     let mediaProvider: MediaProviderProtocol?
     private let profileResolver: ((String) async -> UserProfileProxy?)?
+    private let roomNameResolver: ((String) async -> String?)?
+
+    /// Имена комнат по roomID — «в какой группе запощен файл». Лениво, с кэшем.
+    @Published private(set) var roomNames: [String: String] = [:]
+    private var roomNamesInFlight: Set<String> = []
     private var nextBefore: String?
     private var isLoadingMore = false
 
@@ -254,10 +259,12 @@ final class DiskScreenViewModel: ObservableObject {
 
     init(service: DiskService,
          mediaProvider: MediaProviderProtocol?,
-         profileResolver: ((String) async -> UserProfileProxy?)? = nil) {
+         profileResolver: ((String) async -> UserProfileProxy?)? = nil,
+         roomNameResolver: ((String) async -> String?)? = nil) {
         self.service = service
         self.mediaProvider = mediaProvider
         self.profileResolver = profileResolver
+        self.roomNameResolver = roomNameResolver
         let saved = UserDefaults.standard.string(forKey: Self.layoutKey)
         layout = saved.flatMap(DiskLayout.init(rawValue:)) ?? .list
         showsFolders = UserDefaults.standard.bool(forKey: Self.foldersKey)
@@ -303,9 +310,22 @@ final class DiskScreenViewModel: ObservableObject {
 
     /// Подтянуть профили получателей шаринга строки. Лениво и с дедупликацией:
     /// список большой, а профили нужны только видимым строкам.
+    /// Сюда же — отправитель (dp: «кто запостил») и имя комнаты («в какой группе»).
     func ensureSharedProfiles(_ file: DiskFile) {
-        guard let ids = file.sharedWith, !ids.isEmpty else { return }
-        ensureProfiles(Array(ids.prefix(4)))
+        var ids: [String] = file.sender.isEmpty ? [] : [file.sender]
+        if let shared = file.sharedWith { ids.append(contentsOf: shared.prefix(4)) }
+        ensureProfiles(ids)
+
+        if let roomID = file.roomID, roomNames[roomID] == nil, !roomNamesInFlight.contains(roomID),
+           let roomNameResolver {
+            roomNamesInFlight.insert(roomID)
+            Task { [weak self] in
+                let name = await roomNameResolver(roomID)
+                guard let self else { return }
+                if let name { roomNames[roomID] = name }
+                roomNamesInFlight.remove(roomID)
+            }
+        }
     }
 
     /// Профиль владельца расшаренного файла — для аватарки «от кого».
