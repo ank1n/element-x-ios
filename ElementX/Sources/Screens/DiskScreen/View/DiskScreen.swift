@@ -728,16 +728,11 @@ struct DiskSharedFileRow: View {
                 MarqueeText(text: file.name)
 
                 HStack(spacing: 6) {
-                    // «От кого» — аватарка владельца (dp: без неё непонятно,
-                    // чей файл). «Кому ещё» сервер в shared-with-me не отдаёт.
-                    LoadableAvatarImage(url: profiles[file.owner]?.avatarURL,
-                                        name: profiles[file.owner]?.displayName ?? file.ownerDisplay,
-                                        contentID: file.owner,
-                                        avatarSize: .custom(16),
-                                        mediaProvider: mediaProvider)
-                    Text(file.ownerDisplay ?? String(file.owner.dropFirst().prefix(while: { $0 != ":" })))
-                        .lineLimit(1)
-                    Text("·")
+                    // Только аватарки, без имён (решение dp): владелец первым,
+                    // за ним получатели внахлёст, когда сервер начнёт их слать.
+                    DiskSharedAvatars(userIDs: [file.owner] + (file.recipients?.map(\.user) ?? []),
+                                      profiles: profiles,
+                                      mediaProvider: mediaProvider)
                     Text(DiskFileRow.sizeFormatter.string(fromByteCount: file.size))
                     Text("·")
                     Text(DiskFileRow.dateFormatter.string(from: file.date))

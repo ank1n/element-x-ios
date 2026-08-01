@@ -197,6 +197,15 @@ struct DiskSharedFile: Identifiable, Equatable {
     /// открыть НЕЛЬЗЯ, UI обязан показать это заранее (правило Molly).
     let needsKeys: Bool
     let ts: Int64
+    /// Кому ещё доступен файл. Поле запрошено у Molly (dp: веб показывает всех
+    /// в колонке «Доступ»); пока сервер его не шлёт — nil, зажжётся само.
+    let recipients: [Recipient]?
+
+    struct Recipient: Decodable, Equatable {
+        let user: String
+        let display: String?
+        let permission: String?
+    }
 
     var id: String {
         eventID ?? blobID ?? (mxcURL.isEmpty ? "\(owner)-\(name)-\(ts)" : mxcURL)
@@ -210,7 +219,7 @@ struct DiskSharedFile: Identifiable, Equatable {
 extension DiskSharedFile: Decodable {
     private enum CodingKeys: String, CodingKey {
         case owner, ownerDisplay, eventId, blobId, mxc, name, mimetype, size,
-             permission, isDiskDoc, viaFolderName, needsKeys, ts
+             permission, isDiskDoc, viaFolderName, needsKeys, ts, recipients, sharedWith
     }
 
     init(from decoder: Decoder) throws {
@@ -234,6 +243,9 @@ extension DiskSharedFile: Decodable {
         } else {
             ts = (try? c.decodeIfPresent(Int64.self, forKey: .ts)) ?? 0
         }
+        // Имя поля с сервером ещё не зафиксировано — читаем оба кандидата.
+        recipients = (try? c.decodeIfPresent([Recipient].self, forKey: .recipients))
+            ?? (try? c.decodeIfPresent([Recipient].self, forKey: .sharedWith))
     }
 }
 
