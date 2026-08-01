@@ -196,14 +196,11 @@ struct AilockChatScreen: View {
     private func assistantMessage(_ message: AilockMessage) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             if !message.text.isEmpty {
-                // Во время стриминга — обычный текст: разметку считаем один раз, когда ответ готов.
-                if message.isStreaming {
-                    Text(message.text)
-                        .font(.body)
-                        .textSelection(.enabled)
-                } else {
-                    AilockMarkdownText(text: message.text)
-                }
+                // Markdown рисуем и ВО ВРЕМЯ стриминга (dp: сырой текст до конца
+                // ответа, потом «перерисовать» — вместо этого форматируем сразу).
+                // Дельты приходят пачками раз в 60мс (flushBuffer), разбор блоков
+                // на килобайтах текста дешёвый — перерисовка не дёргает ленту.
+                AilockMarkdownText(text: message.text)
             }
 
             ForEach(message.files) { file in
