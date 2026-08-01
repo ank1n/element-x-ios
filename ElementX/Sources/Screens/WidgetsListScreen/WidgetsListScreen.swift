@@ -415,6 +415,12 @@ struct WidgetsListScreen: View {
                     .foregroundColor(.white)
             }
         }
+        // Плитка немного меньше слота, чтобы тени было куда лечь.
+        .frame(width: size * 0.94, height: size * 0.94)
+        // Тень у «Диска» и «Айлока» запечена прямо в PNG реестра, а календарь мы
+        // рисуем сами — иначе он единственный в каталоге висел бы плоским.
+        // Параметры от Molly (#ops 01.08), пересчитанные в поинты.
+        .shadow(color: .black.opacity(0.16), radius: 3, x: 0, y: 2)
         .frame(width: size, height: size)
     }
 
