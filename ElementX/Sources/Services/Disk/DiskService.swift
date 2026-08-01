@@ -227,7 +227,13 @@ extension DiskSharedFile: Decodable {
         isDiskDoc = try c.decodeIfPresent(Bool.self, forKey: .isDiskDoc) ?? false
         viaFolderName = try c.decodeIfPresent(String.self, forKey: .viaFolderName)
         needsKeys = try c.decodeIfPresent(Bool.self, forKey: .needsKeys) ?? false
-        ts = try c.decodeIfPresent(Int64.self, forKey: .ts) ?? 0
+        // Сервер шлёт ts ДРОБНЫМ (1785590849703.323 — миллисекунды с хвостом);
+        // целочисленное чтение роняло разбор всего ответа.
+        if let doubleTS = try? c.decodeIfPresent(Double.self, forKey: .ts) {
+            ts = Int64(doubleTS)
+        } else {
+            ts = (try? c.decodeIfPresent(Int64.self, forKey: .ts)) ?? 0
+        }
     }
 }
 
@@ -360,10 +366,19 @@ final class DiskService {
     /// UNION прямых шар, каскада от расшаренных папок и Диск-документов.
     func fetchSharedWithMe() async throws -> [DiskSharedFile] {
         let data = try await get(URL(string: "\(baseURL)/api/files/shared-with-me"))
-        struct Response: Decodable { let files: [DiskSharedFile] }
+        // Поштучный разбор, как у основного списка: одна непонятая запись не
+        // должна прятать все расшаренные файлы.
+        struct LenientShared: Decodable {
+            let file: DiskSharedFile?
+            init(from decoder: Decoder) throws {
+                file = try? DiskSharedFile(from: decoder)
+            }
+        }
+        struct Response: Decodable { let files: [LenientShared] }
         do {
-            let files = try JSONDecoder().decode(Response.self, from: data).files
-            DiagLog.write("Disk", "доступно мне: \(files.count)")
+            let raw = try JSONDecoder().decode(Response.self, from: data).files
+            let files = raw.compactMap(\.file)
+            DiagLog.write("Disk", "доступно мне: \(files.count)\(raw.count == files.count ? "" : ", пропущено: \(raw.count - files.count)")")
             return files
         } catch {
             DiagLog.write("Disk", "shared-with-me не разобрался (\(data.count) байт): \(error)")
