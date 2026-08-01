@@ -225,15 +225,18 @@ class NotificationHandler {
         var item: NotificationItemProxyProtocol?
         var attempt = 0
 
+        // STMOB-277: статусы различимы — «не найдено» повторяем, «вычищено/
+        // отфильтровано» окончательно (заглушка по такому событию — мусор).
+        var suppressed = false
         while attempt < 2 {
             attempt += 1
             let remaining = max(0, fetchDeadline.timeIntervalSinceNow)
             guard remaining >= 3 else { break }
 
             let started = Date()
-            item = await withTaskGroup(of: NotificationItemProxyProtocol?.self) { group in
+            let fetch = await withTaskGroup(of: NSEUserSession.NotificationFetch?.self) { group in
                 group.addTask { [weak self] in
-                    await self?.userSession.notificationItemProxy(roomID: roomID, eventID: eventID)
+                    await self?.userSession.notificationFetch(roomID: roomID, eventID: eventID)
                 }
                 group.addTask {
                     try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
@@ -244,13 +247,33 @@ class NotificationHandler {
                 return first
             }
 
+            let outcome: String
+            switch fetch {
+            case .item(let proxy):
+                item = proxy
+                outcome = "событие"
+            case .suppressed:
+                suppressed = true
+                outcome = "вычищено/отфильтровано"
+            case .notFound:
+                outcome = "не найдено"
+            case nil:
+                outcome = "пусто (таймаут)"
+            }
+
             let elapsed = Date().timeIntervalSince(started)
             NSEDiagLog.write(String(format: "  fetch attempt %d: %@ за %.1fs (осталось %.1fs)",
                                     attempt,
-                                    item == nil ? "пусто" : "событие",
+                                    outcome,
                                     elapsed,
                                     max(0, fetchDeadline.timeIntervalSinceNow)))
-            if item != nil { break }
+            if item != nil || suppressed { break }
+        }
+
+        if suppressed {
+            NSEDiagLog.write("  → событие вычищено/отфильтровано — DISCARD, заглушке тут не место")
+            discardNotification()
+            return
         }
 
         guard let notificationItemProxy = item else {

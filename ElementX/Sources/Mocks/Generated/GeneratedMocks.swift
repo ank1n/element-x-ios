@@ -12446,6 +12446,19 @@ class NSEUserSessionMock: NSEUserSessionProtocol, @unchecked Sendable {
             return notificationItemProxyRoomIDEventIDReturnValue
         }
     }
+    //MARK: - notificationFetch
+
+    // Дописано руками вслед за сменой протокола (STMOB-277): sourcery здесь не
+    // гоняется на каждую правку, а без метода мок перестаёт конформить.
+    var notificationFetchRoomIDEventIDReturnValue: NSEUserSession.NotificationFetch = .notFound
+    var notificationFetchRoomIDEventIDClosure: ((String, String) async -> NSEUserSession.NotificationFetch)?
+
+    func notificationFetch(roomID: String, eventID: String) async -> NSEUserSession.NotificationFetch {
+        if let notificationFetchRoomIDEventIDClosure {
+            return await notificationFetchRoomIDEventIDClosure(roomID, eventID)
+        }
+        return notificationFetchRoomIDEventIDReturnValue
+    }
     //MARK: - roomForIdentifier
 
     var roomForIdentifierUnderlyingCallsCount = 0

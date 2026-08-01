@@ -15,7 +15,7 @@ protocol NSEUserSessionProtocol {
     var mediaPreviewVisibility: MediaPreviews { get async }
     var threadsEnabled: Bool { get }
     
-    func notificationItemProxy(roomID: String, eventID: String) async -> NotificationItemProxyProtocol?
+    func notificationFetch(roomID: String, eventID: String) async -> NSEUserSession.NotificationFetch
     func roomForIdentifier(_ roomID: String) -> Room?
 }
 
@@ -74,7 +74,14 @@ final class NSEUserSession: NSEUserSessionProtocol {
                          appHooks: appHooks,
                          enableOnlySignedDeviceIsolationMode: appSettings.enableOnlySignedDeviceIsolationMode,
                          enableKeyShareOnInvite: appSettings.enableKeyShareOnInvite,
-                         requestTimeout: 15000,
+                         // STMOB-277: 5с вместо 15с. Корень пустых пушей — мёртвый
+                         // keep-alive сокет после простоя NSE-процесса: первый запрос
+                         // уходит в него и ждёт весь requestTimeout (константа 13.5с в
+                         // логах 212/215; на ingress Misty запрос до сервера НЕ доходит),
+                         // повтор на свежем соединении отвечает мгновенно. Запросы NSE
+                         // мелкие, здоровый Synapse отвечает <1с — 5с покрывает хвосты,
+                         // а мёртвый сокет перестаёт съедать половину бюджета.
+                         requestTimeout: 5000,
                          maxRequestRetryTime: 5000,
                          threadsEnabled: appSettings.threadsEnabled)
             .systemIsMemoryConstrained()
@@ -93,29 +100,40 @@ final class NSEUserSession: NSEUserSessionProtocol {
         notificationClient = try await baseClient.notificationClient(processSetup: .multipleProcesses)
     }
     
-    func notificationItemProxy(roomID: String, eventID: String) async -> NotificationItemProxyProtocol? {
+    /// Результат фетча с РАЗЛИЧИМЫМИ причинами пустоты: раньше все три статуса
+    /// схлопывались в nil, и заглушка показывалась даже по вычищенному событию
+    /// (STMOB-277, лог 215: единственный SHOW GENERIC был не таймаутом).
+    enum NotificationFetch {
+        case item(NotificationItemProxyProtocol)
+        /// Не найдено — возможно, гонка индексации; повторить имеет смысл.
+        case notFound
+        /// Отфильтровано или вычищено — окончательно, показывать нечего.
+        case suppressed
+    }
+
+    func notificationFetch(roomID: String, eventID: String) async -> NotificationFetch {
         do {
             let notificationStatus = try await notificationClient.getNotification(roomId: roomID, eventId: eventID)
-                
+
             switch notificationStatus {
             case .event(let notification):
-                return NotificationItemProxy(notificationItem: notification,
-                                             eventID: eventID,
-                                             receiverID: userID,
-                                             roomID: roomID)
+                return .item(NotificationItemProxy(notificationItem: notification,
+                                                   eventID: eventID,
+                                                   receiverID: userID,
+                                                   roomID: roomID))
             case .eventNotFound:
                 MXLog.error("Notification event not found - roomID: \(roomID) eventID: \(eventID)")
-                return nil
+                return .notFound
             case .eventFilteredOut:
                 MXLog.warning("Notification event filtered out - roomID: \(roomID) eventID: \(eventID)")
-                return nil
+                return .suppressed
             case .eventRedacted:
                 MXLog.warning("Notification event redacted - roomID: \(roomID) eventID: \(eventID)")
-                return nil
+                return .suppressed
             }
         } catch {
             MXLog.error("Could not get notification's content creating an empty notification instead, error: \(error)")
-            return EmptyNotificationItemProxy(eventID: eventID, roomID: roomID, receiverID: userID)
+            return .item(EmptyNotificationItemProxy(eventID: eventID, roomID: roomID, receiverID: userID))
         }
     }
     
