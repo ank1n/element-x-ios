@@ -38,6 +38,11 @@ struct DiskScreen: View {
                                               value: "Поиск по файлам", comment: "Disk search prompt"))
         // Тот же системный просмотрщик, что и для вложений в чате.
         .interactiveQuickLook(item: $context.previewItem, allowEditing: false)
+        // Системное «Поделиться» — файл уходит в любое приложение (решение dp).
+        .sheet(item: $context.shareItem) { item in
+            AppActivityView(activityItems: [item.url])
+                .presentationDetents([.medium, .large])
+        }
     }
 
     // MARK: - Категории
@@ -187,6 +192,15 @@ struct DiskScreen: View {
                                     value: "Открыть", comment: "Disk action"), systemImage: "eye")
         }
 
+        // Системный share sheet: файл уходит в любое приложение, не только
+        // внутри sTalk. Зашифрованный уводит в чат — как и «Открыть».
+        Button {
+            context.share(file)
+        } label: {
+            Label(NSLocalizedString("stalk_disk_action_share", tableName: "Localizable",
+                                    value: "Поделиться", comment: "Disk action"), systemImage: "square.and.arrow.up")
+        }
+
         if context.hasChatEvent(file) {
             Button {
                 context.findInChat(file)
@@ -275,45 +289,50 @@ struct MarqueeText: View {
     @State private var textWidth: CGFloat = 0
     @State private var containerWidth: CGFloat = 0
     @State private var scrolled = false
+    /// Высота одной строки шрифта: у GeometryReader своей высоты нет.
+    @ScaledMetric(relativeTo: .body) private var lineHeight: CGFloat = 22
 
     private var overflow: CGFloat {
         max(0, textWidth - containerWidth)
     }
 
     var body: some View {
-        Text(text)
-            .font(font)
-            .lineLimit(1)
-            .fixedSize(horizontal: true, vertical: false)
-            .background {
-                GeometryReader { geo in
-                    Color.clear.onAppear { textWidth = geo.size.width }
-                }
-            }
-            .offset(x: scrolled ? -overflow : 0)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .clipped()
-            .background {
-                GeometryReader { geo in
-                    Color.clear.onAppear {
-                        containerWidth = geo.size.width
-                        startIfNeeded()
+        // GeometryReader снаружи принципиален: он берёт ровно предложенную
+        // ширину и НИКОГДА не транслирует ширину ребёнка наружу. Вариант с
+        // frame(maxWidth:) её транслировал — fixedSize-имя раздувало строку,
+        // и иконка уезжала за левый край экрана (скрин dp 16:39).
+        GeometryReader { container in
+            Text(text)
+                .font(font)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .background {
+                    GeometryReader { geo in
+                        Color.clear.onAppear {
+                            textWidth = geo.size.width
+                            containerWidth = container.size.width
+                            startIfNeeded()
+                        }
                     }
                 }
+                .offset(x: scrolled ? -overflow : 0)
+                .frame(maxHeight: .infinity, alignment: .leading)
+        }
+        .frame(height: lineHeight)
+        .clipped()
+        .mask {
+            // Затухание краёв — только когда есть чему бегать, иначе у коротких
+            // имён «подтаивал» бы правый край.
+            if overflow > 0 {
+                LinearGradient(stops: [.init(color: .clear, location: 0),
+                                       .init(color: .black, location: 0.04),
+                                       .init(color: .black, location: 0.96),
+                                       .init(color: .clear, location: 1)],
+                               startPoint: .leading, endPoint: .trailing)
+            } else {
+                Rectangle()
             }
-            .mask {
-                // Затухание краёв — только когда есть чему бегать, иначе у коротких
-                // имён «подтаивал» бы правый край.
-                if overflow > 0 {
-                    LinearGradient(stops: [.init(color: .clear, location: 0),
-                                           .init(color: .black, location: 0.04),
-                                           .init(color: .black, location: 0.96),
-                                           .init(color: .clear, location: 1)],
-                                   startPoint: .leading, endPoint: .trailing)
-                } else {
-                    Rectangle()
-                }
-            }
+        }
     }
 
     private func startIfNeeded() {
@@ -399,10 +418,24 @@ struct DiskFileRow: View {
                 // Одна строка (dp: перенос рвал имена), длинное имя прокручивается.
                 MarqueeText(text: file.filename)
 
+                // Вся индикация атрибутов — здесь, во второй строке (решение dp):
+                // размер · дата, затем звезда, замок шифрования и аватарки
+                // получателей шаринга. Хвост строки остаётся только спиннеру.
                 HStack(spacing: 6) {
                     Text(Self.sizeFormatter.string(fromByteCount: file.size))
                     Text("·")
                     Text(Self.dateFormatter.string(from: file.date))
+
+                    if file.starred {
+                        Image(systemName: "star.fill")
+                            .foregroundStyle(.yellow)
+                    }
+                    if file.isEncrypted {
+                        Image(systemName: "lock.fill")
+                    }
+                    if let shared = file.sharedWith, !shared.isEmpty {
+                        DiskSharedAvatars(userIDs: shared, profiles: sharedProfiles, mediaProvider: mediaProvider)
+                    }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -413,24 +446,6 @@ struct DiskFileRow: View {
             if isDownloading {
                 ProgressView()
                     .controlSize(.small)
-            }
-
-            // Кому расшарен: аватарки получателей. Файл без шаринга метки не несёт.
-            if let shared = file.sharedWith, !shared.isEmpty {
-                DiskSharedAvatars(userIDs: shared, profiles: sharedProfiles, mediaProvider: mediaProvider)
-            }
-
-            // Замок показывает, что файл зашифрован: такие лежат в чатах, и
-            // расшифровать их может только клиент — сервер ключей не имеет.
-            if file.isEncrypted {
-                Image(systemName: "lock.fill")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            if file.starred {
-                Image(systemName: "star.fill")
-                    .font(.caption)
-                    .foregroundStyle(.yellow)
             }
         }
         .padding(.vertical, 4)

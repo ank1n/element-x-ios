@@ -8,6 +8,12 @@ import Combine
 import Foundation
 import SwiftUI
 
+/// Файл для системного share sheet.
+struct DiskShareItem: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
 enum DiskScreenViewModelAction {
     /// Файл зашифрован — открыть его можно только в чате, где есть ключи комнаты.
     /// Это же действие и «найти в чате»: перейти к сообщению, которым файл прислали.
@@ -73,6 +79,9 @@ final class DiskScreenViewModel: ObservableObject {
     /// Файл, скачанный для просмотра. Показывается системным просмотрщиком —
     /// тем же, что и вложения в чате.
     @Published var previewItem: MediaPreviewItem?
+    /// Файл, скачанный для системного «Поделиться» (dp: файл должен уметь
+    /// уходить в другие приложения, а не жить только внутри).
+    @Published var shareItem: DiskShareItem?
     /// Имя файла, который сейчас качается: показываем прогресс на его строке.
     @Published private(set) var downloadingFileID: String?
 
@@ -305,6 +314,60 @@ final class DiskScreenViewModel: ObservableObject {
                                                     value: "Не удалось загрузить файл", comment: "Disk download failed")
             }
         }
+    }
+
+    /// Системное «Поделиться»: скачать содержимое и отдать в share sheet.
+    /// Зашифрованные файлы, как и при открытии, живут только через чат —
+    /// содержимое расшифровывает таймлайн, серверу оно недоступно.
+    func share(_ file: DiskFile) {
+        if file.isEncrypted, let roomID = file.roomID, let eventID = file.eventID {
+            actionsSubject.send(.openRoom(roomID: roomID, eventID: eventID))
+            return
+        }
+        downloadingFileID = file.id
+        Task { [weak self] in
+            defer { self?.downloadingFileID = nil }
+            guard let self, let url = await localURL(for: file) else { return }
+            shareItem = DiskShareItem(url: url)
+        }
+    }
+
+    /// Содержимое файла на диске, в НАШЕМ временном каталоге. Копия обязательна:
+    /// хэндл медиапровайдера удаляет свой файл при освобождении, и share sheet
+    /// остался бы с мёртвой ссылкой.
+    private func localURL(for file: DiskFile) async -> URL? {
+        if file.mxcURL.isEmpty, let blobID = file.blobID {
+            do {
+                let data = try await service.fetchBlob(id: blobID)
+                return try Self.writeShareTemp(data: data, filename: file.filename.isEmpty ? blobID : file.filename)
+            } catch {
+                DiagLog.write("Disk", "блоб для шаринга не скачался: \(error)")
+                errorText = NSLocalizedString("stalk_disk_error_download", tableName: "Localizable",
+                                              value: "Не удалось загрузить файл", comment: "Disk download failed")
+                return nil
+            }
+        }
+        guard let mediaProvider, !file.mxcURL.isEmpty, let url = URL(string: file.mxcURL),
+              let source = try? MediaSourceProxy(url: url, mimeType: file.mimetype) else { return nil }
+        switch await mediaProvider.loadFileFromSource(source, filename: file.filename) {
+        case .success(let handle):
+            guard let handleURL = handle.url,
+                  let data = try? Data(contentsOf: handleURL) else { return nil }
+            return try? Self.writeShareTemp(data: data, filename: file.filename)
+        case .failure(let error):
+            DiagLog.write("Disk", "файл для шаринга не скачался: \(error)")
+            errorText = NSLocalizedString("stalk_disk_error_download", tableName: "Localizable",
+                                          value: "Не удалось загрузить файл", comment: "Disk download failed")
+            return nil
+        }
+    }
+
+    private static func writeShareTemp(data: Data, filename: String) throws -> URL {
+        let directory = URL.temporaryDirectory.appending(path: "stalk-disk-share", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appending(path: filename)
+        try data.write(to: url, options: .atomic)
+        return url
     }
 
     /// Скачать содержимое из блоб-хранилища и показать тем же просмотрщиком, что
