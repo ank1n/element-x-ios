@@ -296,6 +296,15 @@ struct DiskScreen: View {
         }
 
         if !file.needsKeys {
+            // «Переслать» в чат: события у расшаренного нет — уходит содержимым
+            // через пикер комнат (dp: «почему нет переслать»).
+            Button {
+                context.forwardShared(file)
+            } label: {
+                Label(NSLocalizedString("stalk_disk_action_forward", tableName: "Localizable",
+                                        value: "Переслать", comment: "Disk action"), systemImage: "arrowshape.turn.up.right")
+            }
+
             Button {
                 context.shareShared(file)
             } label: {
@@ -407,6 +416,17 @@ struct DiskScreen: View {
             } label: {
                 Label(NSLocalizedString("stalk_disk_action_share", tableName: "Localizable",
                                         value: "Поделиться", comment: "Disk action"), systemImage: "square.and.arrow.up")
+            }
+        }
+
+        // Диск-документы и копии шаринга живут без Matrix-события — их
+        // «Переслать» уходит содержимым через пикер комнат (dp).
+        if !context.hasChatEvent(file), !file.isEncrypted {
+            Button {
+                context.forwardAsFile(file)
+            } label: {
+                Label(NSLocalizedString("stalk_disk_action_forward", tableName: "Localizable",
+                                        value: "Переслать", comment: "Disk action"), systemImage: "arrowshape.turn.up.right")
             }
         }
 

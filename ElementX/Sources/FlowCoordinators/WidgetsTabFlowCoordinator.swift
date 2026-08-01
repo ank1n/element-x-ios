@@ -17,6 +17,9 @@ enum WidgetsTabFlowCoordinatorAction {
     case openEvent(roomID: String, eventID: String)
     /// STMOB-275: переслать файл из «Диска» в другой чат.
     case forwardEvent(roomID: String, eventID: String)
+    /// STMOB-275: переслать содержимым — файл без Matrix-события уходит
+    /// вложением через пикер комнат (маршрут Share Extension).
+    case forwardFile(url: URL, name: String)
 }
 
 class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
@@ -171,6 +174,8 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
                         self?.actionsSubject.send(.openEvent(roomID: roomID, eventID: eventID))
                     case .forward(let roomID, let eventID):
                         self?.actionsSubject.send(.forwardEvent(roomID: roomID, eventID: eventID))
+                    case .forwardFile(let url, let name):
+                        self?.actionsSubject.send(.forwardFile(url: url, name: name))
                     case .hideTabBar(let hide):
                         self?.actionsSubject.send(.hideTabBar(hide))
                     }

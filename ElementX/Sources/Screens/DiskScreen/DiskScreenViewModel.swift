@@ -42,6 +42,10 @@ enum DiskScreenViewModelAction {
     /// Переслать в другой чат. Содержимого события здесь нет — только ссылка на
     /// него; достаёт его флоу, у которого есть доступ к комнатам.
     case forward(roomID: String, eventID: String)
+    /// Переслать СОДЕРЖИМЫМ (dp: «почему нет переслать» у расшаренных): файлы
+    /// без Matrix-события уходят вложением через пикер комнат — тем же
+    /// маршрутом, что и Share Extension.
+    case forwardFile(url: URL, name: String)
     case dismiss
 }
 
@@ -321,6 +325,45 @@ final class DiskScreenViewModel: ObservableObject {
                 profilesInFlight.remove(id)
             }
         }
+    }
+
+    /// «Переслать» расшаренный файл в чат: скачиваем содержимое и отдаём во
+    /// флоу с пикером комнат (маршрут Share Extension). needsKeys — пункта нет.
+    func forwardShared(_ file: DiskSharedFile) {
+        guard !file.needsKeys else { return }
+        downloadingFileID = file.id
+        Task { [weak self] in
+            defer { self?.downloadingFileID = nil }
+            guard let self, let url = await sharedLocalURL(for: file) else { return }
+            actionsSubject.send(.forwardFile(url: url, name: file.name))
+        }
+    }
+
+    /// «Переслать» свой файл БЕЗ Matrix-события (Диск-документ, копия шаринга):
+    /// пересылать нечего событием — уходит содержимым.
+    func forwardAsFile(_ file: DiskFile) {
+        guard !file.isEncrypted else { return }
+        downloadingFileID = file.id
+        Task { [weak self] in
+            defer { self?.downloadingFileID = nil }
+            guard let self, let url = await localURL(for: file) else { return }
+            actionsSubject.send(.forwardFile(url: url, name: file.filename))
+        }
+    }
+
+    /// Содержимое расшаренного файла во временном файле (общий путь для
+    /// share sheet и пересылки).
+    private func sharedLocalURL(for file: DiskSharedFile) async -> URL? {
+        if file.mxcURL.isEmpty, let blobID = file.blobID {
+            guard let data = try? await service.fetchBlob(id: blobID) else { return nil }
+            return try? Self.writeShareTemp(data: data, filename: file.name.isEmpty ? blobID : file.name)
+        }
+        guard let mediaProvider, let url = URL(string: file.mxcURL),
+              let source = try? MediaSourceProxy(url: url, mimeType: file.mimetype) else { return nil }
+        guard case let .success(handle) = await mediaProvider.loadFileFromSource(source, filename: file.name),
+              let handleURL = handle.url,
+              let data = try? Data(contentsOf: handleURL) else { return nil }
+        return try? Self.writeShareTemp(data: data, filename: file.name)
     }
 
     /// «Поделиться» для расшаренного файла: скачиваем и отдаём в share sheet.

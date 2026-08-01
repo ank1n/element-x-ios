@@ -292,6 +292,11 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                     handleAppRoute(.event(eventID: eventID, roomID: roomID, via: []), animated: true)
                 case .forwardEvent(let roomID, let eventID):
                     Task { await self.presentForwarding(roomID: roomID, eventID: eventID) }
+                case .forwardFile(let url, let name):
+                    // Файл без события: тем же маршрутом, что и Share Extension —
+                    // с пикером комнат и отправкой вложением.
+                    handleAppRoute(.share(.mediaFiles(roomID: nil, mediaFiles: [ShareExtensionMediaFile(url: url, suggestedName: name)])),
+                                   animated: true)
                 }
             }
             .store(in: &cancellables)

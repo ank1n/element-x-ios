@@ -14,6 +14,8 @@ enum DiskScreenCoordinatorAction {
     case openRoom(roomID: String, eventID: String)
     /// Переслать файл в другой чат.
     case forward(roomID: String, eventID: String)
+    /// Переслать содержимым (файлы без Matrix-события): вложение через пикер комнат.
+    case forwardFile(url: URL, name: String)
 }
 
 struct DiskScreenCoordinatorParameters {
@@ -51,6 +53,8 @@ final class DiskScreenCoordinator: CoordinatorProtocol {
                     self?.actionsSubject.send(.openRoom(roomID: roomID, eventID: eventID))
                 case .forward(let roomID, let eventID):
                     self?.actionsSubject.send(.forward(roomID: roomID, eventID: eventID))
+                case .forwardFile(let url, let name):
+                    self?.actionsSubject.send(.forwardFile(url: url, name: name))
                 case .dismiss:
                     break
                 }
