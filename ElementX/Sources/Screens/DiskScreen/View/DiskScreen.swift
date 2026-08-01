@@ -44,7 +44,7 @@ struct DiskScreen: View {
         // Поиск по имени: при первом запросе VM докачивает все страницы,
         // чтобы искать по всему Диску, а не по загруженному куску.
         .searchable(text: $context.searchQuery,
-                    placement: .navigationBarDrawer(displayMode: .automatic),
+                    placement: .navigationBarDrawer(displayMode: .always),
                     prompt: NSLocalizedString("stalk_disk_search", tableName: "Localizable",
                                               value: "Поиск по файлам", comment: "Disk search prompt"))
         // Тот же системный просмотрщик, что и для вложений в чате.
@@ -75,6 +75,15 @@ struct DiskScreen: View {
                          isSelected: context.selectedCategory == category) {
                         context.selectedCategory = category
                     }
+                }
+
+                // «Доступно мне» — расшаренное пользователю живёт в отдельном
+                // эндпоинте и в общий список не попадает по построению.
+                chip(title: NSLocalizedString("stalk_disk_shared_with_me", tableName: "Localizable",
+                                              value: "Доступно мне", comment: "Disk: shared with me"),
+                     count: context.showingShared ? context.sharedFiles.count : nil,
+                     isSelected: context.showingShared) {
+                    context.showingShared.toggle()
                 }
             }
             .padding(.horizontal, 16)
@@ -212,6 +221,8 @@ struct DiskScreen: View {
             Spacer()
         } else if let errorText = context.errorText {
             errorState(errorText)
+        } else if context.showingShared {
+            sharedList
         } else if context.showsFolders, context.selectedFolder == nil, !context.showingNoFolder, context.searchQuery.isEmpty {
             // Режим «по папкам»: сетка папок вместо общего списка. Открытая папка
             // и «Вне папок» показываются обычным списком со строкой «назад»,
@@ -278,6 +289,38 @@ struct DiskScreen: View {
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 16)
+        }
+    }
+
+    // MARK: - Доступно мне
+
+    /// Файлы, расшаренные пользователю: владелец, право, источник доступа.
+    /// `needsKeys` показываем сразу — тап по такому файлу объясняет, а не молчит.
+    private var sharedList: some View {
+        List(context.displayedSharedFiles) { file in
+            Button {
+                context.selectShared(file)
+            } label: {
+                DiskSharedFileRow(file: file, isDownloading: context.downloadingFileID == file.id)
+            }
+            .buttonStyle(.plain)
+            .listRowBackground(Color(.systemBackground))
+            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+        }
+        .listStyle(.plain)
+        .overlay {
+            if context.isLoadingShared, context.sharedFiles.isEmpty {
+                ProgressView()
+            } else if context.sharedFiles.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "person.2")
+                        .font(.system(size: 40))
+                        .foregroundStyle(.secondary)
+                    Text(NSLocalizedString("stalk_disk_shared_empty", tableName: "Localizable",
+                                           value: "Вам пока ничего не расшарили", comment: "Disk: shared empty"))
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
     }
 
@@ -374,7 +417,29 @@ struct DiskScreen: View {
 /// не различимы. Незнакомое расширение падает на серверную категорию.
 enum DiskFileStyle {
     static func of(_ file: DiskFile) -> (symbol: String, tint: Color) {
-        let ext = (file.filename as NSString).pathExtension.lowercased()
+        if let style = byExtension((file.filename as NSString).pathExtension.lowercased()) {
+            return style
+        }
+        switch file.category {
+        case .documents: return ("doc.text.fill", Color(red: 0.145, green: 0.388, blue: 0.922))
+        case .images: return ("photo.fill", Color(red: 0.051, green: 0.741, blue: 0.545))
+        case .media: return ("play.rectangle.fill", Color(red: 0.925, green: 0.286, blue: 0.600))
+        case .other: return ("doc.fill", Color(red: 0.494, green: 0.588, blue: 0.663)) // #7E96A9
+        }
+    }
+
+    /// Для записей без серверной категории («Доступно мне»): расширение, затем mime.
+    static func of(filename: String, mimetype: String) -> (symbol: String, tint: Color) {
+        if let style = byExtension((filename as NSString).pathExtension.lowercased()) {
+            return style
+        }
+        if mimetype.hasPrefix("image/") { return ("photo.fill", Color(red: 0.051, green: 0.741, blue: 0.545)) }
+        if mimetype.hasPrefix("video/") { return ("play.rectangle.fill", Color(red: 0.925, green: 0.286, blue: 0.600)) }
+        if mimetype.hasPrefix("audio/") { return ("waveform", Color(red: 0.388, green: 0.400, blue: 0.945)) }
+        return ("doc.fill", Color(red: 0.494, green: 0.588, blue: 0.663))
+    }
+
+    private static func byExtension(_ ext: String) -> (symbol: String, tint: Color)? {
         switch ext {
         case "doc", "docx", "pages", "rtf": return ("doc.text.fill", Color(red: 0.145, green: 0.388, blue: 0.922)) // #2563EB
         case "pdf": return ("doc.richtext.fill", Color(red: 0.937, green: 0.267, blue: 0.267)) // #EF4444
@@ -385,13 +450,7 @@ enum DiskFileStyle {
         case "mp3", "wav", "ogg", "m4a", "flac", "opus", "aac": return ("waveform", Color(red: 0.388, green: 0.400, blue: 0.945)) // #6366F1
         case "mp4", "mov", "mkv", "webm", "avi": return ("play.rectangle.fill", Color(red: 0.925, green: 0.286, blue: 0.600)) // #EC4899
         case "png", "jpg", "jpeg", "heic", "gif", "webp", "svg", "bmp": return ("photo.fill", Color(red: 0.051, green: 0.741, blue: 0.545)) // #0DBD8B
-        default: break
-        }
-        switch file.category {
-        case .documents: return ("doc.text.fill", Color(red: 0.145, green: 0.388, blue: 0.922))
-        case .images: return ("photo.fill", Color(red: 0.051, green: 0.741, blue: 0.545))
-        case .media: return ("play.rectangle.fill", Color(red: 0.925, green: 0.286, blue: 0.600))
-        case .other: return ("doc.fill", Color(red: 0.494, green: 0.588, blue: 0.663)) // #7E96A9
+        default: return nil
         }
     }
 }
@@ -472,12 +531,27 @@ struct MarqueeText: View {
 /// не всегда (dp: «не очень понятно») — DOCX и TXT рисуются похожими листами,
 /// а подпись снимает вопрос. Без расширения — глиф покрупнее по центру.
 struct DiskFileTypeIcon: View {
-    let file: DiskFile
+    let filename: String
+    let symbol: String
+    let tint: Color
     var size: CGFloat = 36
 
+    init(file: DiskFile, size: CGFloat = 36) {
+        filename = file.filename
+        (symbol, tint) = DiskFileStyle.of(file)
+        self.size = size
+    }
+
+    /// Для «Доступно мне»: серверной категории нет, стиль по имени и mime.
+    init(filename: String, mimetype: String, size: CGFloat = 36) {
+        self.filename = filename
+        (symbol, tint) = DiskFileStyle.of(filename: filename, mimetype: mimetype)
+        self.size = size
+    }
+
     var body: some View {
-        let style = DiskFileStyle.of(file)
-        let ext = (file.filename as NSString).pathExtension.uppercased()
+        let style = (symbol: symbol, tint: tint)
+        let ext = (filename as NSString).pathExtension.uppercased()
         VStack(spacing: size * 0.03) {
             Image(systemName: style.symbol)
                 .font(.system(size: ext.isEmpty ? size * 0.55 : size * 0.38))
@@ -585,6 +659,66 @@ struct DiskFileRow: View {
         f.timeStyle = .none
         return f
     }()
+}
+
+// MARK: - Строка «Доступно мне»
+
+/// Владелец · размер · право · откуда доступ · «нет ключей».
+struct DiskSharedFileRow: View {
+    let file: DiskSharedFile
+    var isDownloading = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            DiskFileTypeIcon(filename: file.name, mimetype: file.mimetype, size: 40)
+                .opacity(file.needsKeys ? 0.55 : 1)
+
+            VStack(alignment: .leading, spacing: 3) {
+                MarqueeText(text: file.name)
+
+                HStack(spacing: 6) {
+                    Text(file.ownerDisplay ?? String(file.owner.dropFirst().prefix(while: { $0 != ":" })))
+                        .lineLimit(1)
+                    Text("·")
+                    Text(DiskFileRow.sizeFormatter.string(fromByteCount: file.size))
+
+                    // Право — как пилюля в карточке шаринга чата.
+                    Text(file.permission == "write"
+                        ? NSLocalizedString("stalk_disk_permission_write", tableName: "Localizable", value: "Правка", comment: "Shared permission")
+                        : NSLocalizedString("stalk_disk_permission_read", tableName: "Localizable", value: "Чтение", comment: "Shared permission"))
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Color(.tertiarySystemFill), in: Capsule())
+
+                    if let via = file.viaFolderName {
+                        HStack(spacing: 3) {
+                            Image(systemName: "folder")
+                            Text(via).lineLimit(1)
+                        }
+                    }
+
+                    // Право есть, ключей нет: файл зашифрован ключами комнаты,
+                    // в которой получателя нет. Показываем ДО тапа.
+                    if file.needsKeys {
+                        Image(systemName: "lock.slash")
+                            .foregroundStyle(.orange)
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 4)
+
+            if isDownloading {
+                ProgressView()
+                    .controlSize(.small)
+            }
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+    }
 }
 
 // MARK: - Карточка

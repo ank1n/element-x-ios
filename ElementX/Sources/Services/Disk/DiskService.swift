@@ -176,6 +176,61 @@ private struct DiskFilesResponse: Decodable {
     }
 }
 
+/// Файл, расшаренный МНЕ (контракт Molly, 02.08). Не DiskFile: другой состав
+/// полей — владелец, право, источник доступа и признак «ключей нет».
+struct DiskSharedFile: Identifiable, Equatable {
+    let owner: String
+    let ownerDisplay: String?
+    let eventID: String?
+    let blobID: String?
+    let mxcURL: String
+    let name: String
+    let mimetype: String
+    let size: Int64
+    /// "read" | "write".
+    let permission: String
+    /// Диск-нативный документ: открывается ОН ЖЕ (соредактирование), не копия.
+    let isDiskDoc: Bool
+    /// Имя папки, от которой доступ пришёл каскадом (nil = прямая шара).
+    let viaFolderName: String?
+    /// Право есть, но файл зашифрован и ключей комнаты у получателя нет —
+    /// открыть НЕЛЬЗЯ, UI обязан показать это заранее (правило Molly).
+    let needsKeys: Bool
+    let ts: Int64
+
+    var id: String {
+        eventID ?? blobID ?? (mxcURL.isEmpty ? "\(owner)-\(name)-\(ts)" : mxcURL)
+    }
+
+    var date: Date {
+        Date(timeIntervalSince1970: TimeInterval(ts) / 1000)
+    }
+}
+
+extension DiskSharedFile: Decodable {
+    private enum CodingKeys: String, CodingKey {
+        case owner, ownerDisplay, eventId, blobId, mxc, name, mimetype, size,
+             permission, isDiskDoc, viaFolderName, needsKeys, ts
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        owner = try c.decodeIfPresent(String.self, forKey: .owner) ?? ""
+        ownerDisplay = try c.decodeIfPresent(String.self, forKey: .ownerDisplay)
+        eventID = try c.decodeIfPresent(String.self, forKey: .eventId)
+        blobID = try c.decodeIfPresent(String.self, forKey: .blobId)
+        mxcURL = try c.decodeIfPresent(String.self, forKey: .mxc) ?? ""
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+        mimetype = try c.decodeIfPresent(String.self, forKey: .mimetype) ?? ""
+        size = try c.decodeIfPresent(Int64.self, forKey: .size) ?? 0
+        permission = try c.decodeIfPresent(String.self, forKey: .permission) ?? "read"
+        isDiskDoc = try c.decodeIfPresent(Bool.self, forKey: .isDiskDoc) ?? false
+        viaFolderName = try c.decodeIfPresent(String.self, forKey: .viaFolderName)
+        needsKeys = try c.decodeIfPresent(Bool.self, forKey: .needsKeys) ?? false
+        ts = try c.decodeIfPresent(Int64.self, forKey: .ts) ?? 0
+    }
+}
+
 /// Папка Диска. `id` сервер шлёт числом — читаем терпимо, как folderId у файла.
 struct DiskFolder: Identifiable, Equatable {
     let id: String
@@ -299,6 +354,21 @@ final class DiskService {
         let lost = decoded.skipped == 0 ? "" : ", пропущено непонятых: \(decoded.skipped)"
         DiagLog.write("Disk", "список: \(decoded.files.count) файлов\(tail)\(lost)")
         return (decoded.files, decoded.nextBefore)
+    }
+
+    /// «Доступно мне»: `GET /api/files/shared-with-me` (контракт Molly, 02.08).
+    /// UNION прямых шар, каскада от расшаренных папок и Диск-документов.
+    func fetchSharedWithMe() async throws -> [DiskSharedFile] {
+        let data = try await get(URL(string: "\(baseURL)/api/files/shared-with-me"))
+        struct Response: Decodable { let files: [DiskSharedFile] }
+        do {
+            let files = try JSONDecoder().decode(Response.self, from: data).files
+            DiagLog.write("Disk", "доступно мне: \(files.count)")
+            return files
+        } catch {
+            DiagLog.write("Disk", "shared-with-me не разобрался (\(data.count) байт): \(error)")
+            throw error
+        }
     }
 
     /// Список папок: `GET /api/files/folders` (контракт Molly, 02.08).

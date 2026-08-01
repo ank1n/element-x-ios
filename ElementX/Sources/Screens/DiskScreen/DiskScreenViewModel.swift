@@ -86,6 +86,77 @@ final class DiskScreenViewModel: ObservableObject {
     /// нет — фильтруем на клиенте поверх общего списка.
     @Published var showingNoFolder = false
 
+    /// «Доступно мне» — файлы, расшаренные пользователю. Отдельный чип и
+    /// отдельный список: в /api/files их нет по построению (контракт Molly).
+    @Published var showingShared = false {
+        didSet {
+            guard oldValue != showingShared else { return }
+            if showingShared { Task { await loadShared() } }
+        }
+    }
+
+    @Published private(set) var sharedFiles: [DiskSharedFile] = []
+    @Published private(set) var isLoadingShared = false
+
+    /// «Доступно мне» после фильтра поиска.
+    var displayedSharedFiles: [DiskSharedFile] {
+        let query = searchQuery.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return sharedFiles }
+        return sharedFiles.filter { $0.name.localizedCaseInsensitiveContains(query) }
+    }
+
+    func loadShared() async {
+        isLoadingShared = true
+        defer { isLoadingShared = false }
+        do {
+            sharedFiles = try await service.fetchSharedWithMe()
+        } catch {
+            DiagLog.write("Disk", "shared-with-me не загрузился: \(error)")
+            errorText = Self.describe(error)
+        }
+    }
+
+    /// Открыть расшаренный файл. `needsKeys` — честный отказ до сети: право
+    /// есть, но содержимое зашифровано ключами комнаты, которых у нас нет.
+    func selectShared(_ file: DiskSharedFile) {
+        guard !file.needsKeys else {
+            errorText = NSLocalizedString("stalk_disk_shared_no_keys", tableName: "Localizable",
+                                          value: "Файл зашифрован, а ключей от его комнаты у вас нет — попросите владельца прислать файл в чат",
+                                          comment: "Shared file cannot be decrypted")
+            return
+        }
+        downloadingFileID = file.id
+        Task { [weak self] in
+            defer { self?.downloadingFileID = nil }
+            guard let self else { return }
+            if file.mxcURL.isEmpty, let blobID = file.blobID {
+                do {
+                    let data = try await service.fetchBlob(id: blobID)
+                    let directory = URL.temporaryDirectory.appending(path: "stalk-disk", directoryHint: .isDirectory)
+                    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                    let url = directory.appending(path: file.name.isEmpty ? blobID : file.name)
+                    try data.write(to: url, options: .atomic)
+                    previewItem = MediaPreviewItem(file: .unmanaged(url: url), title: file.name)
+                } catch {
+                    DiagLog.write("Disk", "shared-блоб \(blobID) не скачался: \(error)")
+                    errorText = NSLocalizedString("stalk_disk_error_download", tableName: "Localizable",
+                                                  value: "Не удалось загрузить файл", comment: "Disk download failed")
+                }
+                return
+            }
+            guard let mediaProvider, let url = URL(string: file.mxcURL),
+                  let source = try? MediaSourceProxy(url: url, mimeType: file.mimetype) else { return }
+            switch await mediaProvider.loadFileFromSource(source, filename: file.name) {
+            case .success(let handle):
+                previewItem = MediaPreviewItem(file: handle, title: file.name)
+            case .failure(let error):
+                DiagLog.write("Disk", "shared \(file.name) не скачался: \(error)")
+                errorText = NSLocalizedString("stalk_disk_error_download", tableName: "Localizable",
+                                              value: "Не удалось загрузить файл", comment: "Disk download failed")
+            }
+        }
+    }
+
     private static let foldersKey = "ru.implica.stalk.diskShowsFolders"
 
     /// Поиск по имени. При первом непустом запросе докачиваем ВСЕ страницы
