@@ -117,7 +117,13 @@ struct DiskFile: Identifiable, Codable, Equatable {
         ts = try c.decodeIfPresent(Int64.self, forKey: .ts) ?? 0
         // Поля появились в схеме позже остальных — читаем терпимо, сервер ещё меняется.
         isEncrypted = try c.decodeIfPresent(Bool.self, forKey: .isEncrypted) ?? false
-        folderID = try c.decodeIfPresent(String.self, forKey: .folderID)
+        // folderId сервер шлёт ЧИСЛОМ (или null) — контракт Molly, 02.08. Прежнее
+        // чтение строкой молча теряло привязку файлов к папкам у всех записей.
+        if let numericFolder = try? c.decodeIfPresent(Int64.self, forKey: .folderID) {
+            folderID = String(numericFolder)
+        } else {
+            folderID = try? c.decodeIfPresent(String.self, forKey: .folderID)
+        }
         starred = try c.decodeIfPresent(Bool.self, forKey: .starred) ?? false
         sharedWith = try c.decodeIfPresent([String].self, forKey: .sharedWith)
     }
@@ -167,6 +173,30 @@ private struct DiskFilesResponse: Decodable {
         } else {
             nextBefore = try? c.decodeIfPresent(String.self, forKey: .nextBefore)
         }
+    }
+}
+
+/// Папка Диска. `id` сервер шлёт числом — читаем терпимо, как folderId у файла.
+struct DiskFolder: Identifiable, Equatable {
+    let id: String
+    let name: String
+    let count: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, count
+    }
+}
+
+extension DiskFolder: Decodable {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let numeric = try? c.decode(Int64.self, forKey: .id) {
+            id = String(numeric)
+        } else {
+            id = try c.decode(String.self, forKey: .id)
+        }
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+        count = try c.decodeIfPresent(Int.self, forKey: .count) ?? 0
     }
 }
 
@@ -224,9 +254,13 @@ final class DiskService {
     }
 
     /// Список файлов. `before` — курсор из `nextBefore` предыдущей страницы.
-    func fetchFiles(category: DiskFileCategory? = nil, before: String? = nil) async throws -> (files: [DiskFile], nextBefore: String?) {
+    func fetchFiles(category: DiskFileCategory? = nil, before: String? = nil, folder: String? = nil) async throws -> (files: [DiskFile], nextBefore: String?) {
         var components = URLComponents(string: "\(baseURL)/api/files")
         var query: [URLQueryItem] = []
+        if let folder {
+            // Содержимое конкретной папки (контракт Molly, 02.08).
+            query.append(URLQueryItem(name: "folder", value: folder))
+        }
         if let category, category != .other {
             // Имя параметра — `filter`, НЕ `category`. Проверено на проде: с
             // `category=images` сервер молча отдаёт всё (14 записей, обе категории),
@@ -243,6 +277,15 @@ final class DiskService {
         components?.queryItems = query.isEmpty ? nil : query
 
         let data = try await get(components?.url)
+        // Диагностика курсора для Molly (STMOB-275): точная строка запроса и сырой
+        // nextBefore из ответа — по этой паре разводятся версии зацикливания.
+        let queryString = components?.url?.query ?? "<без параметров>"
+        if let s = String(data: data, encoding: .utf8), let r = s.range(of: "\"nextBefore\"") {
+            let end = s.index(r.lowerBound, offsetBy: 48, limitedBy: s.endIndex) ?? s.endIndex
+            DiagLog.write("Disk", "запрос ?\(queryString) → сырой \(s[r.lowerBound..<end])")
+        } else {
+            DiagLog.write("Disk", "запрос ?\(queryString) → nextBefore в ответе отсутствует")
+        }
         let decoded: DiskFilesResponse
         do {
             decoded = try JSONDecoder().decode(DiskFilesResponse.self, from: data)
@@ -256,6 +299,20 @@ final class DiskService {
         let lost = decoded.skipped == 0 ? "" : ", пропущено непонятых: \(decoded.skipped)"
         DiagLog.write("Disk", "список: \(decoded.files.count) файлов\(tail)\(lost)")
         return (decoded.files, decoded.nextBefore)
+    }
+
+    /// Список папок: `GET /api/files/folders` (контракт Molly, 02.08).
+    func fetchFolders() async throws -> [DiskFolder] {
+        let data = try await get(URL(string: "\(baseURL)/api/files/folders"))
+        struct Response: Decodable { let folders: [DiskFolder] }
+        do {
+            let folders = try JSONDecoder().decode(Response.self, from: data).folders
+            DiagLog.write("Disk", "папки: \(folders.count)")
+            return folders
+        } catch {
+            DiagLog.write("Disk", "папки не разобрались (\(data.count) байт): \(error)")
+            throw error
+        }
     }
 
     func fetchStats() async throws -> DiskStats {

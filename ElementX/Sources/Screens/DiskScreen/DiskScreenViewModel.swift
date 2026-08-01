@@ -57,6 +57,16 @@ final class DiskScreenViewModel: ObservableObject {
         }
     }
 
+    /// Папки Диска — лента над списком (dp: «представление с разбитием по папкам»).
+    @Published private(set) var folders: [DiskFolder] = []
+    /// Открытая папка: список показывает только её содержимое, сверху — «назад».
+    @Published var selectedFolder: DiskFolder? {
+        didSet {
+            guard oldValue != selectedFolder else { return }
+            Task { await reload() }
+        }
+    }
+
     /// Поиск по имени. При первом непустом запросе докачиваем ВСЕ страницы
     /// пагинации: иначе поиск молча ищет только по загруженному куску и врёт.
     @Published var searchQuery = "" {
@@ -135,7 +145,7 @@ final class DiskScreenViewModel: ObservableObject {
         var pages = 0
         while let before = nextBefore, pages < 25 {
             do {
-                let page = try await service.fetchFiles(category: selectedCategory, before: before)
+                let page = try await service.fetchFiles(category: selectedCategory, before: before, folder: selectedFolder?.id)
                 let known = Set(files.map(\.id))
                 files.append(contentsOf: page.files.filter { !known.contains($0.id) })
                 nextBefore = page.nextBefore
@@ -220,10 +230,12 @@ final class DiskScreenViewModel: ObservableObject {
         nextBefore = nil
         allLoaded = false
 
-        // Счётчики и список независимы: пустая статистика не должна прятать файлы.
+        // Счётчики, папки и список независимы: пустая статистика или упавшие
+        // папки не должны прятать файлы.
         async let statsTask = try? service.fetchStats()
+        async let foldersTask = try? service.fetchFolders()
         do {
-            let page = try await service.fetchFiles(category: selectedCategory)
+            let page = try await service.fetchFiles(category: selectedCategory, folder: selectedFolder?.id)
             files = page.files
             nextBefore = page.nextBefore
         } catch is CancellationError {
@@ -238,6 +250,7 @@ final class DiskScreenViewModel: ObservableObject {
             files = []
         }
         stats = await statsTask
+        folders = await (foldersTask) ?? []
         isLoading = false
     }
 
@@ -250,7 +263,7 @@ final class DiskScreenViewModel: ObservableObject {
         defer { isLoadingMore = false }
 
         do {
-            let page = try await service.fetchFiles(category: selectedCategory, before: nextBefore)
+            let page = try await service.fetchFiles(category: selectedCategory, before: nextBefore, folder: selectedFolder?.id)
             // Дубликаты возможны, если между страницами что-то добавилось.
             let known = Set(files.map(\.id))
             let fresh = page.files.filter { !known.contains($0.id) }
