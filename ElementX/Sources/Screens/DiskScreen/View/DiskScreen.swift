@@ -122,12 +122,15 @@ struct DiskScreen: View {
                             mediaProvider: context.mediaProvider)
             }
             .buttonStyle(.plain)
-            .listRowBackground(Color(.secondarySystemGroupedBackground))
+            // Плоский список во всю ширину (dp: у вставного слишком много пустых
+            // полей по бокам — имени файла нужен каждый пункт ширины).
+            .listRowBackground(Color(.systemBackground))
+            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
             .contextMenu { actions(for: file) }
             .onAppear { context.ensureSharedProfiles(file) }
             .task { await context.loadMoreIfNeeded(currentItem: file) }
         }
-        .listStyle(.insetGrouped)
+        .listStyle(.plain)
     }
 
     /// Карточки. Две колонки: на трёх имя файла обрезается до бессмысленного
@@ -262,6 +265,69 @@ enum DiskFileStyle {
     }
 }
 
+/// Имя файла в одну строку. Не влезает — после паузы медленно прокручивается
+/// туда-обратно с затуханием у краёв (решение dp: перенос на вторую строку рвал
+/// имена дефисами и раздувал строки, обрезание посередине прятало середину).
+struct MarqueeText: View {
+    let text: String
+    var font: Font = .body
+
+    @State private var textWidth: CGFloat = 0
+    @State private var containerWidth: CGFloat = 0
+    @State private var scrolled = false
+
+    private var overflow: CGFloat {
+        max(0, textWidth - containerWidth)
+    }
+
+    var body: some View {
+        Text(text)
+            .font(font)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .background {
+                GeometryReader { geo in
+                    Color.clear.onAppear { textWidth = geo.size.width }
+                }
+            }
+            .offset(x: scrolled ? -overflow : 0)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .clipped()
+            .background {
+                GeometryReader { geo in
+                    Color.clear.onAppear {
+                        containerWidth = geo.size.width
+                        startIfNeeded()
+                    }
+                }
+            }
+            .mask {
+                // Затухание краёв — только когда есть чему бегать, иначе у коротких
+                // имён «подтаивал» бы правый край.
+                if overflow > 0 {
+                    LinearGradient(stops: [.init(color: .clear, location: 0),
+                                           .init(color: .black, location: 0.04),
+                                           .init(color: .black, location: 0.96),
+                                           .init(color: .clear, location: 1)],
+                                   startPoint: .leading, endPoint: .trailing)
+                } else {
+                    Rectangle()
+                }
+            }
+    }
+
+    private func startIfNeeded() {
+        guard overflow > 0, !scrolled else { return }
+        // Скорость постоянная (~28 pt/с): длинному имени — больше времени,
+        // а не более быстрый рывок.
+        withAnimation(.linear(duration: Double(overflow) / 28)
+            .delay(1.4)
+            .repeatForever(autoreverses: true)) {
+                scrolled = true
+            }
+    }
+}
+
 /// Значок типа: глиф + РАСШИРЕНИЕ подписью. По одному глифу тип угадывается
 /// не всегда (dp: «не очень понятно») — DOCX и TXT рисуются похожими листами,
 /// а подпись снимает вопрос. Без расширения — глиф покрупнее по центру.
@@ -330,13 +396,8 @@ struct DiskFileRow: View {
             DiskFileTypeIcon(file: file, size: 40)
 
             VStack(alignment: .leading, spacing: 3) {
-                // Две строки с обрезанием посередине: видно и начало имени,
-                // и расширение — dp: в одну строку длинные имена нечитаемы.
-                Text(file.filename)
-                    .font(.body)
-                    .lineLimit(2)
-                    .truncationMode(.middle)
-                    .multilineTextAlignment(.leading)
+                // Одна строка (dp: перенос рвал имена), длинное имя прокручивается.
+                MarqueeText(text: file.filename)
 
                 HStack(spacing: 6) {
                     Text(Self.sizeFormatter.string(fromByteCount: file.size))
@@ -406,11 +467,16 @@ struct DiskFileCard: View {
         VStack(alignment: .leading, spacing: 0) {
             ZStack {
                 if let thumbnail {
-                    Image(uiImage: thumbnail)
-                        .resizable()
-                        .scaledToFill()
+                    // Картинка — ПОВЕРХ фиксированной рамки, не сама рамкой:
+                    // scaledToFill игнорирует ширину frame, и широкий скриншот
+                    // распирал карточку на всю сетку (скрин dp 16:38).
+                    Color.clear
                         .frame(height: 96)
-                        .frame(maxWidth: .infinity)
+                        .overlay {
+                            Image(uiImage: thumbnail)
+                                .resizable()
+                                .scaledToFill()
+                        }
                         .clipShape(RoundedRectangle(cornerRadius: 10))
                 } else {
                     RoundedRectangle(cornerRadius: 10)
