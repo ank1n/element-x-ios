@@ -14,6 +14,27 @@ struct DiskShareItem: Identifiable {
     let url: URL
 }
 
+/// Строка объединённого списка: свои файлы и расшаренные мне живут в разных
+/// эндпоинтах и моделях, но dp ждёт их в ОДНОМ списке — мержим по времени.
+enum DiskListEntry: Identifiable, Equatable {
+    case own(DiskFile)
+    case shared(DiskSharedFile)
+
+    var id: String {
+        switch self {
+        case .own(let file): "o-\(file.id)"
+        case .shared(let file): "s-\(file.id)"
+        }
+    }
+
+    var ts: Int64 {
+        switch self {
+        case .own(let file): file.ts
+        case .shared(let file): file.ts
+        }
+    }
+}
+
 enum DiskScreenViewModelAction {
     /// Файл зашифрован — открыть его можно только в чате, где есть ключи комнаты.
     /// Это же действие и «найти в чате»: перейти к сообщению, которым файл прислали.
@@ -103,6 +124,24 @@ final class DiskScreenViewModel: ObservableObject {
         let query = searchQuery.trimmingCharacters(in: .whitespaces)
         guard !query.isEmpty else { return sharedFiles }
         return sharedFiles.filter { $0.name.localizedCaseInsensitiveContains(query) }
+    }
+
+    /// Объединённый список для экрана (dp: расшаренное должно быть видно и в
+    /// общем списке). Свои — как раньше; расшаренные подмешиваются по времени,
+    /// но только в «Все» без папки: в категориях и папках их место не определено
+    /// (серверной категории у них нет), а в чипе «Доступно мне» они и так одни.
+    var displayedEntries: [DiskListEntry] {
+        if showingShared {
+            return displayedSharedFiles.map { .shared($0) }
+        }
+        var entries: [DiskListEntry] = displayedFiles.map { .own($0) }
+        if selectedCategory == nil, selectedFolder == nil, !showingNoFolder, !sharedFiles.isEmpty {
+            let query = searchQuery.trimmingCharacters(in: .whitespaces)
+            let shared = query.isEmpty ? sharedFiles : sharedFiles.filter { $0.name.localizedCaseInsensitiveContains(query) }
+            entries.append(contentsOf: shared.map { .shared($0) })
+            entries.sort { $0.ts > $1.ts }
+        }
+        return entries
     }
 
     func loadShared() async {
@@ -261,14 +300,51 @@ final class DiskScreenViewModel: ObservableObject {
     /// Подтянуть профили получателей шаринга строки. Лениво и с дедупликацией:
     /// список большой, а профили нужны только видимым строкам.
     func ensureSharedProfiles(_ file: DiskFile) {
-        guard let ids = file.sharedWith, !ids.isEmpty, let profileResolver else { return }
-        for id in ids.prefix(4) where sharedProfiles[id] == nil && !profilesInFlight.contains(id) {
+        guard let ids = file.sharedWith, !ids.isEmpty else { return }
+        ensureProfiles(Array(ids.prefix(4)))
+    }
+
+    /// Профиль владельца расшаренного файла — для аватарки «от кого».
+    func ensureOwnerProfile(_ file: DiskSharedFile) {
+        guard !file.owner.isEmpty else { return }
+        ensureProfiles([file.owner])
+    }
+
+    private func ensureProfiles(_ ids: [String]) {
+        guard let profileResolver else { return }
+        for id in ids where sharedProfiles[id] == nil && !profilesInFlight.contains(id) {
             profilesInFlight.insert(id)
             Task { [weak self] in
                 let profile = await profileResolver(id)
                 guard let self else { return }
                 if let profile { sharedProfiles[id] = profile }
                 profilesInFlight.remove(id)
+            }
+        }
+    }
+
+    /// «Поделиться» для расшаренного файла: скачиваем и отдаём в share sheet.
+    /// needsKeys — не вызывается вовсе (пункта в меню нет).
+    func shareShared(_ file: DiskSharedFile) {
+        guard !file.needsKeys else { return }
+        downloadingFileID = file.id
+        Task { [weak self] in
+            defer { self?.downloadingFileID = nil }
+            guard let self else { return }
+            if file.mxcURL.isEmpty, let blobID = file.blobID {
+                if let data = try? await service.fetchBlob(id: blobID),
+                   let url = try? Self.writeShareTemp(data: data, filename: file.name.isEmpty ? blobID : file.name) {
+                    shareItem = DiskShareItem(url: url)
+                }
+                return
+            }
+            guard let mediaProvider, let url = URL(string: file.mxcURL),
+                  let source = try? MediaSourceProxy(url: url, mimeType: file.mimetype) else { return }
+            if case let .success(handle) = await mediaProvider.loadFileFromSource(source, filename: file.name),
+               let handleURL = handle.url,
+               let data = try? Data(contentsOf: handleURL),
+               let tempURL = try? Self.writeShareTemp(data: data, filename: file.name) {
+                shareItem = DiskShareItem(url: tempURL)
             }
         }
     }
@@ -349,6 +425,8 @@ final class DiskScreenViewModel: ObservableObject {
         }
         stats = await statsTask
         folders = await (foldersTask) ?? []
+        // Расшаренное грузим вместе со списком: dp ждёт его и в общем списке.
+        sharedFiles = await (try? service.fetchSharedWithMe()) ?? sharedFiles
         isLoading = false
     }
 

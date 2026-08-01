@@ -242,7 +242,21 @@ struct DiskScreen: View {
     }
 
     private var list: some View {
-        List(context.displayedFiles) { file in
+        List(context.displayedEntries) { entry in
+            // Плоский список во всю ширину (dp: у вставного слишком много пустых
+            // полей по бокам — имени файла нужен каждый пункт ширины).
+            entryRow(entry)
+                .listRowBackground(Color(.systemBackground))
+                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+        }
+        .listStyle(.plain)
+    }
+
+    /// Строка объединённого списка: свой файл или расшаренный мне.
+    @ViewBuilder
+    private func entryRow(_ entry: DiskListEntry) -> some View {
+        switch entry {
+        case .own(let file):
             Button {
                 context.selectFile(file)
             } label: {
@@ -252,15 +266,43 @@ struct DiskScreen: View {
                             mediaProvider: context.mediaProvider)
             }
             .buttonStyle(.plain)
-            // Плоский список во всю ширину (dp: у вставного слишком много пустых
-            // полей по бокам — имени файла нужен каждый пункт ширины).
-            .listRowBackground(Color(.systemBackground))
-            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
             .contextMenu { actions(for: file) }
             .onAppear { context.ensureSharedProfiles(file) }
             .task { await context.loadMoreIfNeeded(currentItem: file) }
+        case .shared(let file):
+            Button {
+                context.selectShared(file)
+            } label: {
+                DiskSharedFileRow(file: file,
+                                  isDownloading: context.downloadingFileID == file.id,
+                                  profiles: context.sharedProfiles,
+                                  mediaProvider: context.mediaProvider)
+            }
+            .buttonStyle(.plain)
+            .contextMenu { sharedActions(for: file) }
+            .onAppear { context.ensureOwnerProfile(file) }
         }
-        .listStyle(.plain)
+    }
+
+    /// Меню расшаренного: «Открыть» всегда (needsKeys объяснит словами),
+    /// «Поделиться» — только когда содержимое реально достижимо.
+    @ViewBuilder
+    private func sharedActions(for file: DiskSharedFile) -> some View {
+        Button {
+            context.selectShared(file)
+        } label: {
+            Label(NSLocalizedString("stalk_disk_action_open", tableName: "Localizable",
+                                    value: "Открыть", comment: "Disk action"), systemImage: "eye")
+        }
+
+        if !file.needsKeys {
+            Button {
+                context.shareShared(file)
+            } label: {
+                Label(NSLocalizedString("stalk_disk_action_share", tableName: "Localizable",
+                                        value: "Поделиться", comment: "Disk action"), systemImage: "square.and.arrow.up")
+            }
+        }
     }
 
     /// Карточки. Две колонки: на трёх имя файла обрезается до бессмысленного
@@ -268,23 +310,35 @@ struct DiskScreen: View {
     private var grid: some View {
         ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
-                ForEach(context.displayedFiles) { file in
-                    Button {
-                        context.selectFile(file)
-                    } label: {
-                        DiskFileCard(file: file,
-                                     isDownloading: context.downloadingFileID == file.id,
-                                     thumbnail: context.thumbnails[file.id],
-                                     sharedProfiles: context.sharedProfiles,
-                                     mediaProvider: context.mediaProvider)
+                ForEach(context.displayedEntries) { entry in
+                    switch entry {
+                    case .own(let file):
+                        Button {
+                            context.selectFile(file)
+                        } label: {
+                            DiskFileCard(file: file,
+                                         isDownloading: context.downloadingFileID == file.id,
+                                         thumbnail: context.thumbnails[file.id],
+                                         sharedProfiles: context.sharedProfiles,
+                                         mediaProvider: context.mediaProvider)
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu { actions(for: file) }
+                        .onAppear {
+                            context.ensureThumbnail(file)
+                            context.ensureSharedProfiles(file)
+                        }
+                        .task { await context.loadMoreIfNeeded(currentItem: file) }
+                    case .shared(let file):
+                        Button {
+                            context.selectShared(file)
+                        } label: {
+                            DiskSharedFileCard(file: file, isDownloading: context.downloadingFileID == file.id)
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu { sharedActions(for: file) }
+                        .onAppear { context.ensureOwnerProfile(file) }
                     }
-                    .buttonStyle(.plain)
-                    .contextMenu { actions(for: file) }
-                    .onAppear {
-                        context.ensureThumbnail(file)
-                        context.ensureSharedProfiles(file)
-                    }
-                    .task { await context.loadMoreIfNeeded(currentItem: file) }
                 }
             }
             .padding(.horizontal, 16)
@@ -297,15 +351,10 @@ struct DiskScreen: View {
     /// Файлы, расшаренные пользователю: владелец, право, источник доступа.
     /// `needsKeys` показываем сразу — тап по такому файлу объясняет, а не молчит.
     private var sharedList: some View {
-        List(context.displayedSharedFiles) { file in
-            Button {
-                context.selectShared(file)
-            } label: {
-                DiskSharedFileRow(file: file, isDownloading: context.downloadingFileID == file.id)
-            }
-            .buttonStyle(.plain)
-            .listRowBackground(Color(.systemBackground))
-            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+        List(context.displayedEntries) { entry in
+            entryRow(entry)
+                .listRowBackground(Color(.systemBackground))
+                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
         }
         .listStyle(.plain)
         .overlay {
@@ -653,7 +702,7 @@ struct DiskFileRow: View {
         return f
     }()
 
-    private static let dateFormatter: DateFormatter = {
+    static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateStyle = .medium
         f.timeStyle = .none
@@ -663,10 +712,12 @@ struct DiskFileRow: View {
 
 // MARK: - Строка «Доступно мне»
 
-/// Владелец · размер · право · откуда доступ · «нет ключей».
+/// Аватар и имя владельца · размер · дата · право · откуда доступ · «нет ключей».
 struct DiskSharedFileRow: View {
     let file: DiskSharedFile
     var isDownloading = false
+    var profiles: [String: UserProfileProxy] = [:]
+    var mediaProvider: MediaProviderProtocol?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -677,10 +728,19 @@ struct DiskSharedFileRow: View {
                 MarqueeText(text: file.name)
 
                 HStack(spacing: 6) {
+                    // «От кого» — аватарка владельца (dp: без неё непонятно,
+                    // чей файл). «Кому ещё» сервер в shared-with-me не отдаёт.
+                    LoadableAvatarImage(url: profiles[file.owner]?.avatarURL,
+                                        name: profiles[file.owner]?.displayName ?? file.ownerDisplay,
+                                        contentID: file.owner,
+                                        avatarSize: .custom(16),
+                                        mediaProvider: mediaProvider)
                     Text(file.ownerDisplay ?? String(file.owner.dropFirst().prefix(while: { $0 != ":" })))
                         .lineLimit(1)
                     Text("·")
                     Text(DiskFileRow.sizeFormatter.string(fromByteCount: file.size))
+                    Text("·")
+                    Text(DiskFileRow.dateFormatter.string(from: file.date))
 
                     // Право — как пилюля в карточке шаринга чата.
                     Text(file.permission == "write"
@@ -717,6 +777,67 @@ struct DiskSharedFileRow: View {
             }
         }
         .padding(.vertical, 4)
+        .contentShape(Rectangle())
+    }
+}
+
+// MARK: - Карточка расшаренного (сетка)
+
+/// Карточка «доступно мне» в сетке: значок типа, имя, владелец и дата.
+/// Превью не тянем: доступность содержимого зависит от needsKeys, а карточка
+/// обязана быть честной без сети.
+struct DiskSharedFileCard: View {
+    let file: DiskSharedFile
+    var isDownloading = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ZStack {
+                let style = DiskFileStyle.of(filename: file.name, mimetype: file.mimetype)
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(style.tint.opacity(0.12))
+                    .frame(height: 96)
+                VStack(spacing: 3) {
+                    Image(systemName: style.symbol)
+                        .font(.system(size: 30))
+                    let ext = (file.name as NSString).pathExtension.uppercased()
+                    if !ext.isEmpty {
+                        Text(String(ext.prefix(4)))
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                    }
+                }
+                .foregroundStyle(style.tint)
+                .opacity(file.needsKeys ? 0.55 : 1)
+
+                if isDownloading {
+                    ProgressView().controlSize(.small)
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                if file.needsKeys {
+                    Image(systemName: "lock.slash")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                        .padding(6)
+                }
+            }
+
+            Text(file.name)
+                .font(.subheadline)
+                .lineLimit(2)
+                .truncationMode(.middle)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 8)
+
+            Text("\(file.ownerDisplay ?? file.owner) · \(DiskFileRow.dateFormatter.string(from: file.date))")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .padding(.top, 2)
+        }
+        .padding(10)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
         .contentShape(Rectangle())
     }
 }
