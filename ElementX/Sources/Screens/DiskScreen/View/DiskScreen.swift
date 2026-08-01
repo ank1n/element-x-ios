@@ -262,6 +262,32 @@ enum DiskFileStyle {
     }
 }
 
+/// Значок типа: глиф + РАСШИРЕНИЕ подписью. По одному глифу тип угадывается
+/// не всегда (dp: «не очень понятно») — DOCX и TXT рисуются похожими листами,
+/// а подпись снимает вопрос. Без расширения — глиф покрупнее по центру.
+struct DiskFileTypeIcon: View {
+    let file: DiskFile
+    var size: CGFloat = 36
+
+    var body: some View {
+        let style = DiskFileStyle.of(file)
+        let ext = (file.filename as NSString).pathExtension.uppercased()
+        VStack(spacing: size * 0.03) {
+            Image(systemName: style.symbol)
+                .font(.system(size: ext.isEmpty ? size * 0.55 : size * 0.38))
+            if !ext.isEmpty {
+                Text(String(ext.prefix(4)))
+                    .font(.system(size: size * 0.21, weight: .bold, design: .rounded))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+        }
+        .foregroundStyle(style.tint)
+        .frame(width: size, height: size)
+        .background(style.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: size * 0.22))
+    }
+}
+
 /// До трёх аватарок получателей шаринга внахлёст + «+N» для остальных.
 /// Пока профиль не подтянулся, LoadableAvatarImage рисует инициал по userID.
 struct DiskSharedAvatars: View {
@@ -300,13 +326,8 @@ struct DiskFileRow: View {
     var mediaProvider: MediaProviderProtocol?
 
     var body: some View {
-        let style = DiskFileStyle.of(file)
         HStack(spacing: 12) {
-            Image(systemName: style.symbol)
-                .font(.system(size: 20))
-                .foregroundStyle(style.tint)
-                .frame(width: 36, height: 36)
-                .background(style.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+            DiskFileTypeIcon(file: file, size: 40)
 
             VStack(alignment: .leading, spacing: 3) {
                 // Две строки с обрезанием посередине: видно и начало имени,
@@ -396,9 +417,16 @@ struct DiskFileCard: View {
                         .fill(style.tint.opacity(0.12))
                         .frame(height: 96)
 
-                    Image(systemName: style.symbol)
-                        .font(.system(size: 32))
-                        .foregroundStyle(style.tint)
+                    VStack(spacing: 3) {
+                        Image(systemName: style.symbol)
+                            .font(.system(size: 30))
+                        let ext = (file.filename as NSString).pathExtension.uppercased()
+                        if !ext.isEmpty {
+                            Text(String(ext.prefix(4)))
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                        }
+                    }
+                    .foregroundStyle(style.tint)
                 }
 
                 if isDownloading {

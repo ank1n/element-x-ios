@@ -56,6 +56,10 @@ struct StalkFileShareView: View {
             .frame(maxWidth: 440, alignment: .leading)
             .background(Color.stalkFileShareBackground, in: RoundedRectangle(cornerRadius: 14))
             .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.stalkFileShareBorder, lineWidth: 1))
+            // Резерв под штамп времени: TimelineStyler кладёт его поверх нижнего
+            // правого угла контента, и без отступа он ложился на обводку (скрин dp
+            // 01.08). Пустая зона снизу — штампу есть куда встать.
+            .padding(.bottom, 14)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -63,27 +67,52 @@ struct StalkFileShareView: View {
 
     /// Размер · право · с кем поделились. Отправителя и тип файла веб не показывает —
     /// не показываем и мы, иначе строка расползается и карточки перестают совпадать.
+    ///
+    /// Когда получателей много и в одну строку не влезает — мета раздвигается на две:
+    /// размер и право в первой, аватарки во второй (скрин dp 01.08: пилюля «Чтение»
+    /// ломалась по буквам, зажатая аватарками).
     private var metaRow: some View {
-        HStack(spacing: 7) {
-            if fileShare.size > 0 {
-                Text(Self.sizeFormatter.string(fromByteCount: fileShare.size))
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 7) {
+                sizeText
+                permissionPill
+                avatarsRow
             }
 
-            permissionPill
-
-            if !fileShare.sharedWith.isEmpty {
-                SharedWithAvatars(recipients: fileShare.sharedWith)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 7) {
+                    sizeText
+                    permissionPill
+                }
+                avatarsRow
             }
         }
         .font(.system(size: 11.5))
         .foregroundStyle(Color.stalkFileShareMeta)
     }
 
+    @ViewBuilder
+    private var sizeText: some View {
+        if fileShare.size > 0 {
+            Text(Self.sizeFormatter.string(fromByteCount: fileShare.size))
+        }
+    }
+
+    @ViewBuilder
+    private var avatarsRow: some View {
+        if !fileShare.sharedWith.isEmpty {
+            SharedWithAvatars(recipients: fileShare.sharedWith)
+        }
+    }
+
     /// Право показывается ВСЕГДА, даже когда пришло пустым: по контракту умолчание —
     /// чтение, и пустое место читалось бы как «прав нет вовсе».
+    /// `fixedSize` — пилюля не переносится по буквам, как бы её ни зажимало.
     private var permissionPill: some View {
         Text(fileShare.permission.title)
             .font(.system(size: 11.5, weight: .bold))
+            .lineLimit(1)
+            .fixedSize()
             .foregroundStyle(Color.stalkFileSharePermissionText)
             .padding(.vertical, 1)
             .padding(.horizontal, 7)

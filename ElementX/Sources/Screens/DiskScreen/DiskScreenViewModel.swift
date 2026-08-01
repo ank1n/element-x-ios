@@ -244,8 +244,18 @@ final class DiskScreenViewModel: ObservableObject {
             let page = try await service.fetchFiles(category: selectedCategory, before: nextBefore)
             // Дубликаты возможны, если между страницами что-то добавилось.
             let known = Set(files.map(\.id))
-            files.append(contentsOf: page.files.filter { !known.contains($0.id) })
-            self.nextBefore = page.nextBefore
+            let fresh = page.files.filter { !known.contains($0.id) }
+            files.append(contentsOf: fresh)
+            // Защита от зацикленного курсора (лог dp 214: «бесконечный лоадер,
+            // список не пополняется»): страница без ЕДИНОГО нового файла или
+            // с тем же курсором — это конец списка, что бы сервер ни обещал.
+            // Иначе .task последней строки просит ту же страницу вечно.
+            if fresh.isEmpty || page.nextBefore == nextBefore {
+                DiagLog.write("Disk", "догрузка: страница без новых (курсор \(page.nextBefore ?? "nil")) — считаю список полным")
+                self.nextBefore = nil
+            } else {
+                self.nextBefore = page.nextBefore
+            }
         } catch {
             // Молча: обрыв догрузки не должен ронять уже показанный список.
             DiagLog.write("Disk", "догрузка не удалась: \(error)")
