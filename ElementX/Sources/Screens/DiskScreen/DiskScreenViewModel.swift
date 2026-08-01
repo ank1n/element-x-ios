@@ -51,6 +51,25 @@ final class DiskScreenViewModel: ObservableObject {
         }
     }
 
+    /// Поиск по имени. При первом непустом запросе докачиваем ВСЕ страницы
+    /// пагинации: иначе поиск молча ищет только по загруженному куску и врёт.
+    @Published var searchQuery = "" {
+        didSet {
+            guard oldValue != searchQuery, !searchQuery.isEmpty else { return }
+            Task { await ensureAllLoaded() }
+        }
+    }
+
+    /// Профили получателей шаринга: userID → имя + аватар. Наполняется лениво,
+    /// по мере появления строк с sharedWith на экране.
+    @Published private(set) var sharedProfiles: [String: UserProfileProxy] = [:]
+    private var profilesInFlight: Set<String> = []
+
+    /// Миниатюры изображений для карточек: id файла → картинка.
+    @Published private(set) var thumbnails: [String: UIImage] = [:]
+    private var thumbnailsInFlight: Set<String> = []
+    private var allLoaded = false
+
     /// Файл, скачанный для просмотра. Показывается системным просмотрщиком —
     /// тем же, что и вложения в чате.
     @Published var previewItem: MediaPreviewItem?
@@ -69,7 +88,8 @@ final class DiskScreenViewModel: ObservableObject {
     private static let layoutKey = "ru.implica.stalk.diskLayout"
 
     private let service: DiskService
-    private let mediaProvider: MediaProviderProtocol?
+    let mediaProvider: MediaProviderProtocol?
+    private let profileResolver: ((String) async -> UserProfileProxy?)?
     private var nextBefore: String?
     private var isLoadingMore = false
 
@@ -78,11 +98,84 @@ final class DiskScreenViewModel: ObservableObject {
         actionsSubject.eraseToAnyPublisher()
     }
 
-    init(service: DiskService, mediaProvider: MediaProviderProtocol?) {
+    init(service: DiskService,
+         mediaProvider: MediaProviderProtocol?,
+         profileResolver: ((String) async -> UserProfileProxy?)? = nil) {
         self.service = service
         self.mediaProvider = mediaProvider
+        self.profileResolver = profileResolver
         let saved = UserDefaults.standard.string(forKey: Self.layoutKey)
         layout = saved.flatMap(DiskLayout.init(rawValue:)) ?? .list
+    }
+
+    // MARK: - Поиск
+
+    /// Файлы после фильтра поиска — то, что реально видит экран.
+    var displayedFiles: [DiskFile] {
+        let query = searchQuery.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return files }
+        return files.filter { $0.filename.localizedCaseInsensitiveContains(query) }
+    }
+
+    /// Докачать весь список для честного поиска. Кап страниц — защита от
+    /// бесконечного курсора; текущие объёмы (сотни файлов) покрывает с запасом.
+    private func ensureAllLoaded() async {
+        guard !allLoaded, !isLoadingMore else { return }
+        isLoadingMore = true
+        defer { isLoadingMore = false }
+        var pages = 0
+        while let before = nextBefore, pages < 25 {
+            do {
+                let page = try await service.fetchFiles(category: selectedCategory, before: before)
+                let known = Set(files.map(\.id))
+                files.append(contentsOf: page.files.filter { !known.contains($0.id) })
+                nextBefore = page.nextBefore
+            } catch {
+                DiagLog.write("Disk", "докачка для поиска оборвалась: \(error)")
+                return
+            }
+            pages += 1
+        }
+        if nextBefore == nil { allLoaded = true }
+    }
+
+    // MARK: - Аватарки шаринга и миниатюры
+
+    /// Подтянуть профили получателей шаринга строки. Лениво и с дедупликацией:
+    /// список большой, а профили нужны только видимым строкам.
+    func ensureSharedProfiles(_ file: DiskFile) {
+        guard let ids = file.sharedWith, !ids.isEmpty, let profileResolver else { return }
+        for id in ids.prefix(4) where sharedProfiles[id] == nil && !profilesInFlight.contains(id) {
+            profilesInFlight.insert(id)
+            Task { [weak self] in
+                let profile = await profileResolver(id)
+                guard let self else { return }
+                if let profile { sharedProfiles[id] = profile }
+                profilesInFlight.remove(id)
+            }
+        }
+    }
+
+    /// Возможна ли миниатюра: незашифрованная картинка с mxc-адресом.
+    /// Зашифрованные сервер отдать не может (ключи только у комнаты) —
+    /// их карточка остаётся с глифом и замком.
+    func canThumbnail(_ file: DiskFile) -> Bool {
+        file.category == .images && !file.isEncrypted && !file.mxcURL.isEmpty
+    }
+
+    func ensureThumbnail(_ file: DiskFile) {
+        guard canThumbnail(file), let mediaProvider,
+              thumbnails[file.id] == nil, !thumbnailsInFlight.contains(file.id),
+              let url = URL(string: file.mxcURL) else { return }
+        thumbnailsInFlight.insert(file.id)
+        Task { [weak self] in
+            guard let self else { return }
+            defer { thumbnailsInFlight.remove(file.id) }
+            guard let source = try? MediaSourceProxy(url: url, mimeType: file.mimetype) else { return }
+            if case let .success(image) = await mediaProvider.loadImageFromSource(source, size: CGSize(width: 300, height: 300)) {
+                thumbnails[file.id] = image
+            }
+        }
     }
 
     // MARK: - Действия над файлом
@@ -116,6 +209,7 @@ final class DiskScreenViewModel: ObservableObject {
         isLoading = true
         errorText = nil
         nextBefore = nil
+        allLoaded = false
 
         // Счётчики и список независимы: пустая статистика не должна прятать файлы.
         async let statsTask = try? service.fetchStats()

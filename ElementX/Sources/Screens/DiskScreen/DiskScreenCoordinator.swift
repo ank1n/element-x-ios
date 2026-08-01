@@ -23,6 +23,8 @@ struct DiskScreenCoordinatorParameters {
     let accessTokenProvider: () throws -> String
     let forceTokenRefresh: (() async -> Void)?
     let mediaProvider: MediaProviderProtocol?
+    /// Профиль по userID — для аватарок получателей шаринга в списке.
+    let profileResolver: ((String) async -> UserProfileProxy?)?
 }
 
 final class DiskScreenCoordinator: CoordinatorProtocol {
@@ -38,7 +40,9 @@ final class DiskScreenCoordinator: CoordinatorProtocol {
         let service = DiskService(baseURL: parameters.baseURL,
                                   accessTokenProvider: parameters.accessTokenProvider,
                                   forceTokenRefresh: parameters.forceTokenRefresh)
-        viewModel = DiskScreenViewModel(service: service, mediaProvider: parameters.mediaProvider)
+        viewModel = DiskScreenViewModel(service: service,
+                                        mediaProvider: parameters.mediaProvider,
+                                        profileResolver: parameters.profileResolver)
 
         viewModel.actionsPublisher
             .sink { [weak self] action in

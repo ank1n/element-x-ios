@@ -30,6 +30,12 @@ struct DiskScreen: View {
         }
         .onAppear { context.onAppear() }
         .refreshable { await context.reload() }
+        // Поиск по имени: при первом запросе VM докачивает все страницы,
+        // чтобы искать по всему Диску, а не по загруженному куску.
+        .searchable(text: $context.searchQuery,
+                    placement: .navigationBarDrawer(displayMode: .automatic),
+                    prompt: NSLocalizedString("stalk_disk_search", tableName: "Localizable",
+                                              value: "Поиск по файлам", comment: "Disk search prompt"))
         // Тот же системный просмотрщик, что и для вложений в чате.
         .interactiveQuickLook(item: $context.previewItem, allowEditing: false)
     }
@@ -92,8 +98,12 @@ struct DiskScreen: View {
             Spacer()
         } else if let errorText = context.errorText {
             errorState(errorText)
-        } else if context.files.isEmpty {
-            emptyState
+        } else if context.displayedFiles.isEmpty {
+            if context.searchQuery.isEmpty {
+                emptyState
+            } else {
+                searchEmptyState
+            }
         } else if context.layout == .list {
             list
         } else {
@@ -102,15 +112,19 @@ struct DiskScreen: View {
     }
 
     private var list: some View {
-        List(context.files) { file in
+        List(context.displayedFiles) { file in
             Button {
                 context.selectFile(file)
             } label: {
-                DiskFileRow(file: file, isDownloading: context.downloadingFileID == file.id)
+                DiskFileRow(file: file,
+                            isDownloading: context.downloadingFileID == file.id,
+                            sharedProfiles: context.sharedProfiles,
+                            mediaProvider: context.mediaProvider)
             }
             .buttonStyle(.plain)
             .listRowBackground(Color(.secondarySystemGroupedBackground))
             .contextMenu { actions(for: file) }
+            .onAppear { context.ensureSharedProfiles(file) }
             .task { await context.loadMoreIfNeeded(currentItem: file) }
         }
         .listStyle(.insetGrouped)
@@ -121,19 +135,40 @@ struct DiskScreen: View {
     private var grid: some View {
         ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
-                ForEach(context.files) { file in
+                ForEach(context.displayedFiles) { file in
                     Button {
                         context.selectFile(file)
                     } label: {
-                        DiskFileCard(file: file, isDownloading: context.downloadingFileID == file.id)
+                        DiskFileCard(file: file,
+                                     isDownloading: context.downloadingFileID == file.id,
+                                     thumbnail: context.thumbnails[file.id],
+                                     sharedProfiles: context.sharedProfiles,
+                                     mediaProvider: context.mediaProvider)
                     }
                     .buttonStyle(.plain)
                     .contextMenu { actions(for: file) }
+                    .onAppear {
+                        context.ensureThumbnail(file)
+                        context.ensureSharedProfiles(file)
+                    }
                     .task { await context.loadMoreIfNeeded(currentItem: file) }
                 }
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 16)
+        }
+    }
+
+    private var searchEmptyState: some View {
+        VStack(spacing: 12) {
+            Spacer()
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 40))
+                .foregroundStyle(.secondary)
+            Text(NSLocalizedString("stalk_disk_search_empty", tableName: "Localizable",
+                                   value: "Ничего не найдено", comment: "Disk search: no results"))
+                .foregroundStyle(.secondary)
+            Spacer()
         }
     }
 
@@ -198,25 +233,89 @@ struct DiskScreen: View {
     }
 }
 
+// MARK: - Тип файла
+
+/// Цвет и глиф по РАСШИРЕНИЮ. Узнаваемые цвета офисных форматов (Word синий,
+/// Excel зелёный, PDF красный…) читаются быстрее подписи — dp: «все зелёные»
+/// не различимы. Незнакомое расширение падает на серверную категорию.
+enum DiskFileStyle {
+    static func of(_ file: DiskFile) -> (symbol: String, tint: Color) {
+        let ext = (file.filename as NSString).pathExtension.lowercased()
+        switch ext {
+        case "doc", "docx", "pages", "rtf": return ("doc.text.fill", Color(red: 0.145, green: 0.388, blue: 0.922)) // #2563EB
+        case "pdf": return ("doc.richtext.fill", Color(red: 0.937, green: 0.267, blue: 0.267)) // #EF4444
+        case "xls", "xlsx", "csv", "numbers": return ("tablecells.fill", Color(red: 0.020, green: 0.588, blue: 0.412)) // #059669
+        case "ppt", "pptx", "key": return ("rectangle.stack.fill", Color(red: 0.961, green: 0.620, blue: 0.043)) // #F59E0B
+        case "txt", "md", "log": return ("doc.plaintext.fill", Color(red: 0.392, green: 0.455, blue: 0.545)) // #64748B
+        case "zip", "rar", "7z", "tar", "gz": return ("archivebox.fill", Color(red: 0.710, green: 0.325, blue: 0.035)) // #B45309
+        case "mp3", "wav", "ogg", "m4a", "flac", "opus", "aac": return ("waveform", Color(red: 0.388, green: 0.400, blue: 0.945)) // #6366F1
+        case "mp4", "mov", "mkv", "webm", "avi": return ("play.rectangle.fill", Color(red: 0.925, green: 0.286, blue: 0.600)) // #EC4899
+        case "png", "jpg", "jpeg", "heic", "gif", "webp", "svg", "bmp": return ("photo.fill", Color(red: 0.051, green: 0.741, blue: 0.545)) // #0DBD8B
+        default: break
+        }
+        switch file.category {
+        case .documents: return ("doc.text.fill", Color(red: 0.145, green: 0.388, blue: 0.922))
+        case .images: return ("photo.fill", Color(red: 0.051, green: 0.741, blue: 0.545))
+        case .media: return ("play.rectangle.fill", Color(red: 0.925, green: 0.286, blue: 0.600))
+        case .other: return ("doc.fill", Color(red: 0.494, green: 0.588, blue: 0.663)) // #7E96A9
+        }
+    }
+}
+
+/// До трёх аватарок получателей шаринга внахлёст + «+N» для остальных.
+/// Пока профиль не подтянулся, LoadableAvatarImage рисует инициал по userID.
+struct DiskSharedAvatars: View {
+    let userIDs: [String]
+    let profiles: [String: UserProfileProxy]
+    let mediaProvider: MediaProviderProtocol?
+
+    var body: some View {
+        HStack(spacing: -6) {
+            ForEach(userIDs.prefix(3), id: \.self) { id in
+                LoadableAvatarImage(url: profiles[id]?.avatarURL,
+                                    name: profiles[id]?.displayName ?? String(id.dropFirst().prefix(while: { $0 != ":" })),
+                                    contentID: id,
+                                    avatarSize: .custom(18),
+                                    mediaProvider: mediaProvider)
+                    .overlay(Circle().stroke(Color(.secondarySystemGroupedBackground), lineWidth: 1.5))
+            }
+            if userIDs.count > 3 {
+                Text("+\(userIDs.count - 3)")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 18, height: 18)
+                    .background(Circle().fill(Color(.tertiarySystemFill)))
+                    .padding(.leading, 8)
+            }
+        }
+    }
+}
+
 // MARK: - Ячейка
 
 struct DiskFileRow: View {
     let file: DiskFile
     var isDownloading = false
+    var sharedProfiles: [String: UserProfileProxy] = [:]
+    var mediaProvider: MediaProviderProtocol?
 
     var body: some View {
+        let style = DiskFileStyle.of(file)
         HStack(spacing: 12) {
-            Image(systemName: file.category.systemImage)
+            Image(systemName: style.symbol)
                 .font(.system(size: 20))
-                .foregroundStyle(Color.compound.iconAccentPrimary)
+                .foregroundStyle(style.tint)
                 .frame(width: 36, height: 36)
-                .background(Color.compound.iconAccentPrimary.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                .background(style.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 3) {
+                // Две строки с обрезанием посередине: видно и начало имени,
+                // и расширение — dp: в одну строку длинные имена нечитаемы.
                 Text(file.filename)
                     .font(.body)
-                    .lineLimit(1)
+                    .lineLimit(2)
                     .truncationMode(.middle)
+                    .multilineTextAlignment(.leading)
 
                 HStack(spacing: 6) {
                     Text(Self.sizeFormatter.string(fromByteCount: file.size))
@@ -232,6 +331,11 @@ struct DiskFileRow: View {
             if isDownloading {
                 ProgressView()
                     .controlSize(.small)
+            }
+
+            // Кому расшарен: аватарки получателей. Файл без шаринга метки не несёт.
+            if let shared = file.sharedWith, !shared.isEmpty {
+                DiskSharedAvatars(userIDs: shared, profiles: sharedProfiles, mediaProvider: mediaProvider)
             }
 
             // Замок показывает, что файл зашифрован: такие лежат в чатах, и
@@ -267,21 +371,35 @@ struct DiskFileRow: View {
 
 // MARK: - Карточка
 
-/// Плитка в режиме карточек: крупный значок, имя в две строки, размер и дата.
+/// Плитка в режиме карточек: превью для изображений (dp: «в карточках должно
+/// быть видно превью»), крупный цветной значок для остальных, имя в две строки.
 struct DiskFileCard: View {
     let file: DiskFile
     var isDownloading = false
+    var thumbnail: UIImage?
+    var sharedProfiles: [String: UserProfileProxy] = [:]
+    var mediaProvider: MediaProviderProtocol?
 
     var body: some View {
+        let style = DiskFileStyle.of(file)
         VStack(alignment: .leading, spacing: 0) {
             ZStack {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.compound.iconAccentPrimary.opacity(0.12))
-                    .frame(height: 96)
+                if let thumbnail {
+                    Image(uiImage: thumbnail)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(height: 96)
+                        .frame(maxWidth: .infinity)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                } else {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(style.tint.opacity(0.12))
+                        .frame(height: 96)
 
-                Image(systemName: file.category.systemImage)
-                    .font(.system(size: 32))
-                    .foregroundStyle(Color.compound.iconAccentPrimary)
+                    Image(systemName: style.symbol)
+                        .font(.system(size: 32))
+                        .foregroundStyle(style.tint)
+                }
 
                 if isDownloading {
                     ProgressView()
@@ -301,6 +419,12 @@ struct DiskFileCard: View {
                 }
                 .font(.caption2)
                 .padding(6)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if let shared = file.sharedWith, !shared.isEmpty {
+                    DiskSharedAvatars(userIDs: shared, profiles: sharedProfiles, mediaProvider: mediaProvider)
+                        .padding(6)
+                }
             }
 
             Text(file.filename)

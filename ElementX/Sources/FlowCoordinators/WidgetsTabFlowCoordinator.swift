@@ -160,7 +160,10 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
             let diskCoordinator = DiskScreenCoordinator(parameters: .init(baseURL: sessionBaseURL,
                                                                           accessTokenProvider: { try filesProxy.matrixAccessToken() },
                                                                           forceTokenRefresh: { await filesConcrete?.forceTokenRefresh() },
-                                                                          mediaProvider: userSession.mediaProvider))
+                                                                          mediaProvider: userSession.mediaProvider,
+                                                                          profileResolver: { userID in
+                                                                              try? await filesProxy.profile(for: userID).get()
+                                                                          }))
             diskCoordinator.actionsPublisher
                 .sink { [weak self] action in
                     switch action {
