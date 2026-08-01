@@ -193,12 +193,15 @@ struct DiskScreen: View {
         }
 
         // Системный share sheet: файл уходит в любое приложение, не только
-        // внутри sTalk. Зашифрованный уводит в чат — как и «Открыть».
-        Button {
-            context.share(file)
-        } label: {
-            Label(NSLocalizedString("stalk_disk_action_share", tableName: "Localizable",
-                                    value: "Поделиться", comment: "Disk action"), systemImage: "square.and.arrow.up")
+        // внутри sTalk. У зашифрованных пункта НЕТ вовсе (решение dp): их
+        // содержимое расшифровывает только чат, и пункт был бы обманкой.
+        if !file.isEncrypted {
+            Button {
+                context.share(file)
+            } label: {
+                Label(NSLocalizedString("stalk_disk_action_share", tableName: "Localizable",
+                                        value: "Поделиться", comment: "Disk action"), systemImage: "square.and.arrow.up")
+            }
         }
 
         if context.hasChatEvent(file) {
@@ -288,7 +291,9 @@ struct MarqueeText: View {
 
     @State private var textWidth: CGFloat = 0
     @State private var containerWidth: CGFloat = 0
-    @State private var scrolled = false
+    /// Смещение имени: 0 — начало, −overflow — конец. Двигается ТОЛЬКО жестом.
+    @State private var offsetX: CGFloat = 0
+    @State private var dragBase: CGFloat = 0
     /// Высота одной строки шрифта: у GeometryReader своей высоты нет.
     @ScaledMetric(relativeTo: .body) private var lineHeight: CGFloat = 22
 
@@ -311,18 +316,31 @@ struct MarqueeText: View {
                         Color.clear.onAppear {
                             textWidth = geo.size.width
                             containerWidth = container.size.width
-                            startIfNeeded()
                         }
                     }
                 }
-                .offset(x: scrolled ? -overflow : 0)
+                .offset(x: offsetX)
                 .frame(maxHeight: .infinity, alignment: .leading)
         }
         .frame(height: lineHeight)
         .clipped()
+        .contentShape(Rectangle())
+        // Имя прокручивается ЖЕСТОМ — горизонтальным свайпом по нему (решение dp:
+        // постоянная автопрокрутка в списке дёргалась и раздражала). Вертикаль
+        // отдаём списку, тап — строке: жест срабатывает только на явное
+        // горизонтальное движение.
+        .gesture(DragGesture(minimumDistance: 12)
+            .onChanged { value in
+                guard overflow > 0,
+                      abs(value.translation.width) > abs(value.translation.height) else { return }
+                offsetX = min(0, max(-overflow, dragBase + value.translation.width))
+            }
+            .onEnded { _ in
+                dragBase = offsetX
+            })
         .mask {
-            // Затухание краёв — только когда есть чему бегать, иначе у коротких
-            // имён «подтаивал» бы правый край.
+            // Затухание края — подсказка «имя длиннее, потяни». У коротких имён
+            // маски нет, чтобы правый край не «подтаивал» зря.
             if overflow > 0 {
                 LinearGradient(stops: [.init(color: .clear, location: 0),
                                        .init(color: .black, location: 0.04),
@@ -333,17 +351,6 @@ struct MarqueeText: View {
                 Rectangle()
             }
         }
-    }
-
-    private func startIfNeeded() {
-        guard overflow > 0, !scrolled else { return }
-        // Скорость постоянная (~28 pt/с): длинному имени — больше времени,
-        // а не более быстрый рывок.
-        withAnimation(.linear(duration: Double(overflow) / 28)
-            .delay(1.4)
-            .repeatForever(autoreverses: true)) {
-                scrolled = true
-            }
     }
 }
 

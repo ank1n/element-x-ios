@@ -317,13 +317,10 @@ final class DiskScreenViewModel: ObservableObject {
     }
 
     /// Системное «Поделиться»: скачать содержимое и отдать в share sheet.
-    /// Зашифрованные файлы, как и при открытии, живут только через чат —
-    /// содержимое расшифровывает таймлайн, серверу оно недоступно.
+    /// Для зашифрованных не вызывается вовсе — у них и пункта меню нет
+    /// (решение dp); guard — страховка на случай нового вызова.
     func share(_ file: DiskFile) {
-        if file.isEncrypted, let roomID = file.roomID, let eventID = file.eventID {
-            actionsSubject.send(.openRoom(roomID: roomID, eventID: eventID))
-            return
-        }
+        guard !file.isEncrypted else { return }
         downloadingFileID = file.id
         Task { [weak self] in
             defer { self?.downloadingFileID = nil }
