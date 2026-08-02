@@ -233,18 +233,31 @@ class NotificationHandler {
             let remaining = max(0, fetchDeadline.timeIntervalSinceNow)
             guard remaining >= 3 else { break }
 
+            // Кап попытки 10с, а не весь бюджет (лог dp 02.08): первый пуш после
+            // многочасового простоя виснет ЦЕЛИКОМ — даже наш сон 23с просыпался
+            // на 30-й секунде (системе жалко CPU задремавшему процессу). Раньше
+            // зависшая попытка съедала бюджет и вторая не стартовала; с капом
+            // вторая идёт на свежем состоянии и по замерам успевает за секунды.
+            let attemptCap = min(remaining, 10)
             let started = Date()
             let fetch = await withTaskGroup(of: NSEUserSession.NotificationFetch?.self) { group in
                 group.addTask { [weak self] in
                     await self?.userSession.notificationFetch(roomID: roomID, eventID: eventID)
                 }
                 group.addTask {
-                    try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+                    try? await Task.sleep(nanoseconds: UInt64(attemptCap * 1_000_000_000))
                     return nil
                 }
                 let first = await group.next() ?? nil
                 group.cancelAll()
                 return first
+            }
+
+            // Дрейф сна = процессу не давали CPU (троттлинг NSE после простоя).
+            // Пишем в выгрузку — подтверждение/опровержение придёт само.
+            let drift = Date().timeIntervalSince(started) - attemptCap
+            if fetch == nil, drift > 2 {
+                NSEDiagLog.write(String(format: "  ⚠️ сон дрейфанул на %.1fs — системный троттлинг процесса", drift))
             }
 
             let outcome: String
