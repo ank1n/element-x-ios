@@ -181,11 +181,15 @@ struct AppsAPIIcon: Decodable {
     private let svg: String?
     private let image: String?
 
-    /// Ссылка на логотип, если реестр её уже отдаёт.
-    var logoURL: URL? {
+    /// СЫРОЙ путь логотипа, если реестр его отдаёт. Именно строка: путь бывает
+    /// ОТНОСИТЕЛЬНЫМ (/apps-api/icons/x.png), и URL(string:) собирает из него
+    /// объект без хоста — AsyncImage такой молча не грузит, клиент падал на
+    /// запасной глиф (скрин dp 02.08 «какого хера иконки сменил»). Достройку до
+    /// домена сессии делает вью-модель — у модели домена нет.
+    var logoPath: String? {
         for candidate in [url, png, svg, image] {
-            if let candidate, !candidate.isEmpty, let parsed = URL(string: candidate) {
-                return parsed
+            if let candidate, !candidate.isEmpty {
+                return candidate
             }
         }
         return nil

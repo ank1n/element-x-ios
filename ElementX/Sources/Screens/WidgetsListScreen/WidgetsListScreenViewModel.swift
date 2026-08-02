@@ -187,10 +187,15 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
                 // Use SF Symbol name from API, fallback to generic
                 let sfSymbol = app.icon.sf ?? "app.fill"
 
-                // STMOB-277: настоящий логотип, если реестр его отдаёт. Экран умеет
-                // рисовать картинку по ссылке и сам откатывается на глиф, пока её нет,
-                // так что появление поля на сервере не требует релиза клиента.
-                let logoURL = app.icon.logoURL ?? app.iconUrl.flatMap { $0.isEmpty ? nil : URL(string: $0) }
+                // STMOB-277: настоящий логотип, если реестр его отдаёт. Путь бывает
+                // относительным — достраиваем до домена сессии (мультидомен, как
+                // Android): URL(string:) без хоста AsyncImage молча не грузит,
+                // и иконки «подменялись» запасными глифами (скрин dp 02.08).
+                let rawIcon = app.icon.logoPath ?? app.iconUrl.flatMap { $0.isEmpty ? nil : $0 }
+                let logoURL = rawIcon.flatMap { raw -> URL? in
+                    if raw.hasPrefix("http") { return URL(string: raw) }
+                    return URL(string: raw, relativeTo: URL(string: serverBaseURL))?.absoluteURL
+                }
 
                 return WidgetItem(id: app.id,
                                   name: Self.localizedAppText(app.name),
