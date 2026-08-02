@@ -385,7 +385,7 @@ final class DiskScreenViewModel: ObservableObject {
 
     private func ensureProfiles(_ ids: [String]) {
         guard let profileResolver else { return }
-        for id in ids where sharedProfiles[id] == nil && !profilesInFlight.contains(id) {
+        for id in ids where !id.isEmpty && sharedProfiles[id] == nil && !profilesInFlight.contains(id) {
             profilesInFlight.insert(id)
             Task { [weak self] in
                 let profile = await profileResolver(id)

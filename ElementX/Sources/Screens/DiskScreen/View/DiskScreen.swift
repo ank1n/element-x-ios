@@ -687,8 +687,11 @@ struct DiskSharedAvatars: View {
     let mediaProvider: MediaProviderProtocol?
 
     var body: some View {
+        // Пустой ID (сервер отдаёт owner="" у файлов не из чата) метки не несёт —
+        // как и пустой sender в DiskFileRow, аватарку по нему не рисуем.
+        let ids = userIDs.filter { !$0.isEmpty }
         HStack(spacing: -6) {
-            ForEach(userIDs.prefix(3), id: \.self) { id in
+            ForEach(ids.prefix(3), id: \.self) { id in
                 LoadableAvatarImage(url: profiles[id]?.avatarURL,
                                     name: profiles[id]?.displayName ?? String(id.dropFirst().prefix(while: { $0 != ":" })),
                                     contentID: id,
@@ -696,8 +699,8 @@ struct DiskSharedAvatars: View {
                                     mediaProvider: mediaProvider)
                     .overlay(Circle().stroke(Color(.secondarySystemGroupedBackground), lineWidth: 1.5))
             }
-            if userIDs.count > 3 {
-                Text("+\(userIDs.count - 3)")
+            if ids.count > 3 {
+                Text("+\(ids.count - 3)")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .frame(width: 18, height: 18)
@@ -905,7 +908,8 @@ struct DiskSharedFileCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 8)
 
-            Text("\(file.ownerDisplay ?? file.owner) · \(DiskFileRow.dateFormatter.string(from: file.date))")
+            Text([file.ownerDisplay ?? (file.owner.isEmpty ? nil : file.owner), DiskFileRow.dateFormatter.string(from: file.date)]
+                .compactMap(\.self).joined(separator: " · "))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
