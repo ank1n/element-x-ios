@@ -47,7 +47,7 @@ enum DiagLog {
             do {
                 if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
                    let size = attrs[.size] as? Int, size > maxBytes {
-                    try? FileManager.default.removeItem(at: url)
+                    trimOldest(at: url)
                 }
                 if FileManager.default.fileExists(atPath: url.path) {
                     let h = try FileHandle(forWritingTo: url)
@@ -60,6 +60,40 @@ enum DiagLog {
             } catch {
                 os_log(.error, log: logger, "DiagLog write failed: %{public}@", error.localizedDescription)
             }
+        }
+    }
+
+    /// Переполнение: выбрасываем САМОЕ СТАРОЕ, а свежее остаётся.
+    ///
+    /// Раньше файл при 500 КБ удалялся целиком — и лог начинался с нуля. Для
+    /// пушей это незаметно (следующий придёт через минуту), а вот улики звонка
+    /// исчезали безвозвратно: во время звонка мост логов SDK пишет ~17 КБ в
+    /// минуту, значит буфера хватает примерно на полчаса, после чего всё
+    /// обнуляется. Разбор 03.08 упёрся ровно в это: эпизод в 16:01 уцелел
+    /// случайно (дамп сняли сразу), а окно 16:05–17:00 стёрлось целиком.
+    ///
+    /// Читаем целиком осознанно: файл по определению не больше лимита, а
+    /// операция редкая (раз в переполнение) и идёт на своей serial-очереди.
+    private static func trimOldest(at url: URL) {
+        guard let data = try? Data(contentsOf: url) else {
+            try? FileManager.default.removeItem(at: url)
+            return
+        }
+        // Оставляем свежую половину: обрезать «чуть-чуть» — значит звать эту
+        // операцию на каждой второй записи.
+        let keepFrom = data.count / 2
+        // Режем строго по границе строки, иначе первая строка будет обрублена
+        // посередине и парсеры (в т.ч. глазами) спотыкаются.
+        let newlineIndex = data[keepFrom...].firstIndex(of: UInt8(ascii: "\n"))
+        let tail = data[(newlineIndex.map { $0 + 1 } ?? keepFrom)...]
+        let marker = "[--- старые записи вытеснены, буфер \(maxBytes / 1000) КБ ---]\n"
+        var trimmed = Data(marker.utf8)
+        trimmed.append(contentsOf: tail)
+        do {
+            try trimmed.write(to: url, options: .atomic)
+        } catch {
+            os_log(.error, log: logger, "DiagLog trim failed: %{public}@", error.localizedDescription)
+            try? FileManager.default.removeItem(at: url)
         }
     }
 }

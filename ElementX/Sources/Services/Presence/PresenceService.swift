@@ -37,6 +37,10 @@ class PresenceService {
         pollingUserIDs
     }
 
+    /// Сетевые отказы текущей пачки — в лог уходит счётчиком, а не строкой
+    /// на каждого из ~90 опрашиваемых.
+    private var networkErrors = 0
+
     /// STMOB-110: in-flight set чтобы не запускать второй fetch для уже
     /// активного запроса (protect от 100+ duplicates за 12 мс).
     private var inFlight: Set<String> = []
@@ -167,7 +171,9 @@ class PresenceService {
         // запросов получили 401), просим SDK обновить OIDC token. Build 155
         // добавил всегда-логируемое sawUnauthorized/pendingRetry — на 153
         // retry не запускался, нужно понять почему.
-        DiagLog.write("Presence", "fetchPresence batch result: sawUnauthorized=\(sawUnauthorized) pendingRetry=\(pendingRetry.count)")
+        let failed = networkErrors
+        networkErrors = 0
+        DiagLog.write("Presence", "fetchPresence batch result: sawUnauthorized=\(sawUnauthorized) pendingRetry=\(pendingRetry.count) networkErrors=\(failed)")
         if sawUnauthorized, !pendingRetry.isEmpty {
             DiagLog.write("Presence", "401 batch → forceTokenRefresh + retry \(pendingRetry.count)")
             await tokenRefresher()
@@ -211,7 +217,10 @@ class PresenceService {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               let httpResponse = response as? HTTPURLResponse else {
-            DiagLog.write("Presence", "fetchPresence(\(userID)) network error")
+            // Тоже без строки на юзера: сеть пропадает сразу для всей пачки,
+            // и это давало ~90 одинаковых строк в один момент — как раз в момент
+            // обрыва, когда лог нужнее всего. Счётчик сводится в итог пачки.
+            networkErrors += 1
             return (nil, nil)
         }
         let body = String(data: data, encoding: .utf8) ?? ""
@@ -237,12 +246,14 @@ class PresenceService {
         if let ago = lastActiveAgoMs {
             lastSeenDate = Date().addingTimeInterval(-Double(ago) / 1000.0)
         }
-        // STMOB-131 build 156: лог real-server values чтобы понять почему
-        // @nh / @admin показываются "в сети" если в Contacts «23 минуты назад».
-        // Гипотезы: 1) сервер реально шлёт last_active_ago<5min,
-        // 2) currently_active=true без last_active_ago (мой fix даёт false),
-        // 3) другой userID resolved в Header чем в Contacts.
-        DiagLog.write("Presence", "fetchPresence(\(userID)) → presence=\(presenceStr) currently_active=\(currentlyActive) last_active_ago_ms=\(lastActiveAgoMs ?? -1)")
+        // Успешный ответ в DiagLog НЕ пишем. Строка ставилась под разбор
+        // STMOB-131 build 156 («почему @nh показан в сети»), тот разбор давно
+        // закрыт, а цена осталась: опрос идёт по ~90 контактам каждые 30 секунд,
+        // это ~180 строк в минуту. Во время звонка приложение на переднем плане,
+        // опрос активен — и presence вымывает из общего буфера DiagLog ровно те
+        // строки звонка, ради которых буфер и заведён (разбор 03.08).
+        // Точечная отладка presence остаётся в os_log выше — он не делит бюджет
+        // с диагностикой звонка.
         // STMOB-133 build 154: считаем online ТОЛЬКО если последняя активность
         // < 5 мин назад. Без этого Synapse иногда отдаёт `currently_active: true`
         // для юзеров реально активных 20+ минут назад (race в Synapse

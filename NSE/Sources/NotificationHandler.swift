@@ -529,6 +529,45 @@ class NotificationHandler {
         return content
     }
     
+    /// Короткая метка содержимого события — БЕЗ самого содержимого.
+    ///
+    /// Раньше в лог уходил `String(describing:)` целиком, а внутри него лежит
+    /// полное тело расшифрованного сообщения. Два следствия, оба плохие.
+    ///
+    /// Первое — приватность: диагностический лог тестеры пересылают в переписке,
+    /// и он нёс в себе саму переписку, включая E2EE-сообщения, которые NSE как раз
+    /// и расшифровала.
+    ///
+    /// Второе — объём: такие строки доходили до 7 КБ на пуш и давали ~80% веса
+    /// файла (134 из 167 КБ в логе 03.08). Они вытесняли из буфера всё остальное —
+    /// в том числе улики звонков, ради которых лог и заводился: разбор «не слышали
+    /// меня» упёрся в то, что нужное окно уже стёрлось.
+    ///
+    /// Диагностическая ценность строки — вид содержимого, а не текст, поэтому
+    /// печатаем только имена case'ов. Разбираем два уровня: у сообщения полезен
+    /// ещё и тип (текст/картинка/файл), дальше payload уже везде пользовательский.
+    /// Тип квалифицирован: в проекте есть свой `TimelineEventContent`.
+    private static func contentTag(_ content: MatrixRustSDK.TimelineEventContent?) -> String {
+        guard let content else { return "nil" }
+        switch content {
+        case .state(let state):
+            return "state/\(caseName(state))"
+        case .messageLike(let message):
+            switch message {
+            case .roomMessage(let messageType, _):
+                return "roomMessage/\(caseName(messageType))"
+            default:
+                return caseName(message)
+            }
+        }
+    }
+
+    /// Имя case'а без ассоциированных значений: `String(describing:)` печатает их
+    /// сразу за именем в скобках — обрезаем по первой скобке.
+    private static func caseName(_ value: Any) -> String {
+        String(String(describing: value).prefix { $0 != "(" })
+    }
+
     private func preprocessNotification(_ itemProxy: NotificationItemProxyProtocol) async -> NotificationProcessingResult {
         if settings.hideQuietNotificationAlerts, !itemProxy.isNoisy {
             return .processedShouldDiscard
@@ -539,12 +578,14 @@ class NotificationHandler {
         }
         
         let eventContent = try? event.content()
-        os_log(.default, log: nseHandlerLog, "Event content type: %{public}@", String(describing: eventContent))
-        NSEDiagLog.write("  preprocess: contentType=\(String(describing: eventContent)) eventID=\(event.eventId())")
+        os_log(.default, log: nseHandlerLog, "Event content type: %{public}@", Self.contentTag(eventContent))
+        NSEDiagLog.write("  preprocess: contentType=\(Self.contentTag(eventContent)) eventID=\(event.eventId())")
 
         switch eventContent {
         case .messageLike(let messageContent):
-            os_log(.default, log: nseHandlerLog, "MessageLike content: %{public}@", String(describing: messageContent))
+            // Тоже без payload: os_log попадает в sysdiagnose, а там телу
+            // расшифрованного сообщения делать нечего.
+            os_log(.default, log: nseHandlerLog, "MessageLike content: %{public}@", Self.caseName(messageContent))
             switch messageContent {
             case .roomEncrypted:
                 // Suppress an undecryptable encrypted event when a call is active in the room: these
