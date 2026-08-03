@@ -102,6 +102,28 @@ struct DiskFile: Identifiable, Codable, Equatable {
         case sharedWith
     }
 
+    /// Ручной конструктор для записей НЕ из /api/files (Диск-документы из
+    /// /disk-docs): форма того ответа другая, декодер ниже им не подходит.
+    init(eventID: String?, roomID: String?, blobID: String?, sender: String, filename: String,
+         mimetype: String, size: Int64, msgtype: String, category: DiskFileCategory, mxcURL: String,
+         ts: Int64, isEncrypted: Bool, folderID: String?, starred: Bool, sharedWith: [String]?) {
+        self.eventID = eventID
+        self.roomID = roomID
+        self.blobID = blobID
+        self.sender = sender
+        self.filename = filename
+        self.mimetype = mimetype
+        self.size = size
+        self.msgtype = msgtype
+        self.category = category
+        self.mxcURL = mxcURL
+        self.ts = ts
+        self.isEncrypted = isEncrypted
+        self.folderID = folderID
+        self.starred = starred
+        self.sharedWith = sharedWith
+    }
+
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         eventID = try c.decodeIfPresent(String.self, forKey: .eventID)
@@ -427,6 +449,136 @@ final class DiskService {
     func fetchBlob(id: String) async throws -> Data {
         let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
         return try await get(URL(string: "\(baseURL)/api/files/blob/\(encoded)"))
+    }
+
+    /// Диск-нативные документы владельца (созданы вебом или «Сохранить на Диск»
+    /// из Айлока). В общий /api/files они НЕ входят (живая проба 03.08: свежий
+    /// документ в списке не появился) — веб подмешивает их отдельным запросом,
+    /// повторяем его контракт.
+    func fetchDiskDocs() async throws -> [DiskFile] {
+        struct Response: Decodable { let docs: [LenientDoc]? }
+        struct Doc: Decodable {
+            let blobId: String
+            let name: String?
+            let mimetype: String?
+            let size: Int64?
+            let ts: Double?
+            let starred: Bool?
+            let sharedWith: [Recipient]?
+            struct Recipient: Decodable { let user: String? }
+
+            enum CodingKeys: String, CodingKey { case blobId, name, mimetype, size, ts, starred, sharedWith }
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                // id этого бэкенда уже приходил числом (прецедент folderId) —
+                // читаем терпимо, иначе смена типа молча выбросит запись.
+                if let numeric = try? c.decodeIfPresent(Int64.self, forKey: .blobId) {
+                    blobId = String(numeric)
+                } else {
+                    blobId = try c.decode(String.self, forKey: .blobId)
+                }
+                name = try? c.decodeIfPresent(String.self, forKey: .name)
+                mimetype = try? c.decodeIfPresent(String.self, forKey: .mimetype)
+                size = try? c.decodeIfPresent(Int64.self, forKey: .size)
+                ts = try? c.decodeIfPresent(Double.self, forKey: .ts)
+                starred = try? c.decodeIfPresent(Bool.self, forKey: .starred)
+                sharedWith = try? c.decodeIfPresent([Recipient].self, forKey: .sharedWith)
+            }
+        }
+        // Поштучный разбор, как у shared-with-me: одна непонятая запись не
+        // должна прятать все документы (схема этого API ещё меняется).
+        struct LenientDoc: Decodable {
+            let doc: Doc?
+            init(from decoder: Decoder) throws {
+                doc = try? Doc(from: decoder)
+            }
+        }
+
+        let data = try await get(URL(string: "\(baseURL)/api/files/disk-docs"))
+        let wrapped: [LenientDoc]
+        do {
+            wrapped = try (JSONDecoder().decode(Response.self, from: data)).docs ?? []
+        } catch {
+            DiagLog.write("Disk", "disk-docs не разобрался (\(data.count) байт): \(error)")
+            throw error
+        }
+        let docs = wrapped.compactMap(\.doc).filter { !$0.blobId.isEmpty }
+        if docs.count < wrapped.count {
+            DiagLog.write("Disk", "disk-docs: пропущено записей \(wrapped.count - docs.count) из \(wrapped.count)")
+        }
+        return docs.map { doc in
+            let mime = doc.mimetype ?? ""
+            let category: DiskFileCategory = if mime.hasPrefix("image/") { .images }
+            else if mime.hasPrefix("video/") || mime.hasPrefix("audio/") { .media }
+            else { .documents }
+            return DiskFile(eventID: nil, roomID: nil, blobID: doc.blobId,
+                            sender: "", filename: doc.name ?? "", mimetype: mime,
+                            size: doc.size ?? 0, msgtype: "m.file", category: category,
+                            mxcURL: "",
+                            // Int64(Double) трапается на мусорном значении вне
+                            // диапазона — exactly+rounded безопасно даёт 0.
+                            ts: Int64(exactly: (doc.ts ?? 0).rounded()) ?? 0,
+                            isEncrypted: false,
+                            folderID: nil, starred: doc.starred ?? false,
+                            sharedWith: doc.sharedWith?.compactMap(\.user).filter { !$0.isEmpty })
+        }
+    }
+
+    /// Загрузить содержимое к себе на Диск Диск-документом (diskDoc=1): запись
+    /// появляется в общем списке файлов и открывается вебом как документ.
+    /// Контракт — как у веба (FileIndexApi.uploadDiskDoc): сырое тело POST'ом,
+    /// имя и тип в query, лимит сервера 40 МБ.
+    func uploadDiskDoc(filename: String, mimetype: String, data: Data) async throws {
+        var components = URLComponents(string: "\(baseURL)/api/files/blob")
+        components?.queryItems = [URLQueryItem(name: "diskDoc", value: "1"),
+                                  URLQueryItem(name: "filename", value: filename),
+                                  URLQueryItem(name: "mimetype", value: mimetype)]
+        // URLComponents оставляет «+» сырым (по RFC он в query разрешён), а
+        // form-urlencoded-парсер Node на сервере декодирует его пробелом:
+        // «C++ разбор.md» доехал бы как «C   разбор.md». Веб шлёт %2B — дожимаем
+        // так же. Пробелы URLComponents кодирует в %20, так что замена трогает
+        // только литеральные плюсы (в т.ч. в mimetype вида image/svg+xml).
+        if let encoded = components?.percentEncodedQuery {
+            components?.percentEncodedQuery = encoded.replacingOccurrences(of: "+", with: "%2B")
+        }
+        guard let url = components?.url else { throw DiskServiceError.invalidURL }
+
+        for attempt in 1...2 {
+            let token = try accessTokenProvider()
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+            request.httpBody = data
+
+            let response: URLResponse
+            do {
+                (_, response) = try await session.data(for: request)
+            } catch {
+                // Как в get(): без этой строки сбой сети выглядел бы в выгрузке
+                // как «не сохранилось и молчит» — ни следа, что POST вообще был.
+                let isCancelled = error is CancellationError || (error as? URLError)?.code == .cancelled
+                if !isCancelled {
+                    DiagLog.write("Disk", "загрузка Диск-документа не дошла: \(error.localizedDescription)")
+                }
+                throw error
+            }
+            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+
+            if status == 200 { return }
+
+            if status == 401, attempt == 1 {
+                os_log(.default, log: diskLog, "401 на загрузке — обновляю токен и повторяю")
+                await forceTokenRefresh?()
+                continue
+            }
+
+            DiagLog.write("Disk", "загрузка Диск-документа → HTTP \(status)")
+            throw status == 401 ? DiskServiceError.unauthorized : DiskServiceError.http(status)
+        }
+
+        throw DiskServiceError.unauthorized
     }
 
     // MARK: - Транспорт

@@ -119,6 +119,56 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
             finishVoiceInput()
         case .cancelVoiceInput:
             cancelVoiceInput()
+        case .saveToDisk(let message):
+            saveToDisk(message)
+        }
+    }
+
+    // MARK: - Сохранение ответа на Диск
+
+    /// Ответ агента уходит к себе на Диск Диск-документом (dp): появляется в
+    /// общем списке файлов, открывается вебом как редактируемый документ.
+    /// Текст сохраняем как markdown — в нём агент и отвечает.
+    private func saveToDisk(_ message: AilockMessage) {
+        guard let service = state.diskPicker?.service, !message.text.isEmpty else { return }
+        let text = message.text
+        Task { [weak self] in
+            do {
+                try await service.uploadDiskDoc(filename: Self.diskDocName(for: text),
+                                                mimetype: "text/markdown",
+                                                data: Data(text.utf8))
+                self?.showInfoToast(SL10n.ailockSavedToDisk)
+            } catch {
+                self?.state.errorMessage = SL10n.ailockSaveToDiskFailed
+            }
+        }
+    }
+
+    /// Имя документа — из первой строки ответа: markdown-обвязка и слэши
+    /// убираются, длина режется, пустота получает имя-заглушку.
+    static func diskDocName(for text: String) -> String {
+        let firstLine = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+        var title = firstLine
+            .trimmingCharacters(in: CharacterSet(charactersIn: "#*`>_~- —–"))
+            .replacingOccurrences(of: "**", with: "")
+            .replacingOccurrences(of: "/", with: "-")
+            .trimmingCharacters(in: .whitespaces)
+        if title.count > 40 {
+            title = String(title.prefix(40)).trimmingCharacters(in: .whitespaces) + "…"
+        }
+        if title.isEmpty { title = SL10n.ailockReplyDocName }
+        return title + ".md"
+    }
+
+    private var infoToastTask: Task<Void, Never>?
+
+    private func showInfoToast(_ text: String) {
+        infoToastTask?.cancel()
+        state.infoToast = text
+        infoToastTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2.5))
+            guard !Task.isCancelled else { return }
+            self?.state.infoToast = nil
         }
     }
 

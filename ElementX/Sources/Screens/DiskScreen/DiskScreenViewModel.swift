@@ -170,6 +170,9 @@ final class DiskScreenViewModel: ObservableObject {
     }
 
     @Published private(set) var sharedFiles: [DiskSharedFile] = []
+    /// Диск-нативные документы (веб-редактор, «Сохранить на Диск» из Айлока):
+    /// сервер не отдаёт их в /api/files, грузим отдельно и подмешиваем в «Все».
+    @Published private(set) var diskDocs: [DiskFile] = []
     @Published private(set) var isLoadingShared = false
 
     /// «Доступно мне» после фильтра поиска.
@@ -188,11 +191,17 @@ final class DiskScreenViewModel: ObservableObject {
             return displayedSharedFiles.map { .shared($0) }
         }
         var entries: [DiskListEntry] = displayedFiles.map { .own($0) }
-        if selectedCategory == nil, selectedFolder == nil, !showingNoFolder, selectedChatRoomID == nil, !sharedFiles.isEmpty {
+        if selectedCategory == nil, selectedFolder == nil, !showingNoFolder, selectedChatRoomID == nil {
             let query = searchQuery.trimmingCharacters(in: .whitespaces)
+            // Диск-документы (в т.ч. сохранённые ответы Айлока) в /api/files не
+            // входят — подмешиваем тем же правилом, что и расшаренное.
+            let docs = query.isEmpty ? diskDocs : diskDocs.filter { $0.filename.localizedCaseInsensitiveContains(query) }
+            entries.append(contentsOf: docs.map { .own($0) })
             let shared = query.isEmpty ? sharedFiles : sharedFiles.filter { $0.name.localizedCaseInsensitiveContains(query) }
             entries.append(contentsOf: shared.map { .shared($0) })
-            entries.sort { $0.ts > $1.ts }
+            if !docs.isEmpty || !shared.isEmpty {
+                entries.sort { $0.ts > $1.ts }
+            }
         }
         return entries
     }
@@ -539,6 +548,7 @@ final class DiskScreenViewModel: ObservableObject {
         folders = await (foldersTask) ?? []
         // Расшаренное грузим вместе со списком: dp ждёт его и в общем списке.
         sharedFiles = await (try? service.fetchSharedWithMe()) ?? sharedFiles
+        diskDocs = await (try? service.fetchDiskDocs()) ?? diskDocs
         isLoading = false
     }
 

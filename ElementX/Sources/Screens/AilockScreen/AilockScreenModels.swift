@@ -23,6 +23,8 @@ enum AilockScreenViewAction {
     case startVoiceInput
     case finishVoiceInput
     case cancelVoiceInput
+    /// Сохранить ответ агента к себе на Диск (dp).
+    case saveToDisk(AilockMessage)
 }
 
 /// Состояние голосового ввода: диктовка → расшифровка → текст в поле.
@@ -50,6 +52,8 @@ struct AilockScreenViewState: BindableState {
     var pendingAttachments: [AilockFile] = []
     var isUploadingAttachment = false
     var errorMessage: String?
+    /// Короткое подтверждение действия («Сохранено на Диск») — гаснет само.
+    var infoToast: String?
     /// Айлок не развёрнут на этом домене — экран показывает заглушку, а не ошибку.
     var isUnavailable = false
 
@@ -61,7 +65,9 @@ struct AilockScreenViewState: BindableState {
     /// Расшифровки на этом домене нет — прячем микрофон, а не показываем ошибку каждый раз.
     var isVoiceUnavailable = false
 
-    /// Доступ к «Диску» для выбора вложения. nil — пункт меню не показываем.
+    /// Доступ к «Диску»: пикер вложений и «Сохранить на Диск». Координатор
+    /// отдаёт контекст всегда — nil-ветка структурная, отдельной пробы
+    /// files-api здесь нет.
     var diskPicker: AilockDiskPickerContext?
 
     /// Текущий уровень микрофона. Индикатор читает его сам в момент отрисовки —

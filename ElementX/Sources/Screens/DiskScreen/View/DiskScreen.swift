@@ -269,7 +269,10 @@ struct DiskScreen: View {
             // и «Вне папок» показываются обычным списком со строкой «назад»,
             // активный поиск — всегда по файлам.
             foldersGrid
-        } else if context.displayedFiles.isEmpty {
+        } else if context.displayedEntries.isEmpty {
+            // Гейт по ОБЪЕДИНЁННОМУ списку: свои файлы + диск-документы + расшаренное.
+            // По одним своим на свежем аккаунте сохранённый ответ Айлока прятался
+            // за «Здесь пока нет файлов», а поиск по его имени — за «Ничего не найдено».
             if context.searchQuery.isEmpty {
                 emptyState
             } else {

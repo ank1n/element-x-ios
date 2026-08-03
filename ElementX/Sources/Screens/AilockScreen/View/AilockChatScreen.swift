@@ -201,6 +201,31 @@ struct AilockChatScreen: View {
                 // Дельты приходят пачками раз в 60мс (flushBuffer), разбор блоков
                 // на килобайтах текста дешёвый — перерисовка не дёргает ленту.
                 AilockMarkdownText(text: message.text)
+                    // Меню — на текстовом блоке, НЕ на всём сообщении: иначе оно
+                    // перехватывало бы долгий тап файловых карточек ниже. Оно же
+                    // заменяет копирование выделением (long-press теперь его) —
+                    // «Скопировать» берёт ответ целиком. Только на готовом ответе:
+                    // во время стриминга сохранение унесло бы обрезанную середину.
+                    .contentShape(Rectangle())
+                    .contextMenu {
+                        if !message.isStreaming {
+                            Button {
+                                UIPasteboard.general.string = message.text
+                            } label: {
+                                Label(SL10n.ailockCopy, systemImage: "doc.on.doc")
+                            }
+                            // Контекст Диска приходит от координатора всегда; пробы
+                            // files-api здесь нет — на домене без него сохранение
+                            // честно упадёт в баннер ошибки.
+                            if context.viewState.diskPicker != nil {
+                                Button {
+                                    context.send(viewAction: .saveToDisk(message))
+                                } label: {
+                                    Label(SL10n.ailockSaveToDisk, systemImage: "externaldrive.badge.plus")
+                                }
+                            }
+                        }
+                    }
             }
 
             ForEach(message.files) { file in
@@ -308,6 +333,10 @@ struct AilockChatScreen: View {
                 errorBanner(error)
             }
 
+            if let info = context.viewState.infoToast {
+                infoBanner(info)
+            }
+
             if let question = context.viewState.pendingQuestion {
                 questionBanner(question)
             }
@@ -381,6 +410,10 @@ struct AilockChatScreen: View {
         // Просвет между верхней кромкой панели и капсулой поля: без него овал
         // выглядит обрезанным сверху.
         .padding(.top, Self.composerTopInset)
+        // Тост гаснет сам — без анимируемой транзакции его .transition мёртв,
+        // и композер дёргался бы по высоте. Ошибки/вопросы не анимируем: их
+        // закрывает пользователь.
+        .animation(.easeInOut(duration: 0.2), value: context.viewState.infoToast)
         // Карточный стиль референса (dp: «низ плоский» + «соответствие референсу»):
         // белая карточка со скруглённым верхом, волосяной рамкой --border и тенью
         // --shadow — как .tile/.scene в concept.html. Вниз форма продолжается под
@@ -625,6 +658,23 @@ struct AilockChatScreen: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(Color.red.opacity(0.1))
+    }
+
+    /// Зелёный близнец errorBanner: подтверждение действия, гаснет само —
+    /// поэтому без крестика.
+    private func infoBanner(_ message: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "checkmark.circle")
+                .font(.system(size: 13))
+            Text(message)
+                .font(.footnote)
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(.green)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.green.opacity(0.1))
+        .transition(.opacity)
     }
 
     @ToolbarContentBuilder
