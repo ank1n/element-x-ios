@@ -565,16 +565,19 @@ private struct GroupCallLayout: View {
         // Top tile = 60% от availableHeight, bottom row = 40%.
         let topHeight = availableHeight * 0.6
         let bottomHeight = availableHeight * 0.4
-        VStack(spacing: spacing) {
+        // Своя плитка — всегда слева в нижнем ряду: пользователь ожидает видеть
+        // себя в одном и том же месте, а не там, куда её поставит порядок списка.
+        let bottomPair = [items[1], items[2]].sorted { $0.isLocal && !$1.isLocal }
+        return VStack(spacing: spacing) {
             ParticipantTile(item: items[0], mediaProvider: mediaProvider)
                 .frame(height: topHeight)
                 .clipped()
             HStack(spacing: spacing) {
-                ParticipantTile(item: items[1], mediaProvider: mediaProvider)
+                ParticipantTile(item: bottomPair[0], mediaProvider: mediaProvider)
                     .frame(maxWidth: .infinity)
                     .frame(height: bottomHeight)
                     .clipped()
-                ParticipantTile(item: items[2], mediaProvider: mediaProvider)
+                ParticipantTile(item: bottomPair[1], mediaProvider: mediaProvider)
                     .frame(maxWidth: .infinity)
                     .frame(height: bottomHeight)
                     .clipped()
@@ -655,25 +658,9 @@ private struct GroupCallLayout: View {
             }
         }
 
-        // Local participant
-        if let local = roomManager.localParticipant {
-            let identity = local.identity?.stringValue ?? "local"
-            // STMOB: для local участника НЕ показываем зелёную speaking
-            // рамку — LiveKit voice activity срабатывает на любой шум/echo
-            // даже когда mic muted/idle и отвлекает пользователя. Local
-            // sees their own state без подсказки.
-            items.append(ParticipantItem(id: identity,
-                                         videoTrack: roomManager.localVideoTrack,
-                                         displayName: SL10n.callsYou,
-                                         avatarURL: findAvatarURL(for: identity),
-                                         isLocal: true,
-                                         isSpeaking: false,
-                                         isAudioMuted: isLocalAudioMuted,
-                                         isVideoMuted: !isLocalVideoEnabled,
-                                         isScreenShare: false,
-                                         isHandRaised: roomManager.isHandRaised))
-        }
-
+        // STMOB-279: своя плитка идёт ПОСЛЕ удалённых. Раньше она добавлялась
+        // первой и в раскладке «1 крупный сверху» занимала главный слот —
+        // пользователь видел крупно себя, а собеседников мелко внизу.
         // Remote participants (camera tracks)
         for participant in roomManager.displayParticipants {
             let identity = participant.identity?.stringValue ?? participant.sid?.stringValue ?? UUID().uuidString
@@ -702,6 +689,25 @@ private struct GroupCallLayout: View {
                                          isVideoMuted: videoMuted,
                                          isScreenShare: false,
                                          isHandRaised: handRaised))
+        }
+
+        // Local participant
+        if let local = roomManager.localParticipant {
+            let identity = local.identity?.stringValue ?? "local"
+            // STMOB: для local участника НЕ показываем зелёную speaking
+            // рамку — LiveKit voice activity срабатывает на любой шум/echo
+            // даже когда mic muted/idle и отвлекает пользователя. Local
+            // sees their own state без подсказки.
+            items.append(ParticipantItem(id: identity,
+                                         videoTrack: roomManager.localVideoTrack,
+                                         displayName: SL10n.callsYou,
+                                         avatarURL: findAvatarURL(for: identity),
+                                         isLocal: true,
+                                         isSpeaking: false,
+                                         isAudioMuted: isLocalAudioMuted,
+                                         isVideoMuted: !isLocalVideoEnabled,
+                                         isScreenShare: false,
+                                         isHandRaised: roomManager.isHandRaised))
         }
 
         return items
@@ -1032,7 +1038,8 @@ private struct SpeakerCallLayout: View {
     private func stripView(in geometry: GeometryProxy, height: CGFloat) -> some View {
         let visibleParticipants = stripParticipants
         let overflow = roomManager.displayParticipants.count - visibleParticipants.count
-        let totalTiles = visibleParticipants.count + (overflow > 0 ? 1 : 0)
+        // +1 — своя плитка, она всегда в полосе.
+        let totalTiles = visibleParticipants.count + 1 + (overflow > 0 ? 1 : 0)
         let hpadding: CGFloat = 12
         let spacing: CGFloat = 8
         let availableWidth = geometry.size.width - hpadding * 2
@@ -1046,6 +1053,10 @@ private struct SpeakerCallLayout: View {
         let tileWidth = max(72, computedWidth)
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: spacing) {
+                // STMOB-279: своя плитка — всегда первая слева. Полоса собиралась
+                // только из удалённых участников, и в режиме «докладчик» человек
+                // не видел себя вовсе: ни камеры, ни состояния микрофона.
+                localStripTile(width: tileWidth, height: tileHeight)
                 ForEach(visibleParticipants, id: \.sid) { participant in
                     speakerStripTile(for: participant, width: tileWidth, height: tileHeight)
                 }
@@ -1058,6 +1069,26 @@ private struct SpeakerCallLayout: View {
         }
         .frame(height: height)
         .background(Color.black.opacity(0.6))
+    }
+
+    /// Своя плитка в полосе: та же геометрия, что у остальных, но данные берём
+    /// у локального участника. Камера выключена — показываем аватар, как в сетке.
+    @ViewBuilder
+    private func localStripTile(width: CGFloat, height: CGFloat) -> some View {
+        let identity = roomManager.localParticipant?.identity?.stringValue ?? "local"
+        ParticipantTile(item: ParticipantItem(id: identity,
+                                              videoTrack: isLocalVideoEnabled ? roomManager.localVideoTrack : nil,
+                                              displayName: SL10n.callsYou,
+                                              avatarURL: participants.first { $0.userID == identity }?.avatarURL,
+                                              isLocal: true,
+                                              isSpeaking: false,
+                                              isAudioMuted: isLocalAudioMuted,
+                                              isVideoMuted: !isLocalVideoEnabled,
+                                              isScreenShare: false,
+                                              isHandRaised: roomManager.isHandRaised),
+                        mediaProvider: mediaProvider)
+            .frame(width: width, height: height)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     /// STMOB-117 build 143: для strip берём не более 3 участников.
