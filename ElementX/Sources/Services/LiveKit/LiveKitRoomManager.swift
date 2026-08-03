@@ -43,6 +43,8 @@ final class LiveKitRoomManager: ObservableObject {
     /// STMOB-262: режим переподключения, в котором сейчас находится SDK (nil — не
     /// переподключается). Quick-цикл в `connectionState` не виден вообще.
     @Published private(set) var sdkReconnectMode: ReconnectMode?
+    /// Когда началась текущая лестница реконнекта SDK (для логов и решений).
+    private var sdkReconnectSince: Date?
     /// Оценка качества связи от SFU для СЕБЯ. Приходит только при смене значения,
     /// поэтому как самостоятельный детектор не годится — только как подтверждение.
     @Published private(set) var localConnectionQuality: ConnectionQuality = .unknown
@@ -369,6 +371,30 @@ final class LiveKitRoomManager: ObservableObject {
     /// портит звук. Mid-call смена NS требует republish трека, поэтому семантика
     /// настройки — «применяется со следующего звонка».
     /// Заодно читает blur-интент: тумблер в настройках = блюр по умолчанию для звонка.
+    /// STMOB-280: параметры лестницы переподключения SDK.
+    ///
+    /// По умолчанию SDK делает 9 «быстрых» попыток и только на ПОСЛЕДНЕЙ переходит
+    /// к полному реконнекту. Пауза между попытками растёт по easeOutCirc от 0.3с до
+    /// 7с, а каждая неудачная попытка перед этим ждёт транспорт 10с — значит полный
+    /// реконнект начинается примерно через минуту после обрыва. Столько же длится и
+    /// тишина: quick сохраняет старый транспорт и делает ICE restart на нём.
+    ///
+    /// На телефоне обрыв посреди звонка — это почти всегда смена интерфейса
+    /// (WiFi↔сотовая): локальные сокеты и кандидаты умерли вместе со старым
+    /// адресом, и чинить их ICE-рестартом нечем — помогает только полный реконнект
+    /// с перепубликацией. Лог 03.08 16:01:20→16:02:30: сигнальный WS поднимался за
+    /// секунду и рапортовал DONE, а publisher так и остался ice=disconnected,
+    /// egress стоял на 47610 байтах 70 секунд — собеседники нас не слышали.
+    ///
+    /// Поэтому: две быстрые попытки (короткий блип чинится ими же — в том логе
+    /// quick трижды сработал сразу), затем сразу полный. Общая живучесть не падает:
+    /// после провала полного SDK прекращает лестницу в любом случае.
+    private static func makeConnectOptions() -> ConnectOptions {
+        ConnectOptions(autoSubscribe: true,
+                       reconnectAttempts: 3,
+                       reconnectMaxDelay: 2)
+    }
+
     private func makeRoomOptions(encryptionOptions: EncryptionOptions? = nil) -> RoomOptions {
         if !hasReadCallSettings {
             hasReadCallSettings = true
@@ -438,7 +464,7 @@ final class LiveKitRoomManager: ObservableObject {
         // Configure iOS audio session for VoIP BEFORE connecting
         configureAudioSession(speakerByDefault: speakerByDefault)
 
-        let connectOptions = ConnectOptions(autoSubscribe: true)
+        let connectOptions = Self.makeConnectOptions()
         // STMOB-164: снижение нагрева. adaptiveStream — мелкие/невидимые тайлы
         // получают низкое разрешение или паузятся (меньше декода+рендера+SFrame
         // decrypt). dynacast — не слать simulcast-слои, которые никто не смотрит.
@@ -467,8 +493,8 @@ final class LiveKitRoomManager: ObservableObject {
         let encryptionOptions = EncryptionOptions(keyProvider: keyProvider,
                                                   encryptionType: .gcm)
 
-        let connectOptions = ConnectOptions(autoSubscribe: true // Subscribe immediately — SFrame handles decrypt when keys arrive
-        )
+        // Subscribe immediately — SFrame handles decrypt when keys arrive.
+        let connectOptions = Self.makeConnectOptions()
         // STMOB-164: см. комментарий в connect() — adaptiveStream/dynacast + 720p/24/2Mbps/DTX для снижения нагрева.
         let roomOptions = makeRoomOptions(encryptionOptions: encryptionOptions)
 
@@ -931,7 +957,10 @@ final class LiveKitRoomManager: ObservableObject {
             return
         }
         guard sdkReconnectMode == nil else {
-            DiagLog.write("Call", "egress: ремонт пропущен — SDK уже переподключается (\(sdkReconnectMode.map { "\($0)" } ?? "?"))")
+            // Длительность обязательна в логе: без неё «SDK переподключается» и
+            // «SDK висит в своей лестнице минуту» выглядят одинаково (лог 03.08).
+            let held = sdkReconnectSince.map { Int(Date().timeIntervalSince($0)) } ?? 0
+            DiagLog.write("Call", "egress: ремонт пропущен — SDK уже переподключается (\(sdkReconnectMode.map { "\($0)" } ?? "?"), \(held)с)")
             return
         }
         if let lastRecoveryAt, Date().timeIntervalSince(lastRecoveryAt) < Self.kRecoveryCooldown {
@@ -1686,6 +1715,7 @@ extension LiveKitRoomManager: RoomDelegate {
     nonisolated func room(_ room: Room, didStartReconnectWithMode reconnectMode: ReconnectMode) {
         Task { @MainActor in
             self.sdkReconnectMode = reconnectMode
+            if self.sdkReconnectSince == nil { self.sdkReconnectSince = Date() }
             DiagLog.write("LiveKit", "reconnect START mode=\(reconnectMode)")
         }
     }
@@ -1700,6 +1730,7 @@ extension LiveKitRoomManager: RoomDelegate {
     nonisolated func room(_ room: Room, didCompleteReconnectWithMode reconnectMode: ReconnectMode) {
         Task { @MainActor in
             self.sdkReconnectMode = nil
+            self.sdkReconnectSince = nil
             // Делегат приходит и на ПРОВАЛЕ лестницы — «DONE» без проверки состояния
             // был бы ложью в логе, а рассылка ключа в мёртвую комнату бессмысленна.
             guard self.room.connectionState == .connected else {
@@ -1772,6 +1803,10 @@ final class MediaEgressWatchdog: NSObject, TrackDelegate, @unchecked Sendable {
         var framesEncoded: UInt64 = 0
         var captureFrames: UInt64 = 0
         var flatTicks = 0
+        /// Полная длительность простоя. `flatTicks` обнуляется после каждого
+        /// вердикта (чтобы не долбить им каждую секунду), и в логе из-за этого
+        /// стояло «flat=3с» там, где байты не двигались минуту.
+        var stallTicks = 0
         /// Тики подряд, когда трек не на паузе, а источник не отдал ни одного кадра.
         var captureFlatTicks = 0
         var ticks = 0
@@ -1870,10 +1905,13 @@ final class MediaEgressWatchdog: NSObject, TrackDelegate, @unchecked Sendable {
         snap.ticks += 1
         if grew || !anyActive || track.isMuted {
             snap.flatTicks = 0
+            snap.stallTicks = 0
         } else {
             snap.flatTicks += 1
+            snap.stallTicks += 1
         }
         let flat = snap.flatTicks
+        let stall = snap.stallTicks
         let ticks = snap.ticks
         // Мёртвый захват: трек НЕ на паузе, а счётчик кадров источника стоит.
         // «Камеру выключили» и «камера включена, но не снимает» — разные состояния,
@@ -1897,7 +1935,7 @@ final class MediaEgressWatchdog: NSObject, TrackDelegate, @unchecked Sendable {
         lock.unlock()
 
         if ticks % Self.telemetryEvery == 0 {
-            DiagLog.write("Call", "egress \(kind): bytes=\(bytes) packets=\(packets) encoded=\(encoded) captured=\(captured) active=\(anyActive) ice=\(iceState.map { "\($0)" } ?? "n/a") flat=\(flat)с")
+            DiagLog.write("Call", "egress \(kind): bytes=\(bytes) packets=\(packets) encoded=\(encoded) captured=\(captured) active=\(anyActive) ice=\(iceState.map { "\($0)" } ?? "n/a") flat=\(stall)с")
         }
 
         if captureFlat == Self.captureStallThreshold, !pathDown, !exhausted {
@@ -1909,7 +1947,7 @@ final class MediaEgressWatchdog: NSObject, TrackDelegate, @unchecked Sendable {
         // Пока сети нет — вердикт не выносим: ремонт по мёртвому пути только сожжёт
         // лимит попыток. Вернётся путь — вернётся и вердикт, если он ещё актуален.
         guard !pathDown else {
-            if flat == Self.stallThreshold { DiagLog.write("Call", "egress \(kind): байты стоят, но сети нет — жду восстановления пути") }
+            if flat == Self.stallThreshold { DiagLog.write("Call", "egress \(kind): байты стоят \(stall)с, но сети нет — жду восстановления пути") }
             return
         }
         // Нет новых кадров от источника — отправлять нечего, и «байты стоят» это не
@@ -1935,7 +1973,7 @@ final class MediaEgressWatchdog: NSObject, TrackDelegate, @unchecked Sendable {
         snapshots[key]?.flatTicks = 0 // не долбить вердиктом каждую секунду
         lock.unlock()
 
-        let reason = "\(kind): байты стоят \(flat)с, \(corroboration)"
+        let reason = "\(kind): байты стоят \(stall)с, \(corroboration)"
         guard !exhausted else { return } // лимит исчерпан — молчим, чтобы не смыть лог
         DiagLog.write("Call", "egress ВСТАЛ — \(reason)")
         Task { @MainActor [onStalled] in onStalled(reason) }
