@@ -147,8 +147,15 @@ class NotificationServiceExtension: UNNotificationServiceExtension {
             os_log(.error, log: nseLog, "NSE fallback: locked=%{public}d room=%{public}@ event=%{public}@ clientID=%{public}@ credentialsFound=%{public}d",
                    isDeviceLocked, roomID ?? "nil", eventID ?? "nil", clientID ?? "nil", credentials != nil ? 1 : 0)
             if let mutableContent = request.content.mutableCopy() as? UNMutableNotificationContent {
-                mutableContent.title = "sTalk"
-                mutableContent.body = "Новое сообщение"
+                // Заголовок и текст ставим ТОЛЬКО если в payload их нет. При полном
+                // формате пуша iOS уже собрала «отправитель в комнате: сообщение»,
+                // и заменять это на «sTalk / Новое сообщение» — терять содержимое
+                // там, где мы и так ничего расшифровать не смогли (телефон заблокирован
+                // или нет ключей сессии).
+                if mutableContent.body.isEmpty {
+                    mutableContent.title = "sTalk"
+                    mutableContent.body = "Новое сообщение"
+                }
                 // Preserve room_id for tap navigation
                 if let roomID {
                     mutableContent.roomID = roomID

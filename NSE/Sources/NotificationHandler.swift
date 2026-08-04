@@ -450,8 +450,39 @@ class NotificationHandler {
     /// no-op, тап открывал приложение «в никуда». Дедуп-отметку события снимаем:
     /// показанная заглушка ≠ показанный контент, retry должен пройти фетч заново
     /// (а успех уберёт заглушку — см. removeDeliveredNotifications).
+    /// Пуш приехал с готовым текстом (полный формат): iOS уже собрала из payload
+    /// «отправитель в комнате: сообщение». Наш defaultPayload помечен loc-key
+    /// «Notification» — по нему и отличаем «в пуше ничего нет» от «в пуше всё есть».
+    private var payloadCarriesAlert: Bool {
+        guard let aps = notificationContent.userInfo["aps"] as? [String: Any],
+              let alert = aps["alert"] as? [String: Any],
+              let locKey = alert["loc-key"] as? String else { return false }
+        return locKey != "Notification"
+    }
+
     private func showGenericMessageNotification() {
         let (roomID, eventID) = stateLock.withLock { (currentRoomID, currentEventID) }
+
+        // Если в payload уже есть осмысленный текст — отдаём его как есть.
+        // Затирать «Иван в «Ops»: текст» заглушкой «Новое сообщение» значит
+        // своими руками сделать пуш беднее, чем он приехал. Аватар и группировку
+        // тут не добавить: вложение может приложить только расширение, а мы
+        // попали сюда именно потому, что оно не успело.
+        if payloadCarriesAlert, !notificationContent.body.isEmpty {
+            NSEDiagLog.write("  → отдаю текст из payload (полный формат), заглушка не нужна")
+            if let roomID {
+                notificationContent.roomID = roomID
+                notificationContent.threadIdentifier = "\(userSession.userID)\(roomID)".replacingOccurrences(of: "@", with: "")
+            }
+            if let eventID {
+                notificationContent.eventID = eventID
+                notificationContent.receiverID = userSession.userID
+                NSEEventDedupCache.unmark(eventID: eventID)
+            }
+            callContentHandlerOnce(notificationContent)
+            return
+        }
+
         let content = UNMutableNotificationContent()
         let isRussian = Locale.preferredLanguages.first?.hasPrefix("ru") ?? false
         // Сначала кэш имён: он читается с диска за миллисекунды и не зависит от
