@@ -1249,6 +1249,12 @@ class CallHistoryService: NSObject, CallHistoryServiceProtocol, URLSessionDelega
         throw lastError ?? CallHistoryError.invalidResponse
     }
 
+    /// Обёртка, которой отмечаем окончательный отказ: она проходит мимо ветки
+    /// повторов и разворачивается обратно в исходную ошибку у вызывающего.
+    private struct PermanentFailure: Error {
+        let underlying: Error
+    }
+
     private func performAuthenticatedRequest<T: Decodable>(url: URL, method: String, jsonBody: [String: Any]? = nil) async throws -> T {
         var lastError: Error?
         for attempt in 1...3 {
@@ -1275,10 +1281,19 @@ class CallHistoryService: NSObject, CallHistoryServiceProtocol, URLSessionDelega
                 }
 
                 guard statusCode == 200 else {
-                    throw CallHistoryError.serverError("HTTP \(statusCode)")
+                    // 4xx (кроме 401, он разобран выше вместе с обновлением токена)
+                    // — это вердикт сервера, а не сбой связи. Повтор даст ровно тот
+                    // же ответ, только экран простоит лишние две секунды в загрузке.
+                    // Стало актуально с STALK-751: чужая запись теперь отвечает 403,
+                    // и без этого один отказ превращался бы в три запроса.
+                    let failure = CallHistoryError.serverError("HTTP \(statusCode)")
+                    if (400..<500).contains(statusCode) { throw PermanentFailure(underlying: failure) }
+                    throw failure
                 }
 
                 return try JSONDecoder().decode(T.self, from: data)
+            } catch let permanent as PermanentFailure {
+                throw permanent.underlying
             } catch {
                 lastError = error
                 if attempt < 3 {
