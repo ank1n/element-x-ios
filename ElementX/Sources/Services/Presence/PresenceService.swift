@@ -11,8 +11,23 @@ import os.log
 private let presenceLog = OSLog(subsystem: "ru.implica.stalk", category: "Presence")
 
 struct UserPresence: Equatable {
-    let isOnline: Bool
+    /// Вердикт сервера на момент ответа. Хранится отдельно, чтобы «невидимку»
+    /// (человек сам выставил offline) не зажечь по одной лишь активности.
+    let serverOnline: Bool
     let lastSeenDate: Date?
+
+    /// «В сети» считается КАЖДЫЙ раз заново, а не запоминается снимком.
+    ///
+    /// Правило «активен меньше пяти минут назад» перестаёт выполняться само
+    /// собой — просто оттого, что идёт время. Пока это был сохранённый флаг,
+    /// запись в кэше держала зелёную точку вечно, и единственным способом
+    /// погасить её был новый запрос: приходилось опрашивать всех подряд лишь
+    /// затем, чтобы узнать, что человека давно нет. Теперь устаревание
+    /// отрабатывает локально, а сеть нужна только чтобы поймать ПОЯВЛЕНИЕ.
+    var isOnline: Bool {
+        guard serverOnline, let lastSeenDate else { return false }
+        return Date().timeIntervalSince(lastSeenDate) < PresenceService.onlineWindow
+    }
 }
 
 @MainActor
@@ -36,6 +51,19 @@ class PresenceService {
     var currentUserIDs: [String] {
         pollingUserIDs
     }
+
+    /// Граница «в сети»: сервер считает человека активным, пока последняя
+    /// активность моложе пяти минут. Одно правило и для разбора ответа, и для
+    /// затухания в `UserPresence`, и для расчёта частоты опроса.
+    static let onlineWindow: TimeInterval = 5 * 60
+
+    /// Когда по юзеру получен последний ответ. Без этого каждый вызов
+    /// `fetchPresence` шёл в сеть заново, включая вызовы, прилетающие пачками
+    /// на каждое обновление списка комнат.
+    private var lastFetchedAt: [String: Date] = [:]
+
+    /// Интервал цикла опроса — нужен, чтобы считать свежесть в тех же единицах.
+    private var pollInterval: TimeInterval = 30
 
     /// Сетевые отказы текущей пачки — в лог уходит счётчиком, а не строкой
     /// на каждого из ~90 опрашиваемых.
@@ -113,6 +141,20 @@ class PresenceService {
         }
     }
 
+    /// Как скоро имеет смысл переспрашивать конкретного человека.
+    ///
+    /// Пока он в сети, ответ надо освежать каждый цикл: иначе точка погаснет
+    /// сама через пять минут, хотя человек на месте.
+    ///
+    /// Для тех, кого давно нет, такая частота бессмысленна. Серверное «в сети»
+    /// держится все пять минут после активности, поэтому опроса дважды за это
+    /// окно достаточно, чтобы не пропустить ни одного появления. На длинном
+    /// хвосте молчащих контактов это впятеро меньше запросов — а хвост и
+    /// составляет почти весь список.
+    private func refreshInterval(for userID: String) -> TimeInterval {
+        presenceSubject.value[userID]?.isOnline == true ? pollInterval : Self.onlineWindow / 2
+    }
+
     // MARK: - Fetch Presence
 
     func fetchPresence(for userIDs: [String]) async {
@@ -125,6 +167,8 @@ class PresenceService {
         let dedupedIDs = userIDs.filter { userID in
             if inFlight.contains(userID) { return false }
             if let until = forbiddenUntil[userID], until > now { return false }
+            if let fetchedAt = lastFetchedAt[userID],
+               now.timeIntervalSince(fetchedAt) < refreshInterval(for: userID) { return false }
             return true
         }
         let skippedCount = userIDs.count - dedupedIDs.count
@@ -154,6 +198,10 @@ class PresenceService {
 
             for await (userID, presence, statusCode) in group {
                 inFlight.remove(userID)
+                // Отметка ставится на ЛЮБОЙ завершённый ответ, включая отказ:
+                // иначе юзер, которому сервер стабильно не отвечает, будет
+                // переспрашиваться в каждом проходе.
+                lastFetchedAt[userID] = Date()
                 if statusCode == 403 {
                     forbiddenUntil[userID] = now.addingTimeInterval(forbiddenTTL)
                 }
@@ -190,6 +238,7 @@ class PresenceService {
                 }
                 for await (userID, presence, statusCode) in group {
                     inFlight.remove(userID)
+                    lastFetchedAt[userID] = Date()
                     if statusCode == 403 {
                         forbiddenUntil[userID] = Date().addingTimeInterval(forbiddenTTL)
                     }
@@ -260,14 +309,15 @@ class PresenceService {
         // presence_stream) → header показывал «в сети» когда в Contacts list
         // было корректное «был 23 минуты назад». Теперь оба места дают
         // одинаковый результат.
-        let recentlyActive = (lastActiveAgoMs ?? .max) < 5 * 60 * 1000
+        let recentlyActive = TimeInterval(lastActiveAgoMs ?? .max) / 1000 < Self.onlineWindow
         let isOnline = (presenceStr == "online" || currentlyActive) && recentlyActive
-        return (UserPresence(isOnline: isOnline, lastSeenDate: lastSeenDate), httpResponse.statusCode)
+        return (UserPresence(serverOnline: isOnline, lastSeenDate: lastSeenDate), httpResponse.statusCode)
     }
 
     // MARK: - Polling
 
     func startPolling(userIDs: [String], interval: TimeInterval = 30) {
+        pollInterval = interval
         // STMOB-110: union-merge, НЕ replace. Раньше три экрана (Contacts,
         // Home, RoomScreen) шарят один PresenceService и каждый перетирал
         // общий pollingUserIDs своим списком. Когда экран А ронял @molly из
