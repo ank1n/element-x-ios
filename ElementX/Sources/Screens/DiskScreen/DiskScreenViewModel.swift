@@ -191,14 +191,28 @@ final class DiskScreenViewModel: ObservableObject {
             return displayedSharedFiles.map { .shared($0) }
         }
         var entries: [DiskListEntry] = displayedFiles.map { .own($0) }
-        if selectedCategory == nil, selectedFolder == nil, !showingNoFolder, selectedChatRoomID == nil {
+        if selectedFolder == nil, !showingNoFolder, selectedChatRoomID == nil {
             let query = searchQuery.trimmingCharacters(in: .whitespaces)
             // Диск-документы (в т.ч. сохранённые ответы Айлока) в /api/files не
             // входят — подмешиваем тем же правилом, что и расшаренное.
-            let docs = query.isEmpty ? diskDocs : diskDocs.filter { $0.filename.localizedCaseInsensitiveContains(query) }
+            //
+            // С 04.08 сервер считает их и в категориях (Molly, коммит 45914a9),
+            // по mimetype — тем же правилом, что и мы у себя в fetchDiskDocs.
+            // Поэтому подмешиваем не только во «Все»: иначе чип «Документы»
+            // показывал бы число больше, чем содержимое вкладки — ровно то
+            // расхождение, ради которого правку и делали, только с другой стороны.
+            var docs = query.isEmpty ? diskDocs : diskDocs.filter { $0.filename.localizedCaseInsensitiveContains(query) }
+            if let selectedCategory {
+                docs = docs.filter { $0.category == selectedCategory }
+            }
             entries.append(contentsOf: docs.map { .own($0) })
-            let shared = query.isEmpty ? sharedFiles : sharedFiles.filter { $0.name.localizedCaseInsensitiveContains(query) }
-            entries.append(contentsOf: shared.map { .shared($0) })
+            // Расшаренное остаётся только во «Все»: серверной категории у него
+            // нет, и в счётчиках stats оно не участвует.
+            var shared: [DiskSharedFile] = []
+            if selectedCategory == nil {
+                shared = query.isEmpty ? sharedFiles : sharedFiles.filter { $0.name.localizedCaseInsensitiveContains(query) }
+                entries.append(contentsOf: shared.map { .shared($0) })
+            }
             if !docs.isEmpty || !shared.isEmpty {
                 entries.sort { $0.ts > $1.ts }
             }
