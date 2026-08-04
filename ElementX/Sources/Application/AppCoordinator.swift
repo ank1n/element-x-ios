@@ -1453,7 +1453,12 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
                 // skрытых space-комнат / tombstoned remnants с unread.
                 var total = 0
                 var sources: [String] = []
+                // Заодно складываем имена комнат для расширения уведомлений: мы
+                // и так идём по всему списку, а заглушке без имени нечего писать
+                // в заголовок. Спросить SDK в момент промаха расширение не может.
+                var roomNames: [String: String] = [:]
                 for room in rooms {
+                    if !room.name.isEmpty { roomNames[room.id] = room.name }
                     guard room.joinRequestType == nil,
                           !room.isSpace,
                           !room.isTombstoned,
@@ -1467,6 +1472,7 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
                 if total > 0 {
                     DiagLog.write("Badge", "STMOB-108 sources [\(sources.count)]: \(sources.joined(separator: ", "))")
                 }
+                RoomNameCache.store(roomNames)
                 return total
             }
             .removeDuplicates()

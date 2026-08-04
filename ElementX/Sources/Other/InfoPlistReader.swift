@@ -98,6 +98,57 @@ enum DiagLog {
     }
 }
 
+/// Имена комнат для расширения уведомлений.
+///
+/// Когда событие скачать не удалось, заглушке всё равно нужен заголовок — иначе
+/// пуш выглядит пустым: «Новое сообщение» и ни слова о том, откуда оно. Спросить
+/// имя у SDK ровно в этот момент нельзя. Расширение промахивается как раз тогда,
+/// когда система его подморозила (лог 04.08: фетч ушёл в 09:00:21, бюджет истёк
+/// в 09:00:50, а таймер, заведённый на 10 секунд, проснулся через 30) — обращение
+/// к SDK в такой момент умирает так же, как и сам фетч, и двухсекундное ожидание
+/// имени просто дожигает остаток.
+///
+/// Поэтому имена складывает приложение, пока живо и никем не заморожено, а
+/// расширение только читает готовый файл: одно чтение с диска, без SDK, без сети
+/// и без потоков, которые можно застопорить.
+///
+/// Лежит здесь по той же причине, что и DiagLog — файл уже входит во все targets.
+enum RoomNameCache {
+    private static let queue = DispatchQueue(label: "ru.implica.stalk.roomnames", qos: .utility)
+    /// Последнее, что мы записали. Список комнат обновляется на каждое событие,
+    /// а имена меняются раз в месяц — писать файл на каждый апдейт незачем.
+    private static var lastWritten: [String: String]?
+
+    private static var fileURL: URL? {
+        guard let directory = DiagLog.fileURL?.deletingLastPathComponent() else { return nil }
+        return directory.appending(component: "room-names.json")
+    }
+
+    /// Вызывается приложением при обновлении списка комнат.
+    static func store(_ names: [String: String]) {
+        guard let url = fileURL else { return }
+        queue.async {
+            guard names != lastWritten else { return }
+            lastWritten = names
+            guard let data = try? JSONSerialization.data(withJSONObject: names) else { return }
+            try? data.write(to: url, options: .atomic)
+            // Имя комнаты нужно расширению в том числе до разблокировки экрана —
+            // именно тогда приходят утренние пуши.
+            try? FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
+                                                   ofItemAtPath: url.path)
+        }
+    }
+
+    /// Вызывается расширением. Синхронно и без SDK — это весь смысл кэша.
+    static func name(for roomID: String) -> String? {
+        guard let url = fileURL,
+              let data = try? Data(contentsOf: url),
+              let names = try? JSONSerialization.jsonObject(with: data) as? [String: String] else { return nil }
+        let name = names[roomID]
+        return (name?.isEmpty ?? true) ? nil : name
+    }
+}
+
 struct InfoPlistReader {
     private enum Keys {
         static let appGroupIdentifier = "appGroupIdentifier"

@@ -454,8 +454,12 @@ class NotificationHandler {
         let (roomID, eventID) = stateLock.withLock { (currentRoomID, currentEventID) }
         let content = UNMutableNotificationContent()
         let isRussian = Locale.preferredLanguages.first?.hasPrefix("ru") ?? false
+        // Сначала кэш имён: он читается с диска за миллисекунды и не зависит от
+        // SDK, который в момент промаха как раз и не отвечает. Запрос к SDK
+        // остаётся запасным путём — на случай, если приложение ещё ни разу не
+        // успело сложить имена (первый запуск, свежая установка).
         if let roomID,
-           let roomName = roomNameWithTimeout(roomID),
+           let roomName = RoomNameCache.name(for: roomID) ?? roomNameWithTimeout(roomID),
            !roomName.isEmpty {
             content.title = roomName
         }
