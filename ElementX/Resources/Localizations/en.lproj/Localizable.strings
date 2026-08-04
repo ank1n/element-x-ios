@@ -1947,3 +1947,19 @@
 "stalk_ailock_disk_file_failed" = "Could not fetch the file";
 "stalk_ailock_disk_file_unsupported" = "This file can't be attached";
 "stalk_ailock_cancel" = "Cancel";
+
+/* APNs alert keys. Sygnal puts these into the push when the pusher uses the full
+   format, and iOS renders the banner ITSELF even when the notification extension
+   never gets to run. Argument order is fixed by Sygnal's apnspushkin.py. */
+"MSG_FROM_USER" = "%@: new message";
+"MSG_FROM_USER_WITH_CONTENT" = "%1$@: %2$@";
+"MSG_FROM_USER_IN_ROOM" = "%1$@ in %2$@: new message";
+"MSG_FROM_USER_IN_ROOM_WITH_CONTENT" = "%1$@ in %2$@: %3$@";
+"ACTION_FROM_USER" = "%1$@ %2$@";
+"ACTION_FROM_USER_IN_ROOM" = "%1$@: %2$@ %3$@";
+"IMAGE_FROM_USER" = "%1$@: image \u201C%2$@\u201D";
+"IMAGE_FROM_USER_IN_ROOM" = "%1$@ in %3$@: image \u201C%2$@\u201D";
+"VOICE_CALL_FROM_USER" = "Call from %@";
+"VIDEO_CALL_FROM_USER" = "Video call from %@";
+"USER_INVITE_TO_CHAT" = "%@ invites you to chat";
+"USER_INVITE_TO_NAMED_ROOM" = "%1$@ invites you to %2$@";

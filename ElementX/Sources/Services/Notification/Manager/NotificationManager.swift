@@ -302,16 +302,30 @@ final class NotificationManager: NSObject, NotificationManagerProtocol {
                                                                           locArgs: [])),
                                              pusherNotificationClientIdentifier: clientProxy.pusherNotificationClientIdentifier)
 
-            // format: .eventIdOnly — Sygnal шлёт минимальный payload (event_id+room_id),
-            // NSE сам decrypt/populate content через MatrixRustSDK. Build 53 перешёл на
-            // full format чтобы filter в Sygnal видел type, но это сломало NSE banner:
-            // Sygnal в full mode добавляет aps.alert.loc-key=MSG_FROM_USER, iOS показал raw.
-            // Откат: eventIdOnly, price — Sygnal не может фильтровать call events по type
-            // для regular pusher (но это приемлемо, call events всё равно в VoIP).
+            // format: nil — полный payload, в нём приезжают отправитель, комната и
+            // (для незашифрованных комнат) сам текст.
+            //
+            // При eventIdOnly в пуше не было НИЧЕГО, кроме идентификаторов, и весь
+            // баннер держался на расширении. А расширение промахивается — лог 04.08:
+            // система замораживает его после долгого простоя, фетч не возвращается за
+            // весь бюджет, и пользователь получает пустое «Новое сообщение». Ни таймаут,
+            // ни вторая попытка тут не работают: они стоят в той же заморозке.
+            //
+            // С полным форматом баннер рисует сам iOS из loc-key/loc-args, ещё до того
+            // как расширение вообще запустится; расширение только УЛУЧШАЕТ его, когда
+            // успевает. Пустых пушей в незашифрованных комнатах больше не будет.
+            // В зашифрованных Sygnal текста не знает и кладёт MSG_FROM_USER_IN_ROOM —
+            // «отправитель в комнате», что тоже лучше пустоты (решение dp 04.08:
+            // незашифрованные вычистить, для E2EE пустое после сна приемлемо).
+            //
+            // Сборка 53 уже пробовала полный формат и откатилась, потому что iOS
+            // показывал сырое MSG_FROM_USER. Причина была не в формате: в
+            // Localizable.strings не было ни одного ключа Sygnal — их завезли вместе
+            // с этой правкой (ru/en/en-US, порядок аргументов из apnspushkin.py).
             let configuration = try await PusherConfiguration(identifiers: .init(pushkey: pushkey,
                                                                                  appId: appId),
                                                               kind: .http(data: .init(url: gateway,
-                                                                                      format: .eventIdOnly,
+                                                                                      format: nil,
                                                                                       defaultPayload: defaultPayload.toJsonString())),
                                                               appDisplayName: "\(InfoPlistReader.main.bundleDisplayName) (iOS)",
                                                               deviceDisplayName: UIDevice.current.name,
@@ -337,7 +351,7 @@ final class NotificationManager: NSObject, NotificationManagerProtocol {
             PusherHistoryStorage.recordPushkey(pushkey, userID: userID, appId: appId)
             os_log(.info, log: pushLog, "setPusher SUCCEEDED — pusher registered with server")
             MXLog.info("Set pusher succeeded")
-            DiagLog.write("APNS", "setPusher OK appId=\(appId) format=eventIdOnly")
+            DiagLog.write("APNS", "setPusher OK appId=\(appId) format=full")
             return true
         } catch {
             // STMOB-212: MAS access tokens expire every ~15 min. On a stale token

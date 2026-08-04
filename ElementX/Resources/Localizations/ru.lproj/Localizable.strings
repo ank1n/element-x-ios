@@ -1818,3 +1818,19 @@
 "stalk_ailock_disk_file_failed" = "Не удалось получить файл";
 "stalk_ailock_disk_file_unsupported" = "Этот файл нельзя приложить";
 "stalk_ailock_cancel" = "Отмена";
+
+/* Ключи APNs-баннера. Sygnal кладёт их в пуш при полном формате, и iOS рисует
+   баннер САМ — даже если расширение уведомлений не успело отработать. Порядок
+   аргументов задан в apnspushkin.py на стороне Sygnal, менять нельзя. */
+"MSG_FROM_USER" = "%@: новое сообщение";
+"MSG_FROM_USER_WITH_CONTENT" = "%1$@: %2$@";
+"MSG_FROM_USER_IN_ROOM" = "%1$@ в «%2$@»: новое сообщение";
+"MSG_FROM_USER_IN_ROOM_WITH_CONTENT" = "%1$@ в «%2$@»: %3$@";
+"ACTION_FROM_USER" = "%1$@ %2$@";
+"ACTION_FROM_USER_IN_ROOM" = "«%1$@»: %2$@ %3$@";
+"IMAGE_FROM_USER" = "%1$@: изображение «%2$@»";
+"IMAGE_FROM_USER_IN_ROOM" = "%1$@ в «%3$@»: изображение «%2$@»";
+"VOICE_CALL_FROM_USER" = "Звонок от %@";
+"VIDEO_CALL_FROM_USER" = "Видеозвонок от %@";
+"USER_INVITE_TO_CHAT" = "%@ приглашает вас в чат";
+"USER_INVITE_TO_NAMED_ROOM" = "%1$@ приглашает вас в «%2$@»";
