@@ -302,30 +302,34 @@ final class NotificationManager: NSObject, NotificationManagerProtocol {
                                                                           locArgs: [])),
                                              pusherNotificationClientIdentifier: clientProxy.pusherNotificationClientIdentifier)
 
-            // format: nil — полный payload, в нём приезжают отправитель, комната и
-            // (для незашифрованных комнат) сам текст.
+            // format: .eventIdOnly — остаёмся на нём осознанно, хотя пустые пуши
+            // лечим именно здесь.
             //
-            // При eventIdOnly в пуше не было НИЧЕГО, кроме идентификаторов, и весь
-            // баннер держался на расширении. А расширение промахивается — лог 04.08:
-            // система замораживает его после долгого простоя, фетч не возвращается за
-            // весь бюджет, и пользователь получает пустое «Новое сообщение». Ни таймаут,
-            // ни вторая попытка тут не работают: они стоят в той же заморозке.
+            // Пустой пуш берётся из того, что при eventIdOnly в payload нет ничего,
+            // кроме идентификаторов: весь баннер держится на расширении, а оно
+            // промахивается — лог 04.08 показал, что система замораживает его после
+            // долгого простоя (таймер на 10с проснулся через 30). Ни таймаут, ни
+            // вторая попытка не спасают: они стоят в той же заморозке.
             //
-            // С полным форматом баннер рисует сам iOS из loc-key/loc-args, ещё до того
-            // как расширение вообще запустится; расширение только УЛУЧШАЕТ его, когда
-            // успевает. Пустых пушей в незашифрованных комнатах больше не будет.
-            // В зашифрованных Sygnal текста не знает и кладёт MSG_FROM_USER_IN_ROOM —
-            // «отправитель в комнате», что тоже лучше пустоты (решение dp 04.08:
-            // незашифрованные вычистить, для E2EE пустое после сна приемлемо).
+            // Напрашивающийся ход — полный формат, чтобы iOS рисовал баннер сам из
+            // loc-key. Проверка исходников Sygnal показала, чем он опасен именно нам:
+            // `_get_payload_full` возвращает None, когда не смог выбрать loc-key и
+            // нет badge, и тогда пуш НЕ УХОДИТ вовсе. Для m.room.encrypted loc-key
+            // выбрать не из чего — тела у события нет. Сегодняшний «пустой пуш» в
+            // E2EE-комнате приемлем (решение dp), а пропавший — нет.
             //
-            // Сборка 53 уже пробовала полный формат и откатилась, потому что iOS
-            // показывал сырое MSG_FROM_USER. Причина была не в формате: в
-            // Localizable.strings не было ни одного ключа Sygnal — их завезли вместе
-            // с этой правкой (ru/en/en-US, порядок аргументов из apnspushkin.py).
+            // Поэтому лечим на стороне пушкина, оставив формат прежним: у Molly уже
+            // есть `_lookup_room_name` и `_lookup_display_name` (она зовёт их для
+            // баннера звонка), и тем же способом можно заполнить aps.alert для
+            // обычных сообщений. Тогда пуш перестаёт быть пустым и в E2EE-комнатах,
+            // а текст сообщения вообще не покидает сервер.
+            //
+            // Ключи Sygnal (MSG_FROM_USER, ..._IN_ROOM и остальные десять) уже
+            // заведены в Localizable.strings — они нужны для любого из путей.
             let configuration = try await PusherConfiguration(identifiers: .init(pushkey: pushkey,
                                                                                  appId: appId),
                                                               kind: .http(data: .init(url: gateway,
-                                                                                      format: nil,
+                                                                                      format: .eventIdOnly,
                                                                                       defaultPayload: defaultPayload.toJsonString())),
                                                               appDisplayName: "\(InfoPlistReader.main.bundleDisplayName) (iOS)",
                                                               deviceDisplayName: UIDevice.current.name,
@@ -351,7 +355,7 @@ final class NotificationManager: NSObject, NotificationManagerProtocol {
             PusherHistoryStorage.recordPushkey(pushkey, userID: userID, appId: appId)
             os_log(.info, log: pushLog, "setPusher SUCCEEDED — pusher registered with server")
             MXLog.info("Set pusher succeeded")
-            DiagLog.write("APNS", "setPusher OK appId=\(appId) format=full")
+            DiagLog.write("APNS", "setPusher OK appId=\(appId) format=eventIdOnly")
             return true
         } catch {
             // STMOB-212: MAS access tokens expire every ~15 min. On a stale token
