@@ -781,6 +781,8 @@ struct AilockMarkdownText: View {
                     .frame(width: 3)
                 Text(Self.inline(text)).font(.body).foregroundStyle(.secondary).textSelection(.enabled)
             }
+        case .table(let header, let rows):
+            tableView(header: header, rows: rows)
         case .rule:
             Divider()
         case .paragraph(let text):
@@ -788,6 +790,37 @@ struct AilockMarkdownText: View {
                 .font(.body)
                 .textSelection(.enabled)
         }
+    }
+
+    /// Таблица из markdown. Прокручивается вбок отдельно от ленты: колонок бывает
+    /// больше, чем влезает в телефон, а переносить ячейки по словам — превращать
+    /// таблицу в кашу. Ширины не выравниваем по колонкам вручную — Grid делает это сам.
+    @ViewBuilder
+    private func tableView(header: [String], rows: [[String]]) -> some View {
+        let columns = max(header.count, rows.map(\.count).max() ?? 0)
+        ScrollView(.horizontal, showsIndicators: false) {
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
+                if !header.isEmpty {
+                    GridRow {
+                        ForEach(0..<columns, id: \.self) { i in
+                            Text(Self.inline(i < header.count ? header[i] : ""))
+                                .font(.subheadline.bold())
+                        }
+                    }
+                    Divider().gridCellColumns(columns)
+                }
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    GridRow {
+                        ForEach(0..<columns, id: \.self) { i in
+                            Text(Self.inline(i < row.count ? row[i] : ""))
+                                .font(.callout)
+                        }
+                    }
+                }
+            }
+            .padding(10)
+        }
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     // MARK: разбор
@@ -800,6 +833,7 @@ struct AilockMarkdownText: View {
             case code(String)
             case quote(String)
             case rule
+            case table(header: [String], rows: [[String]])
             case paragraph(String)
         }
 
@@ -813,6 +847,21 @@ struct AilockMarkdownText: View {
         (try? AttributedString(markdown: text,
                                options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
             ?? AttributedString(text)
+    }
+
+    /// Строка-разделитель шапки: |---|:---:|---| и любые пробелы внутри.
+    private static func isTableDivider(_ raw: String) -> Bool {
+        let line = raw.trimmingCharacters(in: .whitespaces)
+        guard line.hasPrefix("|") else { return false }
+        return line.range(of: #"^\|(\s*:?-{1,}:?\s*\|)+$"#, options: .regularExpression) != nil
+    }
+
+    /// Ячейки строки таблицы. Крайние палки — обрамление, а не пустые колонки.
+    private static func tableCells(_ raw: String) -> [String] {
+        var line = raw.trimmingCharacters(in: .whitespaces)
+        if line.hasPrefix("|") { line.removeFirst() }
+        if line.hasSuffix("|") { line.removeLast() }
+        return line.components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }
     }
 
     private static func parse(_ text: String) -> [Block] {
@@ -831,7 +880,11 @@ struct AilockMarkdownText: View {
             paragraph = []
         }
 
-        for rawLine in text.components(separatedBy: "\n") {
+        let lines = text.components(separatedBy: "\n")
+        var skipUntil = 0
+
+        for (tableIndex, rawLine) in lines.enumerated() {
+            if tableIndex < skipUntil { continue }
             let line = rawLine.trimmingCharacters(in: .whitespaces)
 
             if inCode {
@@ -859,11 +912,32 @@ struct AilockMarkdownText: View {
             }
 
             // Заголовок: 1-6 решёток и пробел.
-            if let match = line.range(of: "^#{1,6} +", options: .regularExpression) {
+            if let match = line.range(of: "^#{1,6}[ \\t]+", options: .regularExpression) {
                 flushParagraph()
                 listOpen = false
                 let level = line.prefix(while: { $0 == "#" }).count
                 blocks.append(.heading(level: level, text: String(line[match.upperBound...])))
+                continue
+            }
+
+            // Таблица. Признак — строка-разделитель под шапкой: |---|---|.
+            // Смотрим на СЛЕДУЮЩУЮ строку, поэтому таблицу собираем целиком тут
+            // же, а не по одной строке: иначе шапка успеет уехать в абзац.
+            if line.hasPrefix("|"), tableIndex + 1 < lines.count,
+               Self.isTableDivider(lines[tableIndex + 1]) {
+                flushParagraph()
+                listOpen = false
+                let header = Self.tableCells(line)
+                var rows: [[String]] = []
+                var cursor = tableIndex + 2
+                while cursor < lines.count {
+                    let candidate = lines[cursor].trimmingCharacters(in: .whitespaces)
+                    guard candidate.hasPrefix("|") else { break }
+                    rows.append(Self.tableCells(candidate))
+                    cursor += 1
+                }
+                blocks.append(.table(header: header, rows: rows))
+                skipUntil = cursor
                 continue
             }
 
@@ -875,10 +949,10 @@ struct AilockMarkdownText: View {
                 continue
             }
 
-            if line.hasPrefix("> ") {
+            if let quoteMatch = line.range(of: "^>[ \\t]+", options: .regularExpression) {
                 flushParagraph()
                 listOpen = false
-                let content = String(line.dropFirst(2))
+                let content = String(line[quoteMatch.upperBound...])
                 if case .quote(let existing) = blocks.last {
                     blocks[blocks.count - 1] = .quote(existing + "\n" + content)
                 } else {
@@ -888,7 +962,7 @@ struct AilockMarkdownText: View {
             }
 
             // Маркированный список: -, *, • + пробел.
-            if let match = line.range(of: "^[-*•] +", options: .regularExpression) {
+            if let match = line.range(of: "^[-*•][ \\t]+", options: .regularExpression) {
                 flushParagraph()
                 let item = String(line[match.upperBound...])
                 if listOpen, case .bullets(var items) = blocks.last {
@@ -903,7 +977,7 @@ struct AilockMarkdownText: View {
 
             // Нумерованный список: цифры + точка/скобка. Номер сохраняем исходный —
             // движок может нумеровать с произвольного места, перенумерация соврёт.
-            if let match = line.range(of: #"^\d{1,3}[.)] +"#, options: .regularExpression) {
+            if let match = line.range(of: #"^\d{1,3}[.)][ \t]+"#, options: .regularExpression) {
                 flushParagraph()
                 let number = String(line[..<match.upperBound].prefix(while: \.isNumber))
                 let item = String(line[match.upperBound...])
