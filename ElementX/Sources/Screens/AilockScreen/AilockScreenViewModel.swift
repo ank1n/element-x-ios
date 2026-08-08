@@ -63,6 +63,8 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
     private var localAttachments: [String: URL] = [:]
 
     private var reconnectAttemptCount = 0
+    /// Одна автоматическая пересылка на попытку отправки — чтобы повтор не зациклился.
+    private var didRetrySend = false
     /// Снимается при закрытии сокета: иначе отменённая попытка сама себя перезапускала
     /// и цепочка переживала уход в фон и закрытие экрана.
     private var isReconnectEnabled = false
@@ -380,10 +382,42 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
             beginStreamingPlaceholder()
         } catch {
             guard !Task.isCancelled, !isCancellation(error) else { return }
+
+            // Обрыв на уровне транспорта (сеть моргнула, рукопожатие TLS не сложилось)
+            // — не повод сразу пугать пользователя: через секунду тот же запрос обычно
+            // уходит. Лог dp 09.08, 01:43-01:44: три сбоя `NSURLErrorSecureConnectionFailed`
+            // подряд на сети, где соседние REST-запросы к тому же хосту отвечали 200,
+            // и каждый раз человеку приходилось жать «отправить» вручную. Пробуем один
+            // раз сами, и только если и это не вышло — показываем ошибку.
+            if Self.isTransportFailure(error), !didRetrySend {
+                didRetrySend = true
+                DiagLog.write("Ailock", "транспорт отвалился — повторяю отправку один раз")
+                closeSocket()
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { return }
+                await performSend(message: message, text: text, attachments: attachments, answering: answering)
+                return
+            }
+            didRetrySend = false
+
             // Сообщение не ушло — возвращаем текст и файлы пользователю, а не делаем вид,
             // что отправка состоялась. Иначе набранное просто исчезало.
             restoreComposer(after: message, text: text, attachments: attachments, question: answering)
             handle(error: error)
+        }
+        didRetrySend = false
+    }
+
+    /// Сбой доставки, а не отказ сервиса: сеть, рукопожатие, таймаут. Такое лечится
+    /// повтором, в отличие от 403 или невалидного ответа.
+    private static func isTransportFailure(_ error: Error) -> Bool {
+        guard let urlError = error as? URLError else { return false }
+        switch urlError.code {
+        case .secureConnectionFailed, .networkConnectionLost, .notConnectedToInternet,
+             .timedOut, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed:
+            return true
+        default:
+            return false
         }
     }
 
@@ -796,7 +830,13 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
         }
         MXLog.error("sTalk Ailock: \(error)")
         DiagLog.write("Ailock", "error: \(error.localizedDescription)")
-        state.errorMessage = (error as? LocalizedError)?.errorDescription ?? SL10n.ailockRequestFailed
+        // «Не удалось установить безопасное подключение из-за ошибки TLS» пользователю
+        // ничего не объясняет и выглядит поломкой приложения. Про сеть говорим по-русски.
+        if Self.isTransportFailure(error) {
+            state.errorMessage = SL10n.ailockNetworkFailed
+        } else {
+            state.errorMessage = (error as? LocalizedError)?.errorDescription ?? SL10n.ailockRequestFailed
+        }
         state.isRunning = false
         // Активный стрим не трогаем: поздняя ошибка от другой задачи не должна
         // осиротить сообщение, которое сейчас дописывается.

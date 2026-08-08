@@ -2012,3 +2012,4 @@
 "stalk_file_share_permission_write" = "Write";
 "stalk_meeting_join" = "Join";
 "stalk_share_sdk_log" = "Share SDK log (encryption)";
+"stalk_ailock_network_failed" = "Could not reach Ailock. Check your connection and try again.";

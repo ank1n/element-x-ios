@@ -1882,3 +1882,4 @@
 "stalk_file_share_permission_write" = "Запись";
 "stalk_meeting_join" = "Присоединиться";
 "stalk_share_sdk_log" = "Поделиться логом SDK (шифрование)";
+"stalk_ailock_network_failed" = "Не удалось связаться с Айлоком. Проверьте соединение и попробуйте ещё раз.";

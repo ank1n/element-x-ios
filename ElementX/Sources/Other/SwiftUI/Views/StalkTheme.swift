@@ -228,6 +228,7 @@ enum SL10n {
     static let ailockNoAccess = NSLocalizedString("stalk_ailock_no_access", tableName: "Localizable", value: "Сервер не выдал доступ к агенту", comment: "Ailock access denied")
     static let ailockServerUnavailable = NSLocalizedString("stalk_ailock_server_unavailable", tableName: "Localizable", value: "Айлок временно недоступен", comment: "Ailock server error")
     static let ailockRequestFailed = NSLocalizedString("stalk_ailock_request_failed", tableName: "Localizable", value: "Не удалось выполнить запрос", comment: "Ailock generic error")
+    static let ailockNetworkFailed = NSLocalizedString("stalk_ailock_network_failed", tableName: "Localizable", value: "Не удалось связаться с Айлоком. Проверьте соединение и попробуйте ещё раз.", comment: "Ailock transport error")
     static let ailockRateLimited = NSLocalizedString("stalk_ailock_rate_limited", tableName: "Localizable", value: "Слишком много запросов, попробуйте позже", comment: "Ailock rate limited")
     static let ailockNoStreaming = NSLocalizedString("stalk_ailock_no_streaming", tableName: "Localizable", value: "Сервер не выдал ключ подключения", comment: "No ws ticket")
     static let ailockFileTooLarge = NSLocalizedString("stalk_ailock_file_too_large", tableName: "Localizable", value: "Файл слишком большой", comment: "Attachment too large")
