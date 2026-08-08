@@ -1,22 +1,20 @@
-# App Store — тексты релиза (sTalk, build 321)
+# App Store — тексты релиза (sTalk, build 322 / 26.20.08)
 
 Копипастить в App Store Connect → App Store → версия. Лимиты Apple в скобках.
 Покрывает накопленное с версии, которая сейчас живёт в сторе (**26.20.07**, выложена 27.07.2026)
-до build 321 от 04.08.2026 — 174 коммита.
+до build 322 от 08.08.2026 — 174 коммита.
 
 ---
 
-## ⚠️ СНАЧАЛА РЕШИ: какой номер версии
+## ⚠️ НОМЕР ВЕРСИИ — переименуй страницу в ASC
 
-В сторе сейчас **26.20.07**. В нашем IPA (build 321) стоит `CFBundleShortVersionString = 26.04.11`.
-Строки не совпадают, и «26.04.11» **меньше** «26.20.07» — как номер публичной версии он не пройдёт.
+Сборка 322 несёт `CFBundleShortVersionString = 26.20.08`.
+Страница в ASC создана как **26.08.08** — её надо переименовать в **26.20.08**.
 
-Проверила: значений `26.20.07` и `26.12.07` в проекте не было никогда, ни в одной ветке.
-То есть номер, который видно в сторе, ставится отдельно от того, что лежит в сборке.
-
-**Нужно от тебя:** сказать номер новой версии (например `26.20.08`). Если App Store Connect
-потребует, чтобы он совпадал с номером в сборке, — бампну `MARKETING_VERSION` и пересоберу
-как 322, это десять минут.
+Почему: в сторе живёт 26.20.07, Apple требует, чтобы новый номер был больше.
+Схема именования у нас — дата задом наперёд, день-месяц (26.12.07 = 12 июля,
+26.20.07 = 20 июля). Пока дни росли внутри июля, порядок держался сам собой;
+на августе ломается — день 08 меньше дня 20, и `26.08.08` уходит НИЖЕ текущей.
 
 ---
 
@@ -51,10 +49,10 @@ sTalk стал умнее и удобнее: в нём появились ИИ-�
 sTalk is smarter and more useful: it now has an AI assistant and file storage of its own.
 
 Ailock — your AI assistant
-A new section on the Apps tab. Ask a question and the answer types out in front of you, already formatted: headings, lists, quotes, code blocks — and you can stop it at any moment. Past conversations are kept in a searchable history grouped by date, so you can pick up where you left off. Attach a photo from your library or a file from Drive, or dictate a question by voice and edit it before sending. Long-press an answer to copy it or save it to Drive.
+A new section on the Apps tab. Ask a question and the answer types out in front of you, already formatted: headings, lists, quotes, code blocks — and you can stop it at any moment. Past conversations are kept in a searchable history grouped by date, so you can pick up where you left off. Attach a photo from your library or a file from Disk, or dictate a question by voice and edit it before sending. Long-press an answer to copy it or save it to Disk.
 
-Drive — every file in one place
-Files from your chats gathered into a single list: sections by type, counters, search by name, list or card view with image previews. There is a folder mode where chats appear as folders, and a "Shared with me" section showing the owner and your access level. Tap a file to open it; long-press for "find in chat", "forward" or "share". Files sent from your iPhone now land on Drive too.
+Disk — every file in one place
+Files from your chats gathered into a single list: sections by type, counters, search by name, list or card view with image previews. There is a folder mode where chats appear as folders, and a "Shared with me" section showing the owner and your access level. Tap a file to open it; long-press for "find in chat", "forward" or "share". Files sent from your iPhone now land on Disk too.
 
 Files and meetings right in the conversation
 A "shared a file" message now arrives as a card with the name, size and access level, and opens with a tap. A meeting link turns into a card with the title, time, organiser and a Join button.
@@ -95,11 +93,11 @@ file storage and an AI assistant on the Apps tab).
 
 ### Promotional Text / Промо-текст (≤170, меняется без ревью) — ОБНОВИТЬ
 - RU: `Корпоративный мессенджер с E2EE-шифрованием: чаты, звонки и встречи. Теперь ещё ИИ-помощник и Диск — все файлы команды в одном месте.`
-- EN: `Secure team messenger with end-to-end encryption: chats, calls and meetings. Now with an AI assistant and Drive — all your team's files in one place.`
+- EN: `Secure team messenger with end-to-end encryption: chats, calls and meetings. Now with an AI assistant and Disk — all your team's files in one place.`
 
 ### Keywords / Ключевые слова (≤100, через запятую без пробелов) — ОБНОВИТЬ
 - RU: `мессенджер,чаты,звонки,шифрование,e2ee,встречи,календарь,ии,помощник,файлы,диск,команда`
-- EN: `messenger,chat,calls,encryption,e2ee,meetings,calendar,ai,assistant,files,drive,team,privacy`
+- EN: `messenger,chat,calls,encryption,e2ee,meetings,calendar,ai,assistant,files,disk,team,privacy`
 
 ### Description / Описание (≤4000) — ОБНОВИТЬ
 
@@ -133,7 +131,7 @@ FEATURES
 • Direct and group chats with end-to-end encryption
 • Audio and video calls, group calls
 • Meetings and calendar — schedule and join in one tap
-• Drive — all your team's files in one place, with search and previews
+• Disk — all your team's files in one place, with search and previews
 • Ailock, the AI assistant — answers, file handling and voice input
 • Call history with handy filters
 • Contacts and online presence
