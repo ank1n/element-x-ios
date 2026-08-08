@@ -27,7 +27,7 @@
 sTalk стал умнее и удобнее: в нём появились ИИ-помощник и собственное хранилище файлов.
 
 Айлок — ИИ-помощник
-Новый раздел во вкладке «Приложения». Задаёте вопрос — ответ печатается на глазах и сразу с оформлением: заголовки, списки, цитаты, блоки кода; генерацию можно остановить кнопкой. История бесед с поиском и разбивкой по датам — легко вернуться к старому разговору. К вопросу можно приложить фото из галереи или файл с «Диска», а сам вопрос продиктовать голосом и поправить перед отправкой. Ответ помощника долгим нажатием копируется или сохраняется на «Диск».
+Новый раздел во вкладке «Приложения». Задаёте вопрос — ответ печатается на глазах и сразу с оформлением: заголовки, списки, таблицы, цитаты, блоки кода; генерацию можно остановить кнопкой. История бесед с поиском и разбивкой по датам — легко вернуться к старому разговору. К вопросу можно приложить фото из галереи или файл с «Диска», а сам вопрос продиктовать голосом и поправить перед отправкой. Ответ помощника долгим нажатием копируется или сохраняется на «Диск».
 
 Диск — все файлы в одном месте
 Файлы из ваших чатов собраны в один список: разделы по типам, счётчики, поиск по названию, вид списком или карточками с превью. Есть режим «по папкам», где чаты видны как папки, и раздел «Доступно мне» — файлы, которыми с вами поделились, с владельцем и правом доступа. Файл открывается одним тапом, долгим нажатием — «найти в чате», «переслать», «поделиться». Теперь на Диск попадают и файлы, отправленные с айфона.
@@ -49,7 +49,7 @@ sTalk стал умнее и удобнее: в нём появились ИИ-�
 sTalk is smarter and more useful: it now has an AI assistant and file storage of its own.
 
 Ailock — your AI assistant
-A new section on the Apps tab. Ask a question and the answer types out in front of you, already formatted: headings, lists, quotes, code blocks — and you can stop it at any moment. Past conversations are kept in a searchable history grouped by date, so you can pick up where you left off. Attach a photo from your library or a file from Disk, or dictate a question by voice and edit it before sending. Long-press an answer to copy it or save it to Disk.
+A new section on the Apps tab. Ask a question and the answer types out in front of you, already formatted: headings, lists, tables, quotes, code blocks — and you can stop it at any moment. Past conversations are kept in a searchable history grouped by date, so you can pick up where you left off. Attach a photo from your library or a file from Disk, or dictate a question by voice and edit it before sending. Long-press an answer to copy it or save it to Disk.
 
 Disk — every file in one place
 Files from your chats gathered into a single list: sections by type, counters, search by name, list or card view with image previews. There is a folder mode where chats appear as folders, and a "Shared with me" section showing the owner and your access level. Tap a file to open it; long-press for "find in chat", "forward" or "share". Files sent from your iPhone now land on Disk too.
