@@ -1963,3 +1963,52 @@
 "VIDEO_CALL_FROM_USER" = "Video call from %@";
 "USER_INVITE_TO_CHAT" = "%@ invites you to chat";
 "USER_INVITE_TO_NAMED_ROOM" = "%1$@ invites you to %2$@";
+
+/* Диск и остальные экраны sTalk: до этого их строк в английской локали не было вовсе,
+   и NSLocalizedString отдавал русский текст из value: в коде — в английском интерфейсе
+   Диск целиком оставался русским. */
+"stalk_ailock_copy" = "Copy";
+"stalk_ailock_reply_doc_name" = "Ailock reply";
+"stalk_ailock_save_to_disk" = "Save to Disk";
+"stalk_ailock_save_to_disk_failed" = "Could not save to Disk";
+"stalk_ailock_saved_to_disk" = "Saved to Disk";
+"stalk_auth_not_provisioned" = "This account isn't set up on this server. Contact your administrator.";
+"stalk_create_room_encryption" = "Encryption";
+"stalk_create_room_encryption_footer" = "End-to-end encryption for messages and calls. It can't be disabled after the room is created.";
+"stalk_disk_action_find_in_chat" = "Find in chat";
+"stalk_disk_action_forward" = "Forward";
+"stalk_disk_action_open" = "Open";
+"stalk_disk_action_share" = "Share";
+"stalk_disk_app_description" = "Chat files and documents";
+"stalk_disk_category_all" = "All";
+"stalk_disk_category_documents" = "Documents";
+"stalk_disk_category_images" = "Images";
+"stalk_disk_category_media" = "Media";
+"stalk_disk_category_other" = "Other";
+"stalk_disk_chat_unnamed" = "Chat";
+"stalk_disk_empty" = "No files here yet";
+"stalk_disk_error_auth" = "No access to Disk. Try signing in again.";
+"stalk_disk_error_download" = "Could not download the file";
+"stalk_disk_error_generic" = "Could not load the file list";
+"stalk_disk_error_http" = "The server returned an error (%d)";
+"stalk_disk_error_open" = "This file can't be opened yet";
+"stalk_disk_no_folder" = "Unfiled";
+"stalk_disk_permission_read" = "Read";
+"stalk_disk_permission_write" = "Edit";
+"stalk_disk_retry" = "Retry";
+"stalk_disk_search" = "Search files";
+"stalk_disk_search_empty" = "Nothing found";
+"stalk_disk_section_chats" = "Chats";
+"stalk_disk_section_folders" = "Folders";
+"stalk_disk_shared_empty" = "Nothing has been shared with you yet";
+"stalk_disk_shared_no_keys" = "The file is encrypted and you don't have the keys to its room — ask the owner to send it in a chat";
+"stalk_disk_shared_with_me" = "Shared with me";
+"stalk_disk_title" = "Disk";
+"stalk_disk_toggle_folders" = "Folder view";
+"stalk_disk_toggle_layout" = "List view";
+"stalk_file_share_open_in_disk" = "Open in Disk";
+"stalk_file_share_permission_full" = "Full";
+"stalk_file_share_permission_read" = "Read";
+"stalk_file_share_permission_write" = "Write";
+"stalk_meeting_join" = "Join";
+"stalk_share_sdk_log" = "Share SDK log (encryption)";
