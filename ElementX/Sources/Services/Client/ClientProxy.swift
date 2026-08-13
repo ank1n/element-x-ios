@@ -434,7 +434,11 @@ class ClientProxy: ClientProxyProtocol {
             MXLog.warning("Ignoring request, this client has an unknown token.")
             return
         }
-        
+
+        // Намерение ставим ДО проверки сети: сеть может быть недоступна сейчас, но
+        // синхронизация нам нужна, и наблюдатель поднимет её, когда сеть вернётся.
+        isSyncIntended = true
+
         guard networkMonitor.reachabilityPublisher.value == .reachable else {
             MXLog.warning("Ignoring request, network unreachable.")
             return
@@ -483,6 +487,40 @@ class ClientProxy: ClientProxyProtocol {
     /// loop that was triggered by trying to sync a signed out session.
     @CancellableTask private var restartTask: Task<Void, Never>?
     
+    /// Служба синхронизации встала, хотя мы её не останавливали — поднять.
+    ///
+    /// Наблюдалось вживую: после серии обрывов длинного опроса sliding sync
+    /// (`peer closed connection without sending TLS close_notify`) служба проходит
+    /// `offline → idle → running` несколько раз и в итоге садится в `idle`
+    /// насовсем. Снаружи это вечные скелетоны вместо списка чатов и плашка
+    /// «Не в сети», лечится только перезапуском приложения.
+    ///
+    /// Наблюдатель сети здесь не помогает: сеть не пропадала, перехода
+    /// «недоступна → доступна» не наступает, и `startSync` никто не зовёт.
+    private func recoverSyncIfNeeded(state: SyncServiceState) {
+        // Мы сами остановили службу — уход в фон, выход из аккаунта. Поднимать
+        // нельзя: получим борьбу с собственным остановом.
+        guard isSyncIntended else { return }
+
+        // Если служба падает сразу после подъёма, частые попытки только жгут
+        // батарею и раздувают лог. Даём ей передышку.
+        if let last = lastSyncRecoveryDate, Date().timeIntervalSince(last) < 5 {
+            return
+        }
+        lastSyncRecoveryDate = Date()
+
+        MXLog.warning("Sync service stopped by itself (\(state)) — restarting")
+        DiagLog.write("ClientProxy", "служба синхронизации встала сама (\(state)) → поднимаю")
+        restartSync()
+    }
+
+    /// Нужна ли нам синхронизация прямо сейчас. Отличает наш собственный останов
+    /// от аварийной остановки службы — без этого признака их не различить.
+    private var isSyncIntended = false
+
+    /// Когда в последний раз поднимали упавшую службу.
+    private var lastSyncRecoveryDate: Date?
+
     func restartSync() {
         guard restartTask == nil else { return }
         
@@ -517,7 +555,11 @@ class ClientProxy: ClientProxyProtocol {
 
     func stopSync(completion: (() -> Void)?) {
         MXLog.info("Stopping sync")
-        
+
+        // Снимаем намерение ПЕРВЫМ делом: дальше служба сообщит `idle`, и без этого
+        // сторож принял бы наш собственный останов за аварию и тут же поднял её.
+        isSyncIntended = false
+
         if restartTask != nil {
             MXLog.warning("Removing the sync service restart task.")
             restartTask = nil
@@ -1277,8 +1319,13 @@ class ClientProxy: ClientProxyProtocol {
             MXLog.info("Received sync service update: \(state)")
             
             switch state {
-            case .running, .terminated, .idle:
+            case .running:
                 homeserverReachabilitySubject.send(.reachable)
+            case .terminated, .idle:
+                homeserverReachabilitySubject.send(.reachable)
+                // Служба может встать сама — тогда её надо поднимать, иначе список
+                // чатов остаётся на скелетонах до перезапуска приложения.
+                recoverSyncIfNeeded(state: state)
             case .offline:
                 homeserverReachabilitySubject.send(.unreachable)
             case .error:
