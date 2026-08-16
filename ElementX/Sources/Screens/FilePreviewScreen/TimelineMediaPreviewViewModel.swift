@@ -116,12 +116,20 @@ class TimelineMediaPreviewViewModel: TimelineMediaPreviewViewModelType {
         
         if case let .media(mediaItem) = previewItem {
             if mediaItem.fileHandle == nil, let source = mediaItem.mediaSource {
+                // STMOB-280: скачивание вложения не оставляло в тестерской выгрузке
+                // ни следа — ни успеха, ни отказа. По жалобе «видео не загружается»
+                // из лога нельзя было понять даже то, дошло ли дело до запроса.
+                let started = Date()
+                let what = "\(mediaItem.filename ?? "без имени") \(source.mimeType ?? "тип неизвестен")"
+
                 switch await mediaProvider.loadFileFromSource(source, filename: mediaItem.filename) {
                 case .success(let handle):
                     mediaItem.fileHandle = handle
                     state.previewControllerDriver.send(.itemLoaded(mediaItem.id))
+                    DiagLog.write("Media", "скачано \(what) за \(Int(-started.timeIntervalSinceNow * 1000)) мс")
                 case .failure(let error):
                     MXLog.error("Failed loading media: \(error)")
+                    DiagLog.write("Media", "НЕ скачано \(what) через \(Int(-started.timeIntervalSinceNow * 1000)) мс: \(error)")
                     context.objectWillChange.send() // Manually trigger the SwiftUI view update.
                     mediaItem.downloadError = error
                 }

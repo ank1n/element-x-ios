@@ -670,6 +670,12 @@ class TimelineInteractionHandler {
                                                                                                                                  timelineItemFactory: timelineItemFactory,
                                                                                                                                  mediaProvider: userSession.mediaProvider) else {
                 MXLog.error("Failed presenting media timeline")
+                // STMOB-280: тап по видео или картинке при этой неудаче не делал
+                // РОВНО НИЧЕГО — ни экрана, ни ошибки, и в тестерскую выгрузку не
+                // попадало ни строки. Снаружи это «видео не открывается», и причину
+                // по логу было не установить.
+                DiagLog.write("Media", "не удалось открыть просмотр: лента медиа не построилась (\(newTimelinePresentation))")
+                userIndicatorController.submitIndicator(.init(title: L10n.errorUnknown))
                 return .none
             }
             
