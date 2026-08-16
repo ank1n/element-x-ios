@@ -372,11 +372,47 @@ private struct DownloadIndicatorView: View {
             .padding(.vertical, 40)
             .background(.compound.bgSubtlePrimary, in: RoundedRectangle(cornerRadius: 14))
         } else if shouldShowDownloadIndicator {
-            ProgressView()
-                .controlSize(.large)
-                .tint(.compound.iconPrimary)
+            // STMOB-280: рядом с вертушкой — размер файла.
+            //
+            // Вложение скачивается ЦЕЛИКОМ до начала показа: SDK отдаёт проигрывателю
+            // готовый локальный файл, потоковой подгрузки нет. На картинке это доли
+            // секунды, на видео в десятки мегабайт — долгое ожидание, и раньше на
+            // экране была только немая вертушка. Пользователь не мог отличить
+            // «качается большой файл» от «зависло» — отсюда жалоба «видео не
+            // загружается» (dp, 16.08).
+            //
+            // Настоящего процента SDK не даёт: `ProgressWatcher` у него есть только
+            // на отправку, у скачивания его нет. Врать шкалой не будем — показываем
+            // то, что знаем точно, и по размеру ожидание становится объяснимым.
+            VStack(spacing: 12) {
+                ProgressView()
+                    .controlSize(.large)
+                    .tint(.compound.iconPrimary)
+
+                if let size = downloadSizeDescription {
+                    Text(size)
+                        .font(.compound.bodySM)
+                        .foregroundStyle(.compound.textSecondary)
+                }
+            }
         }
     }
+
+    /// Размер скачиваемого файла — только когда он известен и осмыслен.
+    /// У мелочи подпись лишняя: она успевает лишь мигнуть.
+    private var downloadSizeDescription: String? {
+        guard case let .media(mediaItem) = currentItem,
+              let fileSize = mediaItem.fileSize, fileSize > 512 * 1024 else {
+            return nil
+        }
+        return Self.sizeFormatter.string(fromByteCount: Int64(fileSize))
+    }
+
+    private static let sizeFormatter: ByteCountFormatter = {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter
+    }()
 }
 
 // MARK: - Helpers
