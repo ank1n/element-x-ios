@@ -98,8 +98,28 @@ struct NotchTabBarShape: Shape {
 
         // Wide shoulder for gradual descent from flat top into arc around FAB
         let shoulder: CGFloat = 44
-        let entryX = startPt.x - shoulder
-        let exitX = endPt.x + shoulder
+
+        // STMOB-283: плечо УКОРАЧИВАЕМ, если до края панели его длины не хватает.
+        //
+        // Форма молча рассчитывала, что по обе стороны от центра выреза есть
+        // arcR + shoulder ≈ 79 pt панели. При пяти вкладках во всю ширину у
+        // крайних есть только половина ячейки: на 402 pt это 40 pt, вдвое
+        // меньше нужного. entryX уходил в минус (−39 pt на «Контактах»),
+        // exitX — за правый край (441 pt на «Настройках»), и управляющая точка
+        // кривой оказывалась ВНЕ прямоугольника. У верхнего угла заливка не
+        // доходила до края, там проступал фон и тень кружка — грязное пятно
+        // на скриншотах dp от 20.08 (замер: 217 против 240 на чистом крае,
+        // при этом противоположный край того же снимка чистый).
+        //
+        // Отсечения одного лишь прямого участка не хватало: он пропускался,
+        // а кривая всё равно строилась от вылезшего entryX. Поэтому ограничиваем
+        // саму длину плеча — переход у крайних вкладок становится круче, но
+        // панель остаётся целой. Ширины, при которой влезало бы полное плечо,
+        // у телефонов не бывает: нужна панель ~794 pt.
+        let leftShoulder = min(shoulder, max(startPt.x - (rect.minX + cr), 0))
+        let rightShoulder = min(shoulder, max((rect.maxX - cr) - endPt.x, 0))
+        let entryX = startPt.x - leftShoulder
+        let exitX = endPt.x + rightShoulder
 
         // How far the arc start/end dip below bar top
         let dipY = max(startPt.y - top, 1)
@@ -121,8 +141,8 @@ struct NotchTabBarShape: Shape {
         // cp1 stays on top line far along → long flat run before dipping
         // cp2 near arc entry with gradual vertical approach
         path.addCurve(to: startPt,
-                      control1: CGPoint(x: entryX + shoulder * 0.65, y: top),
-                      control2: CGPoint(x: startPt.x - shoulder * 0.08, y: top + dipY * 0.55))
+                      control1: CGPoint(x: entryX + leftShoulder * 0.65, y: top),
+                      control2: CGPoint(x: startPt.x - leftShoulder * 0.08, y: top + dipY * 0.55))
 
         // Arc wrapping around the circle
         path.addArc(center: CGPoint(x: centerX, y: arcCY),
@@ -133,8 +153,8 @@ struct NotchTabBarShape: Shape {
 
         // Right bezier: mirror — gradual ascent from arc back to flat top
         path.addCurve(to: CGPoint(x: exitX, y: top),
-                      control1: CGPoint(x: endPt.x + shoulder * 0.08, y: top + dipY * 0.55),
-                      control2: CGPoint(x: exitX - shoulder * 0.65, y: top))
+                      control1: CGPoint(x: endPt.x + rightShoulder * 0.08, y: top + dipY * 0.55),
+                      control2: CGPoint(x: exitX - rightShoulder * 0.65, y: top))
 
         // Flat top to right corner
         if exitX < rect.maxX - cr {
