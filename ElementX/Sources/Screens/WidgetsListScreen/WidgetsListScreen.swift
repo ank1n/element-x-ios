@@ -232,6 +232,9 @@ struct WidgetsListScreen: View {
                             .background(Capsule()
                                 .fill(selectedCategory == category ? accentBlue : Color(UIColor.systemGray6)))
                     }
+                    // STMOB-283: см. пояснение в CallsListScreen — при включённых
+                    // «Формах кнопок» система подкладывает свою форму под нашу капсулу.
+                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, 16)

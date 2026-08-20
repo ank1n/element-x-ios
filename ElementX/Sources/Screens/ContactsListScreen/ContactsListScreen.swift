@@ -487,6 +487,9 @@ struct ContactsListScreen: View {
                 .background(Capsule()
                     .fill(isActive ? accentBlue : Color(UIColor.systemGray6)))
         }
+        // STMOB-283: см. пояснение в CallsListScreen — при включённых
+        // «Формах кнопок» система подкладывает свою форму под нашу капсулу.
+        .buttonStyle(.plain)
     }
 
     // MARK: - Cosmos Section Header
