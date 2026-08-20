@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
+import Kingfisher
 import SwiftUI
 import UIKit
 
@@ -362,29 +363,31 @@ struct WidgetsListScreen: View {
         if widget.id == "meetings-calendar" {
             calendarDateIcon(size: size)
         } else if let iconURL = widget.iconURL {
-            AsyncImage(url: iconURL) { phase in
-                switch phase {
-                case .success(let image):
-                    // Белая подложка-плитка с мягкой тенью (решение dp, 01.08):
-                    // прозрачные глифы (Диск) без неё висят прямо на карточке и
-                    // выглядят инородно рядом с цветными плитками. У иконок со
-                    // своим фоном (Айлок) подложка не видна. Белая в обеих темах —
-                    // как карточки референс-дизайна.
-                    image
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: size, height: size)
-                        .background(Color.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(Color.black.opacity(0.08), lineWidth: 0.5)
-                        }
-                        .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
-                default:
-                    sfSymbolIcon(widget, size: size)
+            // STMOB-283: логотип тянем Kingfisher'ом, а не AsyncImage. AsyncImage
+            // не хранит картинку на диске и не повторяет попытку — одного обрыва
+            // связи хватало, чтобы вместо логотипа НАВСЕГДА встал запасной глиф
+            // (скрин dp 20.08 22:23; в логе рядом «Disk probe available=false» и
+            // TLS -1200 в 22:22:52). Kingfisher уже держит диск-кэш аватарок, так
+            // что однажды показанный логотип переживает и обрыв, и запуск без сети.
+            //
+            // Белая подложка-плитка с мягкой тенью (решение dp, 01.08): прозрачные
+            // глифы (Диск) без неё висят прямо на карточке и выглядят инородно
+            // рядом с цветными плитками. У иконок со своим фоном (Айлок) подложка
+            // не видна. Белая в обеих темах — как карточки референс-дизайна.
+            KFImage(iconURL)
+                .cacheOriginalImage()
+                .retry(maxCount: 3, interval: .seconds(2))
+                .placeholder { sfSymbolIcon(widget, size: size) }
+                .resizable()
+                .scaledToFill()
+                .frame(width: size, height: size)
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.black.opacity(0.08), lineWidth: 0.5)
                 }
-            }
+                .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
         } else {
             sfSymbolIcon(widget, size: size)
         }
