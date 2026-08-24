@@ -1546,10 +1546,21 @@ final class NativeCallSession: ObservableObject {
             foregroundObserver = nil
         }
 
-        // Leave MatrixRTC via REST API
+        // STMOB-284: СНАЧАЛА рвём медиа, и только потом объявляем выход.
+        //
+        // Раньше порядок был обратный, и между двумя шагами стоял сетевой запрос.
+        // На плохой связи он растягивается или не проходит вовсе — и всё это время
+        // человека уже нет в списке участников, но его слышно, потому что LiveKit
+        // ещё публикует. Это худший из возможных исходов: собеседники разговаривают
+        // с тем, кого «нет».
+        //
+        // В новом порядке такого состояния не существует: сперва замолкаем, потом
+        // исчезаем. Если сеть отвалится между шагами и объявить выход не удастся,
+        // серверная отсрочка (30 с) снимет участие сама — уже при мёртвом медиа,
+        // то есть безопасно.
+        await liveKitRoomManager.disconnect()
         await sendLeaveViaREST()
 
-        await liveKitRoomManager.disconnect()
         cancellables.removeAll()
         sessionState = .disconnected
         MXLog.info("sTalk NativeCall: Session stopped")

@@ -615,21 +615,39 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
 
     private func performStopCleanup() async {
         nativeCallSession?.beginLeaving()
-        // Очистить MatrixRTC state event через REST API
-        if case .roomCall(let roomProxy, let clientProxy, _, _, _, _) = configuration.kind {
-            await sendLeaveCallStateEventViaREST(roomProxy: roomProxy, clientProxy: clientProxy)
-        }
-        await sendDirectlyToWidgetDriver(.hangup)
-        await sendDirectlyToWidgetDriver(.close)
 
-        // NativeCallSession.stop() сам отключает LiveKit-менеджер + гасит
-        // таймеры (rebroadcast) и наблюдателей; без сессии — прямой disconnect
+        // STMOB-284: тот же порядок и те же дедлайны, что в endCall.
+        //
+        // Здесь их не было вовсе: ни таймаутов, ни правильной очерёдности. А зовут
+        // эту уборку снос экрана звонка и подмена звонка — то есть пути, где
+        // человек ничего не нажимал. Незакрытое ожидание виджета оставляло его
+        // снятым из списка при живом звуке, и повторного входа, чтобы это
+        // исправить, могло не случиться.
+
+        // 1. Оборвать медиа
         let sessionToStop = nativeCallSession
         nativeCallSession = nil
-        if let sessionToStop {
-            await sessionToStop.stop()
-        } else if liveKitRoomManager.connectionState != .disconnected {
-            await liveKitRoomManager.disconnect()
+        await Self.withDeadline(5, label: "cleanup[1] LiveKit disconnect") { [weak liveKitRoomManager] in
+            if let sessionToStop {
+                await sessionToStop.stop()
+            } else if await liveKitRoomManager?.connectionState != .disconnected {
+                await liveKitRoomManager?.disconnect()
+            }
+        }
+
+        // 2. Снять своё участие
+        if case .roomCall(let roomProxy, let clientProxy, _, _, _, _) = configuration.kind {
+            await Self.withDeadline(5, label: "cleanup[2] leave state event") {
+                await self.sendLeaveCallStateEventViaREST(roomProxy: roomProxy, clientProxy: clientProxy)
+            }
+        }
+
+        // 3. Досказать виджету — уже ни на что не влияет, но нужно для Rust SDK
+        await Self.withDeadline(3, label: "cleanup[3a] widget hangup") {
+            await self.sendDirectlyToWidgetDriver(.hangup)
+        }
+        await Self.withDeadline(3, label: "cleanup[3b] widget close") {
+            await self.sendDirectlyToWidgetDriver(.close)
         }
     }
     
@@ -1210,30 +1228,42 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             }
         }
 
-        // 2. Очистить MatrixRTC state event через REST API (основной метод)
-        if case .roomCall(let roomProxy, let clientProxy, _, _, _, _) = configuration.kind {
-            await Self.withDeadline(5, label: "[2] sendLeaveCallStateEventViaREST") {
-                await self.sendLeaveCallStateEventViaREST(roomProxy: roomProxy, clientProxy: clientProxy)
-            }
-        }
+        // STMOB-284: медиа глушим ВТОРЫМ шагом, а не последним.
+        //
+        // Раньше порядок был «снять участие → поговорить с виджетом → оборвать
+        // медиа», и каждый шаг со своим дедлайном: 5 + 3 + 3. То есть до
+        // одиннадцати секунд человека уже не было в списке участников, а слышно
+        // его было по-прежнему. На проде это дало 19 минут (там до обрыва вообще
+        // не дошло), но и одиннадцать секунд — тот же неправильный порядок:
+        // собеседники разговаривают с тем, кого «нет».
+        //
+        // Теперь сперва замолкаем, потом исчезаем. Обратное состояние — «в списке
+        // есть, а звука нет» — безобидно и живёт доли секунды.
 
-        // 3. Отправить .hangup + .close через Widget API (для Rust SDK cleanup)
-        await Self.withDeadline(3, label: "[3a] widgetDriver hangup") {
-            await self.sendDirectlyToWidgetDriver(.hangup)
-        }
-        await Self.withDeadline(3, label: "[3b] widgetDriver close") {
-            await self.sendDirectlyToWidgetDriver(.close)
-        }
-
-        // 4. Отключить нативный LiveKit SDK
+        // 2. Оборвать медиа: нативную сессию либо напрямую LiveKit
         let nativeSessionToStop = nativeCallSession
         nativeCallSession = nil
-        await Self.withDeadline(5, label: "[4] LiveKit disconnect") { [weak liveKitRoomManager] in
+        await Self.withDeadline(5, label: "[2] LiveKit disconnect") { [weak liveKitRoomManager] in
             if let nativeSessionToStop {
                 await nativeSessionToStop.stop()
             } else {
                 await liveKitRoomManager?.disconnect()
             }
+        }
+
+        // 3. Очистить MatrixRTC state event через REST API (основной метод)
+        if case .roomCall(let roomProxy, let clientProxy, _, _, _, _) = configuration.kind {
+            await Self.withDeadline(5, label: "[3] sendLeaveCallStateEventViaREST") {
+                await self.sendLeaveCallStateEventViaREST(roomProxy: roomProxy, clientProxy: clientProxy)
+            }
+        }
+
+        // 4. Отправить .hangup + .close через Widget API (для Rust SDK cleanup)
+        await Self.withDeadline(3, label: "[4a] widgetDriver hangup") {
+            await self.sendDirectlyToWidgetDriver(.hangup)
+        }
+        await Self.withDeadline(3, label: "[4b] widgetDriver close") {
+            await self.sendDirectlyToWidgetDriver(.close)
         }
         // CallKit teardown + dismiss — в defer выше (гарантированно).
     }
