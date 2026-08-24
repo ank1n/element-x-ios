@@ -583,11 +583,21 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         stopSyncParts()
         elementCallService.tearDownCallSession()
         UIDevice.current.isProximityMonitoringEnabled = false
-        await withTaskGroup(of: Void.self) { group in
-            group.addTask { await self.performStopCleanup() }
-            group.addTask { try? await Task.sleep(for: .seconds(8)) }
-            await group.next()
+        await withTaskGroup(of: Bool.self) { group in
+            group.addTask { await self.performStopCleanup(); return true }
+            group.addTask { try? await Task.sleep(for: .seconds(8)); return false }
+            let finished = await group.next() ?? false
             group.cancelAll()
+            // STMOB-284: уборка не уложилась в срок и была оборвана. Порядок внутри
+            // неё такой, что к этому моменту намерение выйти уже объявлено и участие
+            // снято, а медиа ещё не заглушено. Если сессия жива — выход не состоялся,
+            // и намерение надо снять: иначе клиент до конца звонка перестанет
+            // сообщать серверу, что он в звонке, и человека будет слышно, но не видно
+            // в списке участников.
+            if !finished {
+                DiagLog.write("Call", "stopAndWaitCleanup: уборка НЕ уложилась в 8с — снимаю намерение выйти")
+                nativeCallSession?.cancelLeaving(reason: "уборка оборвана по таймауту")
+            }
         }
         DiagLog.write("Call", "stopAndWaitCleanup DONE (LiveKit=\(liveKitRoomManager.connectionState))")
     }

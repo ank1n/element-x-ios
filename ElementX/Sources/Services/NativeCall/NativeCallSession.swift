@@ -1475,6 +1475,12 @@ final class NativeCallSession: ObservableObject {
 
     /// Мы намеренно выходим из звонка — сверщику участия трогать состояние нельзя.
     private var isLeavingCall = false
+    /// Когда намерение объявлено. Нужно, чтобы отличить нормальный выход (доли
+    /// секунды до `stop()`) от застрявшего (STALK-901: девятнадцать минут).
+    private var leaveIntentAt: Date?
+    /// Сколько ждём завершения выхода, прежде чем считать его не состоявшимся.
+    /// Заметно больше нормальных 0.5-1 с, но много меньше длины разговора.
+    private static let leaveIntentGrace: TimeInterval = 20
 
     /// Объявить намерение выйти из звонка. Вызывается ПЕРВЫМ действием завершения,
     /// до любой очистки состояния: UI закрывается сразу, а `tearDownCallSession`
@@ -1486,7 +1492,38 @@ final class NativeCallSession: ObservableObject {
     func beginLeaving() {
         guard !isLeavingCall else { return }
         isLeavingCall = true
+        leaveIntentAt = Date()
         DiagLog.write("Call", "leave intent: сверщик участия отключён")
+    }
+
+    /// Отменить объявленное намерение: выход НЕ состоялся, а звонок продолжается.
+    ///
+    /// STMOB-284 (STALK-901): признак ставился и там, где человек ничего не нажимал — снос
+    /// экрана звонка и «подмена звонка», — а снять его было нечем: обратно в
+    /// `false` он не возвращался нигде. Уборку обрывало по таймауту на плохой
+    /// связи после того, как участие уже снято, но до того, как заглушено медиа,
+    /// и сверщик оставался выключен до конца сессии. На проде это дало человека,
+    /// которого слышали 19 минут, а в списке участников не было.
+    func cancelLeaving(reason: String) {
+        guard isLeavingCall, sessionState == .connected else { return }
+        isLeavingCall = false
+        leaveIntentAt = nil
+        DiagLog.write("Call", "leave intent СНЯТ (\(reason)) — выход не состоялся, сверщик снова включён")
+        Task { [weak self] in await self?.reconcileCallMembership(trigger: "leave-aborted", force: true) }
+    }
+
+    /// Страховка от намерения, которое некому снять.
+    ///
+    /// Явную отмену зовут те места, что сами знают об обрыве уборки. Но путь,
+    /// приведший к инциденту на проде, по логам восстановить не удалось, поэтому
+    /// одного явного вызова мало: если намерение висит дольше отведённого срока,
+    /// а сессия при этом жива и медиа идёт — выход не состоялся, чем бы он ни был
+    /// вызван. Возвращаем себя в звонок сами.
+    private func healStuckLeaveIntentIfNeeded() {
+        guard isLeavingCall, sessionState == .connected, let since = leaveIntentAt else { return }
+        guard Date().timeIntervalSince(since) > Self.leaveIntentGrace else { return }
+        guard liveKitRoomManager.connectionState != .disconnected else { return }
+        cancelLeaving(reason: "медиа живо \(Int(Date().timeIntervalSince(since)))с спустя")
     }
 
     func stop() async {
@@ -1611,6 +1648,9 @@ final class NativeCallSession: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: Self.delayedLeaveRestartSeconds * 1_000_000_000)
                 guard !Task.isCancelled, let self else { return }
+                // STMOB-284: единственный периодический таск за весь звонок, поэтому
+                // страховка от застрявшего намерения выйти живёт здесь.
+                self.healStuckLeaveIntentIfNeeded()
                 let status = await self.delayedLeaveAction("restart", delayID: delayID)
                 guard !Task.isCancelled else { return }
                 // Сетевые ошибки во время обрыва — это НЕ повод что-то делать: delay
