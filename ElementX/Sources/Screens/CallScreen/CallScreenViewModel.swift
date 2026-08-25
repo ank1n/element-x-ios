@@ -689,7 +689,10 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                     // к encryptionStateForCall).
                     let isEncrypted = await roomProxy.encryptionStateForCall()
                     DiagLog.write("E2EE", "звонок: шифрование комнаты = \(isEncrypted)")
-                    let token = (try? (clientProxy as? ClientProxy)?.matrixAccessToken()) ?? ""
+                    // STMOB-284: провайдер вместо снимка токена — MAS вращает его
+                    // раз в ~15 минут, и снимок убивал все матричные запросы звонка
+                    // ровно на пятнадцатой минуте разговора.
+                    let concreteProxy = clientProxy as? ClientProxy
                     let session = NativeCallSession(widgetDriver: widgetDriver,
                                                     liveKitRoomManager: liveKitRoomManager,
                                                     isEncrypted: isEncrypted,
@@ -699,7 +702,12 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                                                     deviceId: clientProxy.deviceID ?? "unknown",
                                                     matrixRoomId: roomProxy.id,
                                                     homeserverURL: clientProxy.homeserver,
-                                                    accessToken: token,
+                                                    accessTokenProvider: { [weak concreteProxy] in
+                                                        (try? concreteProxy?.matrixAccessToken()) ?? ""
+                                                    },
+                                                    tokenRefresher: { [weak concreteProxy] in
+                                                        await concreteProxy?.forceTokenRefresh()
+                                                    },
                                                     roomProxy: roomProxy,
                                                     enableCameraOnConnect: startWithVideoEnabled)
                     self.nativeCallSession = session

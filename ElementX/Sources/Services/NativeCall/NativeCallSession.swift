@@ -43,7 +43,25 @@ final class NativeCallSession: ObservableObject {
     private let deviceId: String
     private let matrixRoomId: String
     private let homeserverURL: String
-    private let accessToken: String
+    /// STMOB-284: токен берём СВЕЖИЙ перед каждым запросом, а не снимком при
+    /// создании сессии.
+    ///
+    /// MAS вращает access token примерно раз в четверть часа. Пока здесь лежал
+    /// снимок, ровно на пятнадцатой минуте разговора ВСЕ матричные запросы сессии
+    /// начинали отвечать 401 — и навсегда: обновить токен было нечем. Продление
+    /// отложенного выхода переставало проходить, сервер снимал участие, а попытка
+    /// сверщика переопубликовать его падала тем же 401. Медиа при этом идёт своим
+    /// путём (у LiveKit собственный JWT) — отсюда «человека слышно, а в списке
+    /// участников нет». В логе 25.08: вход 15:04:14, первый 401 в 15:19:15.
+    ///
+    /// Presence лечили этим же способом в STMOB-109/132, здесь тот же дефект.
+    private let accessTokenProvider: () -> String
+    /// Принудительное обновление токена в SDK — зовём при 401 и повторяем запрос.
+    private let tokenRefresher: () async -> Void
+    private var accessToken: String {
+        accessTokenProvider()
+    }
+
     private let roomProxy: JoinedRoomProxyProtocol?
 
     /// Единая URLSession для всех MatrixRTC REST-запросов. Request/resource timeout = 15с
@@ -182,7 +200,8 @@ final class NativeCallSession: ObservableObject {
          deviceId: String,
          matrixRoomId: String,
          homeserverURL: String,
-         accessToken: String,
+         accessTokenProvider: @escaping () -> String,
+         tokenRefresher: @escaping () async -> Void,
          roomProxy: JoinedRoomProxyProtocol? = nil,
          enableCameraOnConnect: Bool = true) {
         self.enableCameraOnConnect = enableCameraOnConnect
@@ -194,7 +213,8 @@ final class NativeCallSession: ObservableObject {
         self.deviceId = deviceId
         self.matrixRoomId = matrixRoomId
         self.homeserverURL = homeserverURL.hasSuffix("/") ? String(homeserverURL.dropLast()) : homeserverURL
-        self.accessToken = accessToken
+        self.accessTokenProvider = accessTokenProvider
+        self.tokenRefresher = tokenRefresher
         self.roomProxy = roomProxy
     }
 
@@ -1770,7 +1790,7 @@ final class NativeCallSession: ObservableObject {
     /// Возвращает HTTP-статус (0 — сетевая ошибка). Именно статус, а не Bool:
     /// 404 («delay уже сработал») и обрыв сети требуют разного поведения.
     @discardableResult
-    private func delayedLeaveAction(_ action: String, delayID: String) async -> Int {
+    private func delayedLeaveAction(_ action: String, delayID: String, isRetry: Bool = false) async -> Int {
         let url = "\(homeserverURL)/_matrix/client/unstable/org.matrix.msc4140/delayed_events/\(delayID)"
         guard let requestURL = URL(string: url) else {
             MXLog.error("sTalk NativeCall: invalid delayed-action URL: \(url)")
@@ -1784,6 +1804,15 @@ final class NativeCallSession: ObservableObject {
         do {
             let (_, response) = try await restSession.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            // STMOB-284: 401 — токен протух посреди разговора. Раньше мы просто
+            // продолжали долбиться протухшим и через 30 с сервер снимал участие;
+            // в логе 25.08 это три 401 подряд, а потом «join не прошёл».
+            // Теперь просим SDK обновить токен и повторяем ОДИН раз.
+            if status == 401, !isRetry {
+                DiagLog.write("Call", "delayed leave \(action) → 401 — обновляю токен и повторяю")
+                await tokenRefresher()
+                return await delayedLeaveAction(action, delayID: delayID, isRetry: true)
+            }
             if status != 200 {
                 // 404 = delay_id больше нет, т.е. сервер УЖЕ выполнил отложенный leave
                 // и снял наше membership (STMOB-264).
