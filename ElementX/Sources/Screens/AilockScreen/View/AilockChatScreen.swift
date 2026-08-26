@@ -235,8 +235,35 @@ struct AilockChatScreen: View {
             if message.isStreaming, message.text.isEmpty {
                 workingIndicator
             }
+
+            answeredByLabel(message)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// «Чем отвечено» — метка ЭТОГО хода.
+    ///
+    /// Показываем только то, что приехало вместе с ответом. Если метки нет
+    /// (старые ходы, движок не прислал) — не пишем ничего и НЕ подставляем
+    /// текущую активную модель: иначе вся история задним числом перепишется
+    /// под последний выбор.
+    @ViewBuilder
+    private func answeredByLabel(_ message: AilockMessage) -> some View {
+        if !message.isStreaming,
+           let llm = message.llm,
+           let name = llm.displayName(in: context.viewState.llmChains) {
+            HStack(spacing: 4) {
+                Text(String(format: SL10n.ailockAnsweredBy, name))
+                // Просили размышление, но движок его не применил — говорим прямо.
+                // Иначе человек уверен, что получил дорогой режим, а получил обычный.
+                if llm.reasoningApplied == false, let mode = llm.reasoningMode, mode != .auto {
+                    Text("·")
+                    Text(SL10n.ailockReasoningNotApplied)
+                }
+            }
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+        }
     }
 
     private func systemMessage(_ message: AilockMessage, severity: String) -> some View {
@@ -344,6 +371,8 @@ struct AilockChatScreen: View {
             if !context.viewState.pendingAttachments.isEmpty {
                 attachmentsRow
             }
+
+            controlChips
 
             if context.viewState.voicePhase == .recording {
                 recordingBar
@@ -469,6 +498,92 @@ struct AilockChatScreen: View {
     /// Просвет между верхней границей панели ввода и капсулой поля.
     /// Без него овал упирается в кромку панели и выглядит обрезанным.
     private static let composerTopInset: CGFloat = 10
+
+    // MARK: - Чипы поставки 13.08 (STMOB-285)
+
+    /// Выбор модели, уровень размышления и лимиты расхода.
+    ///
+    /// Все три самоскрывающиеся: сервер не прислал данных — элемента нет вовсе,
+    /// ни пустой плашки, ни ошибки. На стендах, где выбор не настроен, композер
+    /// выглядит ровно как раньше.
+    @ViewBuilder
+    private var controlChips: some View {
+        let chains = context.viewState.llmChains
+        let showsModel = context.viewState.showsModelChip
+        let showsReasoning = context.viewState.showsReasoningChip
+        let limits = context.viewState.spendLimits
+
+        if showsModel || showsReasoning || !limits.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    if showsModel, let chains {
+                        Menu {
+                            ForEach(chains.chains) { chain in
+                                Button {
+                                    context.send(viewAction: .selectChain(chain))
+                                } label: {
+                                    if chain.id == chains.activeChainID {
+                                        Label(chain.displayName, systemImage: "checkmark")
+                                    } else {
+                                        Text(chain.displayName)
+                                    }
+                                }
+                            }
+                            Divider()
+                            Button(SL10n.ailockModelDefault) {
+                                context.send(viewAction: .selectChain(nil))
+                            }
+                        } label: {
+                            chipLabel(icon: "cpu",
+                                      text: chains.activeChain?.displayName ?? SL10n.ailockModelTitle)
+                        }
+                    }
+
+                    if showsReasoning, let chains {
+                        Menu {
+                            ForEach(AilockReasoningMode.allCases, id: \.self) { mode in
+                                Button {
+                                    context.send(viewAction: .selectReasoning(mode))
+                                } label: {
+                                    if mode == chains.reasoningMode {
+                                        Label(mode.title, systemImage: "checkmark")
+                                    } else {
+                                        Text(mode.title)
+                                    }
+                                }
+                            }
+                        } label: {
+                            chipLabel(icon: "brain",
+                                      text: "\(SL10n.ailockReasoningTitle): \(chains.reasoningMode.title)")
+                        }
+                    }
+
+                    // Лимиты — только показываем. Проценты у движка сейчас занижены
+                    // (часть ходов `unpriced`), поэтому ничего на них не блокируем
+                    // и порогом не пугаем.
+                    ForEach(limits) { limit in
+                        chipLabel(icon: "gauge.with.needle",
+                                  text: "\(limit.title.isEmpty ? SL10n.ailockSpendTitle : limit.title) \(Int(limit.percent.rounded()))%")
+                    }
+                }
+                .padding(.horizontal, 12)
+            }
+        }
+    }
+
+    private func chipLabel(icon: String, text: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
+            Text(text)
+                .font(.system(size: 12, weight: .medium))
+                .lineLimit(1)
+        }
+        .foregroundColor(.primary)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 6)
+        .background(Capsule().fill(Color(UIColor.systemGray6)))
+    }
 
     private var composerPlaceholder: String {
         context.viewState.voicePhase == .transcribing ? SL10n.ailockTranscribing : SL10n.ailockComposerPlaceholder

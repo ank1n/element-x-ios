@@ -218,6 +218,21 @@ enum SL10n {
     static let ailockHistoryEmpty = NSLocalizedString("stalk_ailock_history_empty", tableName: "Localizable", value: "Бесед пока нет", comment: "Ailock empty history")
     static let ailockSearchPlaceholder = NSLocalizedString("stalk_ailock_search_placeholder", tableName: "Localizable", value: "Поиск по беседам", comment: "Ailock search placeholder")
     static let ailockUntitledConversation = NSLocalizedString("stalk_ailock_untitled", tableName: "Localizable", value: "Новый чат", comment: "Untitled conversation")
+
+    // STMOB-285: уровень размышления агента (поставка острова 13.08).
+    static let ailockReasoningAuto = NSLocalizedString("stalk_ailock_reasoning_auto", tableName: "Localizable", value: "Авто", comment: "Reasoning level: auto")
+    static let ailockReasoningLow = NSLocalizedString("stalk_ailock_reasoning_low", tableName: "Localizable", value: "Низкий", comment: "Reasoning level: low")
+    static let ailockReasoningMedium = NSLocalizedString("stalk_ailock_reasoning_medium", tableName: "Localizable", value: "Средний", comment: "Reasoning level: medium")
+    static let ailockReasoningHigh = NSLocalizedString("stalk_ailock_reasoning_high", tableName: "Localizable", value: "Высокий", comment: "Reasoning level: high")
+    static let ailockReasoningTitle = NSLocalizedString("stalk_ailock_reasoning_title", tableName: "Localizable", value: "Размышление", comment: "Reasoning chip title")
+    static let ailockModelTitle = NSLocalizedString("stalk_ailock_model_title", tableName: "Localizable", value: "Модель", comment: "Model chip title")
+    static let ailockModelDefault = NSLocalizedString("stalk_ailock_model_default", tableName: "Localizable", value: "По умолчанию", comment: "Reset model selection to default")
+    /// Выбор действует со следующего хода — идущий ответ дочитывается прежней моделью.
+    static let ailockModelAppliesNext = NSLocalizedString("stalk_ailock_model_applies_next", tableName: "Localizable", value: "Применится со следующего ответа", comment: "Model selection takes effect from the next turn")
+    static let ailockSpendTitle = NSLocalizedString("stalk_ailock_spend_title", tableName: "Localizable", value: "Лимиты", comment: "Spend limits chip title")
+    static let ailockAnsweredBy = NSLocalizedString("stalk_ailock_answered_by", tableName: "Localizable", value: "Отвечено: %@", comment: "Which model produced the answer")
+    /// Размышление просили, но движок его не применил.
+    static let ailockReasoningNotApplied = NSLocalizedString("stalk_ailock_reasoning_not_applied", tableName: "Localizable", value: "без размышления", comment: "Reasoning requested but not applied")
     static let ailockToday = NSLocalizedString("stalk_ailock_today", tableName: "Localizable", value: "Сегодня", comment: "Today section")
     static let ailockYesterday = NSLocalizedString("stalk_ailock_yesterday", tableName: "Localizable", value: "Вчера", comment: "Yesterday section")
     static let ailockPrevious7Days = NSLocalizedString("stalk_ailock_previous_7_days", tableName: "Localizable", value: "Предыдущие 7 дней", comment: "Previous 7 days section")

@@ -46,6 +46,14 @@ enum AilockHistoryParser {
             // Формат полей не зафиксирован, поэтому читаем терпимо — по нескольким именам.
             let rowAttachments = parseAttachments(row["attachments"])
 
+            // STMOB-285: «чем отвечено» у строки хода. Движок кладёт метку в
+            // `metadata.llm`, шлюз может поднять её на верхний уровень — читаем
+            // терпимо, по обоим местам. Нет метки — оставляем пусто: у ходов
+            // человека её не бывает, у старых ходов не было поля, и подставлять
+            // туда текущий выбор нельзя.
+            let rowLLM = AilockAnswerLLM(json: (row["llm"] as? [String: Any])
+                ?? ((row["metadata"] as? [String: Any])?["llm"] as? [String: Any]))
+
             switch role {
             case "user":
                 messages.append(AilockMessage(id: identifier,
@@ -97,6 +105,12 @@ enum AilockHistoryParser {
                     messages[last].createdAt = createdAt
                 } else {
                     messages.append(AilockMessage(id: identifier, role: .assistant, text: content, createdAt: createdAt))
+                }
+                // Метку кладём на тот ход, к которому она относится — в том числе
+                // когда серия склеилась в одно сообщение: последняя строка серии
+                // и есть та, чем ответили.
+                if let rowLLM, let last = messages.indices.last {
+                    messages[last].llm = rowLLM
                 }
                 if !rowAttachments.isEmpty, let last = messages.indices.last {
                     messages[last].files.append(contentsOf: rowAttachments)

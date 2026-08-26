@@ -25,6 +25,10 @@ enum AilockScreenViewAction {
     case cancelVoiceInput
     /// Сохранить ответ агента к себе на Диск (dp).
     case saveToDisk(AilockMessage)
+    /// STMOB-285: выбрать модель. `nil` — вернуть к варианту по умолчанию.
+    case selectChain(AilockLLMChain?)
+    /// STMOB-285: выбрать уровень размышления.
+    case selectReasoning(AilockReasoningMode)
 }
 
 /// Состояние голосового ввода: диктовка → расшифровка → текст в поле.
@@ -56,6 +60,27 @@ struct AilockScreenViewState: BindableState {
     var infoToast: String?
     /// Айлок не развёрнут на этом домене — экран показывает заглушку, а не ошибку.
     var isUnavailable = false
+
+    /// STMOB-285: набор моделей беседы. `nil` — выбор ей не положен, чип не рисуем.
+    /// Все три чипа поставки 13.08 самоскрывающиеся: нет данных — нет элемента,
+    /// а не пустая плашка. Это избавляет от «пустых кнопок» на стендах, где
+    /// выбор не настроен.
+    var llmChains: AilockLLMChains?
+    /// Проценты заполненности лимитов. Пусто — лимитов не назначено, чипа нет.
+    /// ⚠️ Проценты занижены (часть ходов у движка `unpriced`) — только
+    /// информирование, никаких блокировок на этой цифре.
+    var spendLimits: [AilockSpendLimit] = []
+
+    /// Чип выбора модели показываем, только если есть из чего выбирать.
+    var showsModelChip: Bool {
+        (llmChains?.chains.count ?? 0) > 1
+    }
+
+    /// Чип размышления — только когда действующая модель им управляет, иначе
+    /// кнопка была бы без эффекта.
+    var showsReasoningChip: Bool {
+        llmChains?.reasoningControllable == true
+    }
 
     /// Голосовой ввод.
     var voicePhase: AilockVoicePhase = .idle

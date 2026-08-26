@@ -123,6 +123,10 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
             cancelVoiceInput()
         case .saveToDisk(let message):
             saveToDisk(message)
+        case .selectChain(let chain):
+            selectChain(chain)
+        case .selectReasoning(let mode):
+            selectReasoning(mode)
         }
     }
 
@@ -475,6 +479,13 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
             conversationID = session.conversationID
             UserDefaults.standard.set(session.conversationID, forKey: lastConversationKey)
 
+            // STMOB-285: набор моделей приезжает прямо в ответе на подъём сессии,
+            // с ранее выбранным сотрудником вариантом. Отдельный GET здесь НЕ
+            // делаем: он отвечает только для уже живой сессии, а до открытия
+            // сокета её ещё нет — получили бы 404 и лишний запрос.
+            state.llmChains = session.llmChains
+            loadSpendLimits()
+
             guard let url = service.webSocketURL(conversationID: session.conversationID, ticket: session.wsTicket) else {
                 throw AilockError.badResponse
             }
@@ -584,7 +595,7 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
         case .working(let isWorking):
             state.isRunning = isWorking
 
-        case .response(let role, let text, let severity):
+        case .response(let role, let text, let severity, let llm):
             if role == "system" {
                 flushBuffer()
                 removeEmptyStreamingPlaceholder()
@@ -598,11 +609,29 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
             // Для обычного ответа `text` — не источник истины (кит его не читает),
             // но если дельты потерялись, лучше показать его, чем пустое сообщение.
             flushBuffer()
-            if let index = streamingIndex(), state.messages[index].text.isEmpty, let text, !text.isEmpty {
-                state.messages[index].text = text
+            if let index = streamingIndex() {
+                if state.messages[index].text.isEmpty, let text, !text.isEmpty {
+                    state.messages[index].text = text
+                }
+                // STMOB-285: метка «чем отвечено» относится к ЭТОМУ ходу и
+                // приезжает один раз, с финальным событием.
+                state.messages[index].llm = llm
             }
             finalizeStreamingMessage()
             state.isRunning = false
+
+        case .selectionNotice(let notice):
+            // Придёт второй раз системной строкой из истории — дедупим по id,
+            // иначе после перезагрузки беседы уведомление задвоится.
+            guard !state.messages.contains(where: { $0.id == notice.id }) else { return }
+            flushBuffer()
+            removeEmptyStreamingPlaceholder()
+            state.messages.append(AilockMessage(id: notice.id,
+                                                role: .system(severity: notice.severity ?? "info"),
+                                                text: notice.text,
+                                                createdAt: Date()))
+            // Набор мог смениться — перечитываем у ЖИВОЙ сессии, она сейчас есть.
+            Task { [weak self] in await self?.refreshLLMSelection() }
 
         case .file(let file):
             flushBuffer()
@@ -681,6 +710,64 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
             guard let self, !Task.isCancelled else { return }
             flushTask = nil
             flushBuffer()
+        }
+    }
+
+    // MARK: - Выбор модели и лимиты (STMOB-285)
+
+    /// Перечитать набор у ЖИВОЙ сессии. Зовём только когда сокет уже поднят:
+    /// на мёртвой сессии маршрут отвечает 404 и читать из базы не умеет.
+    private func refreshLLMSelection() async {
+        guard let conversationID else { return }
+        do {
+            state.llmChains = try await service.refreshLLMChains(conversationID: conversationID)
+        } catch {
+            // Набор не критичен: не смогли обновить — оставляем прежний,
+            // экран продолжает работать. Ошибку человеку не показываем.
+            DiagLog.write("Ailock", "набор моделей не обновился: \(error.localizedDescription)")
+        }
+    }
+
+    /// Сменить модель. `chain == nil` — вернуть к варианту по умолчанию.
+    private func selectChain(_ chain: AilockLLMChain?) {
+        guard let conversationID else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                state.llmChains = try await service.setLLMChain(conversationID: conversationID,
+                                                                chainID: chain?.id,
+                                                                resetChain: chain == nil,
+                                                                reasoningMode: nil)
+                // Выбор действует со СЛЕДУЮЩЕГО хода — говорим это словами,
+                // иначе человек решит, что переключение не сработало.
+                state.infoToast = SL10n.ailockModelAppliesNext
+            } catch {
+                state.errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func selectReasoning(_ mode: AilockReasoningMode) {
+        guard let conversationID else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                state.llmChains = try await service.setLLMChain(conversationID: conversationID,
+                                                                chainID: nil,
+                                                                reasoningMode: mode)
+                state.infoToast = SL10n.ailockModelAppliesNext
+            } catch {
+                state.errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    /// Лимиты расхода. Пусто — сотруднику не назначено лимитов, чип не рисуем;
+    /// это нормальное состояние, а не ошибка, поэтому и молчим при отказе.
+    private func loadSpendLimits() {
+        Task { [weak self] in
+            guard let self else { return }
+            state.spendLimits = await (try? service.spendLimits()) ?? []
         }
     }
 

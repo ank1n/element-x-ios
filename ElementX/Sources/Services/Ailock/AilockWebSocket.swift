@@ -23,7 +23,13 @@ enum AilockStreamEvent {
     /// Смена состояния: агент работает или ждёт ввода.
     case working(Bool)
     /// Терминатор ответа. Для role == "system" несёт текст баннера и severity.
-    case response(role: String, text: String?, severity: String?)
+    ///
+    /// STMOB-285: здесь же приезжает метка «чем отвечено» (`data.llm`) — один раз,
+    /// с финальным событием. В `agent.token.delta` её нет, там только текст.
+    case response(role: String, text: String?, severity: String?, llm: AilockAnswerLLM?)
+    /// STMOB-285: движок сменил набор моделей по ходу беседы. Это же уведомление
+    /// приезжает потом системной строкой в истории — дедуп по `message_id`.
+    case selectionNotice(AilockSelectionNotice)
     /// Файл, присланный агентом.
     case file(AilockFile)
     /// Агент задал уточняющий вопрос и ждёт ответа.
@@ -174,9 +180,18 @@ actor AilockWebSocket {
             }
 
         case "agent.response":
+            // Ключа `llm` может не быть вовсе — исполнитель неизвестен. Это
+            // нормальное состояние, а не ошибка: рисуем «неизвестно» и НЕ
+            // подставляем текущую активную цепочку, иначе перепишем прошлое.
             continuation?.yield(.response(role: payload["role"] as? String ?? "assistant",
                                           text: payload["text"] as? String,
-                                          severity: payload["severity"] as? String))
+                                          severity: payload["severity"] as? String,
+                                          llm: AilockAnswerLLM(json: payload["llm"] as? [String: Any])))
+
+        case "agent.llm_selection_notice":
+            if let notice = AilockSelectionNotice(json: payload) {
+                continuation?.yield(.selectionNotice(notice))
+            }
 
         case "agent.file":
             // По текущему коду движка событие несёт только url/filename/mime_type/conversation_id.

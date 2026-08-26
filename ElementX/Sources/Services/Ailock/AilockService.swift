@@ -17,6 +17,140 @@ struct AilockSession {
     let conversationID: String
     let wsTicket: String
     let capabilities: AilockCapabilities
+    /// STMOB-285: набор моделей приезжает В ОТВЕТЕ на подъём сессии — и при
+    /// создании беседы, и при возобновлении, причём с ранее выбранным сотрудником
+    /// вариантом. Отдельный GET нужен только для обновления уже живой сессии.
+    /// `nil` — выбор этой беседе не положен, чип не рисуем (это норма, не ошибка).
+    let llmChains: AilockLLMChains?
+}
+
+/// Уровень размышления. Шкала закрытая: значение вне её сервер отвергает
+/// как `400 invalid_reasoning_mode`.
+enum AilockReasoningMode: String, CaseIterable, Equatable {
+    case auto, low, medium, high
+
+    var title: String {
+        switch self {
+        case .auto: SL10n.ailockReasoningAuto
+        case .low: SL10n.ailockReasoningLow
+        case .medium: SL10n.ailockReasoningMedium
+        case .high: SL10n.ailockReasoningHigh
+        }
+    }
+}
+
+/// Одна цепочка (модель) из набора, выданного сотруднику.
+struct AilockLLMChain: Identifiable, Equatable {
+    let id: String
+    let displayName: String
+    let modelWindow: Int?
+
+    init?(json: [String: Any]) {
+        guard let id = json["id"] as? String, !id.isEmpty else { return nil }
+        self.id = id
+        // Показывать сам id нельзя — он служебный. Если имени нет, честнее
+        // промолчать, чем выводить идентификатор.
+        displayName = (json["display_name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        modelWindow = json["model_window"] as? Int
+    }
+}
+
+/// Набор моделей беседы плюс состояние управления размышлением.
+struct AilockLLMChains: Equatable {
+    let chains: [AilockLLMChain]
+    let activeChainID: String?
+    let reasoningMode: AilockReasoningMode
+    /// Действующая модель не умеет управлять размышлением — чип не показываем,
+    /// иначе кнопка была бы без эффекта.
+    let reasoningControllable: Bool
+
+    init?(json: [String: Any]?) {
+        guard let json else { return nil }
+        let raw = json["chains"] as? [[String: Any]] ?? []
+        chains = raw.compactMap(AilockLLMChain.init(json:))
+        activeChainID = json["active_chain_id"] as? String
+        reasoningMode = (json["reasoning_mode"] as? String).flatMap(AilockReasoningMode.init(rawValue:)) ?? .auto
+        reasoningControllable = json["reasoning_controllable"] as? Bool == true
+    }
+
+    var activeChain: AilockLLMChain? {
+        chains.first { $0.id == activeChainID }
+    }
+}
+
+/// «Чем отвечено» — метка КОНКРЕТНОГО хода.
+///
+/// STMOB-285: вычислять её из `active_chain_id` нельзя. Тот описывает следующий
+/// ход и меняется по ходу беседы: подставив его в прошлые ответы, мы перепишем
+/// всю историю задним числом под текущий выбор. Метка приезжает вместе с ходом —
+/// в живом потоке финальным `agent.response`, в истории полем у строки.
+struct AilockAnswerLLM: Equatable {
+    let chainID: String?
+    let provider: String?
+    let model: String?
+    let selectedBy: String?
+    let reasoningMode: AilockReasoningMode?
+    /// Размышление просили, но оно не применилось. Показывать честно: иначе
+    /// человек уверен, что получил дорогой режим, а получил обычный.
+    let reasoningApplied: Bool?
+
+    init?(json: [String: Any]?) {
+        guard let json else { return nil }
+        chainID = json["chain_id"] as? String
+        provider = json["provider"] as? String
+        model = json["model"] as? String
+        selectedBy = json["selected_by"] as? String
+        reasoningMode = (json["reasoning_mode"] as? String).flatMap(AilockReasoningMode.init(rawValue:))
+        reasoningApplied = json["reasoning_applied"] as? Bool
+    }
+
+    /// Человекочитаемое имя: сопоставляем с набором беседы, а сам `chain_id`
+    /// не показываем никогда.
+    func displayName(in chains: AilockLLMChains?) -> String? {
+        if let chainID, let match = chains?.chains.first(where: { $0.id == chainID }), !match.displayName.isEmpty {
+            return match.displayName
+        }
+        if let model, !model.isEmpty { return model }
+        return nil
+    }
+}
+
+/// Уведомление о смене набора по ходу беседы. Приезжает дважды — событием в
+/// потоке и системной строкой в истории, поэтому дедуп по `messageID`.
+struct AilockSelectionNotice: Identifiable, Equatable {
+    let id: String
+    let kind: String
+    let text: String
+    let severity: String?
+
+    init?(json: [String: Any]?) {
+        guard let json,
+              let messageID = json["message_id"] as? String, !messageID.isEmpty,
+              let text = json["text"] as? String, !text.isEmpty else { return nil }
+        id = messageID
+        kind = json["kind"] as? String ?? "switched"
+        self.text = text
+        severity = json["severity"] as? String
+    }
+}
+
+/// Лимиты расхода: сервер отдаёт ТОЛЬКО проценты заполненности окон, назначенных
+/// сотруднику. Абсолютных сумм организации маршрут не отдаёт и не должен.
+///
+/// ⚠️ Проценты сейчас занижены: часть ходов у движка помечена `unpriced`, тарифа
+/// нет. Поэтому чип только информирует — никаких блокировок и отказов на этой
+/// цифре строить нельзя, и порог может не сработать вовсе.
+struct AilockSpendLimit: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let percent: Double
+
+    init?(json: [String: Any]) {
+        guard let percent = (json["percent"] as? Double) ?? (json["percent"] as? Int).map(Double.init) else { return nil }
+        id = (json["id"] as? String) ?? (json["window"] as? String) ?? UUID().uuidString
+        title = (json["display_name"] as? String) ?? (json["window"] as? String) ?? ""
+        self.percent = percent
+    }
 }
 
 /// STMOB-274: движок отдаёт ровно два булевых ключа. Всё, чего нет — false.
@@ -106,6 +240,11 @@ struct AilockMessage: Identifiable, Equatable {
     var createdAt: Date
     /// true, пока сообщение дописывается потоком токенов.
     var isStreaming = false
+    /// STMOB-285: чем отвечён ИМЕННО этот ход. Приезжает с финальным
+    /// `agent.response` в потоке и полем `llm` у строки в истории. Пусто —
+    /// исполнитель неизвестен (старые ходы, ходы человека); подставлять сюда
+    /// текущий выбор нельзя, история перепишется задним числом.
+    var llm: AilockAnswerLLM?
 
     var isEmpty: Bool {
         text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && files.isEmpty
@@ -195,6 +334,11 @@ final class AilockService {
     /// Последние известные capabilities: приходят и в теле POST /sessions,
     /// и заголовком `X-Ailock-Capabilities` в ответе списка бесед.
     private(set) var capabilities = AilockCapabilities()
+
+    /// STMOB-285: последний известный набор моделей беседы. Обновляется подъёмом
+    /// сессии и сменой выбора; нужен ещё и для того, чтобы у метки «чем отвечено»
+    /// найти человекочитаемое имя по служебному `chain_id`.
+    private(set) var llmChains: AilockLLMChains?
 
     init(homeserver: String,
          accessTokenProvider: @escaping () throws -> String,
@@ -300,7 +444,87 @@ final class AilockService {
 
         let caps = AilockCapabilities(json: json["capabilities"] as? [String: Any])
         capabilities = caps
-        return AilockSession(conversationID: conversation, wsTicket: ticket, capabilities: caps)
+
+        // STMOB-285: набор моделей приезжает прямо здесь — второго запроса не нужно.
+        // Ключа может не быть вовсе: значит выбор этой беседе не положен, чип не
+        // рисуем. Наш шлюз ПЕРЕСОБИРАЕТ тело ответа, а не проксирует, и пробрасывает
+        // `llm_chains` только при открытой заслонке — если чип однажды пропадёт при
+        // живом движке, смотреть сюда, а не на Айлок.
+        let chains = AilockLLMChains(json: json["llm_chains"] as? [String: Any])
+        llmChains = chains
+        DiagLog.write("Ailock", "сессия поднята: моделей=\(chains?.chains.count ?? 0) размышление=\(chains?.reasoningControllable == true ? "управляемо" : "нет")")
+
+        return AilockSession(conversationID: conversation, wsTicket: ticket, capabilities: caps, llmChains: chains)
+    }
+
+    /// Перечитать набор моделей. Работает ТОЛЬКО для живой сессии: после рестарта
+    /// пода движка отвечает 404, из базы не читает.
+    ///
+    /// Поэтому порядок при открытии беседы такой: сперва `createSession` с
+    /// `conversationID` (возобновление поднимает живое состояние и само отдаёт
+    /// набор), и лишь потом, если нужно обновить список, — этот метод. Обратный
+    /// порядок даёт почти гарантированный 404 и лишний запрос.
+    func refreshLLMChains(conversationID: String) async throws -> AilockLLMChains? {
+        let data = try await request(path: "/conversations/\(Self.escape(conversationID))/llm-chains", method: "GET")
+        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let chains = AilockLLMChains(json: json)
+        if let chains { llmChains = chains }
+        return chains
+    }
+
+    /// Сменить модель и/или уровень размышления. Поля независимы — можно слать
+    /// любое одно. `chainID == nil` при `resetChain == true` возвращает беседу к
+    /// варианту по умолчанию; операция обратима.
+    ///
+    /// ⚠️ Выбор действует СО СЛЕДУЮЩЕГО хода: идущий ответ дочитывается прежней
+    /// моделью. Это надо сказать человеку, иначе он решит, что не сработало.
+    /// ⚠️ Выбор запоминается за СОТРУДНИКОМ, а не за устройством: смена на вебе
+    /// будет видна на телефоне и наоборот.
+    @discardableResult
+    func setLLMChain(conversationID: String,
+                     chainID: String?,
+                     resetChain: Bool = false,
+                     reasoningMode: AilockReasoningMode?) async throws -> AilockLLMChains? {
+        var body: [String: Any] = [:]
+        if resetChain {
+            body["chain_id"] = NSNull()
+        } else if let chainID {
+            body["chain_id"] = chainID
+        }
+        if let reasoningMode { body["reasoning_mode"] = reasoningMode.rawValue }
+
+        // Наш шлюз проверяет тело ДО авторизации: пустое даёт 400 empty_selection
+        // даже без токена. Значит 400 на этом маршруте ничего не говорит о токене —
+        // и значит пустой запрос слать просто незачем.
+        guard !body.isEmpty else { return llmChains }
+
+        let data = try await request(path: "/conversations/\(Self.escape(conversationID))/llm-chain",
+                                     method: "POST",
+                                     jsonBody: body)
+        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        // Ответ несёт только новое состояние выбора — список цепочек в нём не
+        // повторяется, поэтому берём его из уже известного набора.
+        guard let json else { return llmChains }
+        let updated = AilockLLMChains(json: [
+            "chains": llmChains?.chains.map { ["id": $0.id, "display_name": $0.displayName] } ?? [],
+            "active_chain_id": json["active_chain_id"] as Any,
+            "reasoning_mode": json["reasoning_mode"] as Any,
+            "reasoning_controllable": json["reasoning_controllable"] as Any
+        ])
+        if let updated { llmChains = updated }
+        return updated
+    }
+
+    /// GET /me/spend-limits — проценты заполненности окон сотрудника.
+    /// Пустой ответ = лимитов не назначено, чип не рисуем. Это нормальное
+    /// состояние, а не ошибка.
+    func spendLimits(chainID: String? = nil) async throws -> [AilockSpendLimit] {
+        var query: [URLQueryItem] = []
+        if let chainID, !chainID.isEmpty { query.append(URLQueryItem(name: "chain_id", value: chainID)) }
+        let data = try await request(path: "/me/spend-limits", method: "GET", query: query)
+        guard let json = try? JSONSerialization.jsonObject(with: data) else { return [] }
+        let raw = (json as? [[String: Any]]) ?? ((json as? [String: Any])?["limits"] as? [[String: Any]]) ?? []
+        return raw.compactMap(AilockSpendLimit.init(json:))
     }
 
     /// URL сокета. Ключ — conversation_id, а не идентификатор сессии.
