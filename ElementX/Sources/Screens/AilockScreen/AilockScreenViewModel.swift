@@ -186,6 +186,7 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
         state.conversationTitle = conversation.title
         UserDefaults.standard.set(conversation.id, forKey: lastConversationKey)
         loadHistory()
+        raiseSessionForSelection()
     }
 
     /// Освободить ресурсы при закрытии экрана.
@@ -809,6 +810,32 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
         guard let saved = UserDefaults.standard.string(forKey: lastConversationKey), !saved.isEmpty else { return }
         conversationID = saved
         loadHistory()
+        raiseSessionForSelection()
+    }
+
+    /// STMOB-287: поднять сессию при ОТКРЫТИИ беседы, а не только при отправке.
+    ///
+    /// Набор моделей приезжает единственным способом — в ответе `POST /sessions`.
+    /// Отдельной ручки «дай список» у движка нет, а `GET llm-chains` отвечает
+    /// только для уже живой сессии. Наш путь открытия состоял из одних чтений
+    /// (история и статус), поэтому вызов, несущий набор, вообще не делался — и
+    /// чипы были пусты при любом состоянии сервера.
+    ///
+    /// Измерено Molly по журналу ingress: от `sTalk/328` за двое суток на проде
+    /// НИ ОДНОГО `POST /sessions` — только GET conversations/messages/status.
+    /// Это же объясняет, почему «чем отвечено» работало: метка хода едет из
+    /// истории и от сессии не зависит.
+    private func raiseSessionForSelection() {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await ensureConnected()
+            } catch {
+                // Не показываем ошибку: беседу человек уже открыл, история
+                // загрузится и без сокета. Сессия поднимется при первой отправке.
+                DiagLog.write("Ailock", "сессия при открытии не поднялась: \(error.localizedDescription)")
+            }
+        }
     }
 
     private func loadHistory() {
@@ -860,6 +887,10 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
     private func startNewConversation() {
         resetConversationState()
         UserDefaults.standard.removeObject(forKey: lastConversationKey)
+        // STMOB-287: сессию поднимаем и для новой беседы — без conversation_id
+        // движок её заведёт, а вместе с ответом приедет набор моделей. Иначе на
+        // чистом чате чипов не будет до первой отправки.
+        raiseSessionForSelection()
     }
 
     // MARK: - Файлы
