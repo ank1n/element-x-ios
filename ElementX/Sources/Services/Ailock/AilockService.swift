@@ -297,6 +297,9 @@ enum AilockError: Error, LocalizedError {
     case badResponse
     case fileTooLarge
     case unsupportedFileType
+    /// Локальной копии вложения больше нет, а на сервер оно ещё не уехало.
+    /// Отправлять текст молча без обещанного файла нельзя — человек уверен, что файл ушёл.
+    case attachmentUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -328,6 +331,8 @@ enum AilockError: Error, LocalizedError {
             return SL10n.ailockFileTooLarge
         case .unsupportedFileType:
             return SL10n.ailockFileUnsupported
+        case .attachmentUnavailable:
+            return SL10n.ailockAttachFailed
         }
     }
 }

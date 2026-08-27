@@ -61,6 +61,10 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
 
     /// Локальные файлы, выбранные пользователем: id вложения → URL на диске.
     private var localAttachments: [String: URL] = [:]
+    /// Что уже уехало на сервер в рамках текущей отправки: локальный id вложения → id на сервере.
+    /// Держим до подтверждённой отправки сообщения, а не до конца загрузки: иначе повтор
+    /// (автоматический или руками) уходил бы без файлов, а уже загруженные id терялись.
+    private var uploadedAttachmentIDs: [String: String] = [:]
 
     private var reconnectAttemptCount = 0
     /// Одна автоматическая пересылка на попытку отправки — чтобы повтор не зациклился.
@@ -103,6 +107,7 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
         case .removeAttachment(let id):
             state.pendingAttachments.removeAll { $0.id == id }
             localAttachments[id] = nil
+            uploadedAttachmentIDs[id] = nil
         case .openConversations:
             actionsSubject.send(.openConversations)
         case .newConversation:
@@ -215,6 +220,7 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
         streamBuffer = ""
         reconnectAttemptCount = 0
         localAttachments.removeAll()
+        uploadedAttachmentIDs.removeAll()
 
         state.messages = []
         state.pendingQuestion = nil
@@ -369,10 +375,21 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
                 defer { state.isUploadingAttachment = false }
 
                 for attachment in attachments {
-                    guard let localURL = localAttachments[attachment.id] else { continue }
+                    // Повтор не перезагружает то, что уже уехало: второй раз тот же файл
+                    // создал бы на сервере дубль, а его id нужен этому же сообщению.
+                    if let uploadedID = uploadedAttachmentIDs[attachment.id] {
+                        attachmentIDs.append(uploadedID)
+                        continue
+                    }
+                    // Ни локальной копии, ни загруженного id — файла у нас нет. Молча
+                    // отправить один текст нельзя: человек видел вложение в композере
+                    // и уверен, что оно ушло вместе с сообщением.
+                    guard let localURL = localAttachments[attachment.id] else {
+                        throw AilockError.attachmentUnavailable
+                    }
                     let uploaded = try await service.uploadAttachment(conversationID: conversationID, fileURL: localURL)
+                    uploadedAttachmentIDs[attachment.id] = uploaded.id
                     attachmentIDs.append(uploaded.id)
-                    localAttachments[attachment.id] = nil
                 }
             }
 
@@ -383,6 +400,10 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
             } else {
                 try await socket.send(content: text, attachmentIDs: attachmentIDs)
             }
+
+            // Кадр ушёл — только теперь отпускаем вложения. До этой строки они нужны
+            // повтору: и автоматическому, и тому, что человек делает руками из композера.
+            releaseAttachments(attachments)
 
             beginStreamingPlaceholder()
         } catch {
@@ -413,6 +434,15 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
         didRetrySend = false
     }
 
+    /// Сообщение доставлено — отпускаем локальные копии вложений и их серверные id:
+    /// повторять больше нечего, а держать копии в памяти незачем.
+    private func releaseAttachments(_ attachments: [AilockFile]) {
+        for attachment in attachments {
+            localAttachments[attachment.id] = nil
+            uploadedAttachmentIDs[attachment.id] = nil
+        }
+    }
+
     /// Сбой доставки, а не отказ сервиса: сеть, рукопожатие, таймаут. Такое лечится
     /// повтором, в отличие от 403 или невалидного ответа.
     private static func isTransportFailure(_ error: Error) -> Bool {
@@ -435,7 +465,13 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
         let current = state.bindings.composerText.trimmingCharacters(in: .whitespacesAndNewlines)
         state.bindings.composerText = current.isEmpty ? text : text + " " + current
         if state.pendingAttachments.isEmpty {
+            // Файлы возвращаются в композер вместе с текстом, а их локальные копии и уже
+            // полученные серверные id остаются живы — повтор руками уйдёт с вложениями.
             state.pendingAttachments = attachments
+        } else {
+            // Человек успел приложить другие файлы: старые из композера не воскрешаем,
+            // значит и держать их копии незачем.
+            releaseAttachments(attachments)
         }
         if let question, state.pendingQuestion == nil {
             state.pendingQuestion = question
