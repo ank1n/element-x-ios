@@ -252,6 +252,10 @@ enum SL10n {
     }
 
     static let ailockChainDefault = NSLocalizedString("stalk_ailock_chain_default", tableName: "Localizable", value: "по умолчанию", comment: "Default chain marker")
+
+    static let ailockModelsSheetTitle = NSLocalizedString("stalk_ailock_models_sheet", tableName: "Localizable", value: "Модель", comment: "Models sheet title")
+    static let ailockAttachSheetTitle = NSLocalizedString("stalk_ailock_attach_sheet", tableName: "Localizable", value: "Вложения", comment: "Attachments sheet title")
+    static let ailockSheetClose = NSLocalizedString("stalk_ailock_sheet_close", tableName: "Localizable", value: "Закрыть", comment: "Close sheet")
     static let ailockToday = NSLocalizedString("stalk_ailock_today", tableName: "Localizable", value: "Сегодня", comment: "Today section")
     static let ailockYesterday = NSLocalizedString("stalk_ailock_yesterday", tableName: "Localizable", value: "Вчера", comment: "Yesterday section")
     static let ailockPrevious7Days = NSLocalizedString("stalk_ailock_previous_7_days", tableName: "Localizable", value: "Предыдущие 7 дней", comment: "Previous 7 days section")

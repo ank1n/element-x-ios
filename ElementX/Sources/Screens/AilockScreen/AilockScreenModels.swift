@@ -136,6 +136,13 @@ struct AilockScreenViewStateBindings {
     var showDiskPicker = false
     /// Скачанный файл, который показываем системным листом «Поделиться».
     var sharedFile: AilockSharedFile?
+    /// STMOB-285: выбор модели нижним листом, а не выпадающим меню (референс
+    /// Perplexity, решение dp 28.08). В меню не помещаются подписи и пометки,
+    /// а список моделей у тенанта бывает длинным.
+    var showsModelsSheet = false
+    /// Лист «плюса»: вложения и уровень размышления в одном месте — у них так же,
+    /// и это убирает лишний чип из ряда.
+    var showsAttachmentsSheet = false
 }
 
 /// Обёртка вокруг URL для `.sheet(item:)`.

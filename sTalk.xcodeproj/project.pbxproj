@@ -1242,6 +1242,7 @@
 		C9B00A19FF982EAB90DF3F86 /* ClientBuilderHook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30AAE59BC86F732658428C87 /* ClientBuilderHook.swift */; };
 		C9EDE919FA098280D976D796 /* ShimmerModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FAE5DD6F3DE94EA2E16AFE0 /* ShimmerModifier.swift */; };
 		CA0D6D077FF2D9FFDDFDFEC1 /* test_image.png in Resources */ = {isa = PBXBuildFile; fileRef = 40B25A8D59DB1A30C44C2A81 /* test_image.png */; };
+		CA2456B66F510FEB41BB7507 /* AilockSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 128E49825DD8A415B00F5B03 /* AilockSheets.swift */; };
 		CA344F7D5C03D4F5C90080A7 /* SpaceAddRoomsScreenSelectedItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5FA7CE1665580BA2E939B90 /* SpaceAddRoomsScreenSelectedItem.swift */; };
 		CA4BBD350F0796197A373EF6 /* AilockHistoryParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64593D95CFA85363C1DEA5B9 /* AilockHistoryParser.swift */; };
 		CA7F16FB7E9DCC60AD9EFABA /* VoiceTranscriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86FC1A9D8F8BC6EC5CD0CBF8 /* VoiceTranscriptionService.swift */; };
@@ -1784,6 +1785,7 @@
 		120EE34847987CF726C3A2A8 /* ServerConfirmationScreenModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerConfirmationScreenModels.swift; sourceTree = "<group>"; };
 		124261DB12A15F0CE1B98F57 /* BindableState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BindableState.swift; sourceTree = "<group>"; };
 		124A2F3EF1A47B20CC2B6E18 /* JoinRoomScreenModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JoinRoomScreenModels.swift; sourceTree = "<group>"; };
+		128E49825DD8A415B00F5B03 /* AilockSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AilockSheets.swift; sourceTree = "<group>"; };
 		1301088239A62AAF23E67F95 /* EncryptionKeyProviderProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EncryptionKeyProviderProtocol.swift; sourceTree = "<group>"; };
 		1311224949C7EC701291C4B6 /* VoiceMessageRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceMessageRecorder.swift; sourceTree = "<group>"; };
 		1316D0D6E421AFC8D732DFD3 /* RoomSummaryProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomSummaryProviderTests.swift; sourceTree = "<group>"; };
@@ -5392,6 +5394,7 @@
 				0FB1BC6852FA95BC88EA0958 /* AilockConversationsScreen.swift */,
 				A4FF4655838F8E29454295D8 /* AilockDiskPickerScreen.swift */,
 				A519A3B706AEDCABB2B2B816 /* AilockLevelMeter.swift */,
+				128E49825DD8A415B00F5B03 /* AilockSheets.swift */,
 			);
 			path = View;
 			sourceTree = "<group>";
@@ -8339,6 +8342,7 @@
 				8585210DDE0711892F4A8A28 /* AilockScreenModels.swift in Sources */,
 				09058C511AC31AB64E772899 /* AilockScreenViewModel.swift in Sources */,
 				732030A44DC1A809D756EC07 /* AilockService.swift in Sources */,
+				CA2456B66F510FEB41BB7507 /* AilockSheets.swift in Sources */,
 				50B7F9A66938E7D49B618A96 /* AilockVoiceInput.swift in Sources */,
 				B7FF9F4C2932B1DEE4803EBF /* AilockWebSocket.swift in Sources */,
 				A90CD938DD3FF2A8C1DB6B6C /* Alert.swift in Sources */,

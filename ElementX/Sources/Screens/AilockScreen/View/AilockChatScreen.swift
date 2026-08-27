@@ -15,7 +15,7 @@ import SwiftUI
 /// Палитра референс-дизайна (Robodoc concept.html) — токены оттуда дословно.
 /// Экран Айлока в светлой теме следует ему; в тёмной держимся системных
 /// материалов: референс светлый, белая карточка в тёмной теме слепит.
-private enum AilockPalette {
+enum AilockPalette {
     static let card = Color.white // --card
     static let border = Color(red: 0.863, green: 0.910, blue: 0.933) // --border #DCE8EE
     static let ice = Color(red: 0.918, green: 0.957, blue: 0.980) // --ice #EAF4FA
@@ -51,6 +51,36 @@ struct AilockChatScreen: View {
         .navigationTitle(context.viewState.conversationTitle ?? SL10n.ailockTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbar }
+        .sheet(isPresented: $context.showsModelsSheet) {
+            if let chains = context.viewState.llmChains {
+                AilockModelsSheet(chains: chains,
+                                  onSelect: { chain in
+                                      context.showsModelsSheet = false
+                                      context.send(viewAction: .selectChain(chain))
+                                  },
+                                  onClose: { context.showsModelsSheet = false })
+            }
+        }
+        .sheet(isPresented: $context.showsAttachmentsSheet) {
+            AilockAttachmentsSheet(reasoningMode: context.viewState.llmChains?.reasoningMode ?? .auto,
+                                   showsReasoning: context.viewState.showsReasoningChip,
+                                   onPickPhoto: {
+                                       context.showsAttachmentsSheet = false
+                                       // Пикер поднимаем следующим тактом: два листа
+                                       // подряд в одном такте система показывает только
+                                       // первый, и выбор фото молча не открывался бы.
+                                       DispatchQueue.main.async { context.showPhotosPicker = true }
+                                   },
+                                   onPickFromDisk: {
+                                       context.showsAttachmentsSheet = false
+                                       DispatchQueue.main.async { context.showDiskPicker = true }
+                                   },
+                                   onSelectReasoning: { mode in
+                                       context.showsAttachmentsSheet = false
+                                       context.send(viewAction: .selectReasoning(mode))
+                                   },
+                                   onClose: { context.showsAttachmentsSheet = false })
+        }
         .sheet(isPresented: $context.showDiskPicker) {
             if let picker = context.viewState.diskPicker {
                 AilockDiskPickerScreen(service: picker.service,
@@ -457,22 +487,8 @@ struct AilockChatScreen: View {
     /// Кнопка вложений. Системный файловый пикер убран намеренно (решение dp):
     /// прикладываем только из галереи и из нашего «Диска».
     private var attachMenu: some View {
-        Menu {
-            Button {
-                context.showPhotosPicker = true
-            } label: {
-                // Иконку системного «Фото» приложение использовать не может:
-                // Apple не даёт доступа к иконкам чужих приложений. Берём
-                // ближайший системный глиф той же метафоры.
-                Label(SL10n.ailockAttachPhoto, systemImage: "photo.stack")
-            }
-            Button {
-                context.showDiskPicker = true
-            } label: {
-                // Тот же глиф, что у плитки «Диска» в «Приложениях», —
-                // чтобы источник вложения читался с первого взгляда.
-                Label(SL10n.ailockAttachFromDisk, systemImage: WidgetItem.files.icon)
-            }
+        Button {
+            context.showsAttachmentsSheet = true
         } label: {
             // Круглая кнопка того же размера, что микрофон и отправка —
             // ряд читается как один набор, а не как разнородные значки.
@@ -482,6 +498,7 @@ struct AilockChatScreen: View {
                 .frame(width: 36, height: 36)
                 .background(Circle().fill(colorScheme == .dark ? Color(.secondarySystemBackground) : AilockPalette.ice))
         }
+        .buttonStyle(.plain)
         .disabled(context.viewState.isUploadingAttachment || context.viewState.voicePhase == .transcribing)
     }
 
@@ -523,105 +540,50 @@ struct AilockChatScreen: View {
 
     // MARK: - Чипы поставки 13.08 (STMOB-285)
 
-    /// Выбор модели, уровень размышления и лимиты расхода.
+    /// Ряд управления: модель и лимиты.
     ///
-    /// Все три самоскрывающиеся: сервер не прислал данных — элемента нет вовсе,
-    /// ни пустой плашки, ни ошибки. На стендах, где выбор не настроен, композер
-    /// выглядит ровно как раньше.
+    /// STMOB-285: уровень размышления отсюда УБРАН — он переехал в лист «плюса»,
+    /// вместе с источниками вложения (референс Perplexity: у них «Режимы» живут
+    /// в том же листе). Ряд от этого разгрузился, а «плюс» стал единой точкой
+    /// входа для всего, что не текст.
+    ///
+    /// Чипы самоскрывающиеся: нет данных — нет элемента, а не пустая плашка.
     @ViewBuilder
     private var controlChips: some View {
-        let chains = context.viewState.llmChains
-        let showsModel = context.viewState.showsModelChip
-        let showsReasoning = context.viewState.showsReasoningChip
-        let limits = context.viewState.spendLimits
-
-        if showsModel || showsReasoning || !limits.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    if showsModel, let chains {
-                        Menu {
-                            // Строка меню как в вебе: название, под ним число
-                            // звеньев и пометка варианта по умолчанию, галочка
-                            // у действующего. Подзаголовок SwiftUI берёт из
-                            // второго Text — так меню читается без иконок.
-                            ForEach(chains.chains) { chain in
-                                Button {
-                                    context.send(viewAction: .selectChain(chain))
-                                } label: {
-                                    Text(chain.displayName)
-                                    if !chain.menuSubtitle.isEmpty {
-                                        Text(chain.menuSubtitle)
-                                    }
-                                    if chain.id == chains.activeChainID {
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
-                            }
-                            Divider()
-                            Button(SL10n.ailockModelDefault) {
-                                context.send(viewAction: .selectChain(nil))
-                            }
-                        } label: {
-                            menuChip(text: chains.activeChain?.displayName ?? SL10n.ailockModelTitle)
-                        }
-                    }
-
-                    if showsReasoning, let chains {
-                        Menu {
-                            Section(SL10n.ailockReasoningTitle) {
-                                ForEach(AilockReasoningMode.allCases, id: \.self) { mode in
-                                    Button {
-                                        context.send(viewAction: .selectReasoning(mode))
-                                    } label: {
-                                        if mode == chains.reasoningMode {
-                                            Label(mode.title, systemImage: "checkmark")
-                                        } else {
-                                            Text(mode.title)
-                                        }
-                                    }
-                                }
-                            }
-                        } label: {
-                            // В вебе на чипе только уровень («Авто»), само слово
-                            // «Размышление» — заголовок меню. Повторяем: строка
-                            // чипов и так тесная, лишнее слово её распирает.
-                            menuChip(text: chains.reasoningMode.title)
-                        }
-                    }
-
-                    // Лимиты — только показываем. Проценты у движка сейчас занижены
-                    // (часть ходов `unpriced`), поэтому ничего на них не блокируем
-                    // и порогом не пугаем.
-                    ForEach(limits) { limit in
-                        infoChip(icon: "gauge.with.needle",
-                                 text: "\(limit.title.isEmpty ? SL10n.ailockSpendTitle : limit.title) \(Int(limit.percent.rounded()))%")
-                    }
-                }
-                .padding(.horizontal, 12)
+        if context.viewState.showsModelChip, let chains = context.viewState.llmChains {
+            Button {
+                context.showsModelsSheet = true
+            } label: {
+                menuChip(text: chains.activeChain?.displayName ?? SL10n.ailockModelTitle)
             }
+            .buttonStyle(.plain)
+        }
+
+        // Лимиты — только показываем. Проценты у движка сейчас занижены (часть
+        // ходов `unpriced`), поэтому ничего на них не блокируем и порогом
+        // не пугаем.
+        ForEach(context.viewState.spendLimits) { limit in
+            infoChip(icon: "gauge.with.needle",
+                     text: "\(limit.title.isEmpty ? SL10n.ailockSpendTitle : limit.title) \(Int(limit.percent.rounded()))%")
         }
     }
 
-    /// Чип-меню: текст и «шеврон» справа.
+    /// Чип-кнопка: только текст в капсуле.
     ///
-    /// Ведущей иконки нет намеренно. Во-первых, надпись и так называет, что это
-    /// («Модель», «Размышление: Авто») — символ рядом ничего не добавляет.
-    /// Во-вторых, значок вроде `brain` на одиннадцати пунктах превращается
-    /// в неразборчивую загогулину. Признак нажимаемости несёт шеврон — ровно
-    /// так помечены меню в наших настройках.
+    /// Ни значка, ни шеврона (решение dp, 28.08). Капсула в ряду управления и
+    /// так читается как кнопка — стрелка ничего не добавляет, а место занимает.
+    /// В референсе Perplexity чип «Модель» тоже голый.
+    ///
+    /// Ведущий значок был убран раньше по другой причине: `brain` на
+    /// одиннадцати пунктах превращался в неразборчивую загогулину.
     private func menuChip(text: String) -> some View {
-        HStack(spacing: 5) {
-            Text(text)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.primary)
-                .lineLimit(1)
-            Image(systemName: "chevron.up.chevron.down")
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundColor(.secondary)
-        }
-        .padding(.horizontal, 11)
-        .padding(.vertical, 6)
-        .background(Capsule().fill(Color(UIColor.systemGray6)))
+        Text(text)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundColor(.primary)
+            .lineLimit(1)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(Capsule().fill(colorScheme == .dark ? Color(.secondarySystemBackground) : AilockPalette.ice))
     }
 
     /// Чип-показатель: не нажимается, поэтому без шеврона, зато со значком —
