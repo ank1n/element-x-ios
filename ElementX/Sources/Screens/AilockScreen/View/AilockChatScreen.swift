@@ -105,6 +105,11 @@ struct AilockChatScreen: View {
                 // Снизу больше: последнее сообщение не должно липнуть к панели ввода.
                 .padding(.bottom, 20)
             }
+            // STMOB-285: прокрутка ленты убирает клавиатуру. Без этого её нечем
+            // закрыть: кнопки «Готово» на клавиатуре нет, тап по ленте занят
+            // выделением текста, и человек оказывается заперт в поле ввода —
+            // единственный выход был отправить сообщение или уйти с экрана.
+            .scrollDismissesKeyboard(.immediately)
             .simultaneousGesture(DragGesture().onChanged { value in
                 if value.translation.height > 24 { userScrolledUp = true }
             })
