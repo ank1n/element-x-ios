@@ -46,11 +46,21 @@ struct AilockLLMChain: Identifiable, Equatable {
     let modelWindow: Int?
 
     init?(json: [String: Any]) {
-        guard let id = json["id"] as? String, !id.isEmpty else { return nil }
-        self.id = id
+        // STMOB-287: идентификатор читаем ТЕРПИМО. Раньше здесь требовалась
+        // строка ровно под именем `id`, и любое расхождение — число вместо
+        // строки, имя `chain_id` — приводило к тому, что compactMap молча
+        // вычищал ВЕСЬ список, а снаружи это выглядело как «сервер не прислал
+        // моделей». Так же терпимо мы уже читаем идентификаторы папок Диска.
+        let rawID = (json["id"] as? String)
+            ?? (json["chain_id"] as? String)
+            ?? (json["id"] as? Int).map(String.init)
+            ?? (json["chain_id"] as? Int).map(String.init)
+        guard let rawID, !rawID.isEmpty else { return nil }
+        id = rawID
         // Показывать сам id нельзя — он служебный. Если имени нет, честнее
         // промолчать, чем выводить идентификатор.
-        displayName = (json["display_name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        displayName = ((json["display_name"] as? String) ?? (json["name"] as? String) ?? (json["title"] as? String))?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         modelWindow = json["model_window"] as? Int
     }
 }
@@ -66,8 +76,19 @@ struct AilockLLMChains: Equatable {
 
     init?(json: [String: Any]?) {
         guard let json else { return nil }
-        let raw = json["chains"] as? [[String: Any]] ?? []
+        let raw = (json["chains"] as? [[String: Any]])
+            ?? (json["items"] as? [[String: Any]])
+            ?? (json["available"] as? [[String: Any]])
+            ?? []
         chains = raw.compactMap(AilockLLMChain.init(json:))
+        // Диагностика на случай расхождения формы: сколько элементов пришло и
+        // сколько мы смогли прочитать. Разрыв между ними означает, что имена
+        // полей разошлись с контрактом, а не что сервер прислал пусто.
+        if raw.count != chains.count {
+            DiagLog.write("Ailock", "набор моделей: пришло \(raw.count), прочитано \(chains.count) — расходятся имена полей: \(raw.first?.keys.sorted().joined(separator: ",") ?? "-")")
+        } else if raw.isEmpty {
+            DiagLog.write("Ailock", "набор моделей пуст, ключи llm_chains: \(json.keys.sorted().joined(separator: ","))")
+        }
         activeChainID = json["active_chain_id"] as? String
         reasoningMode = (json["reasoning_mode"] as? String).flatMap(AilockReasoningMode.init(rawValue:)) ?? .auto
         reasoningControllable = json["reasoning_controllable"] as? Bool == true

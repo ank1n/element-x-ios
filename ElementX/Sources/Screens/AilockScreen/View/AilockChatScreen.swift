@@ -539,8 +539,7 @@ struct AilockChatScreen: View {
                                 context.send(viewAction: .selectChain(nil))
                             }
                         } label: {
-                            chipLabel(icon: "cpu",
-                                      text: chains.activeChain?.displayName ?? SL10n.ailockModelTitle)
+                            menuChip(text: chains.activeChain?.displayName ?? SL10n.ailockModelTitle)
                         }
                     }
 
@@ -558,8 +557,7 @@ struct AilockChatScreen: View {
                                 }
                             }
                         } label: {
-                            chipLabel(icon: "brain",
-                                      text: "\(SL10n.ailockReasoningTitle): \(chains.reasoningMode.title)")
+                            menuChip(text: "\(SL10n.ailockReasoningTitle): \(chains.reasoningMode.title)")
                         }
                     }
 
@@ -567,8 +565,8 @@ struct AilockChatScreen: View {
                     // (часть ходов `unpriced`), поэтому ничего на них не блокируем
                     // и порогом не пугаем.
                     ForEach(limits) { limit in
-                        chipLabel(icon: "gauge.with.needle",
-                                  text: "\(limit.title.isEmpty ? SL10n.ailockSpendTitle : limit.title) \(Int(limit.percent.rounded()))%")
+                        infoChip(icon: "gauge.with.needle",
+                                 text: "\(limit.title.isEmpty ? SL10n.ailockSpendTitle : limit.title) \(Int(limit.percent.rounded()))%")
                     }
                 }
                 .padding(.horizontal, 12)
@@ -576,7 +574,31 @@ struct AilockChatScreen: View {
         }
     }
 
-    private func chipLabel(icon: String, text: String) -> some View {
+    /// Чип-меню: текст и «шеврон» справа.
+    ///
+    /// Ведущей иконки нет намеренно. Во-первых, надпись и так называет, что это
+    /// («Модель», «Размышление: Авто») — символ рядом ничего не добавляет.
+    /// Во-вторых, значок вроде `brain` на одиннадцати пунктах превращается
+    /// в неразборчивую загогулину. Признак нажимаемости несёт шеврон — ровно
+    /// так помечены меню в наших настройках.
+    private func menuChip(text: String) -> some View {
+        HStack(spacing: 5) {
+            Text(text)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.primary)
+                .lineLimit(1)
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundColor(.secondary)
+        }
+        .padding(.horizontal, 11)
+        .padding(.vertical, 6)
+        .background(Capsule().fill(Color(UIColor.systemGray6)))
+    }
+
+    /// Чип-показатель: не нажимается, поэтому без шеврона, зато со значком —
+    /// он и отличает его от соседних меню.
+    private func infoChip(icon: String, text: String) -> some View {
         HStack(spacing: 5) {
             Image(systemName: icon)
                 .font(.system(size: 11, weight: .semibold))
@@ -584,7 +606,7 @@ struct AilockChatScreen: View {
                 .font(.system(size: 12, weight: .medium))
                 .lineLimit(1)
         }
-        .foregroundColor(.primary)
+        .foregroundColor(.secondary)
         .padding(.horizontal, 11)
         .padding(.vertical, 6)
         .background(Capsule().fill(Color(UIColor.systemGray6)))
