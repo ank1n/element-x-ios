@@ -377,8 +377,6 @@ struct AilockChatScreen: View {
                 attachmentsRow
             }
 
-            controlChips
-
             if context.viewState.voicePhase == .recording {
                 recordingBar
                     .padding(.horizontal, 12)
@@ -386,72 +384,42 @@ struct AilockChatScreen: View {
                     // на устройстве это читается как «подпирает» нижнюю кромку.
                     .padding(.bottom, Self.composerBottomInset)
             } else {
-                HStack(alignment: .bottom, spacing: 8) {
-                    // Скрепка даёт выбор источника: снимок прикладывают чаще документа,
-                    // а доставать фото через файловый пикер неудобно.
-                    Menu {
-                        Button {
-                            context.showPhotosPicker = true
-                        } label: {
-                            // Иконку системного «Фото» приложение использовать не может:
-                            // Apple не даёт доступа к иконкам чужих приложений. Берём
-                            // ближайший системный глиф той же метафоры.
-                            Label(SL10n.ailockAttachPhoto, systemImage: "photo.stack")
-                        }
-                        Button {
-                            context.showDiskPicker = true
-                        } label: {
-                            // Тот же глиф, что у плитки «Диска» в «Приложениях», —
-                            // чтобы источник вложения читался с первого взгляда.
-                            Label(SL10n.ailockAttachFromDisk, systemImage: WidgetItem.files.icon)
-                        }
-                    } label: {
-                        Image(systemName: "paperclip")
-                            .font(.system(size: 18))
-                            .foregroundStyle(colorScheme == .dark ? AnyShapeStyle(.secondary) : AnyShapeStyle(AilockPalette.muted))
-                            .frame(width: 34, height: 34)
-                    }
-                    .disabled(context.viewState.isUploadingAttachment || context.viewState.voicePhase == .transcribing)
+                // STMOB-285: компоновка «острова» по референсу Perplexity (dp, 28.08).
+                //
+                // Было три уровня: чипы отдельной строкой НАД полем, скрепка и
+                // микрофон по бокам от него. Стало два: поле во всю ширину сверху
+                // и ОДИН ряд управления под ним, внутри той же карточки. Кнопки
+                // круглые и одного размера, залита акцентом только отправка.
+                //
+                // Палитра и значки наши — меняется расстановка, не оформление.
+                VStack(spacing: 10) {
+                    composerField
 
-                    TextField(composerPlaceholder, text: $context.composerText, axis: .vertical)
-                        .lineLimit(1...6)
-                        .textFieldStyle(.plain)
-                        .disabled(context.viewState.voicePhase == .transcribing)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 9)
-                        // Поле = --ice с рамкой, как .fmid референса; тёмная — системное.
-                        .background(colorScheme == .dark ? Color(.secondarySystemBackground) : AilockPalette.ice,
-                                    in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                        .overlay {
-                            if colorScheme != .dark {
-                                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                    .stroke(AilockPalette.iceBorder, lineWidth: 1)
+                    HStack(spacing: 8) {
+                        attachMenu
+
+                        // Чипы прокручиваются, а микрофон и отправка приколоты
+                        // справа: иначе длинное имя модели утаскивало бы главную
+                        // кнопку за край экрана.
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                controlChips
                             }
                         }
 
-                    // Микрофон показываем, пока поле пустое — как в мобильных LLM-клиентах:
-                    // начал печатать, кнопка уступает место отправке.
-                    if showsMicButton {
-                        micButton
-                    } else {
-                        sendButton
+                        if showsMicButton {
+                            micButton
+                        } else {
+                            sendButton
+                        }
                     }
                 }
                 .padding(.horizontal, 12)
                 .padding(.bottom, Self.composerBottomInset)
             }
         }
-        // Просвет между верхней кромкой панели и капсулой поля: без него овал
-        // выглядит обрезанным сверху.
         .padding(.top, Self.composerTopInset)
-        // Тост гаснет сам — без анимируемой транзакции его .transition мёртв,
-        // и композер дёргался бы по высоте. Ошибки/вопросы не анимируем: их
-        // закрывает пользователь.
         .animation(.easeInOut(duration: 0.2), value: context.viewState.infoToast)
-        // Карточный стиль референса (dp: «низ плоский» + «соответствие референсу»):
-        // белая карточка со скруглённым верхом, волосяной рамкой --border и тенью
-        // --shadow — как .tile/.scene в concept.html. Вниз форма продолжается под
-        // домашний индикатор — там скругление не нужно. Тёмная тема — материал.
         .background {
             let shape = UnevenRoundedRectangle(topLeadingRadius: 18, topTrailingRadius: 18, style: .continuous)
             shape
@@ -466,6 +434,55 @@ struct AilockChatScreen: View {
                         radius: colorScheme == .dark ? 8 : 18,
                         y: colorScheme == .dark ? -2 : -4)
         }
+    }
+
+    /// Поле ввода во всю ширину карточки.
+    private var composerField: some View {
+        TextField(composerPlaceholder, text: $context.composerText, axis: .vertical)
+            .lineLimit(1...6)
+            .textFieldStyle(.plain)
+            .disabled(context.viewState.voicePhase == .transcribing)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .background(colorScheme == .dark ? Color(.secondarySystemBackground) : AilockPalette.ice,
+                        in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay {
+                if colorScheme != .dark {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(AilockPalette.iceBorder, lineWidth: 1)
+                }
+            }
+    }
+
+    /// Кнопка вложений. Системный файловый пикер убран намеренно (решение dp):
+    /// прикладываем только из галереи и из нашего «Диска».
+    private var attachMenu: some View {
+        Menu {
+            Button {
+                context.showPhotosPicker = true
+            } label: {
+                // Иконку системного «Фото» приложение использовать не может:
+                // Apple не даёт доступа к иконкам чужих приложений. Берём
+                // ближайший системный глиф той же метафоры.
+                Label(SL10n.ailockAttachPhoto, systemImage: "photo.stack")
+            }
+            Button {
+                context.showDiskPicker = true
+            } label: {
+                // Тот же глиф, что у плитки «Диска» в «Приложениях», —
+                // чтобы источник вложения читался с первого взгляда.
+                Label(SL10n.ailockAttachFromDisk, systemImage: WidgetItem.files.icon)
+            }
+        } label: {
+            // Круглая кнопка того же размера, что микрофон и отправка —
+            // ряд читается как один набор, а не как разнородные значки.
+            Image(systemName: "plus")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(colorScheme == .dark ? AnyShapeStyle(.secondary) : AnyShapeStyle(AilockPalette.muted))
+                .frame(width: 36, height: 36)
+                .background(Circle().fill(colorScheme == .dark ? Color(.secondarySystemBackground) : AilockPalette.ice))
+        }
+        .disabled(context.viewState.isUploadingAttachment || context.viewState.voicePhase == .transcribing)
     }
 
     /// Переносит выбранное в медиатеке во временные файлы и отдаёт их вью-модели —

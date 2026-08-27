@@ -173,6 +173,9 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
 
     private var infoToastTask: Task<Void, Never>?
 
+    /// Плашку ставить ТОЛЬКО этим методом: он же заводит гашение через 2,5 с.
+    /// Присвоение `state.infoToast` напрямую оставляет её на экране навсегда —
+    /// на этом уже обожглись с «применится со следующего ответа».
     private func showInfoToast(_ text: String) {
         infoToastTask?.cancel()
         state.infoToast = text
@@ -775,9 +778,11 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
                                                                 chainID: chain?.id,
                                                                 resetChain: chain == nil,
                                                                 reasoningMode: nil)
-                // Выбор действует со СЛЕДУЮЩЕГО хода — говорим это словами,
-                // иначе человек решит, что переключение не сработало.
-                state.infoToast = SL10n.ailockModelAppliesNext
+                // Плашки «применится со следующего ответа» здесь нет намеренно
+                // (решение dp): смена имени на самом чипе уже подтверждает, что
+                // переключение произошло, а лишняя строка над клавиатурой только
+                // занимает место. Прежде она вдобавок не гасла — текст ставился
+                // напрямую в обход showInfoToast, который и снимает её через 2,5 с.
             } catch {
                 state.errorMessage = error.localizedDescription
             }
@@ -792,7 +797,6 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
                 state.llmChains = try await service.setLLMChain(conversationID: conversationID,
                                                                 chainID: nil,
                                                                 reasoningMode: mode)
-                state.infoToast = SL10n.ailockModelAppliesNext
             } catch {
                 state.errorMessage = error.localizedDescription
             }
