@@ -523,14 +523,20 @@ struct AilockChatScreen: View {
                 HStack(spacing: 8) {
                     if showsModel, let chains {
                         Menu {
+                            // Строка меню как в вебе: название, под ним число
+                            // звеньев и пометка варианта по умолчанию, галочка
+                            // у действующего. Подзаголовок SwiftUI берёт из
+                            // второго Text — так меню читается без иконок.
                             ForEach(chains.chains) { chain in
                                 Button {
                                     context.send(viewAction: .selectChain(chain))
                                 } label: {
+                                    Text(chain.displayName)
+                                    if !chain.menuSubtitle.isEmpty {
+                                        Text(chain.menuSubtitle)
+                                    }
                                     if chain.id == chains.activeChainID {
-                                        Label(chain.displayName, systemImage: "checkmark")
-                                    } else {
-                                        Text(chain.displayName)
+                                        Image(systemName: "checkmark")
                                     }
                                 }
                             }
@@ -545,19 +551,24 @@ struct AilockChatScreen: View {
 
                     if showsReasoning, let chains {
                         Menu {
-                            ForEach(AilockReasoningMode.allCases, id: \.self) { mode in
-                                Button {
-                                    context.send(viewAction: .selectReasoning(mode))
-                                } label: {
-                                    if mode == chains.reasoningMode {
-                                        Label(mode.title, systemImage: "checkmark")
-                                    } else {
-                                        Text(mode.title)
+                            Section(SL10n.ailockReasoningTitle) {
+                                ForEach(AilockReasoningMode.allCases, id: \.self) { mode in
+                                    Button {
+                                        context.send(viewAction: .selectReasoning(mode))
+                                    } label: {
+                                        if mode == chains.reasoningMode {
+                                            Label(mode.title, systemImage: "checkmark")
+                                        } else {
+                                            Text(mode.title)
+                                        }
                                     }
                                 }
                             }
                         } label: {
-                            menuChip(text: "\(SL10n.ailockReasoningTitle): \(chains.reasoningMode.title)")
+                            // В вебе на чипе только уровень («Авто»), само слово
+                            // «Размышление» — заголовок меню. Повторяем: строка
+                            // чипов и так тесная, лишнее слово её распирает.
+                            menuChip(text: chains.reasoningMode.title)
                         }
                     }
 

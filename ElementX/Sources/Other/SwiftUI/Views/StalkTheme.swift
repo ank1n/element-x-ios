@@ -233,6 +233,25 @@ enum SL10n {
     static let ailockAnsweredBy = NSLocalizedString("stalk_ailock_answered_by", tableName: "Localizable", value: "Отвечено: %@", comment: "Which model produced the answer")
     /// Размышление просили, но движок его не применил.
     static let ailockReasoningNotApplied = NSLocalizedString("stalk_ailock_reasoning_not_applied", tableName: "Localizable", value: "без размышления", comment: "Reasoning requested but not applied")
+
+    /// Число звеньев в цепочке. Русская форма зависит от числа: 1 звено,
+    /// 2-4 звена, 5 и больше — звеньев.
+    static func ailockChainLinks(_ count: Int) -> String {
+        let n = abs(count) % 100
+        let last = n % 10
+        let word = if n >= 11, n <= 14 {
+            NSLocalizedString("stalk_ailock_links_many", tableName: "Localizable", value: "звеньев", comment: "Chain links, many")
+        } else if last == 1 {
+            NSLocalizedString("stalk_ailock_links_one", tableName: "Localizable", value: "звено", comment: "Chain links, one")
+        } else if (2...4).contains(last) {
+            NSLocalizedString("stalk_ailock_links_few", tableName: "Localizable", value: "звена", comment: "Chain links, few")
+        } else {
+            NSLocalizedString("stalk_ailock_links_many", tableName: "Localizable", value: "звеньев", comment: "Chain links, many")
+        }
+        return "\(count) \(word)"
+    }
+
+    static let ailockChainDefault = NSLocalizedString("stalk_ailock_chain_default", tableName: "Localizable", value: "по умолчанию", comment: "Default chain marker")
     static let ailockToday = NSLocalizedString("stalk_ailock_today", tableName: "Localizable", value: "Сегодня", comment: "Today section")
     static let ailockYesterday = NSLocalizedString("stalk_ailock_yesterday", tableName: "Localizable", value: "Вчера", comment: "Yesterday section")
     static let ailockPrevious7Days = NSLocalizedString("stalk_ailock_previous_7_days", tableName: "Localizable", value: "Предыдущие 7 дней", comment: "Previous 7 days section")

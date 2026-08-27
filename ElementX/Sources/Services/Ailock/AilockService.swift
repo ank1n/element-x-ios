@@ -44,6 +44,11 @@ struct AilockLLMChain: Identifiable, Equatable {
     let id: String
     let displayName: String
     let modelWindow: Int?
+    /// Сколько звеньев в цепочке — `members[]` контракта. Веб показывает это
+    /// подписью под названием («2 звена»), повторяем.
+    let memberCount: Int
+    /// Вариант по умолчанию — в меню помечается словом, как в вебе.
+    let isDefault: Bool
 
     init?(json: [String: Any]) {
         // STMOB-287: идентификатор читаем ТЕРПИМО. Раньше здесь требовалась
@@ -61,7 +66,19 @@ struct AilockLLMChain: Identifiable, Equatable {
         // промолчать, чем выводить идентификатор.
         displayName = ((json["display_name"] as? String) ?? (json["name"] as? String) ?? (json["title"] as? String))?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        modelWindow = json["model_window"] as? Int
+        let members = json["members"] as? [[String: Any]] ?? []
+        memberCount = members.count
+        isDefault = json["is_default"] as? Bool == true
+        // `model_window` лежит у ЗВЕНА, а не у цепочки — берём у первого.
+        modelWindow = (members.first?["model_window"] as? Int) ?? (json["model_window"] as? Int)
+    }
+
+    /// Подпись в меню: число звеньев и пометка варианта по умолчанию.
+    var menuSubtitle: String {
+        var parts: [String] = []
+        if memberCount > 0 { parts.append(SL10n.ailockChainLinks(memberCount)) }
+        if isDefault { parts.append(SL10n.ailockChainDefault) }
+        return parts.joined(separator: " · ")
     }
 }
 
