@@ -345,9 +345,30 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                     // «принято» ставит ТОЛЬКО реальный вход remote в SFU (подписка
                     // remoteParticipants ниже). Отвечающий/join (!startedAsInitiator) —
                     // remote уже есть, эти пути корректны.
+                    // STMOB-293: состав участников в Matrix НЕ доказывает, что
+                    // соединены МЫ. Он говорит лишь, кто числится в звонке.
+                    //
+                    // 31.08 после обрыва наше собственное `m.call.member` от уже
+                    // мёртвого звонка провисело в комнате сорок секунд: снятие
+                    // упало по таймауту, подтверждение пришло только потом. Новый
+                    // экран увидел в комнате самого себя, объявил соединение и
+                    // запустил таймер — за минуту до того, как поднялось медиа.
+                    // В логе это «endCall tap: callStatus=connected elapsed=50.0»:
+                    // пятьдесят секунд «разговора» при мёртвом медиатракте.
+                    //
+                    // Отсюда же росла и плашка записи: её опрос стартует из
+                    // startCallTimer() и спрашивает сервер «идёт ли запись
+                    // в комнате» — запись действительно шла, её вели другие.
+                    //
+                    // Поэтому в нативном режиме требуем ещё и живое медиа. В режиме
+                    // виджета медиа ведёт он сам, и такого признака у нас нет —
+                    // там поведение прежнее.
+                    let mediaIsUp = !self.useNativeCall || self.liveKitRoomManager.connectionState == .connected
+
                     if !self.startedAsInitiator,
                        self.state.isDirect,
                        self.state.callStatus != .connected,
+                       mediaIsUp,
                        callParticipants.count >= 2 {
                         self.state.callStatus = .connected
                         self.startCallTimer()
@@ -358,6 +379,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                     if !self.startedAsInitiator,
                        !self.state.isDirect,
                        self.state.callStatus != .connected,
+                       mediaIsUp,
                        callParticipants.contains(roomProxy.ownUserID) {
                         self.state.callStatus = .connected
                         self.startCallTimer()
@@ -764,6 +786,23 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                     await session.start(baseURL: baseURL,
                                         clientID: clientID,
                                         colorScheme: colorScheme)
+
+                    // STMOB-293: пока start() висел, пользователь мог положить трубку.
+                    //
+                    // При плохой сети виджет-драйвер поднимается до минуты (лог 31.08:
+                    // `widgetDriver.start done @60333ms`). Человек за это время нажал
+                    // отбой, экран закрылся, уборка отработала — а здесь выполнение
+                    // продолжилось как ни в чём не бывало: подняло LiveKit, включило
+                    // микрофон с камерой и завело системный звонок. Через ТРИНАДЦАТЬ
+                    // секунд после отбоя.
+                    //
+                    // `nativeCallSession === session` заодно ловит подмену звонка
+                    // вторым: если экран уже держит другую сессию, эта — чужая.
+                    guard !isEndingCall, nativeCallSession === session else {
+                        DiagLog.write("Call", "start() доработал после отбоя — глушу сессию, системный звонок не завожу")
+                        await session.stop()
+                        return
+                    }
 
                     // Note: NOT calling elementCallService.setupCallSession —
                     // CallKit would kill the call when WidgetDriver times out.

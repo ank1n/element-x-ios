@@ -391,6 +391,21 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
             return
         }
 
+        // STMOB-293: прежний системный звонок обязан быть завершён ДО заведения
+        // нового.
+        //
+        // Раньше здесь просто присваивался новый CallID с новым UUID, а прежний
+        // затирался — и завершить его становилось нечем: tearDownCallSession
+        // закрывает ровно тот, что лежит в ongoingCallID. В логе 31.08 это дало
+        // четыре старта против трёх завершений, и один системный звонок прожил
+        // десять минут после отбоя: всё это время iOS показывала «идёт звонок»,
+        // а приложение о нём уже не знало (`didActivate room=nil`). Закрыть его
+        // смог только сам человек из системного интерфейса.
+        if let previous = ongoingCallID {
+            DiagLog.write("Call", "markNativeCallActive: завершаю прежний системный звонок room=\(previous.roomID)")
+            callProvider.reportCall(with: previous.callKitID, endedAt: Date(), reason: .remoteEnded)
+        }
+
         let callID = CallID(callKitID: UUID(), roomID: roomID, rtcNotificationID: nil)
         ongoingCallID = callID
         didReportOutgoingConnected = false
