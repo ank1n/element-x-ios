@@ -20,7 +20,8 @@ class LoggingTests: XCTestCase {
         try reloadTracingFileWriter(configuration: .init(path: URL.appGroupLogsDirectory.path(percentEncoded: false),
                                                          filePrefix: "console-tests",
                                                          fileSuffix: "log",
-                                                         maxFiles: 100))
+                                                         maxTotalSizeBytes: 100 * 1024 * 1024,
+                                                         maxAgeSeconds: 7 * 24 * 60 * 60))
     }
     
     func testFileLogging() throws {
@@ -344,7 +345,8 @@ class LoggingTests: XCTestCase {
             try reloadTracingFileWriter(configuration: .init(path: testDirectory.path(percentEncoded: false),
                                                              filePrefix: "console",
                                                              fileSuffix: "log",
-                                                             maxFiles: 100))
+                                                             maxTotalSizeBytes: 100 * 1024 * 1024,
+                                                             maxAgeSeconds: 7 * 24 * 60 * 60))
         }
     }
 }

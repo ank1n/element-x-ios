@@ -150,6 +150,13 @@ targets:
     settings:
       base:
         PRODUCT_NAME: $(APP_NAME)
+        # ⚠️ Имя МОДУЛЯ закреплено отдельно от имени приложения. Приложение зовётся
+        # по $(APP_NAME) (sTalk), а весь код и тесты импортируют `ElementX` —
+        # без этой строки модуль переименовывался вслед за продуктом, и каждый
+        # `@testable import ElementX` переставал находиться. Из-за этого тесты
+        # в форке не запускались вовсе, а xcodebuild отвечал лишь «нет тестовых
+        # бандлов», не называя причины.
+        PRODUCT_MODULE_NAME: ElementX
         PRODUCT_BUNDLE_IDENTIFIER: $(BASE_BUNDLE_IDENTIFIER)
         # STMOB-198: iPhone-only (1). Было дефолтное "1,2" (universal) → Apple требовал
         # iPad 13" скриншоты и блокировал submit. iPad не поддерживаем целенаправленно.

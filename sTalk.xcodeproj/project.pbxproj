@@ -9909,7 +9909,7 @@
 				PRODUCT_NAME = PreviewTests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ElementX.app/ElementX";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/$(APP_NAME).app/$(APP_NAME)";
 			};
 			name = Release;
 		};
@@ -9930,6 +9930,7 @@
 				PRODUCT_NAME = AccessibilityTests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/$(APP_NAME).app/$(APP_NAME)";
 				TEST_TARGET_NAME = ElementX;
 			};
 			name = Debug;
@@ -10071,7 +10072,7 @@
 				PRODUCT_NAME = UnitTests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ElementX.app/ElementX";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/$(APP_NAME).app/$(APP_NAME)";
 			};
 			name = Debug;
 		};
@@ -10113,7 +10114,7 @@
 				PRODUCT_NAME = PreviewTests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ElementX.app/ElementX";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/$(APP_NAME).app/$(APP_NAME)";
 			};
 			name = Debug;
 		};
@@ -10173,7 +10174,7 @@
 				PRODUCT_NAME = UnitTests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ElementX.app/ElementX";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/$(APP_NAME).app/$(APP_NAME)";
 			};
 			name = Release;
 		};
@@ -10311,6 +10312,7 @@
 				);
 				PILLS_UT_TYPE_IDENTIFIER = "$(BASE_BUNDLE_IDENTIFIER).pills";
 				PRODUCT_BUNDLE_IDENTIFIER = "$(BASE_BUNDLE_IDENTIFIER)";
+				PRODUCT_MODULE_NAME = ElementX;
 				PRODUCT_NAME = "$(APP_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "sTalk AppStore";
 				SDKROOT = iphoneos;
@@ -10337,6 +10339,7 @@
 				PRODUCT_NAME = AccessibilityTests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/$(APP_NAME).app/$(APP_NAME)";
 				TEST_TARGET_NAME = ElementX;
 			};
 			name = Release;
@@ -10366,6 +10369,7 @@
 				);
 				PILLS_UT_TYPE_IDENTIFIER = "$(BASE_BUNDLE_IDENTIFIER).pills";
 				PRODUCT_BUNDLE_IDENTIFIER = "$(BASE_BUNDLE_IDENTIFIER)";
+				PRODUCT_MODULE_NAME = ElementX;
 				PRODUCT_NAME = "$(APP_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "sTalk AppStore";
 				SDKROOT = iphoneos;

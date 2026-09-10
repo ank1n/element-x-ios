@@ -1,32 +1,30 @@
 {
-  "configurations" : [
+  "configurations": [
     {
-      "id" : "D789E5F1-30B8-4A23-B20E-281ACE05CFD6",
-      "name" : "Default",
-      "options" : {
-
-      }
+      "id": "D789E5F1-30B8-4A23-B20E-281ACE05CFD6",
+      "name": "Default",
+      "options": {}
     }
   ],
-  "defaultOptions" : {
-    "defaultTestExecutionTimeAllowance" : 60,
-    "environmentVariableEntries" : [
+  "defaultOptions": {
+    "defaultTestExecutionTimeAllowance": 60,
+    "environmentVariableEntries": [
       {
-        "key" : "IS_RUNNING_UNIT_TESTS",
-        "value" : "1"
+        "key": "IS_RUNNING_UNIT_TESTS",
+        "value": "1"
       }
     ],
-    "testExecutionOrdering" : "random",
-    "testTimeoutsEnabled" : true
+    "testExecutionOrdering": "random",
+    "testTimeoutsEnabled": true
   },
-  "testTargets" : [
+  "testTargets": [
     {
-      "target" : {
-        "containerPath" : "container:ElementX.xcodeproj",
-        "identifier" : "32C23C8D224D46EFE62AFAD0",
-        "name" : "UnitTests"
+      "target": {
+        "containerPath": "container:sTalk.xcodeproj",
+        "identifier": "22B85B4F32A79182CA2AAB30",
+        "name": "UnitTests"
       }
     }
   ],
-  "version" : 1
+  "version": 1
 }

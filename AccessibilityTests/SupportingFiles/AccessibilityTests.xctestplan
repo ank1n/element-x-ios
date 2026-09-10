@@ -1,52 +1,48 @@
 {
-  "configurations" : [
+  "configurations": [
     {
-      "id" : "EFC6A442-D3B7-4273-B349-7A923C06AF5E",
-      "name" : "Default",
-      "options" : {
-
-      }
+      "id": "EFC6A442-D3B7-4273-B349-7A923C06AF5E",
+      "name": "Default",
+      "options": {}
     }
   ],
-  "defaultOptions" : {
-    "addressSanitizer" : {
-      "enabled" : true
+  "defaultOptions": {
+    "addressSanitizer": {
+      "enabled": true
     },
-    "codeCoverage" : {
-      "targets" : [
+    "codeCoverage": {
+      "targets": [
         {
-          "containerPath" : "container:ElementX.xcodeproj",
-          "identifier" : "C0FAEB81CFD9776CD78CE489",
-          "name" : "ElementX"
+          "containerPath": "container:sTalk.xcodeproj",
+          "identifier": "44197489C0719E9EA6C21A00",
+          "name": "ElementX"
         }
       ]
     },
-    "defaultTestExecutionTimeAllowance" : 120,
-    "environmentVariableEntries" : [
-
-    ],
-    "language" : "en-US",
-    "locationScenario" : {
-      "identifier" : "San Francisco, CA, USA",
-      "referenceType" : "built-in"
+    "defaultTestExecutionTimeAllowance": 120,
+    "environmentVariableEntries": [],
+    "language": "en-US",
+    "locationScenario": {
+      "identifier": "San Francisco, CA, USA",
+      "referenceType": "built-in"
     },
-    "region" : "US",
-    "targetForVariableExpansion" : {
-      "containerPath" : "container:ElementX.xcodeproj",
-      "identifier" : "C0C687DE1D270F9895FEE186",
-      "name" : "AccessibilityTests"
+    "region": "US",
+    "targetForVariableExpansion": {
+      "containerPath": "container:sTalk.xcodeproj",
+      "identifier": "915ACF53D8B8204DAAEF7BDB",
+      "name": "AccessibilityTests"
     },
-    "testTimeoutsEnabled" : true,
-    "undefinedBehaviorSanitizerEnabled" : true
+    "testTimeoutsEnabled": true,
+    "undefinedBehaviorSanitizerEnabled": true
   },
-  "testTargets" : [
+  "testTargets": [
     {
-      "target" : {
-        "containerPath" : "container:ElementX.xcodeproj",
-        "identifier" : "C0C687DE1D270F9895FEE186",
-        "name" : "AccessibilityTests"
+      "target": {
+        "containerPath": "container:sTalk.xcodeproj",
+        "identifier": "915ACF53D8B8204DAAEF7BDB",
+        "name": "AccessibilityTests"
       }
     }
   ],
-  "version" : 1
+  "version": 1
 }

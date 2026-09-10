@@ -1,59 +1,59 @@
 {
-  "configurations" : [
+  "configurations": [
     {
-      "id" : "183696C6-4CBB-4BCE-8F4C-D2B848395699",
-      "name" : "English",
-      "options" : {
-        "language" : "en",
-        "region" : "GB"
+      "id": "183696C6-4CBB-4BCE-8F4C-D2B848395699",
+      "name": "English",
+      "options": {
+        "language": "en",
+        "region": "GB"
       }
     }
   ],
-  "defaultOptions" : {
-    "addressSanitizer" : {
-      "enabled" : true
+  "defaultOptions": {
+    "addressSanitizer": {
+      "enabled": true
     },
-    "codeCoverage" : {
-      "targets" : [
+    "codeCoverage": {
+      "targets": [
         {
-          "containerPath" : "container:ElementX.xcodeproj",
-          "identifier" : "C0FAEB81CFD9776CD78CE489",
-          "name" : "ElementX"
+          "containerPath": "container:sTalk.xcodeproj",
+          "identifier": "44197489C0719E9EA6C21A00",
+          "name": "ElementX"
         }
       ]
     },
-    "defaultTestExecutionTimeAllowance" : 120,
-    "environmentVariableEntries" : [
+    "defaultTestExecutionTimeAllowance": 120,
+    "environmentVariableEntries": [
       {
-        "key" : "SNAPSHOT_ARTIFACTS",
-        "value" : "\/tmp\/__FailedScreenshots__"
+        "key": "SNAPSHOT_ARTIFACTS",
+        "value": "/tmp/__FailedScreenshots__"
       },
       {
-        "enabled" : false,
-        "key" : "RECORD_FAILURES",
-        "value" : "true"
+        "enabled": false,
+        "key": "RECORD_FAILURES",
+        "value": "true"
       }
     ],
-    "locationScenario" : {
-      "identifier" : "London, England",
-      "referenceType" : "built-in"
+    "locationScenario": {
+      "identifier": "London, England",
+      "referenceType": "built-in"
     },
-    "targetForVariableExpansion" : {
-      "containerPath" : "container:ElementX.xcodeproj",
-      "identifier" : "0E28CD62691FDBC63147D5E3",
-      "name" : "UITests"
+    "targetForVariableExpansion": {
+      "containerPath": "container:sTalk.xcodeproj",
+      "identifier": "3AB0EF1129DCC2B9BC22C15E",
+      "name": "UITests"
     },
-    "testTimeoutsEnabled" : true,
-    "undefinedBehaviorSanitizerEnabled" : true
+    "testTimeoutsEnabled": true,
+    "undefinedBehaviorSanitizerEnabled": true
   },
-  "testTargets" : [
+  "testTargets": [
     {
-      "target" : {
-        "containerPath" : "container:ElementX.xcodeproj",
-        "identifier" : "0E28CD62691FDBC63147D5E3",
-        "name" : "UITests"
+      "target": {
+        "containerPath": "container:sTalk.xcodeproj",
+        "identifier": "3AB0EF1129DCC2B9BC22C15E",
+        "name": "UITests"
       }
     }
   ],
-  "version" : 1
+  "version": 1
 }

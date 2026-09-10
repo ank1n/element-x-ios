@@ -90,7 +90,27 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         let callKitID: UUID
         let roomID: String
         let rtcNotificationID: String?
+        /// Когда об этом звонке узнали. ⚠️ Нужен, чтобы отличить ЖИВОЙ звонок от
+        /// пометки, пережившей заморозку приложения: по одному наличию пометки
+        /// этого не понять, а именно на нём и держалась дедупликация.
+        var ringingSince: Date = .distantPast
     }
+
+    /// Сколько пометка о входящем звонке считается живой.
+    ///
+    /// ⚠️ ЭТО НЕ ПОДОБРАННОЕ ЧИСЛО, А ПРЕДЕЛ САМОГО ЗВОНКА: дольше 90 секунд у нас
+    /// не звонит ни один вызов — тот же потолок стоит у `ringDuration` ниже.
+    /// Пометка старше описывает звонок, которого уже нет.
+    ///
+    /// Зачем предел вообще. Пометку снимала отложенная задача через `ringDuration`,
+    /// и в этом была ошибка: задача живёт в процессе приложения, а процесс в фоне
+    /// замораживают — сон не идёт, задача не просыпается. В логе владельца пометка
+    /// от неотвеченного звонка 09.09 16:27 дожила до 10.09 14:22 и погасила новый
+    /// вызов как «повтор»: ни звонка на экране, ни пропущенного в истории.
+    /// Это ВТОРОЙ раз: тот же дефект чинили в build 100 (STMOB-87) — тоже таймером,
+    /// и он снова не сработал по той же причине. Время нельзя мерить сном; его
+    /// можно только СРАВНИВАТЬ по часам.
+    private static let ringMarkerLifetime: TimeInterval = 90
 
     private let pushRegistry: PKPushRegistry
     private let callController = CXCallController()
@@ -579,13 +599,34 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         // reporting+cancelling a throwaway call (CXProvider rejects the
         // payload, iOS does not stack a second ringer).
         if let pending = incomingCallID, pending.roomID == roomID {
-            DiagLog.write("VoIP", "  duplicate ring for room=\(roomID), keeping existing callKitID=\(pending.callKitID)")
-            MXLog.warning("Duplicate VoIP push for already-pending room \(roomID), discarding")
-            reportAndCancelFakeCall(completion: completion)
-            return
+            // ⚠️ ПОМЕТКА ПРОТУХАЕТ ПО ЧАСАМ, А НЕ ПО ТАЙМЕРУ. Звонок не может
+            // звонить дольше `ringMarkerLifetime`; пометка старше описывает
+            // вызов, которого давно нет, и глушить ею новый — значит терять
+            // звонок молча. Именно так он и терялся: 22 часа спустя.
+            let age = timeProvider.now().timeIntervalSince(pending.ringingSince)
+            if age <= Self.ringMarkerLifetime {
+                DiagLog.write("VoIP", "  duplicate ring for room=\(roomID), keeping existing callKitID=\(pending.callKitID)")
+                MXLog.warning("Duplicate VoIP push for already-pending room \(roomID), discarding")
+                reportAndCancelFakeCall(completion: completion)
+                return
+            }
+
+            // Пометка протухла. ⚠️ О пропущенном звонке сообщаем ЗДЕСЬ, иначе он
+            // не появится нигде: CallKit его не показывал, а отложенная задача,
+            // которая обычно шлёт `.missedCall`, не проснулась вовсе — из-за неё
+            // пометка и осталась. Владелец видел ровно это: ни звонка, ни
+            // пропущенного.
+            DiagLog.write("VoIP", "  stale ring marker for room=\(roomID) age=\(Int(age))s — dropping, reporting missed call")
+            MXLog.warning("Stale ring marker for room \(roomID), age \(Int(age))s — treating this push as a new call")
+            endUnansweredCallTask?.cancel()
+            endUnansweredCallTask = nil
+            callProvider.reportCall(with: pending.callKitID, endedAt: nil, reason: .unanswered)
+            actionsSubject.send(.missedCall(roomID: pending.roomID))
+            incomingCallID = nil
         }
 
-        let callID = CallID(callKitID: UUID(), roomID: roomID, rtcNotificationID: rtcNotificationID)
+        let callID = CallID(callKitID: UUID(), roomID: roomID, rtcNotificationID: rtcNotificationID,
+                            ringingSince: timeProvider.now())
         incomingCallID = callID
 
         let expirationDate = payload.dictionaryPayload[ElementCallServiceNotificationKey.expirationDate.rawValue] as? Date
