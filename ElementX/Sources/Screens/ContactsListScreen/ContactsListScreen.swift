@@ -198,6 +198,8 @@ struct ContactsListScreen: View {
                                         ]) {
                                             classicContactCell(contact)
                                         }
+                                        .onAppear { context.send(viewAction: .contactRowAppeared(contact.id)) }
+                                        .onDisappear { context.send(viewAction: .contactRowDisappeared(contact.id)) }
                                     }
                                 } header: {
                                     classicSectionHeader(group.letter)
@@ -426,6 +428,8 @@ struct ContactsListScreen: View {
                                                 cornerRadius: 14) {
                                                     cosmosContactCell(contact)
                                                 }
+                                                .onAppear { context.send(viewAction: .contactRowAppeared(contact.id)) }
+                                                .onDisappear { context.send(viewAction: .contactRowDisappeared(contact.id)) }
                                             }
                                         }
                                         .padding(.horizontal, 16)

@@ -32,6 +32,16 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
     private var roomContacts: [ContactItem] = []
     /// Отложенный повтор похода после неудачи. Один на модель.
     private var directoryRetryTask: Task<Void, Never>?
+    /// STMOB-304: строки на экране — их присутствие опрашиваем в первую очередь. Считаем экземпляры,
+    /// а не множество: при перестройке секций onAppear новой строки может прийти раньше
+    /// onDisappear старой, и множество потеряло бы видимую строку.
+    private var visibleRowCounts: [ContactItem.ID: Int] = [:]
+    /// Потолок интереса «Контактов». Страховка на случай, если onAppear сработает у всех строк
+    /// разом (нелениво свёрстанный список): экран строк — это десятки, а не сотни человек.
+    private static let presenceInterestLimit = 40
+    /// Фоном опрашиваем только недавних собеседников (список комнат отсортирован по свежести):
+    /// круг опроса должен укладываться в пятиминутное окно «в сети», а нагрузка — оставаться малой.
+    private static let chatPartnersLimit = 30
 
     private static let favoritesKey = "ru.implica.stalk.favoriteContacts"
     private static let contactsCacheKeyPrefix = "ru.implica.stalk.cachedContacts."
@@ -75,6 +85,14 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
             state.selectedFilter = filter
         case .toggleFavorite(let contact):
             toggleFavorite(contact)
+        case .contactRowAppeared(let id):
+            visibleRowCounts[id, default: 0] += 1
+            updatePresenceInterest()
+        case .contactRowDisappeared(let id):
+            if let count = visibleRowCounts[id] {
+                visibleRowCounts[id] = count > 1 ? count - 1 : nil
+            }
+            updatePresenceInterest()
         }
     }
 
@@ -129,24 +147,10 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
 
     private func setupPresenceService() {
         // Build 125: shared PresenceService из AppCoordinator (sync с HomeScreen + RoomScreen).
-        // Fallback на локальный instance если shared отсутствует (тест scenarios).
-        if let shared = AppCoordinator.sharedPresenceService {
-            presenceService = shared
-        } else if let concreteProxy = userSession.clientProxy as? ClientProxy {
-            // STMOB-109 build 138: tokenProvider вместо immutable accessToken —
-            // см. PresenceService.swift про token rotation fix.
-            // STMOB-132 build 153: + tokenRefresher для force refresh на 401.
-            presenceService = PresenceService(homeserver: userSession.clientProxy.homeserver,
-                                              tokenProvider: { [weak concreteProxy] in
-                                                  try? concreteProxy?.matrixAccessToken()
-                                              },
-                                              tokenRefresher: { [weak concreteProxy] in
-                                                  await concreteProxy?.forceTokenRefresh()
-                                              },
-                                              ownUserID: userSession.clientProxy.userID)
-        } else {
-            return
-        }
+        // STMOB-304: своего экземпляра больше не заводим — второй цикл опроса обходил бы
+        // и бюджет запросов, и отступ на 429.
+        guard let shared = AppCoordinator.sharedPresenceService else { return }
+        presenceService = shared
 
         // Subscribe to presence updates
         presenceService?.presenceSubject
@@ -208,7 +212,7 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
         for i in contacts.indices {
             guard let matrixUserID = contacts[i].matrixUserID,
                   let presence = presenceMap[matrixUserID] else { continue }
-            contacts[i].isOnline = presence.isOnline
+            contacts[i].serverOnline = presence.serverOnline
             contacts[i].lastSeenDate = presence.lastSeenDate
         }
         state.contacts = contacts
@@ -307,7 +311,7 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
                                         displayName: summary.name,
                                         avatarURL: contactAvatarURL,
                                         matrixUserID: heroUserID,
-                                        isOnline: presence?.isOnline ?? false,
+                                        serverOnline: presence?.serverOnline ?? false,
                                         lastSeenDate: presence?.lastSeenDate,
                                         isFavorite: favoriteRoomIDs.contains(summary.id)))
 
@@ -337,7 +341,7 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
                                         displayName: summary.name,
                                         avatarURL: contactAvatarURL,
                                         matrixUserID: heroUserID,
-                                        isOnline: presence?.isOnline ?? false,
+                                        serverOnline: presence?.serverOnline ?? false,
                                         lastSeenDate: presence?.lastSeenDate,
                                         isFavorite: favoriteRoomIDs.contains(summary.id)))
 
@@ -349,23 +353,13 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
         state.isLoading = false
         saveCachedContacts()
 
-        // Start or update polling with current user IDs
-        if !userIDs.isEmpty {
-            // Build 125: merge с existing polling — НЕ перезаписываем (другие screens
-            // могли добавить свои userIDs).
-            if let presenceService {
-                let merged = Array(Set(presenceService.currentUserIDs).union(userIDs))
-                if presenceService.currentUserIDs.isEmpty {
-                    presenceService.startPolling(userIDs: merged)
-                } else {
-                    presenceService.updatePollingUserIDs(merged)
-                    Task { await presenceService.fetchPresence(for: userIDs) }
-                }
-            }
+        // STMOB-304: собеседников по комнатам опрашиваем фоном — остатком бюджета и редко, чтобы
+        // работали фильтр «Онлайн», счётчик и сортировка. Раньше каждое изменение списка комнат
+        // добавляло их в общий опрос навсегда, наравне с видимыми строками.
+        presenceService?.setInterest(userIDs.prefix(Self.chatPartnersLimit), for: .chatPartners)
 
-            if let orgProfileService {
-                Task { await orgProfileService.fetchProfiles(for: userIDs) }
-            }
+        if !userIDs.isEmpty, let orgProfileService {
+            Task { await orgProfileService.fetchProfiles(for: userIDs) }
         }
 
         // Source 3: User Directory — async fetch server-wide users
@@ -397,7 +391,7 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
                             displayName: user.displayName ?? user.userID.replacingOccurrences(of: "@", with: "").components(separatedBy: ":").first ?? user.userID,
                             avatarURL: user.avatarURL,
                             matrixUserID: user.userID,
-                            isOnline: false,
+                            serverOnline: false,
                             lastSeenDate: nil,
                             isFavorite: false)
             }
@@ -408,10 +402,10 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
             guard let userID = contact.matrixUserID else { return contact }
 
             if let presence = presenceMap[userID] {
-                contact.isOnline = presence.isOnline
+                contact.serverOnline = presence.serverOnline
                 contact.lastSeenDate = presence.lastSeenDate
             } else if let previous = known[userID] {
-                contact.isOnline = previous.isOnline
+                contact.serverOnline = previous.serverOnline
                 contact.lastSeenDate = previous.lastSeenDate
             }
 
@@ -420,6 +414,21 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
             contact.department = profile?.department ?? known[userID]?.department
             return contact
         }
+
+        // Строки могли смениться при тех же id (личный чат появился у справочного человека).
+        updatePresenceInterest()
+    }
+
+    /// STMOB-304: видимые строки опрашиваются в первую очередь, не больше потолка. Собеседники по
+    /// комнатам идут ещё и фоном (`chatPartners`); люди из справочника без общей комнаты — только
+    /// когда видны (иначе сервер ответит 403). Известные данные гаснут сами (`ContactItem.isOnline`).
+    private func updatePresenceInterest() {
+        guard let presenceService else { return }
+        let userIDs = state.contacts
+            .filter { visibleRowCounts[$0.id] != nil }
+            .compactMap(\.matrixUserID)
+            .prefix(Self.presenceInterestLimit)
+        presenceService.setInterest(userIDs, for: .contacts)
     }
 
     /// STMOB-303: сюда приходит КАЖДОЕ изменение списка комнат — новое сообщение в любом чате,
@@ -533,7 +542,6 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
         let newUserIDs = directoryUsers.map(\.userID).filter { $0 != ownUserID && !previousUserIDs.contains($0) }
         guard !newUserIDs.isEmpty else { return }
 
-        presenceService?.updatePollingUserIDs((presenceService?.currentUserIDs ?? []) + newUserIDs)
         if let orgProfileService {
             Task { await orgProfileService.fetchProfiles(for: newUserIDs) }
         }

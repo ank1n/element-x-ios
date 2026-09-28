@@ -25,346 +25,451 @@ struct UserPresence: Equatable {
     /// затем, чтобы узнать, что человека давно нет. Теперь устаревание
     /// отрабатывает локально, а сеть нужна только чтобы поймать ПОЯВЛЕНИЕ.
     var isOnline: Bool {
+        isOnline(at: Date())
+    }
+
+    func isOnline(at date: Date) -> Bool {
+        Self.isOnline(serverOnline: serverOnline, lastSeenDate: lastSeenDate, at: date)
+    }
+
+    static func isOnline(serverOnline: Bool, lastSeenDate: Date?, at date: Date) -> Bool {
         guard serverOnline, let lastSeenDate else { return false }
-        return Date().timeIntervalSince(lastSeenDate) < PresenceService.onlineWindow
+        return date.timeIntervalSince(lastSeenDate) < PresenceService.onlineWindow
     }
 }
 
-@MainActor
-class PresenceService {
-    private let homeserver: String
-    /// STMOB-109 build 138: token берём свежий через provider перед каждым
-    /// запросом. Раньше держали immutable accessToken — после Matrix token
-    /// rotation все GET-запросы становились HTTP 401, чужой presence
-    /// «отваливался» полностью (в логе 2101 HTTP 401 за день, 0 HTTP 200
-    /// на fetchPresence). OwnPresenceManager уже использует такой подход
-    /// с build 121, теперь и PresenceService.
-    private let tokenProvider: () -> String?
-    /// STMOB-132 build 153: после 401 вызываем forceTokenRefresh чтобы SDK
-    /// обновил OIDC access_token внутри (он rotated на MAS каждые 15 мин),
-    /// затем retry с свежим token.
-    private let tokenRefresher: () async -> Void
-    private let ownUserID: String
+/// STMOB-304: кому нужно присутствие. Каждый экран объявляет свой набор; внутри ключа
+/// набор заменяется, между ключами объединяется. Так экран может выбросить ушедших из вида,
+/// не стирая чужих, а сервис опрашивает только тех, кого сейчас кто-то показывает.
+enum PresenceInterest: Hashable {
+    /// Собеседники личных чатов из видимых строк «Чатов».
+    case chats
+    /// Люди из видимых строк «Контактов».
+    case contacts
+    /// Собеседник открытого личного чата (шапка комнаты). Ключ — у каждого экрана свой.
+    case room(String)
+    /// Все собеседники по личным чатам — фоном, остатком бюджета и редко. Нужен фильтру «Онлайн»,
+    /// счётчику и сортировке «Контактов»: без него новый «в сети» не появился бы там, пока строку
+    /// не прокрутят на экран.
+    case chatPartners
 
-    private var pollingTask: Task<Void, Never>?
-    private var pollingUserIDs: [String] = []
-    var currentUserIDs: [String] {
-        pollingUserIDs
+    /// Видимое на экране опрашивается раньше фона.
+    var isForeground: Bool {
+        self != .chatPartners
     }
 
+    /// С этими людьми есть общая комната: 403 для них — временное состояние (приглашение ещё
+    /// не принято), а не «чужой человек», и надолго его не запоминаем.
+    var isRoomBacked: Bool {
+        self != .contacts
+    }
+}
+
+/// STMOB-304: кэш 403 (нет общей комнаты — Synapse не покажет присутствие) переживает
+/// перезапуск приложения. Раньше он жил в памяти, и каждый холодный старт давал ~100 лишних 403.
+protocol PresenceForbiddenStore {
+    func load() -> [String: Date]
+    func save(_ forbiddenUntil: [String: Date])
+}
+
+struct UserDefaultsPresenceForbiddenStore: PresenceForbiddenStore {
+    private let key: String
+    private let defaults: UserDefaults
+
+    init(ownUserID: String, defaults: UserDefaults = .standard) {
+        key = "presenceForbiddenUntil.\(ownUserID)"
+        self.defaults = defaults
+    }
+
+    func load() -> [String: Date] {
+        defaults.dictionary(forKey: key) as? [String: Date] ?? [:]
+    }
+
+    func save(_ forbiddenUntil: [String: Date]) {
+        defaults.set(forbiddenUntil, forKey: key)
+    }
+}
+
+/// Опрос чужого присутствия по REST.
+///
+/// STMOB-304: на sliding sync присутствие не приходит вовсе (ни в SDK, ни в Synapse SSS),
+/// поэтому опрос остаётся, но ограниченный:
+/// - опрашиваем только объединение интересов экранов (видимые строки, открытая комната);
+/// - на запросы есть бюджет: пачка до `burst`, дальше не чаще `refillPerSecond`,
+///   одновременно не больше `maxConcurrent`; самые несвежие — первыми;
+/// - 429 — пауза по `retry_after_ms` с удвоением; 401 — волна прерывается, и запросов нет,
+///   пока SDK не выдаст новый токен; 403 у человека без общей комнаты — не опрашивается 6 часов,
+///   и между запусками тоже;
+/// - фон (`chatPartners`) получает только остаток бюджета и не чаще `offlineRefreshInterval`.
+/// Свой статус этот сервис больше не отправляет — это делает только `OwnPresenceManager`.
+@MainActor
+final class PresenceService {
     /// Граница «в сети»: сервер считает человека активным, пока последняя
     /// активность моложе пяти минут. Одно правило и для разбора ответа, и для
     /// затухания в `UserPresence`, и для расчёта частоты опроса.
-    static let onlineWindow: TimeInterval = 5 * 60
+    nonisolated static let onlineWindow: TimeInterval = 5 * 60
+    /// Тех, кто в сети, освежаем чаще: иначе точка гасла бы между ответами, хотя человек на месте.
+    static let onlineRefreshInterval: TimeInterval = 30
+    /// Серверное «в сети» держится пять минут после активности — опроса дважды за это окно
+    /// достаточно, чтобы не пропустить появление.
+    static let offlineRefreshInterval: TimeInterval = onlineWindow / 2
+    /// Шаг планировщика: за столько новая видимая строка гарантированно получает запрос.
+    static let tickInterval: TimeInterval = 5
+    /// Пачка покрывает экран строк сразу в «Чатах» и «Контактах»; дальше — не чаще 30 в минуту
+    /// (прежний опрос давал до ~200 в минуту и пачки по 114 запросов в секунду).
+    static let burst = 20
+    static let refillPerSecond = 0.5
+    /// Фон тратит бюджет только сверх этого запаса: новый экран видимых строк получает запросы сразу,
+    /// даже если фону всегда есть кого спросить.
+    static let backgroundReserve = 10
+    static let maxConcurrent = 6
+    static let forbiddenTTL: TimeInterval = 6 * 60 * 60
+    static let requestTimeout: TimeInterval = 15
 
-    /// Когда по юзеру получен последний ответ. Без этого каждый вызов
-    /// `fetchPresence` шёл в сеть заново, включая вызовы, прилетающие пачками
-    /// на каждое обновление списка комнат.
+    private let homeserver: String
+    /// STMOB-109: токен берём свежий перед каждым запросом — он ротируется.
+    private let tokenProvider: () -> String?
+    /// Просьба к SDK обновить токен после 401. Ответа не ждём: запросы возобновятся,
+    /// когда `tokenProvider` вернёт другой токен.
+    private let tokenRefresher: () async -> Void
+    private let ownUserID: String
+    private let transport: PresenceTransport
+    private let forbiddenStore: PresenceForbiddenStore
+    private let now: () -> Date
+
+    private var interests: [PresenceInterest: Set<String>] = [:]
     private var lastFetchedAt: [String: Date] = [:]
-
-    /// Интервал цикла опроса — нужен, чтобы считать свежесть в тех же единицах.
-    private var pollInterval: TimeInterval = 30
-
-    /// Сетевые отказы текущей пачки — в лог уходит счётчиком, а не строкой
-    /// на каждого из ~90 опрашиваемых.
-    private var networkErrors = 0
-
-    /// STMOB-110: in-flight set чтобы не запускать второй fetch для уже
-    /// активного запроса (protect от 100+ duplicates за 12 мс).
     private var inFlight: Set<String> = []
-
-    /// STMOB-110: кэш юзеров с HTTP 403 (бот без presence permissions).
-    /// На N минут такого юзера не fetchим вообще — Synapse будет возвращать
-    /// 403 и дальше, а каждый запрос съедает per-user rate limit.
-    private var forbiddenUntil: [String: Date] = [:]
-    // STMOB-193: 403 = нет общей комнаты (Synapse M_FORBIDDEN на чужой presence).
-    // Этот статус в рамках сессии почти не меняется, а presence «своих» приходит
-    // через sync presence EDU, а не через этот REST-поллинг. При 10-мин TTL и
-    // 30-сек интервале forbidden-юзеры ре-поллились каждые 10 мин → сотни лишних 403
-    // (515 за полчаса в логе тестера). Делаем TTL длинным — один 403 на сессию.
-    private let forbiddenTTL: TimeInterval = 6 * 60 * 60 // 6 часов
+    private var forbiddenUntil: [String: Date]
+    private var backoff = PresenceRateLimitBackoff()
+    /// Токен, на который пришёл 401: с ним больше не ходим.
+    private var rejectedToken: String?
+    private var budget: Double
+    private var budgetUpdatedAt: Date
+    private var pollingTask: Task<Void, Never>?
+    /// Внеочередной шаг (новая строка на экране). Хранится, чтобы stop() гасил и его.
+    private var soonTask: Task<Void, Never>?
+    private var isPollInProgress = false
+    /// Когда последний раз проверяли затухание точек «в сети».
+    private var decayCheckedAt: Date
 
     let presenceSubject = CurrentValueSubject<[String: UserPresence], Never>([:])
+
+    /// Кого сейчас опрашиваем: объединение интересов всех экранов.
+    var polledUserIDs: Set<String> {
+        interests.values.reduce(into: Set<String>()) { $0.formUnion($1) }
+    }
+
+    var isPolling: Bool {
+        pollingTask != nil
+    }
 
     init(homeserver: String,
          tokenProvider: @escaping () -> String?,
          tokenRefresher: @escaping () async -> Void = { },
-         ownUserID: String) {
+         ownUserID: String,
+         transport: PresenceTransport = URLSessionPresenceTransport(),
+         forbiddenStore: PresenceForbiddenStore? = nil,
+         now: @escaping () -> Date = Date.init) {
         // Remove trailing slash to avoid double-slash in URLs
         self.homeserver = homeserver.hasSuffix("/") ? String(homeserver.dropLast()) : homeserver
         self.tokenProvider = tokenProvider
         self.tokenRefresher = tokenRefresher
         self.ownUserID = ownUserID
-        os_log(.info, log: presenceLog, "PresenceService init: homeserver=%{public}@, ownUserID=%{public}@", self.homeserver, ownUserID)
+        self.transport = transport
+        self.forbiddenStore = forbiddenStore ?? UserDefaultsPresenceForbiddenStore(ownUserID: ownUserID)
+        self.now = now
+
+        let start = now()
+        forbiddenUntil = self.forbiddenStore.load().filter { $0.value > start }
+        budget = Double(Self.burst)
+        budgetUpdatedAt = start
+        decayCheckedAt = start
+        os_log(.info, log: presenceLog, "PresenceService init: forbidden cached=%d", forbiddenUntil.count)
     }
 
     deinit {
         pollingTask?.cancel()
+        soonTask?.cancel()
     }
 
-    // MARK: - Own Presence
+    // MARK: - Interest
 
-    private static func encodeUserID(_ userID: String) -> String {
-        // Matrix user IDs contain @ and : which must be percent-encoded in URL paths
-        var allowed = CharacterSet.urlPathAllowed
-        allowed.remove(charactersIn: "@:")
-        return userID.addingPercentEncoding(withAllowedCharacters: allowed) ?? userID
-    }
+    func setInterest(_ userIDs: some Sequence<String>, for key: PresenceInterest) {
+        let userIDs = Set(userIDs).subtracting([ownUserID])
+        let hasNewUsers = !userIDs.subtracting(polledUserIDs).isEmpty
+        interests[key] = userIDs.isEmpty ? nil : userIDs
 
-    func setOwnPresence(_ status: String) async {
-        let encodedUserID = Self.encodeUserID(ownUserID)
-        let urlString = "\(homeserver)/_matrix/client/v3/presence/\(encodedUserID)/status"
-        os_log(.info, log: presenceLog, "setOwnPresence URL: %{public}@", urlString)
-        guard let url = URL(string: urlString) else { return }
-        guard let token = tokenProvider() else {
-            os_log(.error, log: presenceLog, "setOwnPresence: no token")
-            DiagLog.write("Presence", "setOwnPresence(\(status)) — tokenProvider() returned nil")
-            return
-        }
-        // STMOB-132 build 150: фиксируем длину/префикс токена и тип запроса —
-        // увидим в логе если PUT и GET берут разные токены.
-        DiagLog.write("Presence", "setOwnPresence(\(status)) PUT tokenLen=\(token.count) tokenPrefix=\(token.prefix(8))…")
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "PUT"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: ["presence": status])
-
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
-            let body = String(data: data, encoding: .utf8) ?? ""
-            os_log(.info, log: presenceLog, "setOwnPresence(%{public}@) url=%{public}@ → %d: %{public}@", status, urlString, statusCode, body)
-        } catch {
-            os_log(.error, log: presenceLog, "setOwnPresence error: %{public}@", error.localizedDescription)
+        // Новая строка на экране не ждёт следующего шага, но бюджет всё равно действует.
+        if hasNewUsers {
+            pollSoon()
         }
     }
 
-    /// Как скоро имеет смысл переспрашивать конкретного человека.
-    ///
-    /// Пока он в сети, ответ надо освежать каждый цикл: иначе точка погаснет
-    /// сама через пять минут, хотя человек на месте.
-    ///
-    /// Для тех, кого давно нет, такая частота бессмысленна. Серверное «в сети»
-    /// держится все пять минут после активности, поэтому опроса дважды за это
-    /// окно достаточно, чтобы не пропустить ни одного появления. На длинном
-    /// хвосте молчащих контактов это впятеро меньше запросов — а хвост и
-    /// составляет почти весь список.
-    private func refreshInterval(for userID: String) -> TimeInterval {
-        presenceSubject.value[userID]?.isOnline == true ? pollInterval : Self.onlineWindow / 2
+    func removeInterest(for key: PresenceInterest) {
+        interests[key] = nil
     }
 
-    // MARK: - Fetch Presence
-
-    func fetchPresence(for userIDs: [String]) async {
-        var results = presenceSubject.value
-
-        // STMOB-110: дедуп. Из набора убираем 1) тех кто уже in-flight
-        // (другой fetchPresence call ещё идёт для этого юзера) и 2) тех
-        // кто в forbidden-кэше (бот вернул 403 < 10 мин назад).
-        let now = Date()
-        let dedupedIDs = userIDs.filter { userID in
-            if inFlight.contains(userID) { return false }
-            if let until = forbiddenUntil[userID], until > now { return false }
-            if let fetchedAt = lastFetchedAt[userID],
-               now.timeIntervalSince(fetchedAt) < refreshInterval(for: userID) { return false }
-            return true
-        }
-        let skippedCount = userIDs.count - dedupedIDs.count
-        if skippedCount > 0 {
-            DiagLog.write("Presence", "fetchPresence batch=\(userIDs.count) → \(dedupedIDs.count) (skipped \(skippedCount): in-flight/forbidden)")
-        } else {
-            DiagLog.write("Presence", "fetchPresence batch=\(dedupedIDs.count)")
-        }
-        guard !dedupedIDs.isEmpty else {
-            return
-        }
-        for id in dedupedIDs {
-            inFlight.insert(id)
-        }
-
-        var sawUnauthorized = false
-        var pendingRetry: [String] = []
-
-        await withTaskGroup(of: (String, UserPresence?, Int?).self) { group in
-            for userID in dedupedIDs {
-                group.addTask { [weak self] in
-                    guard let self else { return (userID, nil, nil) }
-                    let (presence, statusCode) = await self.fetchSinglePresenceWithStatus(userID: userID)
-                    return (userID, presence, statusCode)
-                }
-            }
-
-            for await (userID, presence, statusCode) in group {
-                inFlight.remove(userID)
-                // Отметка ставится на ЛЮБОЙ завершённый ответ, включая отказ:
-                // иначе юзер, которому сервер стабильно не отвечает, будет
-                // переспрашиваться в каждом проходе.
-                lastFetchedAt[userID] = Date()
-                if statusCode == 403 {
-                    forbiddenUntil[userID] = now.addingTimeInterval(forbiddenTTL)
-                }
-                if statusCode == 401 {
-                    sawUnauthorized = true
-                    pendingRetry.append(userID)
-                }
-                if let presence {
-                    results[userID] = presence
-                }
-            }
-        }
-
-        // STMOB-132 build 153/155: если SDK accessToken был stale (часть
-        // запросов получили 401), просим SDK обновить OIDC token. Build 155
-        // добавил всегда-логируемое sawUnauthorized/pendingRetry — на 153
-        // retry не запускался, нужно понять почему.
-        let failed = networkErrors
-        networkErrors = 0
-        DiagLog.write("Presence", "fetchPresence batch result: sawUnauthorized=\(sawUnauthorized) pendingRetry=\(pendingRetry.count) networkErrors=\(failed)")
-        if sawUnauthorized, !pendingRetry.isEmpty {
-            DiagLog.write("Presence", "401 batch → forceTokenRefresh + retry \(pendingRetry.count)")
-            await tokenRefresher()
-            for id in pendingRetry {
-                inFlight.insert(id)
-            }
-            await withTaskGroup(of: (String, UserPresence?, Int?).self) { group in
-                for userID in pendingRetry {
-                    group.addTask { [weak self] in
-                        guard let self else { return (userID, nil, nil) }
-                        let (presence, statusCode) = await self.fetchSinglePresenceWithStatus(userID: userID)
-                        return (userID, presence, statusCode)
-                    }
-                }
-                for await (userID, presence, statusCode) in group {
-                    inFlight.remove(userID)
-                    lastFetchedAt[userID] = Date()
-                    if statusCode == 403 {
-                        forbiddenUntil[userID] = Date().addingTimeInterval(forbiddenTTL)
-                    }
-                    if let presence {
-                        results[userID] = presence
-                    }
-                }
-            }
-        }
-
-        presenceSubject.send(results)
-    }
-
-    /// STMOB-110: версия fetchSinglePresence которая дополнительно отдаёт
-    /// HTTP-код наверх (нужен для 403-кэша).
-    private func fetchSinglePresenceWithStatus(userID: String) async -> (UserPresence?, Int?) {
-        let encodedUserID = Self.encodeUserID(userID)
-        guard let url = URL(string: "\(homeserver)/_matrix/client/v3/presence/\(encodedUserID)/status") else { return (nil, nil) }
-        guard let token = tokenProvider() else {
-            DiagLog.write("Presence", "fetchPresence(\(userID)) — no token")
-            return (nil, nil)
-        }
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              let httpResponse = response as? HTTPURLResponse else {
-            // Тоже без строки на юзера: сеть пропадает сразу для всей пачки,
-            // и это давало ~90 одинаковых строк в один момент — как раз в момент
-            // обрыва, когда лог нужнее всего. Счётчик сводится в итог пачки.
-            networkErrors += 1
-            return (nil, nil)
-        }
-        let body = String(data: data, encoding: .utf8) ?? ""
-        os_log(.info, log: presenceLog, "fetchPresence(%{public}@) → %d: %{public}@", userID, httpResponse.statusCode, body)
-        if httpResponse.statusCode != 200 {
-            // STMOB-132 build 150: при HTTP 401 — записываем prefix токена
-            // чтобы сравнить с тем что использует setOwnPresence (PUT). Если
-            // префиксы разные — tokenProvider возвращает stale токен для GET.
-            if httpResponse.statusCode == 401 {
-                DiagLog.write("Presence", "fetchPresence(\(userID)) → HTTP 401 tokenLen=\(token.count) tokenPrefix=\(token.prefix(8))…")
-            } else {
-                DiagLog.write("Presence", "fetchPresence(\(userID)) → HTTP \(httpResponse.statusCode)")
-            }
-            return (nil, httpResponse.statusCode)
-        }
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return (nil, httpResponse.statusCode)
-        }
-        let presenceStr = json["presence"] as? String ?? "offline"
-        let currentlyActive = json["currently_active"] as? Bool ?? false
-        let lastActiveAgoMs = json["last_active_ago"] as? Int
-        var lastSeenDate: Date?
-        if let ago = lastActiveAgoMs {
-            lastSeenDate = Date().addingTimeInterval(-Double(ago) / 1000.0)
-        }
-        // Успешный ответ в DiagLog НЕ пишем. Строка ставилась под разбор
-        // STMOB-131 build 156 («почему @nh показан в сети»), тот разбор давно
-        // закрыт, а цена осталась: опрос идёт по ~90 контактам каждые 30 секунд,
-        // это ~180 строк в минуту. Во время звонка приложение на переднем плане,
-        // опрос активен — и presence вымывает из общего буфера DiagLog ровно те
-        // строки звонка, ради которых буфер и заведён (разбор 03.08).
-        // Точечная отладка presence остаётся в os_log выше — он не делит бюджет
-        // с диагностикой звонка.
-        // STMOB-133 build 154: считаем online ТОЛЬКО если последняя активность
-        // < 5 мин назад. Без этого Synapse иногда отдаёт `currently_active: true`
-        // для юзеров реально активных 20+ минут назад (race в Synapse
-        // presence_stream) → header показывал «в сети» когда в Contacts list
-        // было корректное «был 23 минуты назад». Теперь оба места дают
-        // одинаковый результат.
-        let recentlyActive = TimeInterval(lastActiveAgoMs ?? .max) / 1000 < Self.onlineWindow
-        let isOnline = (presenceStr == "online" || currentlyActive) && recentlyActive
-        return (UserPresence(serverOnline: isOnline, lastSeenDate: lastSeenDate), httpResponse.statusCode)
+    /// Набор одного экрана — для проверок.
+    func userIDs(for key: PresenceInterest) -> Set<String> {
+        interests[key] ?? []
     }
 
     // MARK: - Polling
 
-    func startPolling(userIDs: [String], interval: TimeInterval = 30) {
-        pollInterval = interval
-        // STMOB-110: union-merge, НЕ replace. Раньше три экрана (Contacts,
-        // Home, RoomScreen) шарят один PresenceService и каждый перетирал
-        // общий pollingUserIDs своим списком. Когда экран А ронял @molly из
-        // набора, RoomScreen.setupDMPresence видел `!contains(@molly)` →
-        // fetchPresence([@molly]) + ре-добавление, и так на КАЖДЫЙ апдейт
-        // активного бот-DM. В логе: @molly = 1161 фетч против ~15 у других.
-        // Монотонный набор (юзер не выпадает) держит гард RoomScreen закрытым.
-        let newUsers = userIDs.filter { !pollingUserIDs.contains($0) }
-        pollingUserIDs = Array(Set(pollingUserIDs).union(userIDs))
-        os_log(.info, log: presenceLog, "startPolling: +%d new, %d total", newUsers.count, pollingUserIDs.count)
+    /// Запускает опрос (приложение на переднем плане). Повторный вызов ничего не делает.
+    func start() {
+        guard pollingTask == nil else { return }
 
-        // STMOB-110: идемпотентность. Раньше каждый вызов делал stopPolling()
-        // + новый Task с немедленным ПОЛНЫМ fetchPresence — навигация между
-        // экранами = шторм рестартов. Если цикл уже идёт — не трогаем его,
-        // лишь до-фетчим реально новых юзеров один раз.
-        if pollingTask != nil {
-            if !newUsers.isEmpty {
-                Task { [weak self] in await self?.fetchPresence(for: newUsers) }
-            }
-            return
-        }
-
+        // Цикл держит сервис слабо: иначе после выхода из аккаунта он жил бы вечно
+        // и продолжал ходить в сеть рядом с новым экземпляром.
         pollingTask = Task { [weak self] in
-            guard let self else { return }
-
-            // Initial fetch + set own presence
-            await self.setOwnPresence("online")
-            await self.fetchPresence(for: self.pollingUserIDs)
-
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
-                guard !Task.isCancelled else { break }
-
-                await self.setOwnPresence("online")
-                await self.fetchPresence(for: self.pollingUserIDs)
+                await self?.pollOnce()
+                guard self != nil else { return }
+                try? await Task.sleep(for: .seconds(PresenceService.tickInterval))
             }
         }
     }
 
-    func updatePollingUserIDs(_ userIDs: [String]) {
-        // STMOB-110: union, не replace — набор монотонный в рамках сессии,
-        // юзер не выпадает → нет ping-pong ре-фетчей у RoomScreen.
-        pollingUserIDs = Array(Set(pollingUserIDs).union(userIDs))
-    }
-
-    func stopPolling() {
+    /// Останавливает опрос (уход с переднего плана, выход из аккаунта). Интересы экранов сохраняются.
+    func stop() {
         pollingTask?.cancel()
         pollingTask = nil
+        soonTask?.cancel()
+        soonTask = nil
+    }
+
+    private func pollSoon() {
+        guard pollingTask != nil, !isPollInProgress, soonTask == nil else { return }
+        soonTask = Task { [weak self] in
+            await self?.pollOnce()
+            self?.soonTask = nil
+        }
+    }
+
+    /// Один шаг планировщика: выбирает, кого пора спросить, в пределах бюджета.
+    func pollOnce() async {
+        guard !isPollInProgress else { return }
+        isPollInProgress = true
+        defer { isPollInProgress = false }
+
+        let now = now()
+        publishDecay(now: now)
+        guard !backoff.isBlocked(now: now) else { return }
+        guard let token = tokenProvider() else { return }
+        if let rejectedToken {
+            // После 401 ждём, пока SDK обновит токен: со старым каждый запрос — тот же 401.
+            guard token != rejectedToken else { return }
+            self.rejectedToken = nil
+        }
+
+        refillBudget(now: now)
+        let due = selectDue(now: now)
+        guard !due.isEmpty else { return }
+
+        var outcome = BatchOutcome()
+        for chunk in Array(due).chunked(into: Self.maxConcurrent) {
+            // Остановленный опрос (фон, выход из аккаунта) не досылает волну.
+            guard !outcome.shouldStop, !Task.isCancelled else { break }
+            // Пока шла прошлая пачка, строки могли уйти с экрана — на них бюджет не тратим.
+            let chunk = chunk.filter { polledUserIDs.contains($0) }
+            guard !chunk.isEmpty else { continue }
+            budget -= Double(chunk.count)
+            await fetch(chunk, token: token, outcome: &outcome)
+        }
+
+        if outcome.networkErrors > 0 || outcome.sawUnauthorized || outcome.sawRateLimit {
+            DiagLog.write("Presence", "poll: asked=\(outcome.asked) ok=\(outcome.accepted) 401=\(outcome.sawUnauthorized) 429=\(outcome.sawRateLimit) networkErrors=\(outcome.networkErrors)")
+        }
+    }
+
+    // MARK: - Private
+
+    private struct BatchOutcome {
+        var asked = 0
+        var accepted = 0
+        var networkErrors = 0
+        var sawUnauthorized = false
+        var sawRateLimit = false
+
+        var shouldStop: Bool {
+            sawUnauthorized || sawRateLimit
+        }
+    }
+
+    private func refillBudget(now: Date) {
+        let elapsed = max(0, now.timeIntervalSince(budgetUpdatedAt))
+        budget = min(Double(Self.burst), budget + elapsed * Self.refillPerSecond)
+        budgetUpdatedAt = now
+    }
+
+    /// Кого пора спросить: видимые раньше фона; внутри — ещё ни разу не спрошенные первыми,
+    /// дальше самые несвежие.
+    private func dueUserIDs(now: Date) -> [String] {
+        let foreground = userIDs(where: { $0.isForeground })
+        let roomBacked = userIDs(where: { $0.isRoomBacked })
+        return polledUserIDs
+            .filter { userID in
+                if inFlight.contains(userID) { return false }
+                if !roomBacked.contains(userID), let until = forbiddenUntil[userID], until > now { return false }
+                guard let fetchedAt = lastFetchedAt[userID] else { return true }
+                return now.timeIntervalSince(fetchedAt) >= refreshInterval(for: userID, isForeground: foreground.contains(userID), now: now)
+            }
+            .sorted { lhs, rhs in
+                let lhsForeground = foreground.contains(lhs)
+                let rhsForeground = foreground.contains(rhs)
+                if lhsForeground != rhsForeground { return lhsForeground }
+                let lhsDate = lastFetchedAt[lhs] ?? .distantPast
+                let rhsDate = lastFetchedAt[rhs] ?? .distantPast
+                return lhsDate == rhsDate ? lhs < rhs : lhsDate < rhsDate
+            }
+    }
+
+    /// Сколько кого спросить в этот шаг: видимые — в пределах всего бюджета, фон — сверх запаса.
+    private func selectDue(now: Date) -> [String] {
+        let foreground = userIDs(where: { $0.isForeground })
+        let due = dueUserIDs(now: now)
+        let available = Int(budget)
+        let foregroundDue = due.prefix { foreground.contains($0) }.prefix(available)
+        let backgroundAllowance = max(0, available - foregroundDue.count - Self.backgroundReserve)
+        return Array(foregroundDue) + due.drop { foreground.contains($0) }.prefix(backgroundAllowance)
+    }
+
+    private func userIDs(where predicate: (PresenceInterest) -> Bool) -> Set<String> {
+        interests.filter { predicate($0.key) }.values.reduce(into: Set<String>()) { $0.formUnion($1) }
+    }
+
+    private func refreshInterval(for userID: String, isForeground: Bool, now: Date) -> TimeInterval {
+        guard isForeground else { return Self.offlineRefreshInterval }
+        return presenceSubject.value[userID]?.isOnline(at: now) == true ? Self.onlineRefreshInterval : Self.offlineRefreshInterval
+    }
+
+    /// Точка «в сети» гаснет по времени, но экран перерисуется, только если карта пришла заново.
+    /// Пока опрос стоит (пауза после 429, ждём токен, все ответы 403), новых ответов нет — поэтому
+    /// переотправляем карту, как только чья-то точка должна погаснуть.
+    private func publishDecay(now: Date) {
+        let presence = presenceSubject.value
+        let hasFaded = presence.values.contains { $0.isOnline(at: decayCheckedAt) && !$0.isOnline(at: now) }
+        decayCheckedAt = now
+        if hasFaded {
+            presenceSubject.send(presence)
+        }
+    }
+
+    private func fetch(_ userIDs: [String], token: String, outcome: inout BatchOutcome) async {
+        inFlight.formUnion(userIDs)
+        defer { inFlight.subtract(userIDs) }
+
+        let requests = userIDs.compactMap { userID -> (String, URLRequest)? in
+            guard let url = PresenceRequest.url(homeserver: homeserver, userID: userID) else { return nil }
+            var request = URLRequest(url: url, timeoutInterval: Self.requestTimeout)
+            request.httpMethod = "GET"
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            return (userID, request)
+        }
+
+        let transport = transport
+        let responses = await withTaskGroup(of: (String, PresenceHTTPResponse?).self) { group in
+            for (userID, request) in requests {
+                group.addTask {
+                    let response = try? await transport.send(request)
+                    return (userID, response)
+                }
+            }
+            var responses: [(String, PresenceHTTPResponse?)] = []
+            for await response in group {
+                responses.append(response)
+            }
+            return responses
+        }
+
+        // Карту читаем В МОМЕНТ применения, а не снимком до запросов: иначе ответы,
+        // пришедшие в другом шаге, перетирались бы.
+        var presence = presenceSubject.value
+        let answeredAt = now()
+        var forbiddenChanged = false
+        var rateLimitResponse: PresenceHTTPResponse?
+        var acceptedCount = 0
+        let roomBackedUserIDs = self.userIDs(where: { $0.isRoomBacked })
+        outcome.asked += responses.count
+
+        for (userID, response) in responses {
+            guard let response else {
+                // Сеть или отмена: человека не помечаем спрошенным — спросим на следующем шаге.
+                outcome.networkErrors += 1
+                continue
+            }
+            os_log(.info, log: presenceLog, "presence(%{public}@) → %d", userID, response.statusCode)
+
+            switch response.statusCode {
+            case 200:
+                acceptedCount += 1
+                lastFetchedAt[userID] = answeredAt
+                if let parsed = Self.parse(response.body, answeredAt: answeredAt) {
+                    presence[userID] = parsed
+                }
+            case 401:
+                // Не повторяем сразу: SDK обновит токен по 401 синка, а проба forceTokenRefresh
+                // на Synapse ничего не обновляет (/profile не проверяет токен). Повтор со старым
+                // токеном только удваивал пачку.
+                if !outcome.sawUnauthorized {
+                    rejectedToken = token
+                    Task { [tokenRefresher] in await tokenRefresher() }
+                }
+                outcome.sawUnauthorized = true
+            case 403:
+                lastFetchedAt[userID] = answeredAt
+                // С собеседником по комнате общая комната есть или вот-вот будет (приглашение не
+                // принято) — ему хватит обычного срока свежести, на часы не запоминаем.
+                if !roomBackedUserIDs.contains(userID) {
+                    forbiddenUntil[userID] = answeredAt.addingTimeInterval(Self.forbiddenTTL)
+                    forbiddenChanged = true
+                }
+            case 429:
+                rateLimitResponse = rateLimitResponse ?? response
+            default:
+                // 404, 5xx: ответ получен — ждём обычный срок, а не долбим каждый шаг.
+                lastFetchedAt[userID] = answeredAt
+            }
+        }
+
+        // Отказ по частоте в пачке важнее соседних успехов: иначе ответ 200, пришедший после 429,
+        // снимал бы паузу, и следующая пачка снова упиралась бы в лимит.
+        outcome.accepted += acceptedCount
+        if let rateLimitResponse {
+            outcome.sawRateLimit = true
+            backoff.recordRateLimited(retryAfter: PresenceRequest.retryAfter(from: rateLimitResponse), now: answeredAt)
+        } else if acceptedCount > 0 {
+            backoff.recordAccepted()
+        }
+
+        if forbiddenChanged {
+            forbiddenStore.save(forbiddenUntil.filter { $0.value > answeredAt })
+        }
+        if presence != presenceSubject.value {
+            presenceSubject.send(presence)
+        }
+    }
+
+    static func parse(_ body: Data, answeredAt: Date) -> UserPresence? {
+        guard let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else {
+            return nil
+        }
+        let presence = json["presence"] as? String ?? "offline"
+        let currentlyActive = json["currently_active"] as? Bool ?? false
+        let lastActiveAgoMs = json["last_active_ago"] as? Double
+        let lastSeenDate = lastActiveAgoMs.map { answeredAt.addingTimeInterval(-$0 / 1000) }
+        // STMOB-133: в сети — ТОЛЬКО если последняя активность моложе пяти минут. Synapse
+        // иногда отдаёт currently_active для давно ушедших; шапка и «Контакты» должны совпадать.
+        let recentlyActive = (lastActiveAgoMs ?? .greatestFiniteMagnitude) / 1000 < onlineWindow
+        let serverOnline = (presence == "online" || currentlyActive) && recentlyActive
+        return UserPresence(serverOnline: serverOnline, lastSeenDate: lastSeenDate)
+    }
+}
+
+private extension Array {
+    func chunked(into size: Int) -> [[Element]] {
+        stride(from: 0, to: count, by: size).map { Array(self[$0..<Swift.min($0 + size, count)]) }
     }
 }

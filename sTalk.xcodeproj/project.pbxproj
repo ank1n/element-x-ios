@@ -882,6 +882,7 @@
 		9217895D18BDC2C916D86FC7 /* TimelineMediaPreviewViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20DF9132C8BFC0F15E858328 /* TimelineMediaPreviewViewModelTests.swift */; };
 		923F519EE1B5E89FCCC1BAC0 /* TimelineMediaPreviewDetailsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 788BE34F3EBBA9B93BD73768 /* TimelineMediaPreviewDetailsView.swift */; };
 		9242F80181BBC7B03A18432E /* MeetingEditViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29C945F4DC21B34D5B318537 /* MeetingEditViewModelTests.swift */; };
+		928E345CED9060F8FD5A993C /* PresenceTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38445E231DCC0CE2ED1D0C3E /* PresenceTransport.swift */; };
 		9318A12BB5692745391EF280 /* HomeScreenKnockedCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83EB7A5977B0D4A95F9B99DD /* HomeScreenKnockedCell.swift */; };
 		931A006B55D178410A212B0E /* MockImageCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BCD4929CE6D5EF09B2F657F /* MockImageCache.swift */; };
 		93562FEB47FDA9F4E29304F1 /* ProcessInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2541B1D953FEEEFCD232F5B /* ProcessInfo.swift */; };
@@ -1159,6 +1160,7 @@
 		BC0ECBCF7499C55611C5525F /* InviteUsersScreenCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13A010D5D75DF4FC7F7FFC8B /* InviteUsersScreenCoordinator.swift */; };
 		BC38E7CC37713A4D1E668692 /* NSRegularExpresion.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE7F8A863264C33CFE13C329 /* NSRegularExpresion.swift */; };
 		BC4D8C5DD39C3A5968ED44D2 /* RoomTimelineItemViewState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51166D48E92726E4E4367230 /* RoomTimelineItemViewState.swift */; };
+		BC6010A81ECC89F521573529 /* PresenceServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D6AA0E7C7363D4888F63E38 /* PresenceServiceTests.swift */; };
 		BCEC62FFD33828361EDEBB01 /* TimelineItemMenuAction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9785FCDA5E722AC37582D733 /* TimelineItemMenuAction.swift */; };
 		BCF27FED9811226AEC9AACF0 /* AggregratedReaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C237000FC91471D6246C7D9 /* AggregratedReaction.swift */; };
 		BD048585B86CAFCDF940321A /* SecureBackupKeyBackupScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0239175AE8F70AD43AED15D2 /* SecureBackupKeyBackupScreen.swift */; };
@@ -2003,6 +2005,7 @@
 		37321827ABE02B4C49D7EB8B /* HTMLParserStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HTMLParserStyle.swift; sourceTree = "<group>"; };
 		37653F4FE405570E529BB7A3 /* et */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = et; path = et.lproj/SAS.strings; sourceTree = "<group>"; };
 		376A06237FA6A9D54B21588E /* NavigationTabCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationTabCoordinator.swift; sourceTree = "<group>"; };
+		38445E231DCC0CE2ED1D0C3E /* PresenceTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresenceTransport.swift; sourceTree = "<group>"; };
 		38538AC41F15C3EB676715C0 /* PollFormScreenViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PollFormScreenViewModel.swift; sourceTree = "<group>"; };
 		38751F87F15EA34BD70BD2E8 /* SecureBackupKeyBackupScreenViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureBackupKeyBackupScreenViewModel.swift; sourceTree = "<group>"; };
 		3895346071471F22F624A967 /* AppLockSetupBiometricsScreenViewModelProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLockSetupBiometricsScreenViewModelProtocol.swift; sourceTree = "<group>"; };
@@ -2230,6 +2233,7 @@
 		5D434D8DCE9DC2EB5419EE52 /* DiskScreenViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskScreenViewModel.swift; sourceTree = "<group>"; };
 		5D50585C0E5C28E11C1BD01F /* TimelineReactionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineReactionsView.swift; sourceTree = "<group>"; };
 		5D61D321DD0FC5148EEFA27A /* PinnedItemsIndicatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedItemsIndicatorView.swift; sourceTree = "<group>"; };
+		5D6AA0E7C7363D4888F63E38 /* PresenceServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresenceServiceTests.swift; sourceTree = "<group>"; };
 		5DCB53D1CB9CDFDB13030D8C /* AudioRoomTimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRoomTimelineView.swift; sourceTree = "<group>"; };
 		5DF8E2731322D682D16C0F55 /* RoomAttachmentPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomAttachmentPicker.swift; sourceTree = "<group>"; };
 		5DF9F1E709B9E0F885686348 /* RoomPermissions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomPermissions.swift; sourceTree = "<group>"; };
@@ -6038,6 +6042,7 @@
 			isa = PBXGroup;
 			children = (
 				B9F493647ECA41C3C9D07C49 /* PresenceService.swift */,
+				38445E231DCC0CE2ED1D0C3E /* PresenceTransport.swift */,
 			);
 			path = Presence;
 			sourceTree = "<group>";
@@ -6264,6 +6269,7 @@
 				B9C460FCC1771B5EDD2BBD3D /* PillContextTests.swift */,
 				EF1B88550322538A992667AB /* PinnedEventsBannerStateTests.swift */,
 				D69E9F59892360ECF3645705 /* PollFormScreenViewModelTests.swift */,
+				5D6AA0E7C7363D4888F63E38 /* PresenceServiceTests.swift */,
 				E73C0B2212090EF1DEB3AA63 /* QRCodeLoginScreenViewModelTests.swift */,
 				DB2F68E887C6151DC6825AC2 /* RemotePreferenceTests.swift */,
 				49FBD663C4757DB882D8E6B3 /* ReportContentScreenViewModelTests.swift */,
@@ -8242,6 +8248,7 @@
 				ACB2F88DA1F6CA00497E3B63 /* PillContextTests.swift in Sources */,
 				0F3C064E2C2A4618789073FE /* PinnedEventsBannerStateTests.swift in Sources */,
 				4442F7F89A2D052FCA03D811 /* PollFormScreenViewModelTests.swift in Sources */,
+				BC6010A81ECC89F521573529 /* PresenceServiceTests.swift in Sources */,
 				3BF4FB1FABA6446453E652E0 /* Publisher.swift in Sources */,
 				CE65F31779BF9A07E15CE479 /* QRCodeLoginScreenViewModelTests.swift in Sources */,
 				E3193463F9E85733EFB4796B /* RemotePreferenceTests.swift in Sources */,
@@ -8944,6 +8951,7 @@
 				04A65DB178588B44C0EB5861 /* PollView.swift in Sources */,
 				C1737617A5CEB716F1C82B3E /* PostHogAnalyticsClient.swift in Sources */,
 				6804CA652D98456F295763D0 /* PresenceService.swift in Sources */,
+				928E345CED9060F8FD5A993C /* PresenceTransport.swift in Sources */,
 				93562FEB47FDA9F4E29304F1 /* ProcessInfo.swift in Sources */,
 				90BB42143E40B251FCA67713 /* ProgressCursorModifier.swift in Sources */,
 				4F85461BA67ADD9538B34FA8 /* ProgressMaskModifier.swift in Sources */,

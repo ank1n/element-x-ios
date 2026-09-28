@@ -308,6 +308,94 @@ class ContactsListScreenTests: XCTestCase {
         XCTAssertTrue(harness.contactIDs.contains(UserProfileProxy.mockAlice.userID))
     }
 
+    // MARK: - STMOB-304: присутствие только для видимых строк
+
+    func testOnlyVisibleContactsArePolled() async throws {
+        let presence = installPresenceService()
+        defer { AppCoordinator.sharedPresenceService = nil }
+        let harness = makeHarness { _, _ in .success(.init(results: [], limited: false)) }
+        let users = (0..<3).map { UserProfileProxy(userID: "@user\($0):example.com") }
+        harness.roomList.send(users.map(Self.directRoom(with:)))
+        try await settle()
+        XCTAssertTrue(presence.userIDs(for: .contacts).isEmpty, "строк на экране ещё нет — видимых нет")
+        XCTAssertEqual(presence.userIDs(for: .chatPartners), Set(users.map(\.userID)),
+                       "собеседники по комнатам идут фоном — для фильтра «Онлайн» и счётчика")
+
+        harness.viewModel.context.send(viewAction: .contactRowAppeared(Self.directRoomID(users[1])))
+        XCTAssertEqual(presence.userIDs(for: .contacts), [users[1].userID])
+
+        harness.viewModel.context.send(viewAction: .contactRowDisappeared(Self.directRoomID(users[1])))
+        XCTAssertTrue(presence.userIDs(for: .contacts).isEmpty, "строка ушла с экрана — из видимых выпала")
+    }
+
+    /// Секции перестроились: onAppear новой строки пришёл раньше onDisappear старой.
+    func testRowStaysVisibleWhenAppearEventsArriveOutOfOrder() async throws {
+        let presence = installPresenceService()
+        defer { AppCoordinator.sharedPresenceService = nil }
+        let harness = makeHarness { _, _ in .success(.init(results: [], limited: false)) }
+        let user = UserProfileProxy(userID: "@user:example.com")
+        harness.roomList.send([Self.directRoom(with: user)])
+        try await settle()
+
+        let rowID = Self.directRoomID(user)
+        harness.viewModel.context.send(viewAction: .contactRowAppeared(rowID))
+        harness.viewModel.context.send(viewAction: .contactRowAppeared(rowID))
+        harness.viewModel.context.send(viewAction: .contactRowDisappeared(rowID))
+
+        XCTAssertEqual(presence.userIDs(for: .contacts), [user.userID])
+    }
+
+    /// Если onAppear сработает у всех строк разом (нелениво свёрстанный список), опрос не разрастается.
+    func testContactsInterestIsCapped() async throws {
+        let presence = installPresenceService()
+        defer { AppCoordinator.sharedPresenceService = nil }
+        let harness = makeHarness { _, _ in .success(.init(results: [], limited: false)) }
+        let users = (0..<60).map { UserProfileProxy(userID: "@user\($0):example.com") }
+        harness.roomList.send(users.map(Self.directRoom(with:)))
+        try await settle()
+
+        for user in users {
+            harness.viewModel.context.send(viewAction: .contactRowAppeared(Self.directRoomID(user)))
+        }
+
+        XCTAssertEqual(presence.userIDs(for: .contacts).count, 40)
+        XCTAssertEqual(presence.userIDs(for: .chatPartners).count, 30, "фоном — только недавние собеседники")
+    }
+
+    func testCachedOnlineFlagFromOldVersionIsNotTrusted() throws {
+        let json = #"{"id":"!r:x","displayName":"Alice","matrixUserID":"@alice:x","isOnline":true,"isFavorite":false}"#
+        let contact = try JSONDecoder().decode(ContactItem.self, from: Data(json.utf8))
+
+        XCTAssertFalse(contact.isOnline, "снимок «в сети» из прошлой сессии не должен зажигать точку")
+    }
+
+    /// Откат на старую сборку: её декодер требует поле isOnline, без него весь кэш выбрасывался бы.
+    func testCacheKeepsTheLegacyKeyForRollback() throws {
+        let data = try JSONEncoder().encode(makeContact(id: "1", name: "Alice", isOnline: true))
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        XCTAssertEqual(json["isOnline"] as? Bool, false)
+        XCTAssertEqual(try JSONDecoder().decode(ContactItem.self, from: data).serverOnline, true)
+    }
+
+    func testContactOnlineDotFadesWithoutNewData() {
+        var contact = makeContact(id: "1", name: "Alice", isOnline: true)
+        XCTAssertTrue(contact.isOnline)
+
+        contact.lastSeenDate = Date().addingTimeInterval(-PresenceService.onlineWindow)
+        XCTAssertFalse(contact.isOnline, "точка гаснет сама, даже если человека больше не опрашивают")
+    }
+
+    private func installPresenceService() -> PresenceService {
+        let service = PresenceService(homeserver: "https://example.org",
+                                      tokenProvider: { nil },
+                                      ownUserID: "@me:example.com",
+                                      transport: FakePresenceTransport(),
+                                      forbiddenStore: InMemoryForbiddenStore())
+        AppCoordinator.sharedPresenceService = service
+        return service
+    }
+
     // MARK: - Helpers
 
     private final class TestClock {
@@ -407,12 +495,13 @@ class ContactsListScreenTests: XCTestCase {
                              name: String,
                              isOnline: Bool = false,
                              isFavorite: Bool = false) -> ContactItem {
+        // «В сети» теперь считается по ответу сервера и свежести активности.
         ContactItem(id: id,
                     displayName: name,
                     avatarURL: nil,
                     matrixUserID: "@\(name.lowercased()):example.com",
-                    isOnline: isOnline,
-                    lastSeenDate: nil,
+                    serverOnline: isOnline,
+                    lastSeenDate: isOnline ? Date() : nil,
                     isFavorite: isFavorite)
     }
 }

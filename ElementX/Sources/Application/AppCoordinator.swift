@@ -36,7 +36,11 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
     private var userSession: UserSessionProtocol? {
         didSet {
             userSessionObserver?.cancel()
+            // STMOB-304: старые циклы останавливаем явно. Раньше они держали себя сами и после
+            // выхода из аккаунта продолжали ходить в сеть рядом с новыми.
+            ownPresenceManager?.stop()
             ownPresenceManager = nil
+            sharedPresenceService?.stop()
             if let userSession {
                 configureElementCallService()
                 configureNotificationManager()
@@ -46,7 +50,12 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
                 // STMOB-103: глобальная presence ping (online/unavailable/offline)
                 // на уровне сессии — раньше работало только на ContactsListScreen.
                 ownPresenceManager = OwnPresenceManager(clientProxy: userSession.clientProxy)
-                ownPresenceManager?.startOnline()
+                // STMOB-304: сессия может подняться и в фоне (пуш, фоновое обновление) —
+                // тогда «в сети» не объявляем; didBecomeActive включит всё сам.
+                let isActive = UIApplication.shared.applicationState == .active
+                if isActive {
+                    ownPresenceManager?.startOnline()
+                }
                 // STMOB-103 build 125: shared PresenceService для DM presence
                 // (HomeScreen list dots + RoomScreen header subtitle). Раньше были
                 // 2 независимых instance → расхождение статуса.
@@ -67,6 +76,9 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
                                                         },
                                                         ownUserID: clientProxy.userID)
                 AppCoordinator.sharedPresenceService = sharedPresenceService
+                if isActive {
+                    sharedPresenceService?.start()
+                }
                 // STMOB-108: держим app icon badge в синхроне с реальным
                 // unreadNotificationsCount из SDK (NSE ставит badge на push,
                 // но при чтении сообщений в app системный счётчик не сбрасывался).
@@ -904,6 +916,10 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         showLoadingIndicator()
 
         stopSync(isBackgroundTask: false)
+        // STMOB-304: свой статус больше не шлём — ни во время выхода на сервере, ни после мягкого
+        // выхода (токен мёртв). Обнуляем, чтобы didBecomeActive не запустил пинги снова.
+        ownPresenceManager?.stop()
+        ownPresenceManager = nil
         userSessionFlowCoordinator?.stop()
 
         guard !isSoft else {
@@ -1369,13 +1385,14 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         // Отложенный стоп остаётся ТОЛЬКО на expiration background task при
         // реальном уходе в фон — см. applicationDidEnterBackground.
         DiagLog.write("AppLifecycle", "  resign: sync НЕ стопаем (STMOB-254, upstream-модель)")
-        // STMOB-103: idle на background (жёлтый dot + "был X назад" на web)
-        ownPresenceManager?.setBackground()
+        // STMOB-304: свой статус здесь НЕ меняем — шторка и Control Center тоже дают resign, и
+        // «unavailable» туда-обратно упирался в лимит Synapse (1 PUT в 10 с). Статус меняется
+        // при реальном уходе в фон (applicationDidEnterBackground).
         // STMOB-123 build 159: pause shared presence polling в background.
         // 30s URLSession requests могут держать file handles в момент suspend
         // → contribute к watchdog 0xDEADBEEC / lock 0xDEAD10CC. На foreground
         // restart через applicationDidBecomeActive.
-        sharedPresenceService?.stopPolling()
+        sharedPresenceService?.stop()
         DiagLog.write("AppLifecycle", "  PresenceService polling stopped (background)")
 
         // STMOB-133 build 158: гарантируем что все pending DiagLog writes
@@ -1392,6 +1409,9 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         let activeCallRoomID = elementCallService.ongoingCallRoomIDPublisher.value
         let hasIncomingCall = (elementCallService as? ElementCallService)?.hasIncomingCall ?? false
         DiagLog.write("AppLifecycle", "didEnterBackground: activeCall=\(activeCallRoomID ?? "nil") incoming=\(hasIncomingCall)")
+        // STMOB-103: idle на background (жёлтый dot + "был X назад" на web).
+        // STMOB-304: здесь, а не на resign — см. applicationWillResignActive.
+        ownPresenceManager?.setBackground()
         // При звонке CallKit держит процесс живым — ни стоп, ни bg task не нужны,
         // а синк обязан жить (widget-события/ключи).
         if activeCallRoomID == nil, !hasIncomingCall {
@@ -1431,13 +1451,11 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         startSync()
         // STMOB-103: возобновить online ping при возврате из background
         ownPresenceManager?.startOnline()
-        // STMOB-123 build 159: resume shared presence polling — список userIDs
-        // сохранён в currentUserIDs (если был пуст — startPolling no-op'нется
-        // на первом вызове, фактически restart происходит при возврате на
-        // экран Contacts/Chats который вызовет fetchPresence заново).
-        if let presence = sharedPresenceService, !presence.currentUserIDs.isEmpty {
-            presence.startPolling(userIDs: presence.currentUserIDs)
-            DiagLog.write("AppLifecycle", "  PresenceService polling resumed (\(presence.currentUserIDs.count) users)")
+        // STMOB-123 build 159 / STMOB-304: возобновляем опрос. Интересы экранов сохранились,
+        // а бюджет запросов не даёт возврату в приложение превратиться в пачку по всем сразу.
+        if let presence = sharedPresenceService {
+            presence.start()
+            DiagLog.write("AppLifecycle", "  PresenceService polling resumed (\(presence.polledUserIDs.count) users)")
         }
         // STMOB-108: при возврате из background — снести delivered notifications
         // тех комнат, где непрочитанных уже нет (юзер прочитал на другом устройстве

@@ -147,6 +147,9 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
             .removeDuplicates { $0 == $1 }
             .sink { [weak self] isSearchFieldFocused, _, _ in
                 guard let self else { return }
+                // STMOB-304: после смены фильтра или поиска старый диапазон указывает на строки
+                // прежнего списка.
+                visibleRoomRange = nil
                 // isSearchFieldFocused` is sometimes turning to true after cancelling the search. So to be extra sure we are updating the values correctly we read them directly in the next run loop, and we add a small delay if the value has changed
                 let delay = isSearchFieldFocused == self.context.viewState.bindings.isSearchFieldFocused ? 0.0 : 0.05
                 DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
@@ -199,6 +202,8 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
             appSettings.hasSeenNewSoundBanner = true
         case .updateVisibleItemRange(let range):
             roomSummaryProvider?.updateVisibleRange(range)
+            visibleRoomRange = range
+            updatePresencePolling()
         case .startChat:
             actionsSubject.send(.presentStartChatScreen)
         case .globalSearch:
@@ -207,6 +212,9 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
             actionsSubject.send(.presentMessageSearch)
         case .searchQueryChanged(let query):
             performMessageSearch(query: query)
+            // Во время поиска экран диапазон не присылает, а старый указывает не на те строки.
+            visibleRoomRange = nil
+            updatePresencePolling()
         case .markRoomAsUnread(let roomIdentifier):
             Task {
                 guard case let .joined(roomProxy) = await userSession.clientProxy.roomForIdentifier(roomIdentifier) else {
@@ -551,6 +559,14 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
     // MARK: - DM Presence (STMOB-103 build 120)
 
     private var dmPresenceServiceSubscribed = false
+    /// STMOB-304: видимые строки по прокрутке (тот же диапазон, что уходит в пагинацию списка).
+    /// Строки берём не по onAppear: в теме «Космос» список обёрнут в обычный VStack, и onAppear
+    /// срабатывает сразу у всех строк.
+    private var visibleRoomRange: Range<Int>?
+    /// Запас строк вокруг видимых: при прокрутке точки у соседних строк уже готовы.
+    private static let presenceRowMargin = 5
+    /// Когда диапазона нет (список короче экрана, поиск, ещё не прокручивали) — первый экран строк.
+    private static let presenceFallbackRowCount = 20
 
     private func setupDMPresenceService() {
         // Build 125: используем shared PresenceService из AppCoordinator вместо
@@ -566,20 +582,27 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
             .store(in: &cancellables)
     }
 
+    /// STMOB-304: опрашиваем собеседников только тех личных чатов, чьи строки видны. Раньше в опрос
+    /// навсегда попадали все загруженные личные чаты (страница до 200), и набор только рос.
     private func updatePresencePolling() {
         setupDMPresenceService()
         guard let service = AppCoordinator.sharedPresenceService else { return }
-        let dmUserIDs = Array(Set(state.rooms.compactMap(\.dmUserID)))
-        // Build 125: merge с existing polling — НЕ перезаписываем (RoomScreen
-        // тоже мог добавить userID собеседника).
-        let merged = Array(Set(service.currentUserIDs).union(dmUserIDs))
-        guard !merged.isEmpty else { return }
-        if service.currentUserIDs.isEmpty {
-            service.startPolling(userIDs: merged)
-        } else if Set(service.currentUserIDs) != Set(merged) {
-            service.updatePollingUserIDs(merged)
-            Task { await service.fetchPresence(for: merged) }
+        service.setInterest(Self.presenceRows(in: state.rooms, visibleRange: visibleRoomRange).compactMap(\.dmUserID),
+                            for: .chats)
+    }
+
+    static func presenceRows(in rooms: [HomeScreenRoom], visibleRange: Range<Int>?) -> ArraySlice<HomeScreenRoom> {
+        guard !rooms.isEmpty else { return [] }
+        // Короткий список экран не прокручивает и диапазон для него не присылает, а старый диапазон
+        // (например, до фильтра) указывает мимо: такой список опрашиваем целиком — это не больше экрана.
+        guard let visibleRange,
+              rooms.count > presenceFallbackRowCount,
+              visibleRange.lowerBound < rooms.count else {
+            return rooms.prefix(presenceFallbackRowCount)
         }
+        let lower = min(max(0, visibleRange.lowerBound - presenceRowMargin), rooms.count)
+        let upper = min(rooms.count, max(lower, visibleRange.upperBound + presenceRowMargin))
+        return rooms[lower..<upper]
     }
 
     private func markRoomAsFavourite(_ roomID: String, isFavourite: Bool) async {

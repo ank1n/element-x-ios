@@ -10,124 +10,236 @@ import Foundation
 /// STMOB-103: Поддерживает корректную presence пользователя в Synapse независимо
 /// от того, на какой вкладке он находится в приложении.
 ///
-/// Раньше presence отправляла только PresenceService прикреплённая к ContactsListScreen.
-/// Когда юзер был на Chats/Calls/Settings — Synapse считал его offline. Молли
-/// нашла это: `presence_stream` для bondar = state=offline, last_user_sync_ts=35h.
-///
 /// Логика жизненного цикла:
-/// - Foreground active   → `online`, периодический ping каждые 30 сек
+/// - Foreground active   → `online`, периодический ping
 /// - Background          → `unavailable` (idle, web покажет жёлтый dot + last seen)
 /// - Terminate           → `offline`
 ///
-/// Использует тот же endpoint что PresenceService:
-///   PUT /_matrix/client/v3/presence/{userId}/status   {"presence":"<status>"}
+/// STMOB-304: это ЕДИНСТВЕННЫЙ писатель своего статуса. Раньше тот же PUT слал и цикл
+/// PresenceService, и два писателя в одном 10-секундном окне получали 429 (лимит Synapse
+/// rc_presence — один PUT в 10 с на учётку): на проде все 429 присутствия были от этого.
+///
+/// Endpoint: PUT /_matrix/client/v3/presence/{userId}/status   {"presence":"<status>"}
 @MainActor
 final class OwnPresenceManager {
+    typealias Status = OwnPresenceSchedule.Status
+
+    static let requestTimeout: TimeInterval = 15
+
     private let homeserver: String
     private let userID: String
-    /// Build 121: token не кэшируем — берём свежий из clientProxy перед каждым
-    /// запросом. Иначе после Matrix token rotation все запросы возвращают 401.
+    /// Build 121: token не кэшируем — берём свежий перед каждым запросом (ротация).
     private let tokenProvider: () -> String?
-    private var pingTask: Task<Void, Never>?
-    /// Build 121: 60s вместо 30s — снижаем частоту чтобы не упираться в Synapse
-    /// rate-limit на /presence endpoint (раньше регулярно прилетало HTTP 429).
-    private let pingInterval: TimeInterval = 60
+    private let transport: PresenceTransport
+    private let now: () -> Date
 
-    /// STMOB-109 build 134: дебаунс. iOS lifecycle хуки (willEnterForeground /
-    /// willResignActive) могут стрелять пачкой — без дебаунса setStatus летит
-    /// 3-5 раз за 10 секунд и упирается в Synapse 429.
-    /// build 132: дебаунс работал только для same-status повторов.
-    /// build 134: общий cooldown — любые setStatus в окне 5с после успешного
-    /// предыдущего скипаются (online↔unavailable flapping тоже режется).
-    private var lastSentStatus: String?
-    private var lastSentAt: Date?
-    /// build 135: 12с (было 5с). На build 134 cooldown 5с пропускал
-    /// большинство 429 из-за iOS lifecycle flapping, в логе соотношение
-    /// 49 HTTP 429 vs 3 SKIP. 12с режет более широкое окно.
-    private let debounceInterval: TimeInterval = 12
+    private var schedule = OwnPresenceSchedule()
+    private var worker: Task<Void, Never>?
+    private var isSending = false
 
-    init?(clientProxy: ClientProxyProtocol) {
+    convenience init?(clientProxy: ClientProxyProtocol) {
         // sanity check: token должен быть доступен сейчас (иначе session не set)
         guard (try? clientProxy.matrixAccessToken()) != nil else { return nil }
-        let raw = clientProxy.homeserver
-        homeserver = raw.hasSuffix("/") ? String(raw.dropLast()) : raw
-        userID = clientProxy.userID
-        tokenProvider = { [weak clientProxy] in try? clientProxy?.matrixAccessToken() }
+        self.init(homeserver: clientProxy.homeserver,
+                  userID: clientProxy.userID,
+                  tokenProvider: { [weak clientProxy] in try? clientProxy?.matrixAccessToken() })
+    }
+
+    init(homeserver: String,
+         userID: String,
+         tokenProvider: @escaping () -> String?,
+         transport: PresenceTransport = URLSessionPresenceTransport(),
+         now: @escaping () -> Date = Date.init) {
+        self.homeserver = homeserver.hasSuffix("/") ? String(homeserver.dropLast()) : homeserver
+        self.userID = userID
+        self.tokenProvider = tokenProvider
+        self.transport = transport
+        self.now = now
     }
 
     deinit {
-        pingTask?.cancel()
+        worker?.cancel()
     }
 
     func startOnline() {
-        pingTask?.cancel()
-        let interval = pingInterval
-        pingTask = Task { [weak self] in
-            guard let self else { return }
-            await self.setStatus("online")
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
-                guard !Task.isCancelled else { break }
-                await self.setStatus("online")
-            }
-        }
+        setDesired(.online)
     }
 
     func setBackground() {
-        pingTask?.cancel()
-        pingTask = nil
-        Task { [weak self] in await self?.setStatus("unavailable") }
+        setDesired(.unavailable)
     }
 
     func setOffline() {
-        pingTask?.cancel()
-        pingTask = nil
-        Task { [weak self] in await self?.setStatus("offline") }
+        setDesired(.offline)
     }
 
-    private func setStatus(_ status: String) async {
-        // STMOB-109 build 134: общий cooldown на любой setStatus. Lifecycle hooks
-        // могут флапать online↔unavailable за секунды и каждый запрос ел rate
-        // limit — теперь любой setStatus в окне `debounceInterval` после
-        // успешного предыдущего скипается. Кроме `offline` — это терминальный
-        // статус (на завершении app), его пропускать нельзя.
-        if status != "offline",
-           let lastSentAt,
-           Date().timeIntervalSince(lastSentAt) < debounceInterval {
-            DiagLog.write("Presence", "setStatus(\(status)) SKIP — debounced (<\(Int(debounceInterval))s, last=\(lastSentStatus ?? "?"))")
-            return
+    /// Выход из аккаунта: больше ничего не шлём.
+    func stop() {
+        schedule.desiredStatus = nil
+        worker?.cancel()
+        worker = nil
+    }
+
+    // MARK: - Private
+
+    /// Смена статуса не выбрасывается, а откладывается до разрешённого момента: раньше дебаунс
+    /// просто глотал её, и после быстрого возврата в приложение на сервере до минуты висел
+    /// `unavailable`. Идущий PUT не прерываем — цикл подхватит новый статус сразу после него.
+    private func setDesired(_ status: Status) {
+        schedule.desiredStatus = status
+        guard !isSending else { return }
+        worker?.cancel()
+        // Цикл держит менеджер слабо: после выхода из аккаунта он не живёт сам по себе.
+        worker = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let delay = await self?.step() else { return }
+                try? await Task.sleep(for: .seconds(delay))
+            }
         }
-        var allowed = CharacterSet.urlPathAllowed
-        allowed.remove(charactersIn: "@:")
-        let encodedUserID = userID.addingPercentEncoding(withAllowedCharacters: allowed) ?? userID
-        guard let url = URL(string: "\(homeserver)/_matrix/client/v3/presence/\(encodedUserID)/status") else { return }
-        guard let token = tokenProvider() else {
-            DiagLog.write("Presence", "setStatus(\(status)) SKIP — no token")
-            return
+    }
+
+    /// Один шаг: отправляет статус, если пора, и говорит, сколько ждать до следующего шага.
+    /// `nil` — ждать нечего (статус отправлен и повторять его не нужно).
+    private func step() async -> TimeInterval? {
+        let token = tokenProvider()
+        switch schedule.nextAction(now: now(), currentToken: token) {
+        case .idle:
+            return nil
+        case .wait(let delay):
+            return delay
+        case .send(let status):
+            let sentAt = now()
+            isSending = true
+            let result = await send(status, token: token)
+            isSending = false
+            schedule.record(result, for: status, sentAt: sentAt, answeredAt: now())
+            // Сразу следующий шаг: статус мог смениться, пока шёл запрос.
+            return 0
+        }
+    }
+
+    private func send(_ status: Status, token: String?) async -> OwnPresenceSchedule.SendResult {
+        guard let url = PresenceRequest.url(homeserver: homeserver, userID: userID) else { return .failed }
+        guard let token else {
+            DiagLog.write("Presence", "setStatus(\(status.rawValue)) SKIP — no token")
+            return .failed
         }
 
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: url, timeoutInterval: Self.requestTimeout)
         request.httpMethod = "PUT"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: ["presence": status])
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["presence": status.rawValue])
 
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
-            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
-            DiagLog.write("Presence", "setStatus(\(status)) → HTTP \(code)")
-            // STMOB-109: фиксируем lastSent ТОЛЬКО при HTTP 200, чтобы дебаунс
-            // не ел реальный retry после 429 на следующем такте.
-            if code == 200 {
-                lastSentStatus = status
-                lastSentAt = Date()
-            }
-            // Build 121: при 429 (rate limit) — backoff 2 мин на следующий ping.
-            if code == 429 {
-                try? await Task.sleep(nanoseconds: 120 * 1_000_000_000)
-            }
+            return try await Self.result(of: transport.send(request), status: status, token: token)
         } catch {
-            DiagLog.write("Presence", "setStatus(\(status)) ERR \(error)")
+            DiagLog.write("Presence", "setStatus(\(status.rawValue)) ERR \(error)")
+            return .failed
+        }
+    }
+
+    static func result(of response: PresenceHTTPResponse, status: Status, token: String) -> OwnPresenceSchedule.SendResult {
+        switch response.statusCode {
+        case 200:
+            return .accepted
+        case 401:
+            DiagLog.write("Presence", "setStatus(\(status.rawValue)) → HTTP 401, waiting for a new token")
+            return .unauthorized(token: token)
+        case 429:
+            let retryAfter = PresenceRequest.retryAfter(from: response)
+            DiagLog.write("Presence", "setStatus(\(status.rawValue)) → HTTP 429, retry in \(retryAfter.map { "\(Int($0 * 1000))ms" } ?? "?")")
+            return .rateLimited(retryAfter: retryAfter)
+        default:
+            DiagLog.write("Presence", "setStatus(\(status.rawValue)) → HTTP \(response.statusCode)")
+            return .failed
+        }
+    }
+}
+
+/// STMOB-304: когда слать свой статус. Отдельно от сети и времени, чтобы правила проверялись тестами.
+struct OwnPresenceSchedule {
+    enum Status: String {
+        case online
+        case unavailable
+        case offline
+    }
+
+    enum SendResult: Equatable {
+        case accepted
+        case rateLimited(retryAfter: TimeInterval?)
+        /// Токен протух: с ним повторять бессмысленно, ждём, пока SDK выдаст новый.
+        case unauthorized(token: String)
+        case failed
+    }
+
+    enum Action: Equatable {
+        case send(Status)
+        case wait(TimeInterval)
+        case idle
+    }
+
+    /// На sliding sync Synapse не считает телефон синхронизирующимся и снимает его в offline,
+    /// если с последнего PUT прошло больше 30 с (sync_online_timeout, проверка раз в 5 с).
+    /// Поэтому шаг заметно меньше 30 с: запас на задержку сети и на отложенный после 429 PUT.
+    static let pingInterval: TimeInterval = 20
+    /// Лимит Synapse rc_presence.per_user по умолчанию — один PUT в 10 с на учётку (на проде так же).
+    /// Раньше этого срока после принятого PUT смена статуса гарантированно получила бы 429 —
+    /// ждём, а не упираемся.
+    static let minPutInterval: TimeInterval = 10
+    /// Повтор после сбоя сети: быстро, чтобы один пропуск не уронил в offline, но с ростом до потолка.
+    static let initialRetryInterval: TimeInterval = 2
+    static let retryInterval: TimeInterval = 10
+    /// Пока токен тот же, что получил 401, проверяем смену локально — без сети.
+    static let tokenCheckInterval: TimeInterval = 1
+
+    var desiredStatus: Status?
+    private(set) var lastSent: (status: Status, at: Date)?
+    /// Раньше этого времени PUT не шлём: окно лимита, срок после 429 или после сбоя.
+    private(set) var notBefore: Date = .distantPast
+    private(set) var rejectedToken: String?
+    private var consecutiveFailures = 0
+
+    func nextAction(now: Date, currentToken: String?) -> Action {
+        guard let status = desiredStatus else { return .idle }
+        if let rejectedToken, currentToken == rejectedToken {
+            return .wait(Self.tokenCheckInterval)
+        }
+
+        let dueAt: Date
+        if let lastSent, lastSent.status == status {
+            // Уже на сервере. Повторять нужно только online — иначе Synapse снимет его через 30 с.
+            guard status == .online else { return .idle }
+            dueAt = lastSent.at.addingTimeInterval(Self.pingInterval)
+        } else {
+            dueAt = now
+        }
+
+        let sendAt = max(dueAt, notBefore)
+        return sendAt <= now ? .send(status) : .wait(sendAt.timeIntervalSince(now))
+    }
+
+    /// `sentAt` — начало отправки: от него считается следующий пинг, так пауза на сервере не
+    /// растягивается на время запроса. `answeredAt` — ответ: от него считается окно лимита.
+    mutating func record(_ result: SendResult, for status: Status, sentAt: Date, answeredAt: Date) {
+        switch result {
+        case .accepted:
+            lastSent = (status, sentAt)
+            notBefore = answeredAt.addingTimeInterval(Self.minPutInterval)
+            rejectedToken = nil
+            consecutiveFailures = 0
+        case .rateLimited(let retryAfter):
+            // Срок берём у сервера (retry_after_ms), а не спим фиксированные 120 с: после такого
+            // сна телефон на минуты выпадал в offline.
+            notBefore = answeredAt.addingTimeInterval(retryAfter ?? Self.retryInterval)
+            consecutiveFailures = 0
+        case .unauthorized(let token):
+            rejectedToken = token
+            notBefore = .distantPast
+        case .failed:
+            let delay = min(Self.initialRetryInterval * pow(2, Double(consecutiveFailures)), Self.retryInterval)
+            notBefore = answeredAt.addingTimeInterval(delay)
+            consecutiveFailures += 1
         }
     }
 }

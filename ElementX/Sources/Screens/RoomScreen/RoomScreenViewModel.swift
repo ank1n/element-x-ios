@@ -140,6 +140,9 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
         // When navigating away from the room, we need to mark the room as fully read.
         // This does not affect the read receipts only the notification count.
         Task { await roomProxy.markAsRead(receiptType: .fullyRead) }
+        // STMOB-304: собеседник закрытой комнаты больше не нужен шапке — снимаем его из опроса.
+        isStopped = true
+        AppCoordinator.sharedPresenceService?.removeInterest(for: presenceInterest)
         // Work around QLPreviewController dismissal issues, see the InteractiveQuickLookModifier.
         state.bindings.mediaPreviewViewModel = nil
     }
@@ -330,6 +333,11 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
     // MARK: - DM Presence (STMOB-103 build 122)
 
     private var dmPresenceSubscribed = false
+    /// STMOB-304: ключ интереса — у этого экрана свой. Экранов одной комнаты бывает несколько
+    /// (дочерние потоки, iPad), и stop() одного не должен снимать собеседника у другого.
+    private let presenceInterest = PresenceInterest.room(UUID().uuidString)
+    /// После stop() интерес не возвращаем: подписки модели живут до deinit и могут позвать setup.
+    private var isStopped = false
 
     /// STMOB-103 build 124+: системные боты + guest meet users (динамические ID
     /// типа @meet-8913e350:..., @meet-cleanup:...) — игнорируем при resolve
@@ -353,19 +361,11 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
                 }
                 .store(in: &cancellables)
         }
-        // Регистрируем userID собеседника в общий poll если не зарегистрирован.
-        if !service.currentUserIDs.contains(userID) {
-            let merged = Array(Set(service.currentUserIDs + [userID]))
-            if service.currentUserIDs.isEmpty {
-                service.startPolling(userIDs: merged)
-            } else {
-                service.updatePollingUserIDs(merged)
-                Task { await service.fetchPresence(for: [userID]) }
-            }
-        } else {
-            // Уже polit — присвоим cached value для немедленного отображения
-            state.dmRecipientPresence = service.presenceSubject.value[userID]
-        }
+        // Известное значение — сразу, свежее придёт из опроса. STMOB-304: пока комната открыта,
+        // собеседник — её интерес; снимается в stop().
+        state.dmRecipientPresence = service.presenceSubject.value[userID]
+        guard !isStopped else { return }
+        service.setInterest([userID], for: presenceInterest)
     }
     
     /// STMOB-188: cross-platform call direction. When the user starts a call in a room
