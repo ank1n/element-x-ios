@@ -133,7 +133,7 @@ class KeychainControllerTests: XCTestCase {
                                                                          userId: "@test:example.com",
                                                                          deviceId: "D3V1C3",
                                                                          homeserverUrl: "https://matrix.example.com",
-                                                                         oauthData: nil,
+                                                                         oidcData: nil,
                                                                          slidingSyncVersion: .proxy(url: "https://sync.example.com")),
                                                       sessionDirectory: .sessionsBaseDirectory.appending(component: UUID().uuidString),
                                                       passphrase: "passphrase",
