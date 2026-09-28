@@ -22,6 +22,12 @@ class JoinRoomScreenViewModel: JoinRoomScreenViewModelType, JoinRoomScreenViewMo
     private var room: RoomProxyType?
     private var isLoadingPreview = true
     private var membershipStateChangeCancellable: AnyCancellable?
+    /// STALK-951: наблюдатель «комната доехала синком как joined».
+    private var joinedMembershipCancellable: AnyCancellable?
+    /// Вход подтверждается двумя путями (кнопка и список комнат) — в комнату уводим один раз.
+    private var hasFinishedJoin = false
+    /// Сам уводим участника в комнату один раз; повторить вход можно кнопкой.
+    private var didAttemptMemberFastPath = false
     
     private let actionsSubject: PassthroughSubject<JoinRoomScreenViewModelAction, Never> = .init()
     var actionsPublisher: AnyPublisher<JoinRoomScreenViewModelAction, Never> {
@@ -58,6 +64,10 @@ class JoinRoomScreenViewModel: JoinRoomScreenViewModelType, JoinRoomScreenViewMo
             }
             .store(in: &cancellables)
         
+        if case .generic = source {
+            observeJoinedMembership(roomID: roomID)
+        }
+        
         Task {
             await loadRoomDetails()
         }
@@ -89,15 +99,52 @@ class JoinRoomScreenViewModel: JoinRoomScreenViewModelType, JoinRoomScreenViewMo
     }
     
     func stop() {
+        joinedMembershipCancellable = nil
         hideLoadingIndicator()
     }
     
     // MARK: - Private
     
+    /// STALK-951: тап по пушу мог опередить синк — комнаты ещё нет в памяти SDK, и
+    /// координатор открыл этот экран. Как только синк привезёт её как joined, уводим
+    /// участника в чат, а не держим на «нужно приглашение».
+    private func observeJoinedMembership(roomID: String) {
+        joinedMembershipCancellable = clientProxy
+            .staticRoomSummaryProvider
+            .roomListPublisher
+            .compactMap { summaries in
+                summaries.first { $0.id == roomID }
+            }
+            .first { $0.room.membership() == .joined }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                Task { await self?.proceedAsMember() }
+            }
+    }
+    
+    private var isLocallyJoined: Bool {
+        if case .joined = room {
+            return true
+        }
+        return false
+    }
+    
+    /// Мы уже участник — экран присоединения тут лишний, уводим в комнату.
+    private func proceedAsMember() async {
+        MXLog.info("Already a member of \(state.roomID), leaving the join screen")
+        await finishJoinAction()
+    }
+    
     private func loadRoomDetails() async {
         showLoadingIndicator()
         
         await updateRoom()
+        
+        // Уже ушли в комнату как участник — превью с сервера не нужно.
+        if hasFinishedJoin {
+            hideLoadingIndicator()
+            return
+        }
         
         switch source {
         case .generic(let roomID, let via):
@@ -105,6 +152,15 @@ class JoinRoomScreenViewModel: JoinRoomScreenViewModelType, JoinRoomScreenViewMo
             case .success(let roomPreview):
                 isLoadingPreview = false
                 self.roomPreview = roomPreview
+                // STALK-951: сервер знает, что мы участник, а при первом запросе комнаты
+                // в памяти SDK ещё не было — синк мог привезти её, пока шло превью.
+                if roomPreview.info.membership == .joined, !isLocallyJoined {
+                    await updateRoom()
+                }
+                if hasFinishedJoin {
+                    hideLoadingIndicator()
+                    return
+                }
                 await updateRoomDetails()
             case .failure(.roomPreviewIsPrivate):
                 // Handled by the mode, we don't need an error indicator.
@@ -215,6 +271,19 @@ class JoinRoomScreenViewModel: JoinRoomScreenViewModelType, JoinRoomScreenViewMo
     }
     
     private func updateMode() async {
+        // STALK-951: участник не должен видеть «нужно приглашение». Локальная комната
+        // joined — сразу в чат, превью не ждём. Одному превью не верим: локально
+        // комната может ещё числиться приглашением или выходом, и координатор её не откроет.
+        if case .generic = source, isLocallyJoined, !didAttemptMemberFastPath {
+            didAttemptMemberFastPath = true
+            state.mode = .loading
+            await proceedAsMember()
+            if hasFinishedJoin {
+                return
+            }
+            // Вход в пространство не удался — показываем обычный режим с кнопкой.
+        }
+        
         if isLoadingPreview {
             state.mode = .loading
             return
@@ -256,8 +325,21 @@ class JoinRoomScreenViewModel: JoinRoomScreenViewModelType, JoinRoomScreenViewMo
             case .banned:
                 state.mode = .banned(sender: membershipDetails?.senderRoomMember?.displayName ?? membershipDetails?.senderRoomMember?.userID,
                                      reason: membershipDetails?.ownRoomMember.membershipChangeReason)
+            case .joined:
+                // STALK-951: сервер говорит, что мы участник, а локальная комната не joined:
+                // устарела (приглашение приняли на другом устройстве) или не собралась.
+                // Вместо «нужно приглашение» — рабочая кнопка: вход участника сервер примет
+                // как есть. Наблюдатель списка комнат уведёт в чат сам после синка.
+                state.mode = .joinable
             default:
+                let isMembershipUnknown = room == nil && roomPreview.info.membership == nil
                 switch roomPreview.info.joinRule {
+                case .private where isMembershipUnknown, .invite where isMembershipUnknown:
+                    // STALK-951: комнаты нет в памяти SDK — тогда SDK выбрасывает из превью
+                    // членство, которое вернул сервер, и «нужно приглашение» было бы догадкой,
+                    // неверной для участника (тап по пушу, пока синк не привёз чат). Режим
+                    // «не знаем» с кнопкой: участника сервер впустит, чужому откажет (.forbidden).
+                    state.mode = .unknown
                 case .private, .invite:
                     state.mode = .inviteRequired
                 case .knock, .knockRestricted:
@@ -329,6 +411,12 @@ class JoinRoomScreenViewModel: JoinRoomScreenViewModelType, JoinRoomScreenViewMo
     }
     
     private func finishJoinAction() async {
+        guard !hasFinishedJoin else {
+            return
+        }
+        hasFinishedJoin = true
+        joinedMembershipCancellable = nil
+        
         let roomID = state.roomID
         appSettings.seenInvites.remove(roomID)
         
@@ -341,6 +429,8 @@ class JoinRoomScreenViewModel: JoinRoomScreenViewModelType, JoinRoomScreenViewMo
         case .success(let spaceRoomListProxy):
             actionsSubject.send(.joined(.space(spaceRoomListProxy)))
         case .failure(let error):
+            // Действие не ушло — даём повторить вход кнопкой.
+            hasFinishedJoin = false
             MXLog.error("Failed to get the space room list after joining: \(error)")
             userIndicatorController.submitIndicator(.init(title: L10n.errorUnknown))
         }

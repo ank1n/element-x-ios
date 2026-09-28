@@ -179,7 +179,19 @@ class ClientProxy: ClientProxyProtocol {
         hideInviteAvatarsSubject.asCurrentValuePublisher()
     }
     
-    var roomsToAwait: Set<String> = []
+    /// STALK-951: пишется из главного потока при каждом тапе по пушу, а снимается в
+    /// roomForIdentifier из любого потока — без замка одновременная правка Set рушит память.
+    private let roomsToAwaitLock = NSLock()
+    private var lockedRoomsToAwait: Set<String> = []
+    var roomsToAwait: Set<String> {
+        get { roomsToAwaitLock.withLock { lockedRoomsToAwait } }
+        set { roomsToAwaitLock.withLock { lockedRoomsToAwait = newValue } }
+    }
+    
+    /// Снимает флаг ожидания комнаты одним действием под замком.
+    private func takeRoomToAwait(_ roomID: String) -> Bool {
+        roomsToAwaitLock.withLock { lockedRoomsToAwait.remove(roomID) != nil }
+    }
     
     private let sendQueueStatusSubject = CurrentValueSubject<Bool, Never>(false)
 
@@ -794,7 +806,7 @@ class ClientProxy: ClientProxyProtocol {
     }
         
     func roomForIdentifier(_ identifier: String) async -> RoomProxyType? {
-        let shouldAwait = roomsToAwait.remove(identifier) != nil
+        let shouldAwait = takeRoomToAwait(identifier)
         
         // Try fetching the room from the cold cache (if available) first
         if let room = await buildRoomForIdentifier(identifier) {

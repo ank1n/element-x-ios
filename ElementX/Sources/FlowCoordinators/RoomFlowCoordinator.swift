@@ -836,7 +836,24 @@ class RoomFlowCoordinator: FlowCoordinatorProtocol {
                     Task { [weak self] in
                         guard let self else { return }
                         
-                        if case let .joined(roomProxy) = await userSession.clientProxy.roomForIdentifier(roomID) {
+                        let room = await userSession.clientProxy.roomForIdentifier(roomID)
+                        
+                        // Вход пришёл, пока открыт лист «Отклонить и заблокировать» (приглашение
+                        // приняли на другом устройстве): отклонять уже нечего. Закрываем лист —
+                        // его колбэк синхронно вернёт машину на экран присоединения.
+                        if stateMachine.state == .declineAndBlockScreen {
+                            navigationStackCoordinator.setSheetCoordinator(nil)
+                        }
+                        
+                        // STALK-951: .joined теперь приходит и без нажатия (экран сам уводит
+                        // участника в чат). Если человек за это время ушёл с экрана, не трогаем
+                        // навигацию: иначе поздний ответ открыл бы или закрыл не тот экран.
+                        guard stateMachine.state == .joinRoomScreen else {
+                            MXLog.info("Ignoring joined room \(roomID), the join screen is no longer presented")
+                            return
+                        }
+                        
+                        if case let .joined(roomProxy) = room {
                             await storeAndSubscribeToRoomProxy(roomProxy)
                             stateMachine.tryEvent(.presentRoom(presentationAction: nil), userInfo: EventUserInfo(animated: animated))
                             
@@ -844,6 +861,9 @@ class RoomFlowCoordinator: FlowCoordinatorProtocol {
                                                                      isSpace: roomProxy.infoPublisher.value.isSpace,
                                                                      activeMemberCount: UInt(roomProxy.infoPublisher.value.activeMembersCount))
                         } else {
+                            // STALK-951: раньше экран молча исчезал, и человек не понимал, куда делся чат.
+                            MXLog.error("Joined room \(roomID) could not be resolved, dismissing the flow")
+                            showErrorIndicator()
                             stateMachine.tryEvent(.dismissFlow, userInfo: EventUserInfo(animated: animated))
                         }
                     }

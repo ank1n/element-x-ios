@@ -379,6 +379,97 @@ class RoomFlowCoordinatorTests: XCTestCase {
         try await fulfillment.fulfill()
     }
     
+    // MARK: - STALK-951
+    
+    func testMemberLandingOnJoinScreenIsTakenToTheRoom() async throws {
+        // Тап по пушу опередил синк: координатор и экран присоединения комнату не нашли,
+        // а превью (from_known_room) уже знает, что мы участник закрытого чата.
+        setupRoomFlowCoordinator()
+        let resolve = clientProxy.roomForIdentifierClosure
+        let attempts = ResolveAttempts()
+        clientProxy.roomForIdentifierClosure = { roomID in
+            guard await attempts.next() > 2 else { return nil }
+            return await resolve?(roomID)
+        }
+        clientProxy.roomPreviewForIdentifierViaClosure = { roomID, _ in
+            .success(RoomPreviewProxyMock(.init(roomID: roomID, membership: .joined, joinRule: .invite)))
+        }
+        
+        try await process(route: .room(roomID: "1", via: []))
+        
+        try await waitUntil { self.navigationStackCoordinator.rootCoordinator is RoomScreenCoordinator }
+        XCTAssertEqual(navigationStackCoordinator.stackCoordinators.count, 0)
+    }
+    
+    func testMemberWaitsOnJoinScreenUntilTheRoomSyncs() async throws {
+        // Синк чат ещё не привёз: SDK отдаёт превью без членства. Экран не закрывается с
+        // ошибкой и не пишет «нужно приглашение», а сам уводит в чат, когда комната приедет.
+        setupRoomFlowCoordinator()
+        let resolve = clientProxy.roomForIdentifierClosure
+        let isSynced = SyncFlag()
+        clientProxy.roomForIdentifierClosure = { roomID in
+            await isSynced.value ? await resolve?(roomID) : nil
+        }
+        clientProxy.roomPreviewForIdentifierViaClosure = { roomID, _ in
+            .success(RoomPreviewProxyMock(.init(roomID: roomID, membership: nil, joinRule: .invite)))
+        }
+        let roomList = CurrentValueSubject<[RoomSummary], Never>([])
+        let staticProvider = RoomSummaryProviderMock(.init(state: .loaded([])))
+        staticProvider.roomListPublisher = roomList.asCurrentValuePublisher()
+        clientProxy.staticRoomSummaryProvider = staticProvider
+        
+        try await process(route: .room(roomID: "1", via: []))
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssert(navigationStackCoordinator.rootCoordinator is JoinRoomScreenCoordinator)
+        
+        await isSynced.set()
+        let room = RoomSDKMock()
+        room.membershipReturnValue = .joined
+        roomList.send([RoomSummary.mock(id: "1", name: "Никита Сокол").withRoom(room)])
+        
+        try await waitUntil { self.navigationStackCoordinator.rootCoordinator is RoomScreenCoordinator }
+    }
+    
+    func testLateJoinAfterLeavingTheJoinScreenIsIgnored() async throws {
+        // Экран увидел комнату joined и отправил .joined, но пока координатор её собирал,
+        // человек ушёл назад. Поздний неудачный ответ не должен показывать ошибку и
+        // второй раз закрывать поток, которого уже нет.
+        setupRoomFlowCoordinator()
+        let resolve = clientProxy.roomForIdentifierClosure
+        let attempts = ResolveAttempts()
+        let gate = ResolveGate()
+        clientProxy.roomForIdentifierClosure = { roomID in
+            switch await attempts.next() {
+            case 1: return nil
+            case 2: return await resolve?(roomID)
+            default:
+                await gate.wait()
+                return nil
+            }
+        }
+        
+        try await process(route: .room(roomID: "1", via: []))
+        try await waitUntil { await gate.isWaiting }
+        
+        try await clearRoute(expectedActions: [.finished])
+        let secondFinish = deferFailure(roomFlowCoordinator.actions, timeout: 1) { $0 == .finished }
+        await gate.open()
+        try await secondFinish.fulfill()
+    }
+    
+    func testUnresolvableJoinedRoomDismissesTheFlow() async throws {
+        // Экран увидел комнату joined, а координатор собрать её не смог — закрываемся с ошибкой.
+        setupRoomFlowCoordinator()
+        let resolve = clientProxy.roomForIdentifierClosure
+        let attempts = ResolveAttempts()
+        clientProxy.roomForIdentifierClosure = { roomID in
+            await attempts.next() == 2 ? await resolve?(roomID) : nil
+        }
+        
+        try await process(route: .room(roomID: "1", via: []), expectedActions: [.finished])
+        XCTAssertNil(navigationStackCoordinator.rootCoordinator)
+    }
+    
     // MARK: - Spaces
     
     func testSpacePermalink() async throws {
@@ -393,6 +484,17 @@ class RoomFlowCoordinatorTests: XCTestCase {
     }
     
     // MARK: - Private
+    
+    private func waitUntil(timeout: Duration = .seconds(5), _ condition: () async -> Bool) async throws {
+        let deadline = ContinuousClock.now + timeout
+        while await !condition() {
+            guard ContinuousClock.now < deadline else {
+                XCTFail("Condition wasn't met in time")
+                return
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+    }
     
     private func process(route: AppRoute) async throws {
         roomFlowCoordinator.handleAppRoute(route, animated: true)
@@ -482,4 +584,68 @@ class RoomFlowCoordinatorTests: XCTestCase {
 
 private enum RoomType {
     case invited(roomID: String)
+}
+
+private actor ResolveGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var isOpen = false
+    
+    var isWaiting: Bool {
+        continuation != nil
+    }
+    
+    func wait() async {
+        guard !isOpen else { return }
+        await withCheckedContinuation { continuation = $0 }
+    }
+    
+    func open() {
+        isOpen = true
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
+private actor SyncFlag {
+    private(set) var value = false
+    
+    func set() {
+        value = true
+    }
+}
+
+private extension RoomSummary {
+    func withRoom(_ room: RoomSDKMock) -> RoomSummary {
+        RoomSummary(room: room,
+                    id: id,
+                    joinRequestType: joinRequestType,
+                    name: name,
+                    isDirect: isDirect,
+                    isSpace: isSpace,
+                    avatarURL: avatarURL,
+                    heroes: heroes,
+                    activeMembersCount: activeMembersCount,
+                    lastMessage: lastMessage,
+                    lastMessageDate: lastMessageDate,
+                    lastMessageState: lastMessageState,
+                    unreadMessagesCount: unreadMessagesCount,
+                    unreadMentionsCount: unreadMentionsCount,
+                    unreadNotificationsCount: unreadNotificationsCount,
+                    notificationMode: notificationMode,
+                    canonicalAlias: canonicalAlias,
+                    alternativeAliases: alternativeAliases,
+                    hasOngoingCall: hasOngoingCall,
+                    isMarkedUnread: isMarkedUnread,
+                    isFavourite: isFavourite,
+                    isTombstoned: isTombstoned)
+    }
+}
+
+private actor ResolveAttempts {
+    private var count = 0
+    
+    func next() -> Int {
+        count += 1
+        return count
+    }
 }

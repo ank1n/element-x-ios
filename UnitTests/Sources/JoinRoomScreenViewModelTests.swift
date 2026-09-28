@@ -6,7 +6,10 @@
 // Please see LICENSE files in the repository root for full details.
 //
 
+import Combine
 @testable import ElementX
+import MatrixRustSDK
+import MatrixRustSDKMocks
 import XCTest
 
 @MainActor
@@ -156,7 +159,195 @@ class JoinRoomScreenViewModelTests: XCTestCase {
         try await deferred.fulfill()
     }
     
+    // MARK: - STALK-951: участник не застревает на экране присоединения
+    
+    func testJoinedPreviewTakesMemberToTheRoom() async throws {
+        // Сценарий жалобы: при первом запросе комнаты в памяти SDK ещё нет, а к превью
+        // (from_known_room) синк её уже привёз — мы участник закрытого чата.
+        let attempts = ResolveAttempts()
+        setupMemberViewModel(preview: .joinedInviteOnly) {
+            await attempts.next() > 1 ? .joined(JoinedRoomProxyMock(.init(id: "1"))) : nil
+        }
+        
+        let deferred = deferFulfillment(viewModel.actionsPublisher) { $0 == .joined(.roomID("1")) }
+        try await deferred.fulfill()
+        
+        XCTAssertNotEqual(context.viewState.mode, .inviteRequired)
+    }
+    
+    func testUnknownMembershipOffersJoinButton() async throws {
+        // Главный сценарий жалобы: синк чат ещё не привёз. Без комнаты в памяти SDK
+        // выбрасывает из превью членство (room_preview.rs, cached_room == nil) — знаем
+        // только правило «по приглашению». Это не повод писать «нужно приглашение».
+        setupMemberViewModel(preview: .inviteRequired)
+        
+        let noJoin = deferFailure(viewModel.actionsPublisher, timeout: 1) { $0 == .joined(.roomID("1")) }
+        try await deferFulfillment(viewModel.context.$viewState) { $0.mode == .unknown }.fulfill()
+        try await noJoin.fulfill()
+    }
+    
+    func testJoinedPreviewWithUnbuildableRoomOffersJoinButton() async throws {
+        // Превью joined бывает, только когда комната есть в памяти SDK; nil от
+        // roomForIdentifier тогда значит, что собрать её не удалось. Не уводим в чат,
+        // который координатор не откроет, — даём кнопку входа.
+        setupMemberViewModel(preview: .joinedInviteOnly)
+        
+        let noJoin = deferFailure(viewModel.actionsPublisher, timeout: 1) { $0 == .joined(.roomID("1")) }
+        try await deferFulfillment(viewModel.context.$viewState) { $0.mode == .joinable }.fulfill()
+        try await noJoin.fulfill()
+    }
+    
+    func testStoppedScreenIgnoresLateRoomSync() async throws {
+        let roomList = setupMemberViewModel(preview: .inviteRequired)
+        try await deferFulfillment(viewModel.context.$viewState) { $0.mode == .unknown }.fulfill()
+        
+        viewModel.stop()
+        
+        let noJoin = deferFailure(viewModel.actionsPublisher, timeout: 1) { $0 == .joined(.roomID("1")) }
+        roomList.send([Self.roomSummary(membership: .joined)])
+        try await noJoin.fulfill()
+    }
+    
+    func testJoinedPreviewWithStaleInviteWaitsForSync() async throws {
+        // Приглашение приняли на другом устройстве: локально комната ещё «приглашение».
+        let roomList = setupMemberViewModel(preview: .joinedInviteOnly) {
+            let roomProxy = InvitedRoomProxyMock(.init())
+            roomProxy.rejectInvitationReturnValue = .success(())
+            return .invited(roomProxy)
+        }
+        
+        let noJoin = deferFailure(viewModel.actionsPublisher, timeout: 1) { $0 == .joined(.roomID("1")) }
+        try await deferFulfillment(viewModel.context.$viewState) { $0.mode == .joinable }.fulfill()
+        try await noJoin.fulfill()
+        
+        // Синк привёз вход — уводим в чат без нажатия.
+        let deferred = deferFulfillment(viewModel.actionsPublisher) { $0 == .joined(.roomID("1")) }
+        roomList.send([Self.roomSummary(membership: .joined)])
+        try await deferred.fulfill()
+    }
+    
+    func testLocallyJoinedRoomSkipsThePreview() async throws {
+        setupMemberViewModel(preview: .inviteRequired) { .joined(JoinedRoomProxyMock(.init(id: "1"))) }
+        
+        let deferred = deferFulfillment(viewModel.actionsPublisher) { $0 == .joined(.roomID("1")) }
+        try await deferred.fulfill()
+        // Даём загрузке экрана дойти до конца: без раннего выхода она запросила бы превью.
+        try await Task.sleep(for: .milliseconds(200))
+        
+        XCTAssertFalse(clientProxy.roomPreviewForIdentifierViaCalled, "A joined room doesn't need a preview from the server.")
+    }
+    
+    func testRoomArrivingAsJoinedTakesMemberToTheRoom() async throws {
+        // Синк привёз комнату уже после того, как экран открылся.
+        let roomList = setupMemberViewModel(preview: .inviteRequired)
+        try await deferFulfillment(viewModel.context.$viewState) { $0.mode == .unknown }.fulfill()
+        
+        let deferred = deferFulfillment(viewModel.actionsPublisher) { $0 == .joined(.roomID("1")) }
+        roomList.send([Self.roomSummary(membership: .joined)])
+        try await deferred.fulfill()
+    }
+    
+    func testFormerMemberStillNeedsAnInvite() async throws {
+        // Человек вышел из закрытой комнаты: SDK её знает, и превью несёт членство «left».
+        let roomList = setupMemberViewModel(preview: RoomPreviewProxyMock(.init(membership: .left, joinRule: .invite))) { .left }
+        try await deferFulfillment(viewModel.context.$viewState) { $0.mode == .inviteRequired }.fulfill()
+        
+        let deferred = deferFailure(viewModel.actionsPublisher, timeout: 1) { $0 == .joined(.roomID("1")) }
+        roomList.send([Self.roomSummary(membership: .left)])
+        try await deferred.fulfill()
+        
+        XCTAssertEqual(context.viewState.mode, .inviteRequired)
+    }
+    
+    func testJoinIsReportedOnceWhenButtonFinishesFirst() async throws {
+        try await assertJoinIsReportedOnce(roomListIsFirst: false)
+    }
+    
+    func testJoinIsReportedOnceWhenRoomListIsFirst() async throws {
+        try await assertJoinIsReportedOnce(roomListIsFirst: true)
+    }
+    
     // MARK: - Helpers
+    
+    /// Вход подтверждают и кнопка, и список комнат — в каком бы порядке они ни пришли,
+    /// действие должно уйти одно.
+    private func assertJoinIsReportedOnce(roomListIsFirst: Bool) async throws {
+        let roomList = setupMemberViewModel(preview: .joinable)
+        try await deferFulfillment(viewModel.context.$viewState) { $0.mode == .joinable }.fulfill()
+        // Превью с алиасом — вход идёт через joinRoomAlias; подменяем оба пути входа.
+        let join: () async -> Result<Void, ClientProxyError> = {
+            roomList.send([Self.roomSummary(membership: .joined)])
+            if roomListIsFirst {
+                // Даём наблюдателю списка комнат отработать раньше, чем вернётся вход.
+                try? await Task.sleep(for: .milliseconds(200))
+            }
+            return .success(())
+        }
+        clientProxy.joinRoomViaClosure = { _, _ in await join() }
+        clientProxy.joinRoomAliasClosure = { _ in await join() }
+        
+        var joinedActions = 0
+        let cancellable = viewModel.actionsPublisher.sink { action in
+            if action == .joined(.roomID("1")) {
+                joinedActions += 1
+            }
+        }
+        context.send(viewAction: .join)
+        try await Task.sleep(for: .milliseconds(700))
+        cancellable.cancel()
+        
+        XCTAssertTrue(clientProxy.joinRoomAliasCalled || clientProxy.joinRoomViaCalled, "The join button should have been processed.")
+        XCTAssertEqual(joinedActions, 1)
+    }
+    
+    /// Экран обычной комнаты «1»: превью, локальная комната и список комнат, в который тест
+    /// может «довезти» комнату синком.
+    @discardableResult
+    private func setupMemberViewModel(preview: RoomPreviewProxyMock,
+                                      room: @escaping () async -> RoomProxyType? = { nil }) -> CurrentValueSubject<[RoomSummary], Never> {
+        clientProxy = ClientProxyMock(.init())
+        clientProxy.joinRoomViaReturnValue = .success(())
+        clientProxy.roomPreviewForIdentifierViaReturnValue = .success(preview)
+        clientProxy.roomForIdentifierClosure = { _ in await room() }
+        
+        let roomList = CurrentValueSubject<[RoomSummary], Never>([])
+        let provider = RoomSummaryProviderMock(.init(state: .loaded([])))
+        provider.roomListPublisher = roomList.asCurrentValuePublisher()
+        clientProxy.staticRoomSummaryProvider = provider
+        
+        viewModel = JoinRoomScreenViewModel(source: .generic(roomID: "1", via: []),
+                                            appSettings: appSettings,
+                                            userSession: UserSessionMock(.init(clientProxy: clientProxy)),
+                                            userIndicatorController: ServiceLocator.shared.userIndicatorController)
+        return roomList
+    }
+    
+    private static func roomSummary(membership: Membership) -> RoomSummary {
+        let room = RoomSDKMock()
+        room.membershipReturnValue = membership
+        return RoomSummary(room: room,
+                           id: "1",
+                           joinRequestType: nil,
+                           name: "Никита Сокол",
+                           isDirect: true,
+                           isSpace: false,
+                           avatarURL: nil,
+                           heroes: [],
+                           activeMembersCount: 2,
+                           lastMessage: nil,
+                           lastMessageDate: nil,
+                           lastMessageState: nil,
+                           unreadMessagesCount: 0,
+                           unreadMentionsCount: 0,
+                           unreadNotificationsCount: 0,
+                           notificationMode: .allMessages,
+                           canonicalAlias: nil,
+                           alternativeAliases: [],
+                           hasOngoingCall: false,
+                           isMarkedUnread: false,
+                           isFavourite: false,
+                           isTombstoned: false)
+    }
     
     private func setupViewModel(throwing: Bool = false, mode: TestMode = .joined) {
         ServiceLocator.shared.settings.knockingEnabled = true
@@ -198,6 +389,22 @@ class JoinRoomScreenViewModelTests: XCTestCase {
                                             appSettings: appSettings,
                                             userSession: UserSessionMock(.init(clientProxy: clientProxy)),
                                             userIndicatorController: ServiceLocator.shared.userIndicatorController)
+    }
+}
+
+private extension RoomPreviewProxyMock {
+    /// Закрытый чат, в котором мы, по словам сервера, уже участник.
+    static var joinedInviteOnly: RoomPreviewProxyMock {
+        .init(.init(membership: .joined, joinRule: .invite))
+    }
+}
+
+private actor ResolveAttempts {
+    private var count = 0
+    
+    func next() -> Int {
+        count += 1
+        return count
     }
 }
 
