@@ -11,6 +11,11 @@ class MeetingEditViewModel: MeetingEditViewModelType {
     private let service: MeetingsService
     private let userDiscoveryService: UserDiscoveryServiceProtocol?
     private let actionsSubject: PassthroughSubject<MeetingEditViewModelAction, Never> = .init()
+    /// STMOB-303: набор в поле участников идёт через гашение дребезга. Раньше каждая буква
+    /// сразу уходила поиском по справочнику, прошлые поиски не отменялись, и их поздние
+    /// ответы затирали выдачу по уже набранному тексту.
+    private let searchQuerySubject = PassthroughSubject<String, Never>()
+    private var searchTask: Task<Void, Never>?
 
     var actionsPublisher: AnyPublisher<MeetingEditViewModelAction, Never> {
         actionsSubject.eraseToAnyPublisher()
@@ -36,6 +41,13 @@ class MeetingEditViewModel: MeetingEditViewModelType {
         }
         let initialState = MeetingEditViewState(meetingId: meeting?.id, bindings: bindings)
         super.init(initialViewState: initialState)
+
+        searchQuerySubject
+            .debounceTextQueriesAndRemoveDuplicates()
+            .sink { [weak self] query in
+                self?.searchParticipants(query)
+            }
+            .store(in: &cancellables)
     }
 
     override func process(viewAction: MeetingEditViewAction) {
@@ -45,7 +57,7 @@ class MeetingEditViewModel: MeetingEditViewModelType {
         case .cancel:
             actionsSubject.send(.cancelled)
         case .searchParticipants(let query):
-            searchParticipants(query)
+            searchQuerySubject.send(query)
         case .addParticipant(let user):
             if !state.bindings.participants.contains(where: { $0.userID == user.userID }) {
                 state.bindings.participants.append(user)
@@ -58,15 +70,19 @@ class MeetingEditViewModel: MeetingEditViewModelType {
     }
 
     private func searchParticipants(_ query: String) {
+        searchTask?.cancel()
+
         guard !query.isEmpty, let userDiscoveryService else {
             state.searchResults = []
             state.isSearching = false
             return
         }
         state.isSearching = true
-        Task { [weak self] in
+        searchTask = Task { [weak self] in
             guard let self else { return }
             let result = await userDiscoveryService.searchProfiles(with: query)
+            // Пока ждали ответа, человек набрал дальше — этот ответ уже не про то, что в поле.
+            guard !Task.isCancelled else { return }
             switch result {
             case .success(let profiles):
                 // Filter out already added participants

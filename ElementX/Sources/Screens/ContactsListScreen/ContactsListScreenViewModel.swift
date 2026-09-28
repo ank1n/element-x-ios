@@ -23,6 +23,15 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
     private var orgProfileService: OrgProfileService?
     /// Guards the async DM find-or-create path against repeated contact taps (duplicate opens).
     private var isOpeningContact = false
+    /// STMOB-303: не пускает к справочнику чаще, чем нужно. Подробно — у самого типа ниже.
+    private var directoryGate = UserDirectoryFetchGate()
+    private let now: () -> Date
+    /// STMOB-303: последний известный состав справочника и контакты из комнат. Сеть ходит
+    /// за сторожем, а список собирается из этих двух половин локально — см. publishContacts.
+    private var directoryUsers: [UserProfileProxy] = []
+    private var roomContacts: [ContactItem] = []
+    /// Отложенный повтор похода после неудачи. Один на модель.
+    private var directoryRetryTask: Task<Void, Never>?
 
     private static let favoritesKey = "ru.implica.stalk.favoriteContacts"
     private static let contactsCacheKeyPrefix = "ru.implica.stalk.cachedContacts."
@@ -34,8 +43,9 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
         actionsSubject.eraseToAnyPublisher()
     }
 
-    init(userSession: UserSessionProtocol) {
+    init(userSession: UserSessionProtocol, now: @escaping () -> Date = Date.init) {
         self.userSession = userSession
+        self.now = now
 
         let saved = UserDefaults.standard.stringArray(forKey: Self.favoritesKey) ?? []
         favoriteRoomIDs = Set(saved)
@@ -175,6 +185,12 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
               let cached = try? JSONDecoder().decode([ContactItem].self, from: data) else { return }
         MXLog.info("[Contacts] Loaded \(cached.count) cached contacts")
         state.contacts = cached
+        // Кэш раскладываем на те же две половины, из которых список собирается дальше:
+        // иначе первое же изменение списка комнат стёрло бы справочные записи до похода.
+        roomContacts = cached.filter { !$0.id.hasPrefix("@") }
+        directoryUsers = cached.filter { $0.id.hasPrefix("@") }.map {
+            UserProfileProxy(userID: $0.matrixUserID ?? $0.id, displayName: $0.displayName, avatarURL: $0.avatarURL)
+        }
     }
 
     private func saveCachedContacts() {
@@ -328,14 +344,8 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
             if let heroUserID { userIDs.append(heroUserID) }
         }
 
-        // Preserve cached User Directory contacts (id starts with @) that aren't
-        // already covered by room-based contacts, so they don't disappear while
-        // fetchUserDirectory() runs in the background.
-        let roomMatrixIDs = Set(contacts.compactMap(\.matrixUserID))
-        let cachedDirectoryContacts = state.contacts.filter {
-            $0.id.hasPrefix("@") && !roomMatrixIDs.contains($0.matrixUserID ?? "")
-        }
-        state.contacts = contacts + cachedDirectoryContacts
+        roomContacts = contacts
+        publishContacts()
         state.isLoading = false
         saveCachedContacts()
 
@@ -359,81 +369,251 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
         }
 
         // Source 3: User Directory — async fetch server-wide users
-        fetchUserDirectory(existingUserIDs: seenUserIDs)
+        requestDirectoryFetch()
     }
 
-    /// Fetch all users from User Directory that aren't already in the contacts list.
-    /// Requires Synapse config: user_directory.search_all_users: true
-    private func fetchUserDirectory(existingUserIDs: Set<String>) {
+    /// STMOB-303: собирает список из двух половин — контактов из комнат и последнего известного
+    /// состава справочника. Без сети; зовётся на каждом изменении списка комнат и после похода.
+    ///
+    /// Справочную запись человека, у которого есть личный чат, не выбрасываем, а только прячем.
+    /// Раньше её выбрасывали, и держалось это лишь на том, что справочник перезагружался на
+    /// каждое изменение. С тех пор как поход идёт за сторожем раз в десять минут, выброшенная
+    /// запись пропадала бы на эти десять минут, стоило личному чату исчезнуть из списка комнат:
+    /// поиск или фильтр в «Чатах» (они сужают тот же общий список), выход из чата.
+    private func publishContacts() {
+        let ownUserID = userSession.clientProxy.userID
+        let roomUserIDs = Set(roomContacts.compactMap(\.matrixUserID))
+        let presenceMap = presenceService?.presenceSubject.value ?? [:]
+        let orgProfiles = orgProfileService?.profilesSubject.value ?? [:]
+        // То, что уже известно о человеке (присутствие, должность), при пересборке не теряем,
+        // даже если свежих данных ещё нет — например, сразу после загрузки из кэша.
+        let known = Dictionary(state.contacts.compactMap { contact in contact.matrixUserID.map { ($0, contact) } },
+                               uniquingKeysWith: { first, _ in first })
+
+        let directoryContacts = directoryUsers
+            .filter { $0.userID != ownUserID && !roomUserIDs.contains($0.userID) }
+            .map { user in
+                ContactItem(id: user.userID,
+                            displayName: user.displayName ?? user.userID.replacingOccurrences(of: "@", with: "").components(separatedBy: ":").first ?? user.userID,
+                            avatarURL: user.avatarURL,
+                            matrixUserID: user.userID,
+                            isOnline: false,
+                            lastSeenDate: nil,
+                            isFavorite: false)
+            }
+
+        state.contacts = (roomContacts + directoryContacts).map { contact in
+            var contact = contact
+            contact.isFavorite = favoriteRoomIDs.contains(contact.id)
+            guard let userID = contact.matrixUserID else { return contact }
+
+            if let presence = presenceMap[userID] {
+                contact.isOnline = presence.isOnline
+                contact.lastSeenDate = presence.lastSeenDate
+            } else if let previous = known[userID] {
+                contact.isOnline = previous.isOnline
+                contact.lastSeenDate = previous.lastSeenDate
+            }
+
+            let profile = orgProfiles[userID]
+            contact.jobTitle = profile?.jobTitle ?? known[userID]?.jobTitle
+            contact.department = profile?.department ?? known[userID]?.department
+            return contact
+        }
+    }
+
+    /// STMOB-303: сюда приходит КАЖДОЕ изменение списка комнат — новое сообщение в любом чате,
+    /// прочтение, смена аватарки, поиск в «Чатах». Раньше каждое такое изменение сразу уходило
+    /// в справочник, и на проде это давало до 1422 запросов в минуту. Теперь решает сторож:
+    /// чаще раза в `refreshInterval` не ходим, одновременно — не больше одного похода,
+    /// после отказа ждём.
+    private func requestDirectoryFetch() {
+        guard directoryGate.tryBegin(now: now()) else { return }
+
         Task { [weak self] in
             guard let self else { return }
-            let ownUserID = userSession.clientProxy.userID
+            let result = await fetchUserDirectory()
+            directoryGate.finish(result.outcome, now: now())
+            applyDirectory(result)
 
-            MXLog.info("[Contacts] fetchUserDirectory: existingUserIDs=\(existingUserIDs.count)")
-
-            // Try empty search first (requires search_all_users: true)
-            var users: [UserProfileProxy] = []
-            let result = await userSession.clientProxy.searchUsers(searchTerm: "", limit: 500)
-            if case .success(let searchResults) = result {
-                users = searchResults.results
-                MXLog.info("[Contacts] fetchUserDirectory: empty search returned \(users.count)")
-            }
-
-            // Fallback: if empty search returns nothing, search by common letters
-            if users.isEmpty {
-                MXLog.info("[Contacts] fetchUserDirectory: fallback — searching a-z")
-                var allUsers: [String: UserProfileProxy] = [:]
-                for letter in "abcdefghijklmnopqrstuvwxyz" {
-                    let r = await userSession.clientProxy.searchUsers(searchTerm: String(letter), limit: 50)
-                    if case .success(let sr) = r {
-                        for u in sr.results {
-                            allUsers[u.userID] = u
-                        }
-                    }
-                }
-                users = Array(allUsers.values)
-                MXLog.info("[Contacts] fetchUserDirectory: fallback found \(users.count) unique users")
-            }
-
-            guard !users.isEmpty else { return }
-
-            let presenceMap = presenceService?.presenceSubject.value ?? [:]
-            var newContacts: [ContactItem] = []
-            var newUserIDs: [String] = []
-
-            for user in users {
-                guard user.userID != ownUserID,
-                      !existingUserIDs.contains(user.userID) else { continue }
-
-                let presence = presenceMap[user.userID]
-                newContacts.append(ContactItem(id: user.userID,
-                                               displayName: user.displayName ?? user.userID.replacingOccurrences(of: "@", with: "").components(separatedBy: ":").first ?? user.userID,
-                                               avatarURL: user.avatarURL,
-                                               matrixUserID: user.userID,
-                                               isOnline: presence?.isOnline ?? false,
-                                               lastSeenDate: presence?.lastSeenDate,
-                                               isFavorite: favoriteRoomIDs.contains(user.userID)))
-                newUserIDs.append(user.userID)
-            }
-
-            guard !newContacts.isEmpty else { return }
-            MXLog.info("[Contacts] fetchUserDirectory: adding \(newContacts.count) new contacts")
-
-            await MainActor.run {
-                let existingIDs = Set(self.state.contacts.map(\.id))
-                let existingMatrixIDs = Set(self.state.contacts.compactMap(\.matrixUserID))
-                let filtered = newContacts.filter { !existingIDs.contains($0.id) && !existingMatrixIDs.contains($0.matrixUserID ?? "") }
-                self.state.contacts.append(contentsOf: filtered)
-                MXLog.info("[Contacts] total contacts now: \(self.state.contacts.count)")
-                self.saveCachedContacts()
-            }
-
-            if !newUserIDs.isEmpty {
-                presenceService?.updatePollingUserIDs((presenceService?.currentUserIDs ?? []) + newUserIDs)
-                if let orgProfileService {
-                    await orgProfileService.fetchProfiles(for: newUserIDs)
-                }
+            if result.outcome == .success {
+                directoryRetryTask?.cancel()
+                directoryRetryTask = nil
+            } else {
+                MXLog.warning("[Contacts] fetchUserDirectory: \(result.outcome), следующий поход не раньше \(directoryGate.nextAllowed)")
+                scheduleDirectoryRetry()
             }
         }
+    }
+
+    /// Повтор после неудачи не должен зависеть от того, изменится ли что-то в комнатах:
+    /// у нового сотрудника с пустым кэшем и без чатов изменений может не быть вовсе, и
+    /// «Контакты» остались бы пустыми до перезапуска.
+    ///
+    /// Сон здесь только будит, а не меряет время: если приложение заморозят в фоне, повтор
+    /// просто случится позже, а пускать ли его — решает сторож по часам.
+    private func scheduleDirectoryRetry() {
+        directoryRetryTask?.cancel()
+        let delay = max(directoryGate.nextAllowed.timeIntervalSince(now()), 0)
+        directoryRetryTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled else { return }
+            self?.requestDirectoryFetch()
+        }
+    }
+
+    private struct DirectoryFetchResult {
+        let outcome: UserDirectoryFetchGate.Outcome
+        let users: [UserProfileProxy]
+        /// Весь справочник, а не его часть: можно заменить им прежний состав целиком.
+        let isComplete: Bool
+    }
+
+    /// Fetch all users from User Directory.
+    /// Requires Synapse config: user_directory.search_all_users: true
+    ///
+    /// STMOB-303: любая ошибка останавливает поход целиком. Раньше отказ пустого поиска
+    /// выглядел как «пустой результат» и запускал перебор алфавита — один отказ 429
+    /// превращался в 27 запросов, каждый из которых тоже получал 429.
+    private func fetchUserDirectory() async -> DirectoryFetchResult {
+        // Try empty search first (requires search_all_users: true)
+        switch await userSession.clientProxy.searchUsers(searchTerm: "", limit: 500) {
+        case .success(let searchResults) where !searchResults.results.isEmpty:
+            MXLog.info("[Contacts] fetchUserDirectory: empty search returned \(searchResults.results.count)")
+            return DirectoryFetchResult(outcome: .success, users: searchResults.results, isComplete: true)
+        case .success:
+            break
+        case .failure(let error):
+            // Пустого результата не было — был отказ. Перебор букв здесь только
+            // умножил бы отказы, поэтому возвращаемся сразу.
+            return DirectoryFetchResult(outcome: .init(error), users: [], isComplete: false)
+        }
+
+        // Fallback: if empty search returns nothing, search by common letters
+        MXLog.info("[Contacts] fetchUserDirectory: fallback — searching a-z")
+        var allUsers: [String: UserProfileProxy] = [:]
+        for letter in "abcdefghijklmnopqrstuvwxyz" {
+            switch await userSession.clientProxy.searchUsers(searchTerm: String(letter), limit: 50) {
+            case .success(let sr):
+                for u in sr.results {
+                    allUsers[u.userID] = u
+                }
+            case .failure(let error):
+                // Собранное до отказа не выбрасываем — показываем, что успели.
+                MXLog.warning("[Contacts] fetchUserDirectory: fallback stopped at '\(letter)'")
+                return DirectoryFetchResult(outcome: .init(error), users: Array(allUsers.values), isComplete: false)
+            }
+        }
+        MXLog.info("[Contacts] fetchUserDirectory: fallback found \(allUsers.count) unique users")
+        return DirectoryFetchResult(outcome: .success, users: Array(allUsers.values), isComplete: true)
+    }
+
+    private func applyDirectory(_ result: DirectoryFetchResult) {
+        let ownUserID = userSession.clientProxy.userID
+        let previousUserIDs = Set(directoryUsers.map(\.userID))
+
+        if result.isComplete {
+            var seen = Set<String>()
+            directoryUsers = result.users.filter { seen.insert($0.userID).inserted }
+        } else if !result.users.isEmpty {
+            // Часть справочника: дополняем и освежаем, но никого не выбрасываем.
+            var merged = Dictionary(directoryUsers.map { ($0.userID, $0) }, uniquingKeysWith: { first, _ in first })
+            for user in result.users {
+                merged[user.userID] = user
+            }
+            directoryUsers = Array(merged.values)
+        } else {
+            return
+        }
+
+        publishContacts()
+        MXLog.info("[Contacts] directory users: \(directoryUsers.count), total contacts now: \(state.contacts.count)")
+        saveCachedContacts()
+
+        let newUserIDs = directoryUsers.map(\.userID).filter { $0 != ownUserID && !previousUserIDs.contains($0) }
+        guard !newUserIDs.isEmpty else { return }
+
+        presenceService?.updatePollingUserIDs((presenceService?.currentUserIDs ?? []) + newUserIDs)
+        if let orgProfileService {
+            Task { await orgProfileService.fetchProfiles(for: newUserIDs) }
+        }
+    }
+}
+
+// MARK: - STMOB-303
+
+/// Сторож походов «Контактов» в справочник пользователей Synapse.
+///
+/// Раньше «Контакты» шли в справочник на КАЖДОЕ изменение списка комнат, и каждый поход
+/// был пустым поиском плюс перебором 26 букв. Отказ 429 выглядел как пустой результат и
+/// сам запускал перебор, поэтому один отказ превращался в 27 запросов, а следующее
+/// сообщение в любом чате добавляло ещё 27 поверх. На проде — до 1422 запросов в минуту,
+/// 80% отбиты сервером.
+///
+/// Правила:
+/// - одновременно не больше одного похода;
+/// - после удачи — не чаще раза в `refreshInterval`: состав справочника от новых сообщений
+///   не меняется, а видимые контакты и так держатся из кэша;
+/// - после отказа — отступ с удвоением от `initialBackoff`, но не меньше, чем просит сервер
+///   в `retry_after_ms`, и не больше `maxBackoff`.
+///
+/// Сам сторож только решает «можно ли сейчас» по часам. Повтор после отказа планирует
+/// модель (scheduleDirectoryRetry), чтобы он не зависел от изменений в комнатах.
+struct UserDirectoryFetchGate {
+    enum Outcome: Equatable, CustomStringConvertible {
+        case success
+        case rateLimited(retryAfter: TimeInterval?)
+        case failed
+
+        init(_ error: ClientProxyError) {
+            self = error.isRateLimited ? .rateLimited(retryAfter: error.retryAfter) : .failed
+        }
+
+        var description: String {
+            switch self {
+            case .success: "успех"
+            case .rateLimited(let retryAfter): "отказ по частоте, сервер просит \(retryAfter.map { "\($0) с" } ?? "без срока")"
+            case .failed: "ошибка"
+            }
+        }
+    }
+
+    var refreshInterval: TimeInterval = 10 * 60
+    var initialBackoff: TimeInterval = 1
+    var maxBackoff: TimeInterval = 10 * 60
+
+    private(set) var isInFlight = false
+    private(set) var nextAllowed = Date.distantPast
+    private(set) var consecutiveFailures = 0
+
+    /// Можно ли идти сейчас. Если да — поход считается начатым до вызова `finish`.
+    mutating func tryBegin(now: Date) -> Bool {
+        guard !isInFlight, now >= nextAllowed else { return false }
+        isInFlight = true
+        return true
+    }
+
+    mutating func finish(_ outcome: Outcome, now: Date) {
+        isInFlight = false
+
+        switch outcome {
+        case .success:
+            consecutiveFailures = 0
+            nextAllowed = now.addingTimeInterval(refreshInterval)
+        case .rateLimited(let retryAfter):
+            consecutiveFailures += 1
+            // Просьбу сервера уважаем, но не больше потолка: модель живёт всю сессию, и
+            // ошибочный огромный срок закрыл бы справочник до перезапуска приложения.
+            nextAllowed = now.addingTimeInterval(min(max(retryAfter ?? 0, currentBackoff), maxBackoff))
+        case .failed:
+            consecutiveFailures += 1
+            nextAllowed = now.addingTimeInterval(currentBackoff)
+        }
+    }
+
+    /// 1, 2, 4, 8… секунд с потолком. Степень ограничена, чтобы не уйти в бесконечность.
+    private var currentBackoff: TimeInterval {
+        let exponent = Double(min(max(consecutiveFailures - 1, 0), 30))
+        return min(initialBackoff * pow(2, exponent), maxBackoff)
     }
 }

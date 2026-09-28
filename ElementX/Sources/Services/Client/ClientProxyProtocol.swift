@@ -61,6 +61,75 @@ enum ClientProxyError: Error {
     case httpError(status: Int, body: String)
 }
 
+// STMOB-303: сервер отказал по частоте запросов (M_LIMIT_EXCEEDED, HTTP 429).
+//
+// Раньше этот признак нигде не читался: отказ выглядел как любая ошибка, и вызывающий код
+// сразу пробовал снова.
+//
+// ⚠️ SDK отдаёт отказ ДВУМЯ способами, и какой придёт — зависит от вызова, а не от сервера.
+// Вызовы, ошибка которых идёт через matrix_sdk::Error, дают ClientError.MatrixApi с
+// kind = .limitExceeded. Но часть вызовов возвращает голый HttpError, и FFI превращает его
+// в ClientError.Generic — только текст. Так устроен и поиск по справочнику (Client::search_users
+// в SDK 26.06.03): там приходит
+//     msg:     «the server returned an error: [429 / M_LIMIT_EXCEEDED] Too Many Requests»
+//     details: отладочная строка ruma с «retry_after: Some(Delay(10s))».
+// Первая версия правки ждала только MatrixApi, и на проде распознавание было мёртвым.
+extension ClientProxyError {
+    var isRateLimited: Bool {
+        switch self {
+        case .sdkError(let error):
+            switch error as? ClientError {
+            case .MatrixApi(let kind, _, _, _):
+                if case .limitExceeded = kind { return true }
+                return false
+            case .Generic(let msg, let details):
+                return Self.mentionsRateLimit(msg) || details.map(Self.mentionsRateLimit) == true
+            case nil:
+                return false
+            }
+        case .httpError(let status, _):
+            return status == 429
+        default:
+            return false
+        }
+    }
+
+    /// Сколько сервер просит подождать перед повтором. nil — отказ не по частоте
+    /// или сервер срок не назвал.
+    var retryAfter: TimeInterval? {
+        guard case .sdkError(let error) = self else { return nil }
+
+        switch error as? ClientError {
+        case .MatrixApi(let kind, _, _, _):
+            guard case .limitExceeded(let retryAfterMs) = kind, let retryAfterMs else { return nil }
+            return TimeInterval(retryAfterMs) / 1000
+        case .Generic(_, let details):
+            guard isRateLimited, let details else { return nil }
+            return Self.retryDelay(inDebugDescription: details)
+        case nil:
+            return nil
+        }
+    }
+
+    private static func mentionsRateLimit(_ text: String) -> Bool {
+        text.contains("M_LIMIT_EXCEEDED") || text.contains("[429 /") || text.contains("[429]")
+    }
+
+    /// Срок из отладочной строки ruma: `Delay(10s)`, `Delay(1.5s)`, `Delay(500ms)`.
+    /// Вариант `DateTime(…)` не разбираем — тогда сторож отступит по своему расписанию.
+    static func retryDelay(inDebugDescription text: String) -> TimeInterval? {
+        guard let match = text.firstMatch(of: #/Delay\((\d+(?:\.\d+)?)(ns|µs|us|ms|s)\)/#),
+              let value = Double(match.1) else { return nil }
+
+        return switch match.2 {
+        case "s": value
+        case "ms": value / 1000
+        case "µs", "us": value / 1_000_000
+        default: value / 1_000_000_000
+        }
+    }
+}
+
 enum SlidingSyncConstants {
     static let maximumVisibleRangeSize = 30
 }
