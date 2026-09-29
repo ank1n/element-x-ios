@@ -3,7 +3,10 @@
     {
       "id": "D789E5F1-30B8-4A23-B20E-281ACE05CFD6",
       "name": "Default",
-      "options": {}
+      "options": {
+        "language": "en",
+        "region": "GB"
+      }
     }
   ],
   "defaultOptions": {

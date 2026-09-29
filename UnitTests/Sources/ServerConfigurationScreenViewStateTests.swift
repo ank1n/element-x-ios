@@ -16,9 +16,14 @@ class ServerConfirmationScreenViewStateTests: XCTestCase {
                                                                   authenticationFlow: .login)
         XCTAssertEqual(matrixDotOrgLogin.message, L10n.screenServerConfirmationMessageLoginMatrixDotOrg, "matrix.org should have a custom message.")
         
-        let elementDotIoLogin = ServerConfirmationScreenViewState(mode: .confirmation("element.io"),
+        // STMOB-310: ребрендинг STMOB-30 (580ba8863) отдал «свою» подпись серверу stalk.implica.ru вместо element.io.
+        let elementDotIoLogin = ServerConfirmationScreenViewState(mode: .confirmation("stalk.implica.ru"),
                                                                   authenticationFlow: .login)
-        XCTAssertEqual(elementDotIoLogin.message, L10n.screenServerConfirmationMessageLoginElementDotIo, "element.io should have a custom message.")
+        XCTAssertEqual(elementDotIoLogin.message, L10n.screenServerConfirmationMessageLoginElementDotIo, "stalk.implica.ru should have a custom message.")
+        
+        let upstreamElementDotIoLogin = ServerConfirmationScreenViewState(mode: .confirmation("element.io"),
+                                                                          authenticationFlow: .login)
+        XCTAssertEqual(upstreamElementDotIoLogin.message, "", "element.io is an ordinary server in sTalk.")
         
         let otherLogin = ServerConfirmationScreenViewState(mode: .confirmation(LoginHomeserver.mockOIDC.address),
                                                            authenticationFlow: .login)

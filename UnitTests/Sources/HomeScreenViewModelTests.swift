@@ -199,6 +199,11 @@ class HomeScreenViewModelTests: XCTestCase {
         XCTAssertFalse(context.viewState.shouldShowEmptyFilterState)
     }
     
+    // STMOB-310: в sTalk баннеры безопасности на главном экране подавлены намеренно
+    // (7417339c8, «sTalk: Don't show security banners» в HomeScreenViewModel): ключи
+    // восстанавливает setupAutoRecovery(). Тесты ниже проверяют контракт форка — ни при
+    // каком recoveryState баннер не показывается и доп. настройка аккаунта не требуется.
+    
     func testSetUpRecoveryBannerState() async throws {
         // Given a view model without a visible security banner.
         let securityStateStateSubject = CurrentValueSubject<SessionSecurityState, Never>(.init(verificationState: .verified, recoveryState: .unknown))
@@ -206,39 +211,43 @@ class HomeScreenViewModelTests: XCTestCase {
         XCTAssertEqual(context.viewState.securityBannerMode, .none)
         
         // When the recovery state comes through as disabled.
-        var deferred = deferFulfillment(context.$viewState) { $0.requiresExtraAccountSetup == true }
+        var failure = deferFailure(context.$viewState, timeout: 1) { $0.securityBannerMode.isShown || $0.requiresExtraAccountSetup }
         securityStateStateSubject.send(.init(verificationState: .verified, recoveryState: .disabled))
-        try await deferred.fulfill()
+        try await failure.fulfill()
         
-        // Then the banner should be shown to set up recovery.
-        XCTAssertEqual(context.viewState.securityBannerMode, .show(.setUpRecovery))
+        // Then the set up recovery banner should not be shown (STMOB-310).
+        XCTAssertEqual(context.viewState.securityBannerMode, .none)
+        XCTAssertFalse(context.viewState.requiresExtraAccountSetup)
         
         // When the recovery is enabled.
-        deferred = deferFulfillment(context.$viewState) { $0.requiresExtraAccountSetup == false }
+        failure = deferFailure(context.$viewState, timeout: 1) { $0.securityBannerMode.isShown || $0.requiresExtraAccountSetup }
         securityStateStateSubject.send(.init(verificationState: .verified, recoveryState: .enabled))
-        try await deferred.fulfill()
+        try await failure.fulfill()
         
-        // Then the banner should no longer be shown.
+        // Then there is still no banner.
         XCTAssertEqual(context.viewState.securityBannerMode, .none)
+        XCTAssertFalse(context.viewState.requiresExtraAccountSetup)
     }
     
     func testDismissSetUpRecoveryBannerState() async throws {
-        // Given a view model with the setup recovery banner shown.
+        // Given a view model where recovery is disabled — in sTalk the banner is not shown (STMOB-310).
         let securityStateStateSubject = CurrentValueSubject<SessionSecurityState, Never>(.init(verificationState: .verified, recoveryState: .unknown))
         setupViewModel(securityStatePublisher: securityStateStateSubject.asCurrentValuePublisher())
-        var deferred = deferFulfillment(context.$viewState) { $0.securityBannerMode == .show(.setUpRecovery) }
+        var failure = deferFailure(context.$viewState, timeout: 1) { $0.securityBannerMode.isShown }
         securityStateStateSubject.send(.init(verificationState: .verified, recoveryState: .disabled))
-        try await deferred.fulfill()
+        try await failure.fulfill()
         
         // When the banner is dismissed.
-        deferred = deferFulfillment(context.$viewState) { $0.securityBannerMode == .dismissed }
+        let deferred = deferFulfillment(context.$viewState) { $0.securityBannerMode == .dismissed }
         context.send(viewAction: .skipRecoveryKeyConfirmation)
         
         // Then the banner should no longer be shown.
         try await deferred.fulfill()
         
         // And when the recovery state comes through a second time the banner should still not be shown.
-        let failure = deferFailure(context.$viewState, timeout: 1) { $0.securityBannerMode != .dismissed }
+        // STMOB-310: подписка форка сбрасывает режим в .none (а не держит .dismissed) — для экрана
+        // это то же «баннера нет», поэтому проверяем именно отсутствие показа.
+        failure = deferFailure(context.$viewState, timeout: 1) { $0.securityBannerMode.isShown }
         securityStateStateSubject.send(.init(verificationState: .verified, recoveryState: .disabled))
         try await failure.fulfill()
     }
@@ -250,20 +259,22 @@ class HomeScreenViewModelTests: XCTestCase {
         XCTAssertEqual(context.viewState.securityBannerMode, .none)
         
         // When the recovery state comes through as incomplete.
-        var deferred = deferFulfillment(context.$viewState) { $0.requiresExtraAccountSetup == true }
+        var failure = deferFailure(context.$viewState, timeout: 1) { $0.securityBannerMode.isShown || $0.requiresExtraAccountSetup }
         securityStateStateSubject.send(.init(verificationState: .verified, recoveryState: .incomplete))
-        try await deferred.fulfill()
+        try await failure.fulfill()
         
-        // Then the banner should be shown for out of sync recovery.
-        XCTAssertEqual(context.viewState.securityBannerMode, .show(.recoveryOutOfSync))
+        // Then the out of sync banner should not be shown (STMOB-310).
+        XCTAssertEqual(context.viewState.securityBannerMode, .none)
+        XCTAssertFalse(context.viewState.requiresExtraAccountSetup)
         
         // When the recovery is enabled.
-        deferred = deferFulfillment(context.$viewState) { $0.requiresExtraAccountSetup == false }
+        failure = deferFailure(context.$viewState, timeout: 1) { $0.securityBannerMode.isShown || $0.requiresExtraAccountSetup }
         securityStateStateSubject.send(.init(verificationState: .verified, recoveryState: .enabled))
-        try await deferred.fulfill()
+        try await failure.fulfill()
         
-        // Then the banner should no longer be shown.
+        // Then there is still no banner.
         XCTAssertEqual(context.viewState.securityBannerMode, .none)
+        XCTAssertFalse(context.viewState.requiresExtraAccountSetup)
     }
     
     func testInviteUnreadBadge() async throws {
@@ -341,8 +352,13 @@ class HomeScreenViewModelTests: XCTestCase {
             
             return .invited(roomProxy)
         }
+        // STMOB-310: заглушка rejectInvitation срабатывает раньше, чем модель дождётся
+        // removeDeliveredMessageNotifications и уберёт приглашение из seenInvites. Ждём последний
+        // шаг declineInvite (изменение seenInvites), иначе ассерты ниже гоняются с моделью.
+        let deferredSeenInvites = deferFulfillment(appSettings.$seenInvites) { $0 == [invitedRoomIDs[1]] }
         context.viewState.bindings.alertInfo?.verticalButtons?[0].action?()
         await fulfillment(of: [rejectExpectation], timeout: 1.0)
+        try await deferredSeenInvites.fulfill()
         
         XCTAssertEqual(appSettings.seenInvites, [invitedRoomIDs[1]])
         XCTAssertTrue(notificationManager.removeDeliveredMessageNotificationsForCalled)

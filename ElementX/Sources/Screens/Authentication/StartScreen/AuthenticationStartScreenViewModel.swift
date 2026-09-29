@@ -29,7 +29,8 @@ class AuthenticationStartScreenViewModel: AuthenticationStartScreenViewModelType
          provisioningParameters: AccountProvisioningParameters?,
          isBugReportServiceEnabled: Bool,
          appSettings: AppSettings,
-         userIndicatorController: UserIndicatorControllerProtocol) {
+         userIndicatorController: UserIndicatorControllerProtocol,
+         savedAccountsStore: SavedAccountsStore = SavedAccountsStore()) { // STMOB-310: подмена хранилища в тестах
         self.authenticationService = authenticationService
         self.provisioningParameters = provisioningParameters
         self.appSettings = appSettings
@@ -43,7 +44,7 @@ class AuthenticationStartScreenViewModel: AuthenticationStartScreenViewModelType
         // merged into the picker below (deduplicated with the configured default). Without this
         // the picker only ever showed the hardcoded stalk.implica.ru, so e.g. stalk.implica.uz
         // vanished after relaunch and the capsule could drift out of sync with the list.
-        let savedServers = SavedAccountsStore().getAll().map(\.serverURL)
+        let savedServers = savedAccountsStore.getAll().map(\.serverURL)
         let lastUsedServer = savedServers.first
 
         let initialViewState = if !appSettings.allowOtherAccountProviders {

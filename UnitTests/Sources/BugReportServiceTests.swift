@@ -15,6 +15,11 @@ class BugReportServiceTests: XCTestCase {
     var appSettings: AppSettings!
     var bugReportService: BugReportServiceProtocol!
 
+    // STMOB-310: в форке отчёт уходит задачей в TrackIT (Plane), а не на rageshake —
+    // STMOB-88 (0fe11d990). Сервис возвращает страницу созданной задачи, а URL rageshake
+    // из настроек только включает или выключает отправку (isEnabled).
+    private let trackitIssueReportURL = "https://trackit.implica.ru/implica/projects/a0b9904b-b856-422f-9540-3b975e54f42e/issues/\(MockURLProtocol.createdIssueID)"
+
     override func setUpWithError() throws {
         AppSettings.resetAllSettings()
         appSettings = AppSettings()
@@ -95,11 +100,11 @@ class BugReportServiceTests: XCTestCase {
         let progressSubject = CurrentValueSubject<Double, Never>(0.0)
         let response = try await service.submitBugReport(bugReport, progressListener: progressSubject).get()
         
-        XCTAssertEqual(response.reportURL, "https://example.com/123")
+        XCTAssertEqual(response.reportURL, trackitIssueReportURL)
     }
     
     @MainActor func testConfigurations() async throws {
-        guard case let .url(initialURL) = appSettings.bugReportRageshakeURL.publisher.value else {
+        guard case .url = appSettings.bugReportRageshakeURL.publisher.value else {
             XCTFail("Unexpected initial configuration.")
             return
         }
@@ -130,14 +135,15 @@ class BugReportServiceTests: XCTestCase {
         let progressSubject = CurrentValueSubject<Double, Never>(0.0)
         let customConfigurationResponse = try await service.submitBugReport(bugReport, progressListener: progressSubject).get()
         
-        XCTAssertEqual(customConfigurationResponse.reportURL, "https://bugs.server.net/123")
+        // STMOB-310: свой URL rageshake не меняет получателя — это всё равно задача в TrackIT.
+        XCTAssertEqual(customConfigurationResponse.reportURL, trackitIssueReportURL)
         
         appSettings.bugReportRageshakeURL.reset()
         XCTAssertTrue(service.isEnabled)
         
         let defaultConfigurationResponse = try await service.submitBugReport(bugReport, progressListener: progressSubject).get()
         
-        XCTAssertEqual(defaultConfigurationResponse.reportURL, initialURL.absoluteString.replacingOccurrences(of: "submit", with: "123"))
+        XCTAssertEqual(defaultConfigurationResponse.reportURL, trackitIssueReportURL)
     }
     
     func testLogsMaxSize() {
@@ -167,13 +173,19 @@ class BugReportServiceTests: XCTestCase {
 }
 
 private class MockURLProtocol: URLProtocol {
+    // STMOB-310: форк создаёт задачу через API Plane (STMOB-88). Созданной задачей
+    // отвечаем только на POST в список задач проекта — так тест проверяет и получателя
+    // отчёта. Остальные запросы (вложения) получают 404, и сервис их пропускает.
+    static let trackitIssuesEndpoint = "https://trackit.implica.ru/api/v1/workspaces/implica/projects/a0b9904b-b856-422f-9540-3b975e54f42e/issues/"
+    static let createdIssueID = "123"
+    
     override func startLoading() {
         guard let url = request.url else { return }
-        let reportURL = url.deletingLastPathComponent().appending(path: "123")
-        let response = "{\"report_url\":\"\(reportURL.absoluteString)\"}"
+        let isIssueCreation = request.httpMethod == "POST" && url.absoluteString == Self.trackitIssuesEndpoint
+        let response = isIssueCreation ? "{\"id\":\"\(Self.createdIssueID)\",\"sequence_id\":123}" : "{}"
         
         if let data = response.data(using: .utf8),
-           let urlResponse = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil) {
+           let urlResponse = HTTPURLResponse(url: url, statusCode: isIssueCreation ? 201 : 404, httpVersion: nil, headerFields: nil) {
             client?.urlProtocol(self, didReceive: urlResponse, cacheStoragePolicy: .allowedInMemoryOnly)
             client?.urlProtocol(self, didLoad: data)
             client?.urlProtocolDidFinishLoading(self)

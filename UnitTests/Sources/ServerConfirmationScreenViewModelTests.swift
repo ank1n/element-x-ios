@@ -213,7 +213,8 @@ class ServerConfirmationScreenViewModelTests: XCTestCase {
         
         // Then the configuration should fail with an alert telling the user to download Element Pro.
         XCTAssertEqual(clientFactory.makeClientHomeserverAddressSessionDirectoriesPassphraseClientSessionDelegateAppSettingsAppHooksCallsCount, 1)
-        XCTAssertEqual(context.alertInfo?.id, .elementProRequired(serverName: "matrix.org"))
+        // STMOB-310: имя сервера в алерте — сервер по умолчанию (stalk.implica.ru), см. setupViewModel.
+        XCTAssertEqual(context.alertInfo?.id, .elementProRequired(serverName: appSettings.accountProviders[0]))
     }
     
     // MARK: - Picker mode
@@ -310,7 +311,9 @@ class ServerConfirmationScreenViewModelTests: XCTestCase {
                                 supportsPasswordLogin: Bool = true,
                                 restrictedFlow: Bool = false,
                                 requiresElementPro: Bool = false) {
-        var mode = ServerConfirmationScreenMode.confirmation("matrix.org")
+        // STMOB-310: сервис стартует с accountProviders[0], и экран в режиме подтверждения берёт адрес
+        // у сервиса. В sTalk это stalk.implica.ru (8d9ef0fcb), а не matrix.org, как считал апстрим.
+        var mode = ServerConfirmationScreenMode.confirmation(appSettings.accountProviders[0])
         if restrictedFlow {
             appSettings.override(accountProviders: ["matrix.org", "beta.matrix.org"],
                                  allowOtherAccountProviders: false,
@@ -336,11 +339,15 @@ class ServerConfirmationScreenViewModelTests: XCTestCase {
         }
         
         // Manually create a configuration as the default homeserver address setting is immutable.
-        client = ClientSDKMock(.init(oAuthLoginURL: supportsOIDC ? "https://account.matrix.org/authorize" : nil,
+        // STMOB-310: мок клиента вешаем на фактический сервер по умолчанию (после override — matrix.org,
+        // иначе stalk.implica.ru); иначе configure получает «Not a known homeserver».
+        let defaultProvider = appSettings.accountProviders[0]
+        client = ClientSDKMock(.init(serverAddress: defaultProvider,
+                                     oAuthLoginURL: supportsOIDC ? "https://account.matrix.org/authorize" : nil,
                                      supportsOAuthCreatePrompt: supportsOAuthCreatePrompt,
                                      supportsPasswordLogin: supportsPasswordLogin,
                                      elementWellKnown: requiresElementPro ? "{\"version\":1,\"enforce_element_pro\":true}" : nil))
-        let configuration = AuthenticationClientFactoryMock.Configuration(homeserverClients: ["matrix.org": client])
+        let configuration = AuthenticationClientFactoryMock.Configuration(homeserverClients: [defaultProvider: client])
         
         clientFactory = AuthenticationClientFactoryMock(configuration: configuration)
         service = AuthenticationService(userSessionStore: UserSessionStoreMock(configuration: .init()),

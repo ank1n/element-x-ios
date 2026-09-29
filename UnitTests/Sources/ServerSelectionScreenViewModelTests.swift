@@ -110,9 +110,12 @@ class ServerSelectionScreenViewModelTests: XCTestCase {
     func testInvalidServer() async throws {
         // Given a new instance of the view model.
         setupViewModel(authenticationFlow: .login)
+        // STMOB-310: во входе сюда попадают из QR-фоллбэка, и обычная подпись под полем —
+        // подсказка «нет активных устройств» (STMOB-217, 9439083ab), а не апстримовая.
+        let standardLoginFooter = SL10n.authNoDevicesHint
         XCTAssertFalse(context.viewState.isShowingFooterError, "There should not be an error message for a new view model.")
         XCTAssertNil(context.viewState.footerErrorMessage, "There should not be an error message for a new view model.")
-        XCTAssertEqual(String(context.viewState.footerMessage), L10n.screenChangeServerFormNotice,
+        XCTAssertEqual(String(context.viewState.footerMessage), standardLoginFooter,
                        "The standard footer message should be shown.")
         
         // When attempting to discover an invalid server
@@ -124,7 +127,7 @@ class ServerSelectionScreenViewModelTests: XCTestCase {
         // Then the footer should now be showing an error.
         XCTAssertTrue(context.viewState.isShowingFooterError, "The error message should be stored.")
         XCTAssertNotNil(context.viewState.footerErrorMessage, "The error message should be stored.")
-        XCTAssertNotEqual(String(context.viewState.footerMessage), L10n.screenChangeServerFormNotice,
+        XCTAssertNotEqual(String(context.viewState.footerMessage), standardLoginFooter,
                           "The error message should be shown.")
         
         // And when clearing the error.
@@ -135,7 +138,7 @@ class ServerSelectionScreenViewModelTests: XCTestCase {
         
         // Then the error message should now be removed.
         XCTAssertNil(context.viewState.footerErrorMessage, "The error message should have been cleared.")
-        XCTAssertEqual(String(context.viewState.footerMessage), L10n.screenChangeServerFormNotice,
+        XCTAssertEqual(String(context.viewState.footerMessage), standardLoginFooter,
                        "The standard footer message should be shown again.")
     }
     

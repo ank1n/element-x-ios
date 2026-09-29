@@ -27,12 +27,14 @@ class RoomScreenViewModelTests: XCTestCase {
     
     func testPinnedEventsBanner() async throws {
         var configuration = JoinedRoomProxyMockConfiguration()
-        let timelineSubject = PassthroughSubject<TimelineProxyProtocol, Never>()
+        // STMOB-310: CurrentValueSubject, а не Passthrough — модель подписывается асинхронно, и под
+        // нагрузкой полного прогона send успевал раньше подписки: лента терялась, тест ждал 10 с и падал.
+        let timelineSubject = CurrentValueSubject<TimelineProxyProtocol?, Never>(nil)
         let infoSubject = CurrentValueSubject<RoomInfoProxyProtocol, Never>(RoomInfoProxyMock(configuration))
         let roomProxyMock = JoinedRoomProxyMock(configuration)
         // setup a way to inject the mock of the pinned events timeline
         roomProxyMock.pinnedEventsTimelineClosure = {
-            guard let timeline = await timelineSubject.values.first() else {
+            guard let timeline = await timelineSubject.values.compactMap({ $0 }).first(where: { _ in true }) else {
                 fatalError()
             }
             

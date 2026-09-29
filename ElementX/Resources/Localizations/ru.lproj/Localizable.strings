@@ -210,7 +210,7 @@
 "common_edited_suffix" = "(изменено)";
 "common_editing" = "Редактирование";
 "common_editing_caption" = "Редактирование подписи";
-"common_emote" = "%1$@%2$@";
+"common_emote" = "* %1$@ %2$@";
 "common_empty_file" = "Пустой файл";
 "common_encryption" = "Шифрование";
 "common_encryption_enabled" = "Шифрование включено";

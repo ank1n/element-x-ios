@@ -55,7 +55,9 @@ class CallScreenViewModelTests: XCTestCase {
         let state = makeState()
         XCTAssertFalse(state.isMuted)
         XCTAssertTrue(state.isVideoEnabled)
-        XCTAssertTrue(state.isSpeakerOn)
+        // STMOB-310: isSpeakerOn — зеркало реального аудиомаршрута; до подключения он не выбран (false, 75388192f).
+        // «Динамик по умолчанию» (604e3401f) ставится при connect: connectNativeLiveKit → state.isSpeakerOn = useSpeaker.
+        XCTAssertFalse(state.isSpeakerOn)
         XCTAssertFalse(state.isHandRaised)
         XCTAssertFalse(state.isScreenSharing)
         XCTAssertFalse(state.isMinimized)

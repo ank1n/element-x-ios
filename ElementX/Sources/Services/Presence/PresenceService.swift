@@ -218,6 +218,10 @@ final class PresenceService {
         interests[key] ?? []
     }
     
+    func isSuspended(_ key: PresenceInterest) -> Bool {
+        suspendedInterests.contains(key)
+    }
+    
     /// STMOB-311: вкладка скрыта — её строки не опрашиваем, но набор помним до возврата.
     func setSuspended(_ key: PresenceInterest, _ isSuspended: Bool) {
         guard suspendedInterests.contains(key) != isSuspended else { return }

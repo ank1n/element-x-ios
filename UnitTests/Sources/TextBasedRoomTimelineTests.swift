@@ -10,6 +10,10 @@
 import XCTest
 
 final class TextBasedRoomTimelineTests: XCTestCase {
+    /// STMOB-310: sTalk резервирует место под галочки доставки (✓/✓✓) у исходящих —
+    /// `additionalWhitespaces()` добавляет 3 пробела (f8bb0149b, комментарий «sTalk: extra space for delivery checkmarks»).
+    private let outgoingCheckmarksWhitespaces = 3
+
     func testTextRoomTimelineItemWhitespaceEnd() {
         let timestamp = Calendar.current.startOfDay(for: .now).addingTimeInterval(60 * 60) // 1:00 am
         let timelineItem = TextRoomTimelineItem(id: .randomEvent,
@@ -19,7 +23,7 @@ final class TextBasedRoomTimelineTests: XCTestCase {
                                                 canBeRepliedTo: true,
                                                 sender: .init(id: UUID().uuidString),
                                                 content: .init(body: "Test"))
-        XCTAssertEqual(timelineItem.additionalWhitespaces(), timestamp.formattedTime().count + 1)
+        XCTAssertEqual(timelineItem.additionalWhitespaces(), timestamp.formattedTime().count + 1 + outgoingCheckmarksWhitespaces)
     }
 
     func testTextRoomTimelineItemWhitespaceEndLonger() {
@@ -31,7 +35,7 @@ final class TextBasedRoomTimelineTests: XCTestCase {
                                                 canBeRepliedTo: true,
                                                 sender: .init(id: UUID().uuidString),
                                                 content: .init(body: "Test"))
-        XCTAssertEqual(timelineItem.additionalWhitespaces(), timestamp.formattedTime().count + 1)
+        XCTAssertEqual(timelineItem.additionalWhitespaces(), timestamp.formattedTime().count + 1 + outgoingCheckmarksWhitespaces)
     }
 
     func testTextRoomTimelineItemWhitespaceEndWithEdit() {
@@ -45,7 +49,7 @@ final class TextBasedRoomTimelineTests: XCTestCase {
                                                 content: .init(body: "Test"))
         timelineItem.properties.isEdited = true
         let editedCount = L10n.commonEditedSuffix.count
-        XCTAssertEqual(timelineItem.additionalWhitespaces(), timestamp.formattedTime().count + editedCount + 2)
+        XCTAssertEqual(timelineItem.additionalWhitespaces(), timestamp.formattedTime().count + editedCount + 2 + outgoingCheckmarksWhitespaces)
     }
 
     func testTextRoomTimelineItemWhitespaceEndWithEditAndAlert() {
@@ -60,6 +64,19 @@ final class TextBasedRoomTimelineTests: XCTestCase {
         timelineItem.properties.isEdited = true
         timelineItem.properties.deliveryStatus = .sendingFailed(.unknown)
         let editedCount = L10n.commonEditedSuffix.count
-        XCTAssertEqual(timelineItem.additionalWhitespaces(), timestamp.formattedTime().count + editedCount + 5)
+        XCTAssertEqual(timelineItem.additionalWhitespaces(), timestamp.formattedTime().count + editedCount + 5 + outgoingCheckmarksWhitespaces)
+    }
+
+    /// STMOB-310: у входящих галочек нет — и запаса под них быть не должно.
+    func testTextRoomTimelineItemWhitespaceEndIncoming() {
+        let timestamp = Date.mock
+        let timelineItem = TextRoomTimelineItem(id: .randomEvent,
+                                                timestamp: timestamp,
+                                                isOutgoing: false,
+                                                isEditable: false,
+                                                canBeRepliedTo: true,
+                                                sender: .init(id: UUID().uuidString),
+                                                content: .init(body: "Test"))
+        XCTAssertEqual(timelineItem.additionalWhitespaces(), timestamp.formattedTime().count + 1)
     }
 }

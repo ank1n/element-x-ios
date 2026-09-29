@@ -12,6 +12,8 @@ class UnitTestsAppCoordinator: AppCoordinatorProtocol {
     private let targetConfiguration: Target.ConfigurationResult
     static let targetRageshakeURL = RemotePreference<RageshakeConfiguration>(.url("bugs.example.com/submit"))
     static let targetAppHooks = AppHooks()
+    /// STMOB-310: отдельный набор UserDefaults для истории звонков в юнит-тестах.
+    static let callHistorySuiteName = "ru.implica.stalk.unittests.callhistory"
     
     let windowManager: SecureWindowManagerProtocol
     
@@ -27,6 +29,19 @@ class UnitTestsAppCoordinator: AppCoordinatorProtocol {
         analyticsClient.isRunning = false
         ServiceLocator.shared.register(analytics: AnalyticsService(client: analyticsClient,
                                                                    appSettings: ServiceLocator.shared.settings))
+        
+        // STMOB-310: localCallHistoryService в ServiceLocator неявно развёрнутый, в проде его
+        // регистрирует AppCoordinator.setupServiceLocator. Без него вкладка «Звонки»
+        // (CallsListScreenViewModel) роняла весь тестовый процесс в UserSessionFlowCoordinatorTests.
+        // Хранилище — свой набор UserDefaults, очищаемый при старте: тесты не читают и не портят
+        // историю звонков приложения на том же симуляторе. Остальные sTalk-сервисы
+        // (recordingService, cacheService, bookmarkService, voiceTranscriptionStore) опциональны
+        // и намеренно не регистрируются — с ними меняется поведение экранов в других тестах.
+        guard let callHistoryDefaults = UserDefaults(suiteName: Self.callHistorySuiteName) else {
+            fatalError("STMOB-310: не удалось открыть UserDefaults для истории звонков")
+        }
+        callHistoryDefaults.removePersistentDomain(forName: Self.callHistorySuiteName)
+        ServiceLocator.shared.register(localCallHistoryService: LocalCallHistoryService(userDefaults: callHistoryDefaults))
         
         // As the tests take advantage of Rust's ability to redirect the log files, there is
         // often some debris left from the previous run, so we wipe the entire directory.

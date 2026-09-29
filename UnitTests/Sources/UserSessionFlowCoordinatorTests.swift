@@ -25,8 +25,15 @@ class UserSessionFlowCoordinatorTests: XCTestCase {
         rootCoordinator?.rootCoordinator as? NavigationTabCoordinator
     }
 
+    /// STMOB-310: в sTalk пять вкладок (Контакты, Звонки, Чаты, Приложения, Профиль — 7c6f3f713),
+    /// «Чаты» больше не первая. Split-координатор среди вкладок один — у «Чатов».
     var chatsSplitCoordinator: NavigationSplitCoordinator? {
-        tabCoordinator?.tabCoordinators.first as? NavigationSplitCoordinator
+        tabCoordinator?.tabCoordinators.compactMap { $0 as? NavigationSplitCoordinator }.first
+    }
+
+    /// STMOB-310: настройки в sTalk — последняя вкладка «Профиль», а не шит поверх таббара (7c6f3f713).
+    var profileNavigationStack: NavigationStackCoordinator? {
+        tabCoordinator?.tabCoordinators.last as? NavigationStackCoordinator
     }
 
     var detailCoordinator: CoordinatorProtocol? {
@@ -66,6 +73,13 @@ class UserSessionFlowCoordinatorTests: XCTestCase {
                                                   notificationManager: NotificationManagerMock(),
                                                   stateMachineFactory: stateMachineFactory)
         
+        // STMOB-311: координатор ставит на паузу опрос присутствия скрытых вкладок — нужен сервис.
+        AppCoordinator.sharedPresenceService = PresenceService(homeserver: "https://example.org",
+                                                               tokenProvider: { nil },
+                                                               ownUserID: "hi@bob",
+                                                               transport: FakePresenceTransport(),
+                                                               forbiddenStore: InMemoryForbiddenStore())
+
         userSessionFlowCoordinator = UserSessionFlowCoordinator(isNewLogin: false,
                                                                 navigationRootCoordinator: rootCoordinator,
                                                                 appLockService: AppLockServiceMock(),
@@ -73,17 +87,55 @@ class UserSessionFlowCoordinatorTests: XCTestCase {
         
         userSessionFlowCoordinator.start()
     }
+
+    override func tearDown() {
+        AppCoordinator.sharedPresenceService = nil
+    }
+
+    // MARK: Presence
+
+    /// STMOB-311: вкладки нарисованы все сразу, поэтому строки скрытых «Чатов» и «Контактов»
+    /// считаются видимыми. Опрос их присутствия идёт только для выбранной вкладки.
+    func testPresenceOfHiddenTabsIsSuspended() async throws {
+        // Наборы строк выставляют сами экраны вкладок; здесь проверяем только паузу по вкладке.
+        let presence = try XCTUnwrap(AppCoordinator.sharedPresenceService)
+        XCTAssertFalse(presence.isSuspended(.chats), "sTalk starts on the Chats tab.")
+        XCTAssertTrue(presence.isSuspended(.contacts))
+        
+        tabCoordinator?.selectedTab = .contacts
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertTrue(presence.isSuspended(.chats))
+        XCTAssertFalse(presence.isSuspended(.contacts))
+        
+        tabCoordinator?.selectedTab = .calls
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertTrue(presence.isSuspended(.chats))
+        XCTAssertTrue(presence.isSuspended(.contacts))
+        
+        tabCoordinator?.selectedTab = .chats
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertFalse(presence.isSuspended(.chats))
+        XCTAssertTrue(presence.isSuspended(.contacts))
+    }
     
     // MARK: Navigation
-    
+
     func testInitialState() {
         XCTAssertNotNil(chatsSplitCoordinator)
         XCTAssertNil(detailCoordinator)
+        // STMOB-310: sTalk стартует на вкладке «Чаты» (70d48a932).
+        XCTAssertEqual(tabCoordinator?.selectedTab, .chats)
     }
     
     func testSettingsPresentation() async throws {
-        try await process(route: .settings, expectedUserSessionState: .tabBar)
-        XCTAssertTrue((tabCoordinator?.sheetCoordinator as? NavigationStackCoordinator)?.rootCoordinator is SettingsScreenCoordinator)
+        // STMOB-310: маршрут .settings в sTalk переключает на вкладку «Профиль» и не меняет
+        // состояние UserSessionFlowCoordinator (состояния .settingsScreen в форке нет),
+        // поэтому ждать перехода нечего — проверяем вкладку и корень её стека.
+        XCTAssertEqual(tabCoordinator?.selectedTab, .chats)
+        try await process(route: .settings)
+        XCTAssertEqual(tabCoordinator?.selectedTab, .profile)
+        XCTAssertTrue(profileNavigationStack?.rootCoordinator is SettingsScreenCoordinator)
+        XCTAssertNil(tabCoordinator?.sheetCoordinator)
     }
     
     func testRoomPresentation() async throws {
@@ -93,11 +145,14 @@ class UserSessionFlowCoordinatorTests: XCTestCase {
     }
     
     func testRoomPresentationClearsSettings() async throws {
-        try await process(route: .settings, expectedUserSessionState: .tabBar)
-        XCTAssertTrue((tabCoordinator?.sheetCoordinator as? NavigationStackCoordinator)?.rootCoordinator is SettingsScreenCoordinator)
+        // STMOB-310: настройки — вкладка «Профиль»; «убрать настройки» = вернуться на «Чаты».
+        try await process(route: .settings)
+        XCTAssertEqual(tabCoordinator?.selectedTab, .profile)
+        XCTAssertTrue(profileNavigationStack?.rootCoordinator is SettingsScreenCoordinator)
         XCTAssertNil(detailCoordinator)
         
         try await process(route: .room(roomID: "1", via: []), expectedChatsState: .roomList(detailState: .room(roomID: "1")))
+        XCTAssertEqual(tabCoordinator?.selectedTab, .chats)
         XCTAssertNil((tabCoordinator?.sheetCoordinator))
         XCTAssertTrue(detailNavigationStack?.rootCoordinator is RoomScreenCoordinator)
         XCTAssertNotNil(detailCoordinator)
@@ -119,14 +174,17 @@ class UserSessionFlowCoordinatorTests: XCTestCase {
     }
     
     func testShareMediaRouteWithoutRoom() async throws {
-        try await process(route: .settings, expectedUserSessionState: .tabBar)
-        XCTAssertTrue((tabCoordinator?.sheetCoordinator as? NavigationStackCoordinator)?.rootCoordinator is SettingsScreenCoordinator)
+        // STMOB-310: настройки — вкладка «Профиль», переход состояния UserSessionFlowCoordinator
+        // при шаринге не происходит; вместо него проверяем возврат на вкладку «Чаты».
+        try await process(route: .settings)
+        XCTAssertEqual(tabCoordinator?.selectedTab, .profile)
+        XCTAssertTrue(profileNavigationStack?.rootCoordinator is SettingsScreenCoordinator)
         XCTAssertNil(chatsSplitCoordinator?.sheetCoordinator)
 
         let sharePayload: ShareExtensionPayload = .mediaFiles(roomID: nil, mediaFiles: [.init(url: .picturesDirectory, suggestedName: nil)])
         try await process(route: .share(sharePayload),
-                          expectedUserSessionState: .tabBar,
                           expectedChatsState: .shareExtensionRoomList(sharePayload: sharePayload))
+        XCTAssertEqual(tabCoordinator?.selectedTab, .chats)
         XCTAssertNil(tabCoordinator?.sheetCoordinator)
         XCTAssertTrue((chatsSplitCoordinator?.sheetCoordinator as? NavigationStackCoordinator)?.rootCoordinator is RoomSelectionScreenCoordinator)
     }
@@ -147,14 +205,16 @@ class UserSessionFlowCoordinatorTests: XCTestCase {
     }
     
     func testShareTextRouteWithoutRoom() async throws {
-        try await process(route: .settings, expectedUserSessionState: .tabBar)
-        XCTAssertTrue((tabCoordinator?.sheetCoordinator as? NavigationStackCoordinator)?.rootCoordinator is SettingsScreenCoordinator)
+        // STMOB-310: см. testShareMediaRouteWithoutRoom — настройки в sTalk это вкладка.
+        try await process(route: .settings)
+        XCTAssertEqual(tabCoordinator?.selectedTab, .profile)
+        XCTAssertTrue(profileNavigationStack?.rootCoordinator is SettingsScreenCoordinator)
         XCTAssertNil(chatsSplitCoordinator?.sheetCoordinator)
 
         let sharePayload: ShareExtensionPayload = .text(roomID: nil, text: "Important Text")
         try await process(route: .share(sharePayload),
-                          expectedUserSessionState: .tabBar,
                           expectedChatsState: .shareExtensionRoomList(sharePayload: sharePayload))
+        XCTAssertEqual(tabCoordinator?.selectedTab, .chats)
         XCTAssertNil(tabCoordinator?.sheetCoordinator)
         XCTAssertTrue((chatsSplitCoordinator?.sheetCoordinator as? NavigationStackCoordinator)?.rootCoordinator is RoomSelectionScreenCoordinator)
     }
@@ -247,10 +307,11 @@ class UserSessionFlowCoordinatorTests: XCTestCase {
     }
     
     /// Other services retract indicators, so this filters based on the reachability ID.
+    /// STMOB-310: идентификатор переименован при ребрендинге Element X → sTalk (580ba8863).
     private var retractReachabilityIndicatorCallsCount: Int {
         userIndicatorController
             .retractIndicatorWithIdReceivedInvocations
-            .filter { $0 == "io.element.elementx.reachability.notification" }
+            .filter { $0 == "ru.implica.stalk.reachability.notification" }
             .count
     }
 }

@@ -85,7 +85,9 @@ final class NotificationManagerTests: XCTestCase {
             return
         }
         XCTAssertEqual(data.url, appSettings.pushGatewayNotifyEndpoint.absoluteString)
-        XCTAssertEqual(data.format, .eventIdOnly)
+        // STMOB-310: форк регистрирует пушер с полным форматом (format: nil), чтобы баннер
+        // рисовал сам iOS из loc-key Sygnal, не дожидаясь NSE (3336a79f2).
+        XCTAssertNil(data.format)
         let defaultPayload = APNSPayload(aps: APSInfo(mutableContent: 1,
                                                       alert: APSAlert(locKey: "Notification",
                                                                       locArgs: [])),

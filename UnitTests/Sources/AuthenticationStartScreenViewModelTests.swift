@@ -17,6 +17,12 @@ class AuthenticationStartScreenViewModelTests: XCTestCase {
     var appSettings: AppSettings!
     var authenticationService: AuthenticationServiceProtocol!
     
+    // STMOB-310: STMOB-243 подставляет в капсулу последний сервер из сохранённых аккаунтов
+    // (UserDefaults.standard хост-приложения). На симуляторе с живым входом список не пуст,
+    // и «Войти» уходило в configure вместо .login. Тестам — своё пустое хранилище.
+    private static let savedAccountsSuiteName = "STMOB-310.AuthenticationStartScreenViewModelTests.savedAccounts"
+    var savedAccountsStore: SavedAccountsStore!
+    
     var viewModel: AuthenticationStartScreenViewModel!
     var context: AuthenticationStartScreenViewModel.Context {
         viewModel.context
@@ -27,10 +33,17 @@ class AuthenticationStartScreenViewModelTests: XCTestCase {
         appSettings = AppSettings()
         // These app settings are kept local to the tests on purpose as if they are registered in the
         // ServiceLocator, the providers override that we apply will break other tests in the suite.
+        
+        guard let savedAccountsDefaults = UserDefaults(suiteName: Self.savedAccountsSuiteName) else {
+            fatalError("STMOB-310: не удалось создать отдельный UserDefaults для сохранённых аккаунтов")
+        }
+        savedAccountsDefaults.removePersistentDomain(forName: Self.savedAccountsSuiteName)
+        savedAccountsStore = SavedAccountsStore(userDefaults: savedAccountsDefaults)
     }
     
     override func tearDown() {
         AppSettings.resetAllSettings()
+        UserDefaults().removePersistentDomain(forName: Self.savedAccountsSuiteName)
     }
     
     func testInitialState() async throws {
@@ -153,7 +166,8 @@ class AuthenticationStartScreenViewModelTests: XCTestCase {
                                                        provisioningParameters: provisioningParameters,
                                                        isBugReportServiceEnabled: true,
                                                        appSettings: appSettings,
-                                                       userIndicatorController: UserIndicatorControllerMock())
+                                                       userIndicatorController: UserIndicatorControllerMock(),
+                                                       savedAccountsStore: savedAccountsStore)
         
         // Add a fake window in order for the OIDC flow to continue
         viewModel.context.send(viewAction: .updateWindow(UIWindow()))

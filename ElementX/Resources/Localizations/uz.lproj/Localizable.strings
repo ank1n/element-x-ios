@@ -210,7 +210,7 @@
 "common_edited_suffix" = "(tahrirlangan)";
 "common_editing" = "Tahrirlash";
 "common_editing_caption" = "Sarlavhani tahrirlash";
-"common_emote" = "*%1$@%2$@";
+"common_emote" = "* %1$@ %2$@";
 "common_empty_file" = "Bo'sh fayl";
 "common_encryption" = "Shifrlash";
 "common_encryption_enabled" = "Shifrlash yoqilgan";

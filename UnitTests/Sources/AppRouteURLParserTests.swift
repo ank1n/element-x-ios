@@ -13,6 +13,12 @@ class AppRouteURLParserTests: XCTestCase {
     var appSettings: AppSettings!
     var appRouteURLParser: AppRouteURLParser!
     
+    // STMOB-310: ребрендинг форка (580ba8863) сменил адреса ссылок: звонок —
+    // call.stalk.implica.ru и схема URL Type «sTalk Call» из Info.plist,
+    // веб-клиент — AppSettings.elementWebHosts. Хосты Element форк не обрабатывает.
+    private let callScheme = "ru.implica.stalk.call"
+    private let webHost = "stalk.implica.ru"
+    
     override func setUp() {
         AppSettings.resetAllSettings()
         appSettings = AppSettings()
@@ -20,14 +26,14 @@ class AppRouteURLParserTests: XCTestCase {
     }
     
     func testElementCallRoutes() {
-        guard let url = URL(string: "https://call.element.io/test") else {
+        guard let url = URL(string: "https://call.stalk.implica.ru/test") else {
             XCTFail("URL invalid")
             return
         }
         
         XCTAssertEqual(appRouteURLParser.route(from: url), AppRoute.genericCallLink(url: url))
         
-        guard let customSchemeURL = URL(string: "io.element.call:/?url=https%3A%2F%2Fcall.element.io%2Ftest") else {
+        guard let customSchemeURL = URL(string: "\(callScheme):/?url=https%3A%2F%2Fcall.stalk.implica.ru%2Ftest") else {
             XCTFail("URL invalid")
             return
         }
@@ -56,7 +62,7 @@ class AppRouteURLParserTests: XCTestCase {
             return
         }
         
-        guard let customSchemeURL = URL(string: "io.element.call:/?url=\(encodedURLString)") else {
+        guard let customSchemeURL = URL(string: "\(callScheme):/?url=\(encodedURLString)") else {
             XCTFail("URL invalid")
             return
         }
@@ -65,7 +71,7 @@ class AppRouteURLParserTests: XCTestCase {
     }
     
     func testHttpCustomSchemeLinkCallRoutes() {
-        guard let customSchemeURL = URL(string: "io.element.call:/?url=http%3A%2F%2Fcall.element.io%2Ftest") else {
+        guard let customSchemeURL = URL(string: "\(callScheme):/?url=http%3A%2F%2Fcall.stalk.implica.ru%2Ftest") else {
             XCTFail("URL invalid")
             return
         }
@@ -99,7 +105,7 @@ class AppRouteURLParserTests: XCTestCase {
     
     func testWebRoomIDURL() {
         let id = "!abcdefghijklmnopqrstuvwxyz1234567890:matrix.org"
-        guard let url = URL(string: "https://app.element.io/#/room/\(id)") else {
+        guard let url = URL(string: "https://\(webHost)/#/room/\(id)") else {
             XCTFail("URL invalid")
             return
         }
@@ -111,7 +117,7 @@ class AppRouteURLParserTests: XCTestCase {
     
     func testWebUserIDURL() {
         let id = "@alice:matrix.org"
-        guard let url = URL(string: "https://develop.element.io/#/user/\(id)") else {
+        guard let url = URL(string: "https://\(webHost)/#/user/\(id)") else {
             XCTFail("URL invalid")
             return
         }

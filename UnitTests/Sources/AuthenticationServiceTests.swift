@@ -81,7 +81,9 @@ class AuthenticationServiceTests: XCTestCase {
         }
         
         XCTAssertEqual(service.flow, .login)
-        XCTAssertEqual(service.homeserver.value, .init(address: "matrix.org", loginMode: .unknown))
+        // STMOB-310: после отказа сервис остаётся на сервере по умолчанию — в sTalk это
+        // accountProviders[0] = stalk.implica.ru (8d9ef0fcb), а не апстримовый matrix.org.
+        XCTAssertEqual(service.homeserver.value, .init(address: ServiceLocator.shared.settings.accountProviders[0], loginMode: .unknown))
     }
     
     // MARK: - Helpers
