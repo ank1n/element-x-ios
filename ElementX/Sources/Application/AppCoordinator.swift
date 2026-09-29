@@ -439,46 +439,81 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
     func notificationTapped(content: UNNotificationContent) async {
         MXLog.info("Tapped Notification")
         
-        guard let roomID = content.roomID else {
+        guard let tap = Self.notificationTapHandling(for: content,
+                                                     focusEventOnTap: appSettings.focusEventOnNotificationTap,
+                                                     threadsEnabled: appSettings.threadsEnabled) else {
             return
         }
-        
-        let eventID = appSettings.focusEventOnNotificationTap ? content.eventID : nil
-        
+
+        awaitRoom(tap.roomToAwait)
+        handleAppRoute(tap.route)
+    }
+
+    /// Куда ведёт тап по уведомлению и какую комнату дождаться. Отдельно от координатора,
+    /// чтобы проверялось тестами (STMOB-309).
+    struct NotificationTapHandling {
+        let route: AppRoute
+        let roomToAwait: String
+    }
+
+    static func notificationTapHandling(for content: UNNotificationContent, focusEventOnTap: Bool, threadsEnabled: Bool) -> NotificationTapHandling? {
+        guard let roomID = content.roomID else {
+            return nil
+        }
+
+        let eventID = focusEventOnTap ? content.eventID : nil
+        let route: AppRoute
+
+        // STMOB-266: баннер «начался звонок» ведёт в комнату — там в шапке уже есть
+        // кнопка присоединиться. Сразу открывать экран звонка нельзя: пока пуш шёл,
+        // звонок мог закончиться, и мы бы завели новый звонок вместо присоединения.
+        if content.userInfo[NotificationConstants.UserInfoKey.callNotice] as? Bool == true {
+            route = .room(roomID: roomID, via: [])
+        } else if content.categoryIdentifier == NotificationConstants.Category.invite {
+            route = .room(roomID: roomID, via: [])
+        } else if threadsEnabled, let threadRootEventID = content.threadRootEventID {
+            route = .thread(roomID: roomID, threadRootEventID: threadRootEventID, focusEventID: eventID)
+        } else if let eventID {
+            route = .event(eventID: eventID, roomID: roomID, via: [])
+        } else {
+            route = .room(roomID: roomID, via: [])
+        }
+
         // STALK-951: комната из пуша могла ещё не доехать синком до памяти SDK (чат
         // создали, пока приложение спало) — roomForIdentifier сразу отдавал nil, и
         // участник видел «нужно приглашение». Ждём синк комнаты для ЛЮБОГО тапа, не
         // только для приглашений: ожидание включается, лишь если комнаты нет, и
         // ограничено таймаутом (ClientProxy.waitForRoomToSync).
-        if let userSession {
-            userSession.clientProxy.roomsToAwait.insert(roomID)
+        return NotificationTapHandling(route: route, roomToAwait: roomID)
+    }
+
+    /// Сессии ещё нет (холодный старт по тапу) — запоминаем, отдадим клиенту после установки сессии.
+    private func awaitRoom(_ roomID: String) {
+        Self.awaitRoom(roomID, clientProxy: userSession?.clientProxy, stored: &storedRoomsToAwait)
+    }
+
+    static func awaitRoom(_ roomID: String, clientProxy: ClientProxyProtocol?, stored: inout Set<String>?) {
+        if let clientProxy {
+            clientProxy.addRoomsToAwait([roomID])
         } else {
-            storedRoomsToAwait = [roomID]
-        }
-        
-        // STMOB-266: баннер «начался звонок» ведёт в комнату — там в шапке уже есть
-        // кнопка присоединиться. Сразу открывать экран звонка нельзя: пока пуш шёл,
-        // звонок мог закончиться, и мы бы завели новый звонок вместо присоединения.
-        if content.userInfo[NotificationConstants.UserInfoKey.callNotice] as? Bool == true {
-            handleAppRoute(.room(roomID: roomID, via: []))
-        } else if content.categoryIdentifier == NotificationConstants.Category.invite {
-            handleAppRoute(.room(roomID: roomID, via: []))
-        } else if appSettings.threadsEnabled, let threadRootEventID = content.threadRootEventID {
-            handleAppRoute(.thread(roomID: roomID, threadRootEventID: threadRootEventID, focusEventID: eventID))
-        } else if let eventID {
-            handleAppRoute(.event(eventID: eventID, roomID: roomID, via: []))
-        } else {
-            handleAppRoute(.room(roomID: roomID, via: []))
+            stored = (stored ?? []).union([roomID])
         }
     }
-    
+
     func handleInlineReply(_ service: NotificationManagerProtocol, content: UNNotificationContent, replyText: String) async {
         MXLog.info("Handle notification reply")
-        
+
         guard let roomID = content.roomID else {
             return
         }
-        
+
+        // STMOB-307: ответ из баннера обрабатывается в фоне и поднимает синк (roomForIdentifier снимает
+        // паузу хранилища), а теперь ещё и ждёт комнату. Держим процесс фоновой задачей — по её
+        // истечении синк штатно остановится; иначе приложение засыпало бы с открытой базой (0xDEAD10CC).
+        if UIApplication.shared.applicationState != .active {
+            scheduleDelayedSyncStop()
+        }
+
         if userSession == nil {
             // Store the data so it can be used after the session is established
             storedInlineReply = (roomID, replyText)
@@ -753,7 +788,7 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         }
         
         if let storedRoomsToAwait {
-            userSession.clientProxy.roomsToAwait = storedRoomsToAwait
+            userSession.clientProxy.addRoomsToAwait(storedRoomsToAwait)
         }
         
         if storedAppRoute?.isAuthenticationRoute == false,
@@ -1215,12 +1250,26 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         guard let userSession else {
             fatalError("User session not setup")
         }
-        
-        guard case let .joined(roomProxy) = await userSession.clientProxy.roomForIdentifier(roomID) else {
+
+        await Self.sendInlineReply(roomID: roomID, replyText: replyText, clientProxy: userSession.clientProxy, notificationManager: notificationManager)
+    }
+
+    /// Отдельно от координатора, чтобы проверялось тестами (STMOB-307).
+    static func sendInlineReply(roomID: String,
+                                replyText: String,
+                                clientProxy: ClientProxyProtocol,
+                                notificationManager: NotificationManagerProtocol) async {
+        // STMOB-307: чат из пуша мог ещё не доехать синком (создали, пока приложение спало) —
+        // дожидаемся его, как и при тапе. Раньше ответ в такой чат молча пропадал.
+        clientProxy.addRoomsToAwait([roomID])
+        guard case let .joined(roomProxy) = await clientProxy.roomForIdentifier(roomID) else {
             MXLog.error("Tried to reply in an unjoined room: \(roomID)")
+            // Не молчим: человек должен знать, что ответ не ушёл.
+            await notificationManager.showLocalNotification(with: "⚠️ " + L10n.commonError,
+                                                            subtitle: L10n.errorSomeMessagesHaveNotBeenSent)
             return
         }
-        
+
         switch await roomProxy.timeline.sendMessage(replyText,
                                                     html: nil,
                                                     inReplyToEventID: nil,

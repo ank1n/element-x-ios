@@ -843,6 +843,7 @@
 		8C9EF48259E67A7FB2936DC9 /* AnalyticsPromptScreenCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CE7AF8F9E7310998BB26239 /* AnalyticsPromptScreenCoordinator.swift */; };
 		8CA0460C303C679DF3EEB0AA /* SentrySwiftUI in Frameworks */ = {isa = PBXBuildFile; productRef = E2B12DB5D098F5D1FDCBABA0 /* SentrySwiftUI */; };
 		8CAA92E053E75ECF35873322 /* EventBasedTimelineItemProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59583E24020FA27E6C776841 /* EventBasedTimelineItemProtocol.swift */; };
+		8CAB4724157BF5D491C43AE8 /* NotificationTapHandlingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8228A7FDE01B3D802C86716 /* NotificationTapHandlingTests.swift */; };
 		8CBCE103CEC451DCAF6AA9F3 /* RoomInfoProxy.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEFCDC2EE06F05DD2998A4C1 /* RoomInfoProxy.swift */; };
 		8CC4EE345E26C96E99968394 /* ReportContentScreenViewModelProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EAEC1D520DED9CEE18A338C /* ReportContentScreenViewModelProtocol.swift */; };
 		8CC783DA47281719C88F4203 /* WidgetWebViewScreenCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CDEB6CB91B92875635C9A83 /* WidgetWebViewScreenCoordinator.swift */; };
@@ -2666,6 +2667,7 @@
 		A75CCBE6CB00A7F206AC7A8E /* es */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = es; path = es.lproj/Localizable.strings; sourceTree = "<group>"; };
 		A7CEC9CC494C23C148776EEE /* de */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/SAS.strings; sourceTree = "<group>"; };
 		A7FBE07509B02F45E2C67730 /* DeclineAndBlockScreenViewModelProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeclineAndBlockScreenViewModelProtocol.swift; sourceTree = "<group>"; };
+		A8228A7FDE01B3D802C86716 /* NotificationTapHandlingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationTapHandlingTests.swift; sourceTree = "<group>"; };
 		A8406AE8B272E859262153BD /* ShareExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ShareExtension.entitlements; sourceTree = "<group>"; };
 		A8435E53A1D86B69F9B0FA01 /* MapTilerConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapTilerConfiguration.swift; sourceTree = "<group>"; };
 		A846D5C138CE3468FED4E332 /* LabsScreenViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabsScreenViewModel.swift; sourceTree = "<group>"; };
@@ -6265,6 +6267,7 @@
 				59E1F89FC67FD4AB5C6CB665 /* NotificationContentBuilderTests.swift */,
 				0BF04D8DA316AA11D6F28E68 /* NotificationSettingsEditScreenViewModelTests.swift */,
 				00B65827A6BE619182F9AE62 /* NotificationSettingsScreenViewModelTests.swift */,
+				A8228A7FDE01B3D802C86716 /* NotificationTapHandlingTests.swift */,
 				857326C48870100F4A56F289 /* PermalinkTests.swift */,
 				B9C460FCC1771B5EDD2BBD3D /* PillContextTests.swift */,
 				EF1B88550322538A992667AB /* PinnedEventsBannerStateTests.swift */,
@@ -8243,6 +8246,7 @@
 				1B2470924DAA82B4F4CCF143 /* NotificationManagerTests.swift in Sources */,
 				46C86B1A5A7C985771E4AEFA /* NotificationSettingsEditScreenViewModelTests.swift in Sources */,
 				CFDE1D27782179E9362C7728 /* NotificationSettingsScreenViewModelTests.swift in Sources */,
+				8CAB4724157BF5D491C43AE8 /* NotificationTapHandlingTests.swift in Sources */,
 				B5F55A659F8B2094565EFBE3 /* PINTextFieldTests.swift in Sources */,
 				96DFEF8BB3CB5461267FCD45 /* PermalinkTests.swift in Sources */,
 				ACB2F88DA1F6CA00497E3B63 /* PillContextTests.swift in Sources */,

@@ -138,6 +138,9 @@ final class PresenceService {
     private let now: () -> Date
 
     private var interests: [PresenceInterest: Set<String>] = [:]
+    /// STMOB-311: интересы скрытых вкладок. Наборы не стираем — при возврате на вкладку строки
+    /// не пришлют onAppear заново (вкладки рисуются все сразу), так что набор должен сохраниться.
+    private var suspendedInterests: Set<PresenceInterest> = []
     private var lastFetchedAt: [String: Date] = [:]
     private var inFlight: Set<String> = []
     private var forbiddenUntil: [String: Date]
@@ -157,7 +160,7 @@ final class PresenceService {
 
     /// Кого сейчас опрашиваем: объединение интересов всех экранов.
     var polledUserIDs: Set<String> {
-        interests.values.reduce(into: Set<String>()) { $0.formUnion($1) }
+        userIDs(where: { _ in true })
     }
 
     var isPolling: Bool {
@@ -201,7 +204,7 @@ final class PresenceService {
         interests[key] = userIDs.isEmpty ? nil : userIDs
 
         // Новая строка на экране не ждёт следующего шага, но бюджет всё равно действует.
-        if hasNewUsers {
+        if hasNewUsers, !suspendedInterests.contains(key) {
             pollSoon()
         }
     }
@@ -213,6 +216,18 @@ final class PresenceService {
     /// Набор одного экрана — для проверок.
     func userIDs(for key: PresenceInterest) -> Set<String> {
         interests[key] ?? []
+    }
+    
+    /// STMOB-311: вкладка скрыта — её строки не опрашиваем, но набор помним до возврата.
+    func setSuspended(_ key: PresenceInterest, _ isSuspended: Bool) {
+        guard suspendedInterests.contains(key) != isSuspended else { return }
+        if isSuspended {
+            suspendedInterests.insert(key)
+        } else {
+            suspendedInterests.remove(key)
+            // Вернулись на вкладку — несвежие строки спросим сразу, в пределах бюджета.
+            pollSoon()
+        }
     }
 
     // MARK: - Polling
@@ -308,7 +323,7 @@ final class PresenceService {
     /// дальше самые несвежие.
     private func dueUserIDs(now: Date) -> [String] {
         let foreground = userIDs(where: { $0.isForeground })
-        let roomBacked = userIDs(where: { $0.isRoomBacked })
+        let roomBacked = userIDs(includingSuspended: true, where: { $0.isRoomBacked })
         return polledUserIDs
             .filter { userID in
                 if inFlight.contains(userID) { return false }
@@ -336,8 +351,13 @@ final class PresenceService {
         return Array(foregroundDue) + due.drop { foreground.contains($0) }.prefix(backgroundAllowance)
     }
 
-    private func userIDs(where predicate: (PresenceInterest) -> Bool) -> Set<String> {
-        interests.filter { predicate($0.key) }.values.reduce(into: Set<String>()) { $0.formUnion($1) }
+    /// Люди из интересов, подходящих под условие. Приостановленные (скрытые вкладки) не опрашиваются,
+    /// но «есть ли общая комната» — свойство человека, а не видимости строки: для него их учитываем.
+    private func userIDs(includingSuspended: Bool = false, where predicate: (PresenceInterest) -> Bool) -> Set<String> {
+        interests
+            .filter { (includingSuspended || !suspendedInterests.contains($0.key)) && predicate($0.key) }
+            .values
+            .reduce(into: Set<String>()) { $0.formUnion($1) }
     }
 
     private func refreshInterval(for userID: String, isForeground: Bool, now: Date) -> TimeInterval {
@@ -391,7 +411,7 @@ final class PresenceService {
         var forbiddenChanged = false
         var rateLimitResponse: PresenceHTTPResponse?
         var acceptedCount = 0
-        let roomBackedUserIDs = self.userIDs(where: { $0.isRoomBacked })
+        let roomBackedUserIDs = self.userIDs(includingSuspended: true, where: { $0.isRoomBacked })
         outcome.asked += responses.count
 
         for (userID, response) in responses {

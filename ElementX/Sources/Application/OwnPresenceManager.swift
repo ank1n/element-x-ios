@@ -31,7 +31,9 @@ final class OwnPresenceManager {
     /// Build 121: token не кэшируем — берём свежий перед каждым запросом (ротация).
     private let tokenProvider: () -> String?
     private let transport: PresenceTransport
-    private let now: () -> Date
+    /// STMOB-311: монотонные часы — те же, по которым идёт сон. Перевод системного времени назад
+    /// раньше останавливал пинги на величину сдвига.
+    private let now: () -> ContinuousClock.Instant
 
     private var schedule = OwnPresenceSchedule()
     private var worker: Task<Void, Never>?
@@ -49,7 +51,7 @@ final class OwnPresenceManager {
          userID: String,
          tokenProvider: @escaping () -> String?,
          transport: PresenceTransport = URLSessionPresenceTransport(),
-         now: @escaping () -> Date = Date.init) {
+         now: @escaping () -> ContinuousClock.Instant = { ContinuousClock.now }) {
         self.homeserver = homeserver.hasSuffix("/") ? String(homeserver.dropLast()) : homeserver
         self.userID = userID
         self.tokenProvider = tokenProvider
@@ -193,52 +195,59 @@ struct OwnPresenceSchedule {
     /// Пока токен тот же, что получил 401, проверяем смену локально — без сети.
     static let tokenCheckInterval: TimeInterval = 1
 
+    typealias Instant = ContinuousClock.Instant
+
     var desiredStatus: Status?
-    private(set) var lastSent: (status: Status, at: Date)?
+    private(set) var lastSent: (status: Status, at: Instant)?
     /// Раньше этого времени PUT не шлём: окно лимита, срок после 429 или после сбоя.
-    private(set) var notBefore: Date = .distantPast
+    private(set) var notBefore: Instant?
     private(set) var rejectedToken: String?
     private var consecutiveFailures = 0
 
-    func nextAction(now: Date, currentToken: String?) -> Action {
+    func nextAction(now: Instant, currentToken: String?) -> Action {
         guard let status = desiredStatus else { return .idle }
         if let rejectedToken, currentToken == rejectedToken {
             return .wait(Self.tokenCheckInterval)
         }
 
-        let dueAt: Date
+        let dueAt: Instant
         if let lastSent, lastSent.status == status {
             // Уже на сервере. Повторять нужно только online — иначе Synapse снимет его через 30 с.
             guard status == .online else { return .idle }
-            dueAt = lastSent.at.addingTimeInterval(Self.pingInterval)
+            dueAt = lastSent.at.advanced(by: .seconds(Self.pingInterval))
         } else {
             dueAt = now
         }
 
-        let sendAt = max(dueAt, notBefore)
-        return sendAt <= now ? .send(status) : .wait(sendAt.timeIntervalSince(now))
+        let sendAt = notBefore.map { max(dueAt, $0) } ?? dueAt
+        return sendAt <= now ? .send(status) : .wait(Self.seconds(now.duration(to: sendAt)))
+    }
+
+    private static func seconds(_ duration: Duration) -> TimeInterval {
+        let components = duration.components
+        return Double(components.seconds) + Double(components.attoseconds) / 1e18
     }
 
     /// `sentAt` — начало отправки: от него считается следующий пинг, так пауза на сервере не
     /// растягивается на время запроса. `answeredAt` — ответ: от него считается окно лимита.
-    mutating func record(_ result: SendResult, for status: Status, sentAt: Date, answeredAt: Date) {
+    mutating func record(_ result: SendResult, for status: Status, sentAt: Instant, answeredAt: Instant) {
         switch result {
         case .accepted:
             lastSent = (status, sentAt)
-            notBefore = answeredAt.addingTimeInterval(Self.minPutInterval)
+            notBefore = answeredAt.advanced(by: .seconds(Self.minPutInterval))
             rejectedToken = nil
             consecutiveFailures = 0
         case .rateLimited(let retryAfter):
             // Срок берём у сервера (retry_after_ms), а не спим фиксированные 120 с: после такого
             // сна телефон на минуты выпадал в offline.
-            notBefore = answeredAt.addingTimeInterval(retryAfter ?? Self.retryInterval)
+            notBefore = answeredAt.advanced(by: .seconds(retryAfter ?? Self.retryInterval))
             consecutiveFailures = 0
         case .unauthorized(let token):
             rejectedToken = token
-            notBefore = .distantPast
+            notBefore = nil
         case .failed:
             let delay = min(Self.initialRetryInterval * pow(2, Double(consecutiveFailures)), Self.retryInterval)
-            notBefore = answeredAt.addingTimeInterval(delay)
+            notBefore = answeredAt.advanced(by: .seconds(delay))
             consecutiveFailures += 1
         }
     }

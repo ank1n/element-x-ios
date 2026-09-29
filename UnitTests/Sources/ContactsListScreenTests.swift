@@ -472,6 +472,10 @@ class ContactsListScreenTests: XCTestCase {
         // Уникальный пользователь на каждый тест: кэш контактов лежит в UserDefaults по userID,
         // и чужой кэш подмешал бы в проверку записи из прошлого теста.
         let userID = "@me-\(UUID().uuidString):example.com"
+        // STMOB-311: своё хранилище на тест — кэш не копится в настройках приложения-хоста.
+        let suiteName = "ContactsListScreenTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
         let clientProxy = ClientProxyMock(.init(userID: userID, roomSummaryProvider: provider))
         clientProxy.searchUsersSearchTermLimitClosure = { term, limit in
             await MainActor.run { recorder.terms.append(term) }
@@ -482,7 +486,8 @@ class ContactsListScreenTests: XCTestCase {
         // само по себе не пустит.
         let clock = TestClock(t0)
         let viewModel = ContactsListScreenViewModel(userSession: UserSessionMock(.init(clientProxy: clientProxy)),
-                                                    now: { clock.now })
+                                                    now: { clock.now },
+                                                    defaults: defaults)
         return Harness(viewModel: viewModel, roomList: roomList, recorder: recorder, clock: clock)
     }
 

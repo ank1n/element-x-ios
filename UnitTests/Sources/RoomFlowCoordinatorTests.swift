@@ -425,6 +425,7 @@ class RoomFlowCoordinatorTests: XCTestCase {
         await isSynced.set()
         let room = RoomSDKMock()
         room.membershipReturnValue = .joined
+        clientProxy.roomMembershipRoomIDClosure = { $0 == "1" ? .joined : nil }
         roomList.send([RoomSummary.mock(id: "1", name: "Никита Сокол").withRoom(room)])
         
         try await waitUntil { self.navigationStackCoordinator.rootCoordinator is RoomScreenCoordinator }

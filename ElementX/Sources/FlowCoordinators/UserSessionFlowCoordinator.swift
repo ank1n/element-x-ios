@@ -147,8 +147,9 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         
         stateMachine = flowParameters.stateMachineFactory.makeUserSessionFlowStateMachine(state: .initial)
         configureStateMachine()
-        
+
         setupObservers()
+        observeSelectedTabForPresence()
     }
     
     func start(animated: Bool) {
@@ -225,7 +226,23 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
             fatalError("Unexpected transition: \(context)")
         }
     }
-    
+
+    /// STMOB-311: все вкладки нарисованы сразу (невыбранные — прозрачные), поэтому строки скрытых
+    /// «Чатов» и «Контактов» считаются видимыми. Опрос присутствия для них ставим на паузу по
+    /// выбранной вкладке; при возврате наборы строк уже на месте.
+    private func observeSelectedTabForPresence() {
+        let selectedTab = withObservationTracking {
+            navigationTabCoordinator.selectedTab
+        } onChange: { [weak self] in
+            // onChange приходит ДО записи нового значения — читаем его на следующем шаге.
+            Task { @MainActor [weak self] in self?.observeSelectedTabForPresence() }
+        }
+
+        guard let presence = AppCoordinator.sharedPresenceService else { return }
+        presence.setSuspended(.chats, selectedTab != .chats)
+        presence.setSuspended(.contacts, selectedTab != .contacts)
+    }
+
     private func setupObservers() {
         chatsTabFlowCoordinator.actionsPublisher
             .sink { [weak self] action in
@@ -589,7 +606,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         // Симптом build 174 (dp.bondar 00:16:18): joinRoom OK → re-fetch
         // никогда не вернулся, кнопка работала только со 2-го нажатия через 23s.
         DiagLog.write("CallPerf", "joinRoom START (room not synced yet — cold-Synapse suspect) room=\(roomID)")
-        userSession.clientProxy.roomsToAwait.insert(roomID)
+        userSession.clientProxy.addRoomsToAwait([roomID])
         let joinResult = await userSession.clientProxy.joinRoom(roomID, via: [])
         switch joinResult {
         case .success:

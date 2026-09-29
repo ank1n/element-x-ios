@@ -34,10 +34,13 @@ class JoinRoomScreenViewModel: JoinRoomScreenViewModelType, JoinRoomScreenViewMo
         actionsSubject.eraseToAnyPublisher()
     }
 
+    /// - Parameter membershipCheckTicks: такт локальной проверки членства (STMOB-308); по умолчанию
+    ///   таймер раз в `membershipCheckInterval`, тесты подают свой.
     init(source: JoinRoomScreenSource,
          appSettings: AppSettings,
          userSession: UserSessionProtocol,
-         userIndicatorController: UserIndicatorControllerProtocol) {
+         userIndicatorController: UserIndicatorControllerProtocol,
+         membershipCheckTicks: AnyPublisher<Void, Never>? = nil) {
         self.source = source
         self.appSettings = appSettings
         clientProxy = userSession.clientProxy
@@ -65,7 +68,11 @@ class JoinRoomScreenViewModel: JoinRoomScreenViewModelType, JoinRoomScreenViewMo
             .store(in: &cancellables)
         
         if case .generic = source {
-            observeJoinedMembership(roomID: roomID)
+            let ticks = membershipCheckTicks ?? Timer.publish(every: Self.membershipCheckInterval, on: .main, in: .common)
+                .autoconnect()
+                .map { _ in () }
+                .eraseToAnyPublisher()
+            observeJoinedMembership(roomID: roomID, ticks: ticks)
         }
         
         Task {
@@ -108,19 +115,28 @@ class JoinRoomScreenViewModel: JoinRoomScreenViewModelType, JoinRoomScreenViewMo
     /// STALK-951: тап по пушу мог опередить синк — комнаты ещё нет в памяти SDK, и
     /// координатор открыл этот экран. Как только синк привезёт её как joined, уводим
     /// участника в чат, а не держим на «нужно приглашение».
-    private func observeJoinedMembership(roomID: String) {
-        joinedMembershipCancellable = clientProxy
-            .staticRoomSummaryProvider
-            .roomListPublisher
-            .compactMap { summaries in
-                summaries.first { $0.id == roomID }
-            }
-            .first { $0.room.membership() == .joined }
+    ///
+    /// STMOB-308: членство спрашиваем у SDK (память, без сети), а не ищем комнату в списке: список
+    /// отфильтрован (без «низкого приоритета»), и такую комнату экран не увидел бы никогда. Повод
+    /// проверить — любое изменение списка комнат и редкий локальный такт на случай, когда список
+    /// не меняется (пришла только отфильтрованная комната или сменилось членство устаревшего
+    /// приглашения).
+    private func observeJoinedMembership(roomID: String, ticks: AnyPublisher<Void, Never>) {
+        let roomListChanged = clientProxy.staticRoomSummaryProvider.roomListPublisher.map { _ in () }
+        
+        joinedMembershipCancellable = roomListChanged
+            .merge(with: ticks)
             .receive(on: DispatchQueue.main)
+            .first { [weak self] _ in
+                self?.clientProxy.roomMembership(roomID: roomID) == .joined
+            }
             .sink { [weak self] _ in
                 Task { await self?.proceedAsMember() }
             }
     }
+
+    /// Проверка локальная и дешёвая: FFI-поиск комнаты в памяти SDK.
+    private static let membershipCheckInterval: TimeInterval = 2
     
     private var isLocallyJoined: Bool {
         if case .joined = room {

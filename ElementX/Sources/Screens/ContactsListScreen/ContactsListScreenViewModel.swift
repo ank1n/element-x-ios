@@ -26,6 +26,9 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
     /// STMOB-303: не пускает к справочнику чаще, чем нужно. Подробно — у самого типа ниже.
     private var directoryGate = UserDirectoryFetchGate()
     private let now: () -> Date
+    /// STMOB-311: кэш контактов и избранное — во внедрённом хранилище, чтобы тесты не писали
+    /// в настройки настоящего приложения.
+    private let defaults: UserDefaults
     /// STMOB-303: последний известный состав справочника и контакты из комнат. Сеть ходит
     /// за сторожем, а список собирается из этих двух половин локально — см. publishContacts.
     private var directoryUsers: [UserProfileProxy] = []
@@ -53,11 +56,12 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
         actionsSubject.eraseToAnyPublisher()
     }
 
-    init(userSession: UserSessionProtocol, now: @escaping () -> Date = Date.init) {
+    init(userSession: UserSessionProtocol, now: @escaping () -> Date = Date.init, defaults: UserDefaults = .standard) {
         self.userSession = userSession
         self.now = now
+        self.defaults = defaults
 
-        let saved = UserDefaults.standard.stringArray(forKey: Self.favoritesKey) ?? []
+        let saved = defaults.stringArray(forKey: Self.favoritesKey) ?? []
         favoriteRoomIDs = Set(saved)
 
         var initialState = ContactsListScreenViewState()
@@ -175,7 +179,7 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
     }
 
     private func saveFavorites() {
-        UserDefaults.standard.set(Array(favoriteRoomIDs), forKey: Self.favoritesKey)
+        defaults.set(Array(favoriteRoomIDs), forKey: Self.favoritesKey)
     }
 
     // MARK: - Contact Cache
@@ -185,7 +189,7 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
     }
 
     private func loadCachedContacts() {
-        guard let data = UserDefaults.standard.data(forKey: contactsCacheKey),
+        guard let data = defaults.data(forKey: contactsCacheKey),
               let cached = try? JSONDecoder().decode([ContactItem].self, from: data) else { return }
         MXLog.info("[Contacts] Loaded \(cached.count) cached contacts")
         state.contacts = cached
@@ -201,7 +205,7 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
         let contacts = state.contacts
         guard !contacts.isEmpty,
               let data = try? JSONEncoder().encode(contacts) else { return }
-        UserDefaults.standard.set(data, forKey: contactsCacheKey)
+        defaults.set(data, forKey: contactsCacheKey)
         MXLog.info("[Contacts] Saved \(contacts.count) contacts to cache")
     }
 

@@ -41,15 +41,22 @@ enum PresenceRequest {
     /// Сколько ждать после 429. Synapse кладёт срок только в тело (`retry_after_ms`),
     /// заголовок `Retry-After` может поставить прокси перед сервером.
     static func retryAfter(from response: PresenceHTTPResponse) -> TimeInterval? {
+        let raw: Double?
         if let json = try? JSONSerialization.jsonObject(with: response.body) as? [String: Any],
            let milliseconds = json["retry_after_ms"] as? Double {
-            return milliseconds / 1000
+            raw = milliseconds / 1000
+        } else if let header = response.retryAfterHeader {
+            raw = Double(header.trimmingCharacters(in: .whitespaces))
+        } else {
+            raw = nil
         }
-        if let header = response.retryAfterHeader, let seconds = Double(header.trimmingCharacters(in: .whitespaces)) {
-            return seconds
-        }
-        return nil
+        // STMOB-311: кривой прокси не должен ни ронять процесс (inf/nan/огромное число трапают
+        // в Duration и Int), ни гасить присутствие на сутки.
+        guard let raw, raw.isFinite, raw >= 0 else { return nil }
+        return min(raw, maxRetryAfter)
     }
+    
+    static let maxRetryAfter: TimeInterval = 300
 }
 
 /// STMOB-304: отступ после 429. Пока он действует, запросов этого вида нет вовсе.

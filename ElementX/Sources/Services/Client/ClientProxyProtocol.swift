@@ -219,8 +219,13 @@ protocol ClientProxyProtocol: AnyObject {
     /// Used for listing rooms, can't be filtered nor its state observed
     var staticRoomSummaryProvider: StaticRoomSummaryProviderProtocol { get }
     
-    var roomsToAwait: Set<String> { get set }
-    
+    /// Комнаты, появления которых `roomForIdentifier` дождётся (до 10 с), если их ещё нет в памяти SDK.
+    /// STMOB-309: метод, а не изменяемое свойство — вставка делается под одним захватом замка.
+    func addRoomsToAwait(_ roomIDs: Set<String>)
+
+    /// Членство в комнате по памяти SDK — без сети и без сборки прокси. `nil` — комнату SDK не знает.
+    func roomMembership(roomID: String) -> Membership?
+
     var notificationSettings: NotificationSettingsProxyProtocol { get }
     
     var secureBackupController: SecureBackupControllerProtocol { get }

@@ -183,11 +183,15 @@ class ClientProxy: ClientProxyProtocol {
     /// roomForIdentifier из любого потока — без замка одновременная правка Set рушит память.
     private let roomsToAwaitLock = NSLock()
     private var lockedRoomsToAwait: Set<String> = []
-    var roomsToAwait: Set<String> {
-        get { roomsToAwaitLock.withLock { lockedRoomsToAwait } }
-        set { roomsToAwaitLock.withLock { lockedRoomsToAwait = newValue } }
+
+    func addRoomsToAwait(_ roomIDs: Set<String>) {
+        roomsToAwaitLock.withLock { lockedRoomsToAwait.formUnion(roomIDs) }
     }
-    
+
+    func roomMembership(roomID: String) -> Membership? {
+        (try? client.getRoom(roomId: roomID))?.membership()
+    }
+
     /// Снимает флаг ожидания комнаты одним действием под замком.
     private func takeRoomToAwait(_ roomID: String) -> Bool {
         roomsToAwaitLock.withLock { lockedRoomsToAwait.remove(roomID) != nil }

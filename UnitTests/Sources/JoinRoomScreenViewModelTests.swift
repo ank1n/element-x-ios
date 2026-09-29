@@ -22,6 +22,8 @@ class JoinRoomScreenViewModelTests: XCTestCase {
     }
     
     var viewModel: JoinRoomScreenViewModelProtocol!
+    /// Такт локальной проверки членства — в тестах подаём вручную (STMOB-308).
+    private var membershipTicks: PassthroughSubject<Void, Never>!
     
     var clientProxy: ClientProxyMock!
     var appSettings: AppSettings!
@@ -186,15 +188,18 @@ class JoinRoomScreenViewModelTests: XCTestCase {
         try await noJoin.fulfill()
     }
     
-    func testJoinedPreviewWithUnbuildableRoomOffersJoinButton() async throws {
-        // Превью joined бывает, только когда комната есть в памяти SDK; nil от
-        // roomForIdentifier тогда значит, что собрать её не удалось. Не уводим в чат,
-        // который координатор не откроет, — даём кнопку входа.
+    /// Превью joined бывает, только когда комната есть в памяти SDK; nil от roomForIdentifier тогда
+    /// значит, что собрать её не удалось. Пока SDK не подтвердил членство — кнопка входа; как только
+    /// подтвердил — отдаём координатору: он попробует ещё раз, а не получится — покажет ошибку.
+    func testJoinedPreviewWithUnbuildableRoomOffersJoinButtonThenHandsOver() async throws {
         setupMemberViewModel(preview: .joinedInviteOnly)
         
-        let noJoin = deferFailure(viewModel.actionsPublisher, timeout: 1) { $0 == .joined(.roomID("1")) }
         try await deferFulfillment(viewModel.context.$viewState) { $0.mode == .joinable }.fulfill()
-        try await noJoin.fulfill()
+        
+        let deferred = deferFulfillment(viewModel.actionsPublisher) { $0 == .joined(.roomID("1")) }
+        setMembership(.joined)
+        membershipTicks.send()
+        try await deferred.fulfill()
     }
     
     func testStoppedScreenIgnoresLateRoomSync() async throws {
@@ -204,7 +209,7 @@ class JoinRoomScreenViewModelTests: XCTestCase {
         viewModel.stop()
         
         let noJoin = deferFailure(viewModel.actionsPublisher, timeout: 1) { $0 == .joined(.roomID("1")) }
-        roomList.send([Self.roomSummary(membership: .joined)])
+        deliver(.joined, via: roomList)
         try await noJoin.fulfill()
     }
     
@@ -222,7 +227,7 @@ class JoinRoomScreenViewModelTests: XCTestCase {
         
         // Синк привёз вход — уводим в чат без нажатия.
         let deferred = deferFulfillment(viewModel.actionsPublisher) { $0 == .joined(.roomID("1")) }
-        roomList.send([Self.roomSummary(membership: .joined)])
+        deliver(.joined, via: roomList)
         try await deferred.fulfill()
     }
     
@@ -243,7 +248,23 @@ class JoinRoomScreenViewModelTests: XCTestCase {
         try await deferFulfillment(viewModel.context.$viewState) { $0.mode == .unknown }.fulfill()
         
         let deferred = deferFulfillment(viewModel.actionsPublisher) { $0 == .joined(.roomID("1")) }
-        roomList.send([Self.roomSummary(membership: .joined)])
+        deliver(.joined, via: roomList)
+        try await deferred.fulfill()
+    }
+    
+    /// STMOB-308: комната с меткой «низкий приоритет» в отфильтрованный список не попадает —
+    /// экран всё равно замечает вход по локальной проверке членства.
+    func testMembershipChangeOutsideTheRoomListIsNoticed() async throws {
+        setupMemberViewModel(preview: .inviteRequired)
+        try await deferFulfillment(viewModel.context.$viewState) { $0.mode == .unknown }.fulfill()
+        
+        let noJoin = deferFailure(viewModel.actionsPublisher, timeout: 0.5) { $0 == .joined(.roomID("1")) }
+        setMembership(.joined)
+        try await noJoin.fulfill()
+        
+        // Список не менялся — заметил такт локальной проверки.
+        let deferred = deferFulfillment(viewModel.actionsPublisher) { $0 == .joined(.roomID("1")) }
+        membershipTicks.send()
         try await deferred.fulfill()
     }
     
@@ -253,7 +274,7 @@ class JoinRoomScreenViewModelTests: XCTestCase {
         try await deferFulfillment(viewModel.context.$viewState) { $0.mode == .inviteRequired }.fulfill()
         
         let deferred = deferFailure(viewModel.actionsPublisher, timeout: 1) { $0 == .joined(.roomID("1")) }
-        roomList.send([Self.roomSummary(membership: .left)])
+        deliver(.left, via: roomList)
         try await deferred.fulfill()
         
         XCTAssertEqual(context.viewState.mode, .inviteRequired)
@@ -276,7 +297,7 @@ class JoinRoomScreenViewModelTests: XCTestCase {
         try await deferFulfillment(viewModel.context.$viewState) { $0.mode == .joinable }.fulfill()
         // Превью с алиасом — вход идёт через joinRoomAlias; подменяем оба пути входа.
         let join: () async -> Result<Void, ClientProxyError> = {
-            roomList.send([Self.roomSummary(membership: .joined)])
+            self.deliver(.joined, via: roomList)
             if roomListIsFirst {
                 // Даём наблюдателю списка комнат отработать раньше, чем вернётся вход.
                 try? await Task.sleep(for: .milliseconds(200))
@@ -315,11 +336,24 @@ class JoinRoomScreenViewModelTests: XCTestCase {
         provider.roomListPublisher = roomList.asCurrentValuePublisher()
         clientProxy.staticRoomSummaryProvider = provider
         
+        membershipTicks = PassthroughSubject()
         viewModel = JoinRoomScreenViewModel(source: .generic(roomID: "1", via: []),
                                             appSettings: appSettings,
                                             userSession: UserSessionMock(.init(clientProxy: clientProxy)),
-                                            userIndicatorController: ServiceLocator.shared.userIndicatorController)
+                                            userIndicatorController: ServiceLocator.shared.userIndicatorController,
+                                            membershipCheckTicks: membershipTicks.eraseToAnyPublisher())
         return roomList
+    }
+    
+    /// Синк привёз комнату: SDK знает членство, список комнат изменился.
+    private func deliver(_ membership: Membership, via roomList: CurrentValueSubject<[RoomSummary], Never>) {
+        setMembership(membership)
+        roomList.send([Self.roomSummary(membership: membership)])
+    }
+    
+    /// Членство знает SDK только для нашей комнаты «1» — чужой id не должен сработать.
+    private func setMembership(_ membership: Membership) {
+        clientProxy.roomMembershipRoomIDClosure = { $0 == "1" ? membership : nil }
     }
     
     private static func roomSummary(membership: Membership) -> RoomSummary {

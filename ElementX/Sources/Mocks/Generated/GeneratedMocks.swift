@@ -2335,11 +2335,117 @@ class ClientProxyMock: ClientProxyProtocol, @unchecked Sendable {
         set(value) { underlyingStaticRoomSummaryProvider = value }
     }
     var underlyingStaticRoomSummaryProvider: StaticRoomSummaryProviderProtocol!
-    var roomsToAwait: Set<String> {
-        get { return underlyingRoomsToAwait }
-        set(value) { underlyingRoomsToAwait = value }
+    //MARK: - addRoomsToAwait
+
+    var addRoomsToAwaitUnderlyingCallsCount = 0
+    var addRoomsToAwaitCallsCount: Int {
+        get {
+            if Thread.isMainThread {
+                return addRoomsToAwaitUnderlyingCallsCount
+            } else {
+                var returnValue: Int? = nil
+                DispatchQueue.main.sync {
+                    returnValue = addRoomsToAwaitUnderlyingCallsCount
+                }
+
+                return returnValue!
+            }
+        }
+        set {
+            if Thread.isMainThread {
+                addRoomsToAwaitUnderlyingCallsCount = newValue
+            } else {
+                DispatchQueue.main.sync {
+                    addRoomsToAwaitUnderlyingCallsCount = newValue
+                }
+            }
+        }
     }
-    var underlyingRoomsToAwait: Set<String>!
+    var addRoomsToAwaitCalled: Bool {
+        return addRoomsToAwaitCallsCount > 0
+    }
+    var addRoomsToAwaitReceivedRoomIDs: Set<String>?
+    var addRoomsToAwaitReceivedInvocations: [Set<String>] = []
+    var addRoomsToAwaitClosure: ((Set<String>) -> Void)?
+
+    func addRoomsToAwait(_ roomIDs: Set<String>) {
+        addRoomsToAwaitCallsCount += 1
+        addRoomsToAwaitReceivedRoomIDs = roomIDs
+        DispatchQueue.main.async {
+            self.addRoomsToAwaitReceivedInvocations.append(roomIDs)
+        }
+        addRoomsToAwaitClosure?(roomIDs)
+    }
+    //MARK: - roomMembership
+
+    var roomMembershipRoomIDUnderlyingCallsCount = 0
+    var roomMembershipRoomIDCallsCount: Int {
+        get {
+            if Thread.isMainThread {
+                return roomMembershipRoomIDUnderlyingCallsCount
+            } else {
+                var returnValue: Int? = nil
+                DispatchQueue.main.sync {
+                    returnValue = roomMembershipRoomIDUnderlyingCallsCount
+                }
+
+                return returnValue!
+            }
+        }
+        set {
+            if Thread.isMainThread {
+                roomMembershipRoomIDUnderlyingCallsCount = newValue
+            } else {
+                DispatchQueue.main.sync {
+                    roomMembershipRoomIDUnderlyingCallsCount = newValue
+                }
+            }
+        }
+    }
+    var roomMembershipRoomIDCalled: Bool {
+        return roomMembershipRoomIDCallsCount > 0
+    }
+    var roomMembershipRoomIDReceivedRoomID: String?
+    var roomMembershipRoomIDReceivedInvocations: [String] = []
+
+    var roomMembershipRoomIDUnderlyingReturnValue: Membership?
+    var roomMembershipRoomIDReturnValue: Membership? {
+        get {
+            if Thread.isMainThread {
+                return roomMembershipRoomIDUnderlyingReturnValue
+            } else {
+                var returnValue: Membership?? = nil
+                DispatchQueue.main.sync {
+                    returnValue = roomMembershipRoomIDUnderlyingReturnValue
+                }
+
+                return returnValue!
+            }
+        }
+        set {
+            if Thread.isMainThread {
+                roomMembershipRoomIDUnderlyingReturnValue = newValue
+            } else {
+                DispatchQueue.main.sync {
+                    roomMembershipRoomIDUnderlyingReturnValue = newValue
+                }
+            }
+        }
+    }
+    var roomMembershipRoomIDClosure: ((String) -> Membership?)?
+
+    func roomMembership(roomID: String) -> Membership? {
+        roomMembershipRoomIDCallsCount += 1
+        roomMembershipRoomIDReceivedRoomID = roomID
+        DispatchQueue.main.async {
+            self.roomMembershipRoomIDReceivedInvocations.append(roomID)
+        }
+        if let roomMembershipRoomIDClosure = roomMembershipRoomIDClosure {
+            return roomMembershipRoomIDClosure(roomID)
+        } else {
+            return roomMembershipRoomIDReturnValue
+        }
+    }
     var notificationSettings: NotificationSettingsProxyProtocol {
         get { return underlyingNotificationSettings }
         set(value) { underlyingNotificationSettings = value }

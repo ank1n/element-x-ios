@@ -51,6 +51,23 @@ final class PresenceServiceTests: XCTestCase {
         XCTAssertEqual(service.polledUserIDs, ["@b:x", "@c:x", "@d:x"])
     }
 
+    /// STMOB-311: скрытая вкладка не опрашивается, а её набор строк помнится до возврата —
+    /// вкладки рисуются все сразу, и onAppear при возврате не придёт.
+    func testSuspendedInterestIsSkippedButRemembered() async {
+        let service = makeService()
+        service.setInterest(["@chat:x"], for: .chats)
+        service.setInterest(["@contact:x"], for: .contacts)
+        service.setSuspended(.chats, true)
+        
+        await service.pollOnce()
+        XCTAssertEqual(transport.requestedUserIDs, ["@contact:x"])
+        
+        transport.reset()
+        service.setSuspended(.chats, false)
+        await service.pollOnce()
+        XCTAssertEqual(transport.requestedUserIDs, ["@chat:x"])
+    }
+    
     func testOwnUserIsNeverPolled() async {
         let service = makeService()
         service.setInterest(["@me:x", "@a:x"], for: .chats)
@@ -181,6 +198,21 @@ final class PresenceServiceTests: XCTestCase {
         XCTAssertTrue(store.load().isEmpty, "A room partner's 403 is not persisted.")
     }
 
+    /// Вкладка «Чаты» скрыта, но общая комната с человеком от этого не пропала: его 403 на часы
+    /// не запоминаем, даже если спросили его из-за строки «Контактов».
+    func testSuspendedChatsStillMakeTheUserRoomBacked() async {
+        let service = makeService()
+        transport.responses["@partner:x"] = .status(403)
+        service.setInterest(["@partner:x"], for: .chats)
+        service.setSuspended(.chats, true)
+        service.setInterest(["@partner:x"], for: .contacts)
+        
+        await service.pollOnce()
+        
+        XCTAssertEqual(transport.requestedUserIDs, ["@partner:x"])
+        XCTAssertTrue(store.load().isEmpty)
+    }
+    
     /// Человек из справочника получил 403 (общей комнаты не было), потом с ним завели личный чат:
     /// запомненный отказ больше не должен его прятать.
     func testCachedForbiddenIsIgnoredOnceThereIsASharedRoom() async {
@@ -382,7 +414,7 @@ final class PresenceServiceTests: XCTestCase {
 /// STMOB-304: правила отправки своего статуса.
 @MainActor
 final class OwnPresenceScheduleTests: XCTestCase {
-    private let start = Date(timeIntervalSince1970: 1_000_000)
+    private let start = ContinuousClock.now
     private let token = "token-1"
 
     func testOnlineIsRepeatedBeforeSynapseDropsIt() {
@@ -393,7 +425,7 @@ final class OwnPresenceScheduleTests: XCTestCase {
         schedule.record(.accepted, for: .online, sentAt: start, answeredAt: start)
         XCTAssertEqual(schedule.nextAction(now: start, currentToken: token), .wait(OwnPresenceSchedule.pingInterval))
         XCTAssertLessThan(OwnPresenceSchedule.pingInterval, 30, "Synapse drops a non-syncing client after 30 s.")
-        XCTAssertEqual(schedule.nextAction(now: start.addingTimeInterval(OwnPresenceSchedule.pingInterval), currentToken: token), .send(.online))
+        XCTAssertEqual(schedule.nextAction(now: start.advanced(by: .seconds(OwnPresenceSchedule.pingInterval)), currentToken: token), .send(.online))
     }
 
     /// Следующий пинг считается от начала отправки, а не от ответа: иначе пауза на сервере росла бы
@@ -401,9 +433,9 @@ final class OwnPresenceScheduleTests: XCTestCase {
     func testPingIsCountedFromTheStartOfTheSend() {
         var schedule = OwnPresenceSchedule()
         schedule.desiredStatus = .online
-        schedule.record(.accepted, for: .online, sentAt: start, answeredAt: start.addingTimeInterval(3))
+        schedule.record(.accepted, for: .online, sentAt: start, answeredAt: start.advanced(by: .seconds(3)))
 
-        XCTAssertEqual(schedule.nextAction(now: start.addingTimeInterval(OwnPresenceSchedule.pingInterval), currentToken: token), .send(.online))
+        XCTAssertEqual(schedule.nextAction(now: start.advanced(by: .seconds(OwnPresenceSchedule.pingInterval)), currentToken: token), .send(.online))
     }
 
     func testOtherStatusesAreSentOnce() {
@@ -411,7 +443,7 @@ final class OwnPresenceScheduleTests: XCTestCase {
         schedule.desiredStatus = .unavailable
         schedule.record(.accepted, for: .unavailable, sentAt: start, answeredAt: start)
 
-        XCTAssertEqual(schedule.nextAction(now: start.addingTimeInterval(600), currentToken: token), .idle)
+        XCTAssertEqual(schedule.nextAction(now: start.advanced(by: .seconds(600)), currentToken: token), .idle)
     }
 
     func testRateLimitWaitsForTheServerDelayInsteadOfDroppingTheStatus() {
@@ -419,8 +451,8 @@ final class OwnPresenceScheduleTests: XCTestCase {
         schedule.desiredStatus = .online
         schedule.record(.rateLimited(retryAfter: 7), for: .online, sentAt: start, answeredAt: start)
 
-        XCTAssertEqual(schedule.nextAction(now: start.addingTimeInterval(3), currentToken: token), .wait(4))
-        XCTAssertEqual(schedule.nextAction(now: start.addingTimeInterval(7), currentToken: token), .send(.online))
+        XCTAssertEqual(schedule.nextAction(now: start.advanced(by: .seconds(3)), currentToken: token), .wait(4))
+        XCTAssertEqual(schedule.nextAction(now: start.advanced(by: .seconds(7)), currentToken: token), .send(.online))
     }
 
     /// Лимит Synapse — один PUT в 10 с: смена статуса сразу после принятого PUT ждёт окна,
@@ -431,8 +463,8 @@ final class OwnPresenceScheduleTests: XCTestCase {
         schedule.record(.accepted, for: .online, sentAt: start, answeredAt: start)
 
         schedule.desiredStatus = .unavailable
-        XCTAssertEqual(schedule.nextAction(now: start.addingTimeInterval(1), currentToken: token), .wait(OwnPresenceSchedule.minPutInterval - 1))
-        XCTAssertEqual(schedule.nextAction(now: start.addingTimeInterval(OwnPresenceSchedule.minPutInterval), currentToken: token), .send(.unavailable))
+        XCTAssertEqual(schedule.nextAction(now: start.advanced(by: .seconds(1)), currentToken: token), .wait(OwnPresenceSchedule.minPutInterval - 1))
+        XCTAssertEqual(schedule.nextAction(now: start.advanced(by: .seconds(OwnPresenceSchedule.minPutInterval)), currentToken: token), .send(.unavailable))
     }
 
     func testQuickFlapBackToOnlineSendsNothingNew() {
@@ -444,7 +476,7 @@ final class OwnPresenceScheduleTests: XCTestCase {
         schedule.desiredStatus = .unavailable
         schedule.desiredStatus = .online
 
-        XCTAssertEqual(schedule.nextAction(now: start.addingTimeInterval(2), currentToken: token), .wait(OwnPresenceSchedule.pingInterval - 2))
+        XCTAssertEqual(schedule.nextAction(now: start.advanced(by: .seconds(2)), currentToken: token), .wait(OwnPresenceSchedule.pingInterval - 2))
     }
 
     /// Один сбой сети не должен ронять в offline: первый повтор быстрый, дальше — с ростом.
@@ -459,7 +491,7 @@ final class OwnPresenceScheduleTests: XCTestCase {
                 return XCTFail("Expected a wait after a failure")
             }
             delays.append(delay)
-            now = now.addingTimeInterval(delay)
+            now = now.advanced(by: .seconds(delay))
         }
 
         XCTAssertEqual(delays, [2, 4, 8, 10, 10])
@@ -470,8 +502,8 @@ final class OwnPresenceScheduleTests: XCTestCase {
         schedule.desiredStatus = .online
         schedule.record(.unauthorized(token: token), for: .online, sentAt: start, answeredAt: start)
 
-        XCTAssertEqual(schedule.nextAction(now: start.addingTimeInterval(30), currentToken: token), .wait(OwnPresenceSchedule.tokenCheckInterval))
-        XCTAssertEqual(schedule.nextAction(now: start.addingTimeInterval(30), currentToken: "token-2"), .send(.online))
+        XCTAssertEqual(schedule.nextAction(now: start.advanced(by: .seconds(30)), currentToken: token), .wait(OwnPresenceSchedule.tokenCheckInterval))
+        XCTAssertEqual(schedule.nextAction(now: start.advanced(by: .seconds(30)), currentToken: "token-2"), .send(.online))
     }
 
     func testRateLimitDelayIsReadFromTheBody() {
@@ -481,6 +513,17 @@ final class OwnPresenceScheduleTests: XCTestCase {
         XCTAssertEqual(OwnPresenceManager.result(of: response, status: .online, token: token), .rateLimited(retryAfter: 9.5))
     }
 
+    /// Кривой прокси: бесконечность ронила бы процесс в Duration/Int, сутки — гасили бы статус.
+    func testAbsurdRetryAfterIsCappedOrIgnored() {
+        let huge = PresenceHTTPResponse(statusCode: 429, body: Data(#"{"retry_after_ms":1e300}"#.utf8), retryAfterHeader: nil)
+        let infinite = PresenceHTTPResponse(statusCode: 429, body: Data(), retryAfterHeader: "inf")
+        let negative = PresenceHTTPResponse(statusCode: 429, body: Data(), retryAfterHeader: "-5")
+        
+        XCTAssertEqual(PresenceRequest.retryAfter(from: huge), PresenceRequest.maxRetryAfter)
+        XCTAssertNil(PresenceRequest.retryAfter(from: infinite))
+        XCTAssertNil(PresenceRequest.retryAfter(from: negative))
+    }
+    
     func testRateLimitDelayFallsBackToTheHeader() {
         let response = PresenceHTTPResponse(statusCode: 429, body: Data(), retryAfterHeader: "12")
         XCTAssertEqual(PresenceRequest.retryAfter(from: response), 12)
