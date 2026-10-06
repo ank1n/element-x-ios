@@ -83,7 +83,13 @@ struct CallScreenViewState: BindableState {
 
     /// Keep an explicit local choice throughout the call. Without a choice,
     /// screen sharing selects speaker view; large groups also default to speaker view.
+    var allowsLayoutChoice: Bool {
+        if let roomManager = liveKitRoomManager { return roomManager.displayParticipants.count >= 2 }
+        return callParticipantsCount > 2
+    }
+
     var effectiveLayoutMode: CallLayoutMode {
+        guard allowsLayoutChoice else { return .grid }
         if let override = layoutOverride { return override }
         // STMOB-223: используем единый детект `hasRemoteScreenShare` (по source).
         // Старый name-only детект мимо web/desktop share (пустое имя трека) —
@@ -199,6 +205,10 @@ struct CallVideoVisibility {
 }
 
 enum CallParticipantSelection {
+    static func thumbnails(available: [String], focused: String?, isShowingScreenShare: Bool) -> [String] {
+        isShowingScreenShare ? available : available.filter { $0 != focused }
+    }
+
     static func focus(available: [String], screenShare: String?, pinned: String?, speakers: [String]) -> String? {
         if let screenShare, available.contains(screenShare) { return screenShare }
         if let pinned, available.contains(pinned) { return pinned }

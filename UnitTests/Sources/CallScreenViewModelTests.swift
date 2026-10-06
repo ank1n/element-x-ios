@@ -97,6 +97,7 @@ class CallScreenViewModelTests: XCTestCase {
 
     func testManualPresenterModeAndPinSurviveViewChoice() {
         var state = makeState()
+        state.callParticipantsCount = 3
         state.pinnedParticipantSID = "alice"
         state.layoutOverride = .presenter
         XCTAssertEqual(state.effectiveLayoutMode, .presenter)
@@ -122,6 +123,33 @@ class CallScreenViewModelTests: XCTestCase {
         XCTAssertNil(CallParticipantSelection.contact(identity: "@alice:test.other:DEVICE", participants: [known]))
         XCTAssertNil(CallParticipantSelection.contact(identity: guest.userID, participants: [guest]))
         XCTAssertNil(CallParticipantSelection.contact(identity: "@unknown:test", participants: [known]))
+    }
+
+    func testLayoutChoicesOnlyForMoreThanTwoParticipants() {
+        var state = makeState()
+        state.layoutOverride = .presenter
+        state.pinnedParticipantSID = "alice"
+        state.videoVisibility.hideOwnVideo = true
+        for count in [0, 1, 2] {
+            state.callParticipantsCount = count
+            XCTAssertFalse(state.allowsLayoutChoice)
+            XCTAssertEqual(state.effectiveLayoutMode, .grid)
+        }
+        state.callParticipantsCount = 3
+        XCTAssertTrue(state.allowsLayoutChoice)
+        XCTAssertEqual(state.effectiveLayoutMode, .presenter)
+        state.callParticipantsCount = 2
+        XCTAssertEqual(state.effectiveLayoutMode, .grid)
+        XCTAssertEqual(state.pinnedParticipantSID, "alice")
+        XCTAssertTrue(state.videoVisibility.hideOwnVideo)
+        state.callParticipantsCount = 3
+        XCTAssertEqual(state.effectiveLayoutMode, .presenter)
+    }
+
+    func testMainCameraIsNotDuplicatedButPresenterCameraCanAccompanyScreenShare() {
+        XCTAssertEqual(CallParticipantSelection.thumbnails(available: ["alice", "bob"], focused: "alice", isShowingScreenShare: false), ["bob"])
+        XCTAssertEqual(CallParticipantSelection.thumbnails(available: ["alice"], focused: "alice", isShowingScreenShare: false), [])
+        XCTAssertEqual(CallParticipantSelection.thumbnails(available: ["alice", "bob"], focused: "alice", isShowingScreenShare: true), ["alice", "bob"])
     }
 }
 

@@ -200,19 +200,19 @@ struct CallScreen: View {
            context.viewState.callStatus != .connecting {
             // sTalk: Native call mode — no WebView, native LiveKit rendering
             NativeCallGridView(roomManager: roomManager,
-                               isDirect: context.viewState.isDirect,
+                               isDirect: context.viewState.isDirect || !context.viewState.allowsLayoutChoice,
                                isMinimized: isMinimized,
                                isLocalVideoEnabled: context.viewState.isVideoEnabled,
                                isLocalAudioMuted: context.viewState.isMuted,
                                participants: context.viewState.participants,
                                mediaProvider: context.viewState.mediaProvider,
                                layoutMode: context.viewState.effectiveLayoutMode,
-                               pinnedParticipantSID: context.viewState.pinnedParticipantSID,
+                               pinnedParticipantSID: context.viewState.allowsLayoutChoice ? context.viewState.pinnedParticipantSID : nil,
                                onTogglePin: { sid in context.send(viewAction: .togglePinParticipant(sid: sid)) },
                                onRequestPortrait: { context.send(viewAction: .requestPortraitOrientation) },
-                               videoVisibility: context.viewState.videoVisibility,
-                               isLayoutAutomatic: context.viewState.layoutOverride == nil,
-                               onPin: { sid, mode in context.send(viewAction: .pinParticipant(sid: sid, mode: mode)) },
+                               videoVisibility: context.viewState.allowsLayoutChoice ? context.viewState.videoVisibility : CallVideoVisibility(),
+                               isLayoutAutomatic: context.viewState.layoutOverride == nil || !context.viewState.allowsLayoutChoice,
+                               onPin: context.viewState.allowsLayoutChoice ? { sid, mode in context.send(viewAction: .pinParticipant(sid: sid, mode: mode)) } : nil,
                                onUnpin: { context.send(viewAction: .unpinParticipant) },
                                onShowContact: userSession == nil ? nil : { identity in
                                    selectedContact = CallParticipantSelection.contact(identity: identity, participants: context.viewState.participants)
@@ -424,34 +424,36 @@ struct CallScreen: View {
                 }
             }
 
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    ForEach(CallLayoutMode.allCases, id: \.self) { mode in
-                        Button { context.send(viewAction: .selectLayout(mode)) } label: {
-                            Label(mode.title, systemImage: context.viewState.effectiveLayoutMode == mode ? "checkmark" : "rectangle")
+            if context.viewState.allowsLayoutChoice {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        ForEach(CallLayoutMode.allCases, id: \.self) { mode in
+                            Button { context.send(viewAction: .selectLayout(mode)) } label: {
+                                Label(mode.title, systemImage: context.viewState.effectiveLayoutMode == mode ? "checkmark" : "rectangle")
+                            }
                         }
+                        Section(NSLocalizedString("stalk_call_view_local_only", value: "Only changes your view", comment: "Call filter explanation")) {
+                            Button { context.send(viewAction: .toggleHideOwnVideo) } label: {
+                                Label(NSLocalizedString("stalk_call_hide_self", value: "Hide my video", comment: "Call view filter"),
+                                      systemImage: context.viewState.videoVisibility.hideOwnVideo ? "checkmark" : "person")
+                            }
+                            Button { context.send(viewAction: .toggleHideParticipantsWithoutVideo) } label: {
+                                Label(NSLocalizedString("stalk_call_hide_without_video", value: "Hide participants without video", comment: "Call view filter"),
+                                      systemImage: context.viewState.videoVisibility.hideParticipantsWithoutVideo ? "checkmark" : "video.slash")
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "square.grid.2x2")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(8)
+                            .background(.white.opacity(0.2))
+                            .clipShape(Circle())
                     }
-                    Section(NSLocalizedString("stalk_call_view_local_only", value: "Only changes your view", comment: "Call filter explanation")) {
-                        Button { context.send(viewAction: .toggleHideOwnVideo) } label: {
-                            Label(NSLocalizedString("stalk_call_hide_self", value: "Hide my video", comment: "Call view filter"),
-                                  systemImage: context.viewState.videoVisibility.hideOwnVideo ? "checkmark" : "person")
-                        }
-                        Button { context.send(viewAction: .toggleHideParticipantsWithoutVideo) } label: {
-                            Label(NSLocalizedString("stalk_call_hide_without_video", value: "Hide participants without video", comment: "Call view filter"),
-                                  systemImage: context.viewState.videoVisibility.hideParticipantsWithoutVideo ? "checkmark" : "video.slash")
-                        }
-                    }
-                } label: {
-                    Image(systemName: "square.grid.2x2")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white)
-                        .padding(8)
-                        .background(.white.opacity(0.2))
-                        .clipShape(Circle())
+                    .accessibilityLabel(NSLocalizedString("stalk_call_view_menu", value: "View", comment: "Call view menu"))
+                    .accessibilityValue(context.viewState.effectiveLayoutMode.title)
+                    .accessibilityIdentifier("callViewMenu")
                 }
-                .accessibilityLabel(NSLocalizedString("stalk_call_view_menu", value: "View", comment: "Call view menu"))
-                .accessibilityValue(context.viewState.effectiveLayoutMode.title)
-                .accessibilityIdentifier("callViewMenu")
             }
         }
 

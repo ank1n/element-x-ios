@@ -1004,7 +1004,7 @@ private struct SpeakerCallLayout: View {
                     ScrollView {
                         VStack(spacing: 8) {
                             if showsLocalTile { localStripTile(width: 120, height: 90) }
-                            ForEach(eligibleRemotes, id: \.sid) { participant in
+                            ForEach(thumbnailRemotes, id: \.sid) { participant in
                                 speakerStripTile(for: participant, width: 120, height: 90)
                             }
                         }
@@ -1083,13 +1083,22 @@ private struct SpeakerCallLayout: View {
         roomManager.displayParticipants.filter { !videoVisibility.hideParticipantsWithoutVideo || $0.firstCameraVideoTrack != nil || $0.videoTracks.contains { $0.isScreenShareTrack && $0.isSubscribed && !$0.isMuted } }
     }
 
+    private var thumbnailRemotes: [RemoteParticipant] {
+        let ids = CallParticipantSelection.thumbnails(available: eligibleRemotes.compactMap { $0.sid?.stringValue },
+                                                      focused: focusedSID, isShowingScreenShare: focusedScreenShareOwner != nil)
+        return eligibleRemotes.filter { participant in
+            guard let sid = participant.sid?.stringValue else { return false }
+            return ids.contains(sid)
+        }
+    }
+
     /// STMOB-128 build 148: тайлы strip растягиваются по ширине поровну.
     /// 1 тайл = full width, 2-6 — делятся равномерно, >6 — горизонтальный scroll
     /// с фикс-шириной.
     @ViewBuilder
     private func stripView(in geometry: GeometryProxy, height: CGFloat) -> some View {
         let visibleParticipants = stripParticipants
-        let overflow = eligibleRemotes.count - visibleParticipants.count
+        let overflow = thumbnailRemotes.count - visibleParticipants.count
         // +1 — своя плитка, она всегда в полосе.
         let totalTiles = visibleParticipants.count + (showsLocalTile ? 1 : 0) + (overflow > 0 ? 1 : 0)
         let hpadding: CGFloat = 12
@@ -1147,12 +1156,12 @@ private struct SpeakerCallLayout: View {
     /// Приоритет: (1) pinned, (2) с camera/screen-share track, (3) последний
     /// active speaker, (4) первые remote по списку.
     private var stripParticipants: [RemoteParticipant] {
-        let allRemotes = eligibleRemotes
+        let allRemotes = thumbnailRemotes
         guard allRemotes.count > 3 else { return allRemotes }
         var ordered: [RemoteParticipant] = []
         var seen = Set<String>()
         func add(_ p: RemoteParticipant) {
-            guard let sid = p.sid?.stringValue, !seen.contains(sid) else { return }
+            guard let sid = p.sid?.stringValue, !seen.contains(sid), allRemotes.contains(where: { $0.sid?.stringValue == sid }) else { return }
             ordered.append(p)
             seen.insert(sid)
         }
@@ -2148,7 +2157,7 @@ private struct CallParticipantMenu: ViewModifier {
                 }
             }
             .overlay(alignment: .topTrailing) {
-                if sid != nil || contact != nil {
+                if (sid != nil && onPin != nil) || contact != nil {
                     Menu { actions } label: {
                         Image(systemName: "ellipsis")
                             .foregroundStyle(.white)
@@ -2164,7 +2173,7 @@ private struct CallParticipantMenu: ViewModifier {
 
     @ViewBuilder
     private var actions: some View {
-        if let sid {
+        if let sid, onPin != nil {
             Button { onPin?(sid, .speaker) } label: {
                 Label(NSLocalizedString("stalk_call_pin_speaker", value: "Pin with thumbnails", comment: "Call pin action"), systemImage: "pin")
             }

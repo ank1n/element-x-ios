@@ -548,12 +548,14 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             dismissKeyboard()
             actionsSubject.send(.pictureInPictureStopped)
         case .toggleLayoutMode:
+            guard state.allowsLayoutChoice else { return }
             // STMOB-113: ручной toggle Grid ↔ Speaker. Override побеждает auto-логику
             // (>8 участников → speaker по умолчанию). При hangup сбрасывается в `stop()`.
             let current = state.effectiveLayoutMode
             state.layoutOverride = (current == .grid) ? .speaker : .grid
             MXLog.info("STMOB-113 layoutOverride → \(state.layoutOverride == .speaker ? "speaker" : "grid")")
         case .togglePinParticipant(let sid):
+            guard state.allowsLayoutChoice else { return }
             // STMOB-113: pin/unpin в Speaker mode. Если pin совпадает с текущим
             // — сбрасываем (unpin); иначе закрепляем нового.
             if state.pinnedParticipantSID == sid {
@@ -564,15 +566,19 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 MXLog.info("STMOB-113 pin → \(sid)")
             }
         case .selectLayout(let mode):
+            guard state.allowsLayoutChoice else { return }
             state.layoutOverride = mode
         case .pinParticipant(let sid, let mode):
+            guard state.allowsLayoutChoice else { return }
             state.pinnedParticipantSID = sid
             state.layoutOverride = mode
         case .unpinParticipant:
             state.pinnedParticipantSID = nil
         case .toggleHideOwnVideo:
+            guard state.allowsLayoutChoice else { return }
             state.videoVisibility.hideOwnVideo.toggle()
         case .toggleHideParticipantsWithoutVideo:
+            guard state.allowsLayoutChoice else { return }
             state.videoVisibility.hideParticipantsWithoutVideo.toggle()
         case .requestPortraitOrientation:
             // STMOB-218: leave the landscape fullscreen-share view back to portrait.
