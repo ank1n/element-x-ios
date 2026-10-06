@@ -56,6 +56,65 @@ class RoomDetailsScreenViewModelTests: XCTestCase {
         XCTAssertEqual(context.viewState.bindings.leaveRoomAlertItem?.state, .public)
         XCTAssertEqual(context.viewState.bindings.leaveRoomAlertItem?.subtitle, L10n.leaveRoomAlertSubtitle)
     }
+
+    // STALK-999: the details screen must populate its existing last-seen label.
+    private func makePresenceDetails(service: PresenceService, isDirect: Bool = true) {
+        viewModel.stop()
+        roomProxyMock = JoinedRoomProxyMock(.init(name: "Presence", isDirect: isDirect,
+                                                  members: [.mockMe, .mockBob]))
+        viewModel = RoomDetailsScreenViewModel(roomProxy: roomProxyMock,
+                                               userSession: UserSessionMock(.init()),
+                                               analyticsService: ServiceLocator.shared.analytics,
+                                               userIndicatorController: ServiceLocator.shared.userIndicatorController,
+                                               notificationSettingsProxy: notificationSettingsProxyMock,
+                                               attributedStringBuilder: AttributedStringBuilder(mentionBuilder: MentionBuilder()),
+                                               appSettings: ServiceLocator.shared.settings,
+                                               presenceService: service)
+    }
+
+    private func makeDetailsPresenceService() -> PresenceService {
+        // No credentials: these tests exercise UI subscriptions without network.
+        PresenceService(homeserver: "https://example.invalid", tokenProvider: { nil },
+                        ownUserID: RoomMemberProxyMock.mockMe.userID)
+    }
+
+    func testDMPresenceLoadsCachedLastSeenAndTracksChanges() async throws {
+        let service = makeDetailsPresenceService()
+        let userID = RoomMemberProxyMock.mockBob.userID
+        let cached = UserPresence(serverOnline: false, lastSeenDate: Date(timeIntervalSince1970: 100))
+        service.presenceSubject.send([userID: cached])
+        makePresenceDetails(service: service)
+        let loaded = deferFulfillment(context.observe(\.viewState.dmPresence)) { $0 == cached }
+        try await loaded.fulfill()
+        XCTAssertTrue(service.polledUserIDs.contains(userID))
+
+        let online = UserPresence(serverOnline: true, lastSeenDate: Date())
+        let changed = deferFulfillment(context.observe(\.viewState.dmPresence)) { $0 == online }
+        service.presenceSubject.send([userID: online])
+        try await changed.fulfill()
+        viewModel.stop()
+    }
+
+    func testMissingDMPresenceDoesNotInventLastSeen() async throws {
+        let service = makeDetailsPresenceService()
+        makePresenceDetails(service: service)
+        let recipient = deferFulfillment(context.observe(\.viewState.dmRecipientInfo)) { $0 != nil }
+        try await recipient.fulfill()
+        XCTAssertNil(context.viewState.dmPresence)
+        XCTAssertTrue(service.polledUserIDs.contains(RoomMemberProxyMock.mockBob.userID))
+        viewModel.stop()
+    }
+
+    func testStoppingDetailsRemovesOnlyItsOwnPresenceInterest() async throws {
+        let service = makeDetailsPresenceService()
+        service.setInterest(["@other:example.invalid"], for: .contacts)
+        makePresenceDetails(service: service)
+        let recipient = deferFulfillment(context.observe(\.viewState.dmRecipientInfo)) { $0 != nil }
+        try await recipient.fulfill()
+        XCTAssertTrue(service.polledUserIDs.contains(RoomMemberProxyMock.mockBob.userID))
+        viewModel.stop()
+        XCTAssertEqual(service.polledUserIDs, ["@other:example.invalid"])
+    }
     
     func testLeaveRoomTappedWhenRoomNotPublic() async throws {
         let mockedMembers: [RoomMemberProxyMock] = [.mockBob, .mockAlice]

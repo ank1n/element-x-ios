@@ -19,6 +19,10 @@ class RoomDetailsScreenViewModel: RoomDetailsScreenViewModelType, RoomDetailsScr
     private let notificationSettingsProxy: NotificationSettingsProxyProtocol
     private let attributedStringBuilder: AttributedStringBuilderProtocol
     private let appSettings: AppSettings
+    private let presenceService: PresenceService?
+    private let presenceInterest = PresenceInterest.room(UUID().uuidString)
+    private var presenceSubscription: AnyCancellable?
+    private var isStopped = false
 
     private var pinnedEventsTimelineItemProvider: TimelineItemProviderProtocol? {
         didSet {
@@ -50,7 +54,8 @@ class RoomDetailsScreenViewModel: RoomDetailsScreenViewModelType, RoomDetailsScr
          userIndicatorController: UserIndicatorControllerProtocol,
          notificationSettingsProxy: NotificationSettingsProxyProtocol,
          attributedStringBuilder: AttributedStringBuilderProtocol,
-         appSettings: AppSettings) {
+         appSettings: AppSettings,
+         presenceService: PresenceService? = nil) {
         self.roomProxy = roomProxy
         self.userSession = userSession
         self.analyticsService = analyticsService
@@ -58,6 +63,7 @@ class RoomDetailsScreenViewModel: RoomDetailsScreenViewModelType, RoomDetailsScr
         self.notificationSettingsProxy = notificationSettingsProxy
         self.attributedStringBuilder = attributedStringBuilder
         self.appSettings = appSettings
+        self.presenceService = presenceService ?? AppCoordinator.sharedPresenceService
         
         let topic = attributedStringBuilder.fromPlain(roomProxy.infoPublisher.value.topic, detectMarkdown: false)
         
@@ -105,6 +111,9 @@ class RoomDetailsScreenViewModel: RoomDetailsScreenViewModelType, RoomDetailsScr
     // MARK: - Public
     
     func stop() {
+        isStopped = true
+        presenceSubscription?.cancel()
+        presenceService?.removeInterest(for: presenceInterest)
         // Work around QLPreviewController dismissal issues, see the InteractiveQuickLookModifier.
         state.bindings.mediaPreviewItem = nil
     }
@@ -317,18 +326,47 @@ class RoomDetailsScreenViewModel: RoomDetailsScreenViewModelType, RoomDetailsScr
                 }
                 
                 guard roomProxy.isDirectOneToOneRoom else {
+                    self.updateDMPresence(userID: nil)
                     return
                 }
                 
-                if let dmRecipient = members.first(where: { $0.userID != ownUserID }) {
+                if let dmRecipient = members.first(where: {
+                    $0.userID != ownUserID && !$0.userID.hasPrefix("@meet-") && !$0.userID.hasPrefix("@stalk-system:")
+                }) {
                     self.state.dmRecipientInfo = .init(member: .init(withProxy: dmRecipient))
+                    self.updateDMPresence(userID: dmRecipient.userID)
                     
                     Task { await self.updateMemberIdentityVerificationStates() }
+                } else {
+                    self.state.dmRecipientInfo = nil
+                    self.updateDMPresence(userID: nil)
                 }
             }
             .store(in: &cancellables)
         
         await roomProxy.updateMembers()
+    }
+
+    /// STALK-999: the details view already renders last seen, but its state
+    /// was never connected to presence. Reuse the shared, rate-limited poller.
+    private func updateDMPresence(userID: String?) {
+        guard !isStopped, let presenceService else { return }
+        guard let userID else {
+            state.dmPresence = nil
+            presenceService.removeInterest(for: presenceInterest)
+            return
+        }
+        state.dmPresence = presenceService.presenceSubject.value[userID]
+        if presenceSubscription == nil {
+            presenceSubscription = presenceService.presenceSubject
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] presence in
+                    guard let self, !self.isStopped, self.roomProxy.isDirectOneToOneRoom,
+                          let recipient = self.state.dmRecipientInfo?.member.id else { return }
+                    self.state.dmPresence = presence[recipient]
+                }
+        }
+        presenceService.setInterest([userID], for: presenceInterest)
     }
     
     private func updateMemberIdentityVerificationStates() async {
