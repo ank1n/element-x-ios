@@ -1890,3 +1890,19 @@
 "stalk_meeting_link_forbidden" = "У вас нет доступа к этой встрече. Обратитесь к организатору.";
 "stalk_meeting_link_unauthorized" = "Чтобы открыть встречу, войдите в аккаунт ещё раз.";
 "stalk_meeting_link_not_found" = "Встреча не найдена. Проверьте ссылку.";
+
+// STMOB-313: local call view and participant menus.
+"stalk_call_view_gallery" = "Галерея";
+"stalk_call_view_speaker" = "Говорящий и миниатюры";
+"stalk_call_view_presenter" = "Докладчик";
+"stalk_call_hide_self" = "Скрыть своё видео";
+"stalk_call_hide_without_video" = "Скрыть участников без видео";
+"stalk_call_view_menu" = "Вид";
+"stalk_call_no_visible_video" = "Нет видео для отображения. Участники остаются в звонке.";
+"stalk_call_participant_menu" = "Меню участника";
+"stalk_call_pin_speaker" = "Закрепить с миниатюрами";
+"stalk_call_pin_presenter" = "Закрепить как докладчика";
+"stalk_call_unpin" = "Открепить";
+"stalk_call_view_contact" = "Посмотреть контакт";
+"stalk_call_pinned" = "Закреплённый участник";
+"stalk_call_view_local_only" = "Меняет только ваш вид звонка";

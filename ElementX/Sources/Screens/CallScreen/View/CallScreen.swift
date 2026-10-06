@@ -15,6 +15,8 @@ import WebKit
 
 struct CallScreen: View {
     @ObservedObject var context: CallScreenViewModel.Context
+    var userSession: UserSessionProtocol?
+    @State private var selectedContact: CallParticipantInfo?
     @State private var showRecordingConsent = false
     @State private var showParticipants = false
 
@@ -117,6 +119,11 @@ struct CallScreen: View {
                                  })
                                  .presentationDetents([.medium])
         }
+        .sheet(item: $selectedContact) { contact in
+            if let userSession {
+                CallParticipantProfile(userID: contact.userID, userSession: userSession)
+            }
+        }
         .sheet(isPresented: $showParticipants) {
             CallParticipantsSheet(participants: context.viewState.participants,
                                   activeParticipantIDs: Set(context.viewState.activeCallParticipantIDs),
@@ -202,14 +209,21 @@ struct CallScreen: View {
                                layoutMode: context.viewState.effectiveLayoutMode,
                                pinnedParticipantSID: context.viewState.pinnedParticipantSID,
                                onTogglePin: { sid in context.send(viewAction: .togglePinParticipant(sid: sid)) },
-                               onRequestPortrait: { context.send(viewAction: .requestPortraitOrientation) })
-                .ignoresSafeArea(.container, edges: .bottom)
-                // Подложка для системного окна «картинка в картинке»: она должна
-                // быть в иерархии в момент сворачивания приложения, иначе система
-                // окно не откроет. Невидимая и не перехватывает касания.
-                .overlay(alignment: .topLeading) {
-                    pictureInPictureSource(roomManager: roomManager)
-                }
+                               onRequestPortrait: { context.send(viewAction: .requestPortraitOrientation) },
+                               videoVisibility: context.viewState.videoVisibility,
+                               isLayoutAutomatic: context.viewState.layoutOverride == nil,
+                               onPin: { sid, mode in context.send(viewAction: .pinParticipant(sid: sid, mode: mode)) },
+                               onUnpin: { context.send(viewAction: .unpinParticipant) },
+                               onShowContact: userSession == nil ? nil : { identity in
+                                   selectedContact = CallParticipantSelection.contact(identity: identity, participants: context.viewState.participants)
+                               })
+                               .ignoresSafeArea(.container, edges: .bottom)
+                               // Подложка для системного окна «картинка в картинке»: она должна
+                               // быть в иерархии в момент сворачивания приложения, иначе система
+                               // окно не откроет. Невидимая и не перехватывает касания.
+                               .overlay(alignment: .topLeading) {
+                                   pictureInPictureSource(roomManager: roomManager)
+                               }
         } else if context.viewState.url == nil {
             // Экран набора: до подключения показываем, кого вызываем, + «Вызов»
             // с анимированными точками (попытки дозвона, в такт гудкам).
@@ -410,21 +424,34 @@ struct CallScreen: View {
                 }
             }
 
-            // STMOB-113: Layout toggle (Grid ↔ Speaker). Только для group call с
-            // 2+ remote (одного человека закреплять смысла нет).
-            if (context.viewState.liveKitRoomManager?.displayParticipants.count ?? 0) >= 2 {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { context.send(viewAction: .toggleLayoutMode) } label: {
-                        Image(systemName: context.viewState.effectiveLayoutMode == .speaker
-                            ? "square.grid.2x2"
-                            : "rectangle.inset.filled")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.white)
-                            .padding(8)
-                            .background(.white.opacity(0.2))
-                            .clipShape(Circle())
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    ForEach(CallLayoutMode.allCases, id: \.self) { mode in
+                        Button { context.send(viewAction: .selectLayout(mode)) } label: {
+                            Label(mode.title, systemImage: context.viewState.effectiveLayoutMode == mode ? "checkmark" : "rectangle")
+                        }
                     }
+                    Section(NSLocalizedString("stalk_call_view_local_only", value: "Only changes your view", comment: "Call filter explanation")) {
+                        Button { context.send(viewAction: .toggleHideOwnVideo) } label: {
+                            Label(NSLocalizedString("stalk_call_hide_self", value: "Hide my video", comment: "Call view filter"),
+                                  systemImage: context.viewState.videoVisibility.hideOwnVideo ? "checkmark" : "person")
+                        }
+                        Button { context.send(viewAction: .toggleHideParticipantsWithoutVideo) } label: {
+                            Label(NSLocalizedString("stalk_call_hide_without_video", value: "Hide participants without video", comment: "Call view filter"),
+                                  systemImage: context.viewState.videoVisibility.hideParticipantsWithoutVideo ? "checkmark" : "video.slash")
+                        }
+                    }
+                } label: {
+                    Image(systemName: "square.grid.2x2")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(8)
+                        .background(.white.opacity(0.2))
+                        .clipShape(Circle())
                 }
+                .accessibilityLabel(NSLocalizedString("stalk_call_view_menu", value: "View", comment: "Call view menu"))
+                .accessibilityValue(context.viewState.effectiveLayoutMode.title)
+                .accessibilityIdentifier("callViewMenu")
             }
         }
 
@@ -886,5 +913,29 @@ struct CallScreen_Previews: PreviewProvider {
     
     static var previews: some View {
         CallScreen(context: viewModel.context)
+    }
+}
+
+/// Reuse the authorised profile loader, without starting another conversation from a live call.
+private struct CallParticipantProfile: View {
+    @State private var coordinator: UserProfileScreenCoordinator
+    @Environment(\.dismiss) private var dismiss
+
+    init(userID: String, userSession: UserSessionProtocol) {
+        _coordinator = State(initialValue: UserProfileScreenCoordinator(parameters: .init(userID: userID,
+                                                                                          isPresentedModally: true,
+                                                                                          userSession: userSession,
+                                                                                          userIndicatorController: ServiceLocator.shared.userIndicatorController,
+                                                                                          analytics: ServiceLocator.shared.analytics,
+                                                                                          allowsConversationActions: false)))
+    }
+
+    var body: some View {
+        NavigationStack { coordinator.toPresentable() }
+            .onAppear { coordinator.start() }
+            .onDisappear { coordinator.stop() }
+            .onReceive(coordinator.actionsPublisher) { action in
+                if case .dismiss = action { dismiss() }
+            }
     }
 }

@@ -1529,3 +1529,19 @@
 "stalk_meeting_link_forbidden" = "Sizda bu uchrashuvga kirish huquqi yoʻq. Tashkilotchiga murojaat qiling.";
 "stalk_meeting_link_unauthorized" = "Uchrashuvni ochish uchun hisobingizga qayta kiring.";
 "stalk_meeting_link_not_found" = "Uchrashuv topilmadi. Havolani tekshiring.";
+
+// STMOB-313: local call view and participant menus.
+"stalk_call_view_gallery" = "Galereya";
+"stalk_call_view_speaker" = "Gapiruvchi va kichik tasvirlar";
+"stalk_call_view_presenter" = "Maʼruzachi";
+"stalk_call_hide_self" = "Oʻz videomni yashirish";
+"stalk_call_hide_without_video" = "Videosiz ishtirokchilarni yashirish";
+"stalk_call_view_menu" = "Koʻrinish";
+"stalk_call_no_visible_video" = "Koʻrsatish uchun video yoʻq. Ishtirokchilar qoʻngʻiroqda qoladi.";
+"stalk_call_participant_menu" = "Ishtirokchi menyusi";
+"stalk_call_pin_speaker" = "Kichik tasvirlar bilan mahkamlash";
+"stalk_call_pin_presenter" = "Maʼruzachi sifatida mahkamlash";
+"stalk_call_unpin" = "Mahkamlashni bekor qilish";
+"stalk_call_view_contact" = "Kontaktni koʻrish";
+"stalk_call_pinned" = "Mahkamlangan ishtirokchi";
+"stalk_call_view_local_only" = "Faqat sizdagi koʻrinishni oʻzgartiradi";

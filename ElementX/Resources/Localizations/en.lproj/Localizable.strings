@@ -2020,3 +2020,19 @@
 "stalk_meeting_link_forbidden" = "You don’t have access to this meeting. Contact the organiser.";
 "stalk_meeting_link_unauthorized" = "Sign in again to open this meeting.";
 "stalk_meeting_link_not_found" = "This meeting could not be found. Check the link.";
+
+// STMOB-313: local call view and participant menus.
+"stalk_call_view_gallery" = "Gallery";
+"stalk_call_view_speaker" = "Speaker and thumbnails";
+"stalk_call_view_presenter" = "Presenter";
+"stalk_call_hide_self" = "Hide my video";
+"stalk_call_hide_without_video" = "Hide participants without video";
+"stalk_call_view_menu" = "View";
+"stalk_call_no_visible_video" = "No video to display. Participants are still in the call.";
+"stalk_call_participant_menu" = "Participant menu";
+"stalk_call_pin_speaker" = "Pin with thumbnails";
+"stalk_call_pin_presenter" = "Pin as presenter";
+"stalk_call_unpin" = "Unpin";
+"stalk_call_view_contact" = "View contact";
+"stalk_call_pinned" = "Pinned participant";
+"stalk_call_view_local_only" = "Only changes your view";

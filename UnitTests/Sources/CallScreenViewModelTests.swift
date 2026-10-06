@@ -80,6 +80,49 @@ class CallScreenViewModelTests: XCTestCase {
         XCTAssertNil(info.displayName)
         XCTAssertEqual(info.id, "@bob:example.com")
     }
+
+    // STMOB-313: display choices must not change camera, audio, or participation.
+    func testVideoFiltersAreLocalAndKeepScreenSharingVisible() {
+        var state = makeState()
+        state.isMuted = true
+        state.videoVisibility.hideOwnVideo = true
+        state.videoVisibility.hideParticipantsWithoutVideo = true
+        XCTAssertFalse(state.videoVisibility.shows(isLocal: true, hasVideo: true))
+        XCTAssertFalse(state.videoVisibility.shows(isLocal: false, hasVideo: false))
+        XCTAssertTrue(state.videoVisibility.shows(isLocal: false, hasVideo: true))
+        XCTAssertTrue(state.videoVisibility.shows(isLocal: false, hasVideo: false, isScreenShare: true))
+        XCTAssertTrue(state.isVideoEnabled)
+        XCTAssertTrue(state.isMuted)
+    }
+
+    func testManualPresenterModeAndPinSurviveViewChoice() {
+        var state = makeState()
+        state.pinnedParticipantSID = "alice"
+        state.layoutOverride = .presenter
+        XCTAssertEqual(state.effectiveLayoutMode, .presenter)
+        state.layoutOverride = .grid
+        XCTAssertEqual(state.pinnedParticipantSID, "alice")
+        state.reconcilePinnedParticipant(available: ["bob"])
+        XCTAssertNil(state.pinnedParticipantSID)
+        XCTAssertEqual(state.effectiveLayoutMode, .grid)
+    }
+
+    func testFocusReturnsToPinAfterScreenShareAndToSpeakerAfterDeparture() {
+        let ids = ["alice", "bob", "carol"]
+        XCTAssertEqual(CallParticipantSelection.focus(available: ids, screenShare: "carol", pinned: "alice", speakers: ["bob"]), "carol")
+        XCTAssertEqual(CallParticipantSelection.focus(available: ids, screenShare: nil, pinned: "alice", speakers: ["bob"]), "alice")
+        XCTAssertEqual(CallParticipantSelection.focus(available: ["bob", "carol"], screenShare: nil, pinned: "alice", speakers: ["bob"]), "bob")
+        XCTAssertNil(CallParticipantSelection.focus(available: [], screenShare: "carol", pinned: "alice", speakers: ["bob"]))
+    }
+
+    func testParticipantContactUsesKnownMXIDAndRejectsGuestOrPartialMatch() {
+        let known = CallParticipantInfo(userID: "@alice:test", displayName: "Alice", avatarURL: nil)
+        let guest = CallParticipantInfo(userID: "@meet-guest:test", displayName: "Guest", avatarURL: nil)
+        XCTAssertEqual(CallParticipantSelection.contact(identity: "@alice:test:DEVICE", participants: [known])?.userID, known.userID)
+        XCTAssertNil(CallParticipantSelection.contact(identity: "@alice:test.other:DEVICE", participants: [known]))
+        XCTAssertNil(CallParticipantSelection.contact(identity: guest.userID, participants: [guest]))
+        XCTAssertNil(CallParticipantSelection.contact(identity: "@unknown:test", participants: [known]))
+    }
 }
 
 // MARK: - Mock

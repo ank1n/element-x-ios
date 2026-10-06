@@ -425,6 +425,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             .receive(on: DispatchQueue.main)
             .sink { [weak self] participants in
                 guard let self else { return }
+                self.state.reconcilePinnedParticipant(available: self.liveKitRoomManager.displayParticipants.compactMap { $0.sid?.stringValue })
                 let realUsersCount = participants.filter { $0.kind == .standard }.count
                 // Собеседник подключился — гудки исходящего вызова умолкают
                 if realUsersCount > 0 {
@@ -562,6 +563,17 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 state.pinnedParticipantSID = sid
                 MXLog.info("STMOB-113 pin → \(sid)")
             }
+        case .selectLayout(let mode):
+            state.layoutOverride = mode
+        case .pinParticipant(let sid, let mode):
+            state.pinnedParticipantSID = sid
+            state.layoutOverride = mode
+        case .unpinParticipant:
+            state.pinnedParticipantSID = nil
+        case .toggleHideOwnVideo:
+            state.videoVisibility.hideOwnVideo.toggle()
+        case .toggleHideParticipantsWithoutVideo:
+            state.videoVisibility.hideParticipantsWithoutVideo.toggle()
         case .requestPortraitOrientation:
             // STMOB-218: leave the landscape fullscreen-share view back to portrait.
             actionsSubject.send(.requestPortraitOrientation)
@@ -584,6 +596,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         // STMOB-113: per-call layout override / pin сбрасываем при hangup.
         state.layoutOverride = nil
         state.pinnedParticipantSID = nil
+        state.videoVisibility = CallVideoVisibility()
         MXLog.info("sTalk: stop() called — safety net cleanup")
         // Re-allow auto-lock now that call is ending.
         UIApplication.shared.isIdleTimerDisabled = false
@@ -632,6 +645,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         recordingPollingTask = nil
         state.layoutOverride = nil
         state.pinnedParticipantSID = nil
+        state.videoVisibility = CallVideoVisibility()
         UIApplication.shared.isIdleTimerDisabled = false
     }
 

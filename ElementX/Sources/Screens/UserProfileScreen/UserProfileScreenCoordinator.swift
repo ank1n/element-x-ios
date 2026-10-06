@@ -15,6 +15,7 @@ struct UserProfileScreenCoordinatorParameters {
     let userSession: UserSessionProtocol
     let userIndicatorController: UserIndicatorControllerProtocol
     let analytics: AnalyticsService
+    var allowsConversationActions = true
 }
 
 enum UserProfileScreenCoordinatorAction {
@@ -25,6 +26,7 @@ enum UserProfileScreenCoordinatorAction {
 
 final class UserProfileScreenCoordinator: CoordinatorProtocol {
     private var viewModel: UserProfileScreenViewModelProtocol
+    private let allowsConversationActions: Bool
     
     private var cancellables = Set<AnyCancellable>()
     
@@ -34,6 +36,7 @@ final class UserProfileScreenCoordinator: CoordinatorProtocol {
     }
     
     init(parameters: UserProfileScreenCoordinatorParameters) {
+        allowsConversationActions = parameters.allowsConversationActions
         viewModel = UserProfileScreenViewModel(userID: parameters.userID,
                                                isPresentedModally: parameters.isPresentedModally,
                                                userSession: parameters.userSession,
@@ -62,6 +65,6 @@ final class UserProfileScreenCoordinator: CoordinatorProtocol {
     }
     
     func toPresentable() -> AnyView {
-        AnyView(UserProfileScreen(context: viewModel.context))
+        AnyView(UserProfileScreen(context: viewModel.context, allowsConversationActions: allowsConversationActions))
     }
 }

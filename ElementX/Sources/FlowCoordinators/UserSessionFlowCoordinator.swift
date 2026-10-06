@@ -791,7 +791,8 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
                                                                             localCallHistoryService: callHistoryService,
                                                                             currentCallID: currentCallID,
                                                                             startWithVideoEnabled: startWithVideoEnabled,
-                                                                            orientationManager: flowParameters.windowManager))
+                                                                            orientationManager: flowParameters.windowManager,
+                                                                            userSession: userSession))
         
         callScreenCoordinator.actions
             .sink { [weak self] action in

@@ -60,6 +60,11 @@ struct NativeCallGridView: View {
     var onTogglePin: ((String) -> Void)?
     // STMOB-218: tap the speaker PiP in landscape screen-share → request portrait.
     var onRequestPortrait: (() -> Void)?
+    var videoVisibility = CallVideoVisibility()
+    var isLayoutAutomatic = true
+    var onPin: ((String, CallLayoutMode) -> Void)?
+    var onUnpin: (() -> Void)?
+    var onShowContact: ((String) -> Void)?
 
     // STMOB-218: on iPhone, landscape ⇒ verticalSizeClass == .compact.
     @Environment(\.verticalSizeClass) private var verticalSizeClass
@@ -68,18 +73,22 @@ struct NativeCallGridView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            if isDirect {
+            if isDirect, isLayoutAutomatic, layoutMode == .grid, !videoVisibility.hideParticipantsWithoutVideo {
                 DirectCallLayout(roomManager: roomManager,
                                  isMinimized: isMinimized,
-                                 isLocalVideoEnabled: isLocalVideoEnabled,
+                                 isLocalVideoEnabled: isLocalVideoEnabled && !videoVisibility.hideOwnVideo,
                                  participants: participants,
                                  mediaProvider: mediaProvider)
+                    .modifier(CallParticipantMenu(sid: roomManager.displayParticipants.first?.sid?.stringValue,
+                                                  identity: roomManager.displayParticipants.first?.identity?.stringValue,
+                                                  participants: participants, pinnedSID: pinnedParticipantSID,
+                                                  onPin: onPin, onUnpin: onUnpin, onShowContact: onShowContact))
             } else if isMinimized {
                 // Mini mode: show only the active speaker (or first remote participant)
                 ActiveSpeakerMiniView(roomManager: roomManager,
                                       participants: participants,
                                       mediaProvider: mediaProvider)
-            } else if verticalSizeClass == .compact, roomManager.hasRemoteScreenShare {
+            } else if verticalSizeClass == .compact, roomManager.hasRemoteScreenShare, layoutMode == .speaker, isLayoutAutomatic {
                 // STMOB-218: landscape + active screen-share → give the share the WHOLE
                 // screen (no participant strip), with a single draggable PiP of the
                 // active speaker. Tap the PiP to snap back to portrait.
@@ -87,7 +96,7 @@ struct NativeCallGridView: View {
                                            participants: participants,
                                            mediaProvider: mediaProvider,
                                            onRequestPortrait: onRequestPortrait)
-            } else if layoutMode == .speaker {
+            } else if layoutMode != .grid {
                 // STMOB-113: Speaker layout — focused main + bottom strip.
                 SpeakerCallLayout(roomManager: roomManager,
                                   isLocalVideoEnabled: isLocalVideoEnabled,
@@ -95,13 +104,15 @@ struct NativeCallGridView: View {
                                   participants: participants,
                                   mediaProvider: mediaProvider,
                                   pinnedSID: pinnedParticipantSID,
-                                  onTogglePin: onTogglePin)
+                                  onTogglePin: onTogglePin, mode: layoutMode, videoVisibility: videoVisibility,
+                                  onPin: onPin, onUnpin: onUnpin, onShowContact: onShowContact)
             } else {
                 GroupCallLayout(roomManager: roomManager,
                                 isLocalVideoEnabled: isLocalVideoEnabled,
                                 isLocalAudioMuted: isLocalAudioMuted,
                                 participants: participants,
-                                mediaProvider: mediaProvider)
+                                mediaProvider: mediaProvider, videoVisibility: videoVisibility, pinnedSID: pinnedParticipantSID,
+                                onPin: onPin, onUnpin: onUnpin, onShowContact: onShowContact)
             }
         }
     }
@@ -473,6 +484,11 @@ private struct GroupCallLayout: View {
     let isLocalAudioMuted: Bool
     let participants: [CallParticipantInfo]
     let mediaProvider: MediaProviderProtocol?
+    var videoVisibility = CallVideoVisibility()
+    var pinnedSID: String?
+    var onPin: ((String, CallLayoutMode) -> Void)?
+    var onUnpin: (() -> Void)?
+    var onShowContact: ((String) -> Void)?
     // STMOB-218: landscape — портретная раскладка (VStack + reserve снизу +
     // «1 крупный сверху») в широкой-низкой геометрии ломается и переобрезает
     // видео. В landscape используем ровный grid с .fit-тайлами.
@@ -493,7 +509,7 @@ private struct GroupCallLayout: View {
                 VStack(spacing: spacing) {
                     // Screen share — full width, prominent
                     ForEach(screenShares) { item in
-                        ParticipantTile(item: item, mediaProvider: mediaProvider)
+                        participantTile(item)
                             .aspectRatio(16.0 / 9.0, contentMode: .fit)
                             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
@@ -507,7 +523,7 @@ private struct GroupCallLayout: View {
                         // Regular participants grid
                         LazyVGrid(columns: columns, spacing: spacing) {
                             ForEach(regularItems) { item in
-                                ParticipantTile(item: item, mediaProvider: mediaProvider)
+                                participantTile(item)
                                     .aspectRatio(tileAspect(hasScreenShare: hasScreenShare,
                                                             isLandscape: isLandscape,
                                                             count: regularItems.count,
@@ -526,6 +542,23 @@ private struct GroupCallLayout: View {
             .scrollDisabled(isLandscape ? !hasScreenShare : (!gridLayout(for: regularItems.count).scrollable && !hasScreenShare))
         }
         .background(Color.black)
+        .overlay {
+            if participantItems.isEmpty {
+                Text(NSLocalizedString("stalk_call_no_visible_video", value: "No video to display. Participants are still in the call.", comment: "All call tiles hidden"))
+                    .foregroundStyle(.white.opacity(0.8))
+                    .multilineTextAlignment(.center)
+                    .padding(24)
+            }
+        }
+    }
+
+    private func participantTile(_ item: ParticipantItem) -> some View {
+        let identity = item.isScreenShare ? String(item.id.dropLast("-screen".count)) : item.id
+        let participant = roomManager.displayParticipants.first { ($0.identity?.stringValue ?? $0.sid?.stringValue) == identity }
+        return ParticipantTile(item: item, mediaProvider: mediaProvider)
+            .modifier(CallParticipantMenu(sid: item.isLocal ? nil : participant?.sid?.stringValue,
+                                          identity: item.isLocal ? nil : identity, participants: participants,
+                                          pinnedSID: pinnedSID, onPin: onPin, onUnpin: onUnpin, onShowContact: onShowContact, showsPinnedIndicator: true))
     }
 
     /// STMOB-218: число колонок в landscape — широкая геометрия, тайлы в ряд.
@@ -569,15 +602,15 @@ private struct GroupCallLayout: View {
         // себя в одном и том же месте, а не там, куда её поставит порядок списка.
         let bottomPair = [items[1], items[2]].sorted { $0.isLocal && !$1.isLocal }
         return VStack(spacing: spacing) {
-            ParticipantTile(item: items[0], mediaProvider: mediaProvider)
+            participantTile(items[0])
                 .frame(height: topHeight)
                 .clipped()
             HStack(spacing: spacing) {
-                ParticipantTile(item: bottomPair[0], mediaProvider: mediaProvider)
+                participantTile(bottomPair[0])
                     .frame(maxWidth: .infinity)
                     .frame(height: bottomHeight)
                     .clipped()
-                ParticipantTile(item: bottomPair[1], mediaProvider: mediaProvider)
+                participantTile(bottomPair[1])
                     .frame(maxWidth: .infinity)
                     .frame(height: bottomHeight)
                     .clipped()
@@ -710,7 +743,7 @@ private struct GroupCallLayout: View {
                                          isHandRaised: roomManager.isHandRaised))
         }
 
-        return items
+        return items.filter { videoVisibility.shows(isLocal: $0.isLocal, hasVideo: $0.videoTrack != nil && !$0.isVideoMuted, isScreenShare: $0.isScreenShare) }
     }
 
     /// STMOB: resolve nice display name for a remote LiveKit participant.
@@ -955,80 +988,99 @@ private struct SpeakerCallLayout: View {
     let mediaProvider: MediaProviderProtocol?
     let pinnedSID: String?
     let onTogglePin: ((String) -> Void)?
+    var mode: CallLayoutMode = .speaker
+    var videoVisibility = CallVideoVisibility()
+    var onPin: ((String, CallLayoutMode) -> Void)?
+    var onUnpin: (() -> Void)?
+    var onShowContact: ((String) -> Void)?
 
     var body: some View {
         GeometryReader { geometry in
-            // STMOB-128 build 163/164: strip + main заполняют ВСЁ пространство
-            // до controls overlay (callControlButtons ~120pt от низа). Strip
-            // height теперь dynamic — при малом количестве участников (1-2)
-            // тайлы заметно больше, чтобы не было пустого чёрного gap'а:
-            //   1 strip tile  → 220pt
-            //   2 strip tiles → 200pt
-            //   3+ strip tiles → 150pt (текущий)
             let bottomReserved: CGFloat = 120
-            let visibleCount = stripParticipants.count + (roomManager.displayParticipants.count > 3 ? 1 : 0)
-            let stripHeight: CGFloat = {
-                switch visibleCount {
-                case ...1: return 220
-                case 2: return 200
-                default: return 150
-                }
-            }()
-            let mainHeight = max(0, geometry.size.height - bottomReserved - stripHeight)
-            VStack(spacing: 0) {
-                // Main focused area
-                ZStack {
-                    Color.black
-                    if let track = focusedVideoTrack {
-                        NativeCallVideoView(track: track, contentMode: .fit)
-                    } else {
-                        placeholder
-                    }
-                    // Pin indicator
-                    if let pinnedSID, focusedSID == pinnedSID {
-                        VStack {
-                            HStack {
-                                Image(systemName: "pin.fill")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(Color.black.opacity(0.5))
-                                    .clipShape(Capsule())
-                                    .padding(12)
-                                Spacer()
-                            }
-                            Spacer()
-                        }
-                    }
-
-                    // STMOB-223: подпись чей экран расшарен (bottom-left main area).
-                    // Раньше в main-области не было НИКАКОЙ подписи у шаринга —
-                    // непонятно чей экран. Показываем «<имя> — экран».
-                    if let screenShareLabel {
-                        VStack {
-                            Spacer()
-                            HStack {
-                                Label(screenShareLabel, systemImage: "rectangle.on.rectangle")
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundColor(.white)
-                                    .lineLimit(1)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(Color.black.opacity(0.55))
-                                    .clipShape(Capsule())
-                                    .padding(12)
-                                Spacer()
+            let hasStrip = mode != .presenter && (!stripParticipants.isEmpty || showsLocalTile)
+            if geometry.size.width > geometry.size.height, hasStrip {
+                HStack(spacing: 8) {
+                    focusedTile.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    ScrollView {
+                        VStack(spacing: 8) {
+                            if showsLocalTile { localStripTile(width: 120, height: 90) }
+                            ForEach(eligibleRemotes, id: \.sid) { participant in
+                                speakerStripTile(for: participant, width: 120, height: 90)
                             }
                         }
                     }
+                    .frame(width: 136)
                 }
-                .frame(height: mainHeight)
-
-                stripView(in: geometry, height: stripHeight)
-                    .padding(.bottom, bottomReserved)
+                .padding(.bottom, bottomReserved)
+            } else {
+                let stripHeight: CGFloat = hasStrip ? 180 : 0
+                VStack(spacing: 0) {
+                    focusedTile.frame(height: max(0, geometry.size.height - bottomReserved - stripHeight))
+                    if hasStrip { stripView(in: geometry, height: stripHeight) }
+                }
+                .padding(.bottom, bottomReserved)
             }
         }
+    }
+
+    private var focusedTile: some View {
+        ZStack {
+            Color.black
+            if let track = focusedVideoTrack {
+                NativeCallVideoView(track: track, contentMode: .fit)
+            } else {
+                placeholder
+            }
+            // Pin indicator
+            if let pinnedSID, focusedSID == pinnedSID {
+                VStack {
+                    HStack {
+                        Image(systemName: "pin.fill")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.black.opacity(0.5))
+                            .clipShape(Capsule())
+                            .padding(12)
+                        Spacer()
+                    }
+                    Spacer()
+                }
+            }
+
+            // STMOB-223: подпись чей экран расшарен (bottom-left main area).
+            // Раньше в main-области не было НИКАКОЙ подписи у шаринга —
+            // непонятно чей экран. Показываем «<имя> — экран».
+            if let screenShareLabel {
+                VStack {
+                    Spacer()
+                    HStack {
+                        Label(screenShareLabel, systemImage: "rectangle.on.rectangle")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.white)
+                            .lineLimit(1)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.black.opacity(0.55))
+                            .clipShape(Capsule())
+                            .padding(12)
+                        Spacer()
+                    }
+                }
+            }
+        }
+        .modifier(CallParticipantMenu(sid: focusedSID, identity: focusedParticipant?.identity?.stringValue,
+                                      participants: participants, pinnedSID: pinnedSID,
+                                      onPin: onPin, onUnpin: onUnpin, onShowContact: onShowContact))
+    }
+
+    private var showsLocalTile: Bool {
+        roomManager.localParticipant != nil && videoVisibility.shows(isLocal: true, hasVideo: isLocalVideoEnabled && roomManager.localVideoTrack != nil)
+    }
+
+    private var eligibleRemotes: [RemoteParticipant] {
+        roomManager.displayParticipants.filter { !videoVisibility.hideParticipantsWithoutVideo || $0.firstCameraVideoTrack != nil || $0.videoTracks.contains { $0.isScreenShareTrack && $0.isSubscribed && !$0.isMuted } }
     }
 
     /// STMOB-128 build 148: тайлы strip растягиваются по ширине поровну.
@@ -1037,9 +1089,9 @@ private struct SpeakerCallLayout: View {
     @ViewBuilder
     private func stripView(in geometry: GeometryProxy, height: CGFloat) -> some View {
         let visibleParticipants = stripParticipants
-        let overflow = roomManager.displayParticipants.count - visibleParticipants.count
+        let overflow = eligibleRemotes.count - visibleParticipants.count
         // +1 — своя плитка, она всегда в полосе.
-        let totalTiles = visibleParticipants.count + 1 + (overflow > 0 ? 1 : 0)
+        let totalTiles = visibleParticipants.count + (showsLocalTile ? 1 : 0) + (overflow > 0 ? 1 : 0)
         let hpadding: CGFloat = 12
         let spacing: CGFloat = 8
         let availableWidth = geometry.size.width - hpadding * 2
@@ -1056,7 +1108,7 @@ private struct SpeakerCallLayout: View {
                 // STMOB-279: своя плитка — всегда первая слева. Полоса собиралась
                 // только из удалённых участников, и в режиме «докладчик» человек
                 // не видел себя вовсе: ни камеры, ни состояния микрофона.
-                localStripTile(width: tileWidth, height: tileHeight)
+                if showsLocalTile { localStripTile(width: tileWidth, height: tileHeight) }
                 ForEach(visibleParticipants, id: \.sid) { participant in
                     speakerStripTile(for: participant, width: tileWidth, height: tileHeight)
                 }
@@ -1095,7 +1147,7 @@ private struct SpeakerCallLayout: View {
     /// Приоритет: (1) pinned, (2) с camera/screen-share track, (3) последний
     /// active speaker, (4) первые remote по списку.
     private var stripParticipants: [RemoteParticipant] {
-        let allRemotes = roomManager.displayParticipants
+        let allRemotes = eligibleRemotes
         guard allRemotes.count > 3 else { return allRemotes }
         var ordered: [RemoteParticipant] = []
         var seen = Set<String>()
@@ -1138,20 +1190,13 @@ private struct SpeakerCallLayout: View {
     // MARK: focused track resolver
 
     /// SID участника которого показываем в main view.
-    /// Приоритет: pinned > screen-share > active speaker > first remote.
+    /// Приоритет: screen-share > pinned > active speaker > first remote.
     private var focusedSID: String? {
-        if let pinnedSID,
-           roomManager.displayParticipants.contains(where: { $0.sid?.stringValue == pinnedSID }) {
-            return pinnedSID
-        }
-        // Screen share appears as separate track but на том же participant — в SID не отражается.
-        // Берём active speaker.
-        if let speakingSID = roomManager.activeSpeakers
-            .compactMap({ ($0 as? RemoteParticipant)?.sid?.stringValue })
-            .first(where: { sid in roomManager.displayParticipants.contains(where: { $0.sid?.stringValue == sid }) }) {
-            return speakingSID
-        }
-        return roomManager.displayParticipants.first?.sid?.stringValue
+        let remotes = roomManager.displayParticipants
+        let shareOwner = remotes.first { $0.videoTracks.contains { $0.isScreenShareTrack && $0.isSubscribed && !$0.isMuted } }
+        return CallParticipantSelection.focus(available: remotes.compactMap { $0.sid?.stringValue },
+                                              screenShare: shareOwner?.sid?.stringValue, pinned: pinnedSID,
+                                              speakers: roomManager.activeSpeakers.compactMap { $0.sid?.stringValue })
     }
 
     private var focusedParticipant: RemoteParticipant? {
@@ -1281,9 +1326,9 @@ private struct SpeakerCallLayout: View {
         .overlay(RoundedRectangle(cornerRadius: 8)
             .stroke(isPinned ? Color.white : Color.clear, lineWidth: 2))
         .contentShape(Rectangle())
-        .onTapGesture {
-            onTogglePin?(sid)
-        }
+        .modifier(CallParticipantMenu(sid: sid, identity: participant.identity?.stringValue,
+                                      participants: participants, pinnedSID: pinnedSID,
+                                      onPin: onPin, onUnpin: onUnpin, onShowContact: onShowContact))
     }
 }
 
@@ -2071,5 +2116,71 @@ struct CallPictureInPictureSource: UIViewRepresentable {
         /// Один на звонок: пересборка дерева экрана не должна ронять окно вместе
         /// с менеджером. Звонок в приложении может быть только один.
         let manager = CallPictureInPictureManager.shared
+    }
+}
+
+/// Native menus keep pin/layout/contact actions local to this call view.
+private struct CallParticipantMenu: ViewModifier {
+    let sid: String?
+    let identity: String?
+    let participants: [CallParticipantInfo]
+    let pinnedSID: String?
+    let onPin: ((String, CallLayoutMode) -> Void)?
+    let onUnpin: (() -> Void)?
+    let onShowContact: ((String) -> Void)?
+    var showsPinnedIndicator = false
+
+    private var contact: CallParticipantInfo? {
+        guard let identity, onShowContact != nil else { return nil }
+        return CallParticipantSelection.contact(identity: identity, participants: participants)
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(alignment: .topLeading) {
+                if showsPinnedIndicator, let sid, pinnedSID == sid {
+                    Image(systemName: "pin.fill")
+                        .foregroundStyle(.white)
+                        .padding(8)
+                        .background(.black.opacity(0.65), in: Circle())
+                        .padding(5)
+                        .accessibilityLabel(NSLocalizedString("stalk_call_pinned", value: "Pinned participant", comment: "Call pinned badge"))
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                if sid != nil || contact != nil {
+                    Menu { actions } label: {
+                        Image(systemName: "ellipsis")
+                            .foregroundStyle(.white)
+                            .padding(9)
+                            .background(.black.opacity(0.65), in: Circle())
+                    }
+                    .accessibilityLabel(NSLocalizedString("stalk_call_participant_menu", value: "Participant menu", comment: "Call participant menu"))
+                    .padding(5)
+                }
+            }
+            .contextMenu { actions }
+    }
+
+    @ViewBuilder
+    private var actions: some View {
+        if let sid {
+            Button { onPin?(sid, .speaker) } label: {
+                Label(NSLocalizedString("stalk_call_pin_speaker", value: "Pin with thumbnails", comment: "Call pin action"), systemImage: "pin")
+            }
+            Button { onPin?(sid, .presenter) } label: {
+                Label(NSLocalizedString("stalk_call_pin_presenter", value: "Pin as presenter", comment: "Call pin action"), systemImage: "rectangle.inset.filled")
+            }
+            if pinnedSID == sid {
+                Button { onUnpin?() } label: {
+                    Label(NSLocalizedString("stalk_call_unpin", value: "Unpin", comment: "Call pin action"), systemImage: "pin.slash")
+                }
+            }
+        }
+        if let contact {
+            Button { onShowContact?(contact.userID) } label: {
+                Label(NSLocalizedString("stalk_call_view_contact", value: "View contact", comment: "Call contact action"), systemImage: "person.crop.circle")
+            }
+        }
     }
 }

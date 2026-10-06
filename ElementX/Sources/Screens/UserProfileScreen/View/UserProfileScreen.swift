@@ -11,6 +11,7 @@ import SwiftUI
 
 struct UserProfileScreen: View {
     @Bindable var context: UserProfileScreenViewModel.Context
+    var allowsConversationActions = true
     
     var body: some View {
         Form {
@@ -54,7 +55,7 @@ struct UserProfileScreen: View {
     
     private var otherUserFooter: some View {
         HStack(spacing: 8) {
-            if context.viewState.userProfile != nil, !context.viewState.isOwnUser {
+            if allowsConversationActions, context.viewState.userProfile != nil, !context.viewState.isOwnUser {
                 Button {
                     context.send(viewAction: .openDirectChat)
                 } label: {
@@ -64,7 +65,7 @@ struct UserProfileScreen: View {
                 .accessibilityIdentifier(A11yIdentifiers.roomMemberDetailsScreen.directChat)
             }
             
-            if let roomID = context.viewState.dmRoomID {
+            if allowsConversationActions, let roomID = context.viewState.dmRoomID {
                 Button {
                     context.send(viewAction: .startCall(roomID: roomID))
                 } label: {

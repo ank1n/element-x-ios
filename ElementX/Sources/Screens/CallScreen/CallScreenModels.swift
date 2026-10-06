@@ -73,18 +73,22 @@ struct CallScreenViewState: BindableState {
     /// SID участника закреплённого в speaker view. nil — focus автоматически
     /// на active speaker / first remote.
     var pinnedParticipantSID: String?
+    var videoVisibility = CallVideoVisibility()
 
-    /// Effective layout mode:
-    /// 1. STMOB-114: если есть subscribed screen-share track у любого remote —
-    ///    форсим .speaker (даже override не побеждает — share главнее).
-    /// 2. user override (toolbar toggle).
-    /// 3. auto by remoteCount: > 8 → speaker, иначе grid.
+    mutating func reconcilePinnedParticipant(available: [String]) {
+        if let pinnedParticipantSID, !available.contains(pinnedParticipantSID) {
+            self.pinnedParticipantSID = nil
+        }
+    }
+
+    /// Keep an explicit local choice throughout the call. Without a choice,
+    /// screen sharing selects speaker view; large groups also default to speaker view.
     var effectiveLayoutMode: CallLayoutMode {
+        if let override = layoutOverride { return override }
         // STMOB-223: используем единый детект `hasRemoteScreenShare` (по source).
         // Старый name-only детект мимо web/desktop share (пустое имя трека) —
         // звонок залипал в grid, шаринг лез под кнопки. См. STMOB-204.
         if liveKitRoomManager?.hasRemoteScreenShare == true { return .speaker }
-        if let override = layoutOverride { return override }
         let remoteCount = liveKitRoomManager?.displayParticipants.count ?? 0
         return remoteCount > 8 ? .speaker : .grid
     }
@@ -159,14 +163,54 @@ enum CallScreenViewAction {
     // STMOB-113: layout/spotlight для group call.
     case toggleLayoutMode
     case togglePinParticipant(sid: String)
+    case selectLayout(CallLayoutMode)
+    case pinParticipant(sid: String, mode: CallLayoutMode)
+    case unpinParticipant
+    case toggleHideOwnVideo
+    case toggleHideParticipantsWithoutVideo
     /// STMOB-218: tap on the speaker PiP in landscape screen-share → back to portrait.
     case requestPortraitOrientation
 }
 
 /// STMOB-113
-enum CallLayoutMode {
+enum CallLayoutMode: CaseIterable, Hashable {
     case grid
     case speaker
+    case presenter
+
+    var title: String {
+        switch self {
+        case .grid: NSLocalizedString("stalk_call_view_gallery", value: "Gallery", comment: "Call view")
+        case .speaker: NSLocalizedString("stalk_call_view_speaker", value: "Speaker and thumbnails", comment: "Call view")
+        case .presenter: NSLocalizedString("stalk_call_view_presenter", value: "Presenter", comment: "Call view")
+        }
+    }
+}
+
+/// Local display preferences only; never change capture or subscriptions.
+struct CallVideoVisibility {
+    var hideOwnVideo = false
+    var hideParticipantsWithoutVideo = false
+
+    func shows(isLocal: Bool, hasVideo: Bool, isScreenShare: Bool = false) -> Bool {
+        if isLocal && hideOwnVideo { return false }
+        return isScreenShare || !hideParticipantsWithoutVideo || hasVideo
+    }
+}
+
+enum CallParticipantSelection {
+    static func focus(available: [String], screenShare: String?, pinned: String?, speakers: [String]) -> String? {
+        if let screenShare, available.contains(screenShare) { return screenShare }
+        if let pinned, available.contains(pinned) { return pinned }
+        return speakers.first(where: available.contains) ?? available.first
+    }
+
+    static func contact(identity: String, participants: [CallParticipantInfo]) -> CallParticipantInfo? {
+        participants.first { member in
+            member.userID.hasPrefix("@") && !member.userID.hasPrefix("@meet-") && !member.userID.hasPrefix("@stalk-system:") &&
+                (identity == member.userID || identity.hasPrefix(member.userID + ":"))
+        }
+    }
 }
 
 enum CallScreenError: Error {

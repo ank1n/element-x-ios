@@ -24,6 +24,7 @@ struct CallScreenCoordinatorParameters {
     var startWithVideoEnabled = true
     /// STMOB-394: lets the call screen opt into landscape while the rest of the app stays portrait.
     let orientationManager: OrientationManagerProtocol
+    var userSession: UserSessionProtocol?
 }
 
 enum CallScreenCoordinatorAction {
@@ -45,6 +46,7 @@ enum CallScreenCoordinatorAction {
 final class CallScreenCoordinator: CoordinatorProtocol {
     private var viewModel: CallScreenViewModelProtocol
     private let orientationManager: OrientationManagerProtocol
+    private let userSession: UserSessionProtocol?
     private let actionsSubject: PassthroughSubject<CallScreenCoordinatorAction, Never> = .init()
 
     /// sTalk: Current call elapsed time (for banner display)
@@ -75,6 +77,7 @@ final class CallScreenCoordinator: CoordinatorProtocol {
                                         currentCallID: parameters.currentCallID,
                                         startWithVideoEnabled: parameters.startWithVideoEnabled)
         orientationManager = parameters.orientationManager
+        userSession = parameters.userSession
     }
     
     func start() {
@@ -125,6 +128,6 @@ final class CallScreenCoordinator: CoordinatorProtocol {
     }
         
     func toPresentable() -> AnyView {
-        AnyView(CallScreen(context: viewModel.context))
+        AnyView(CallScreen(context: viewModel.context, userSession: userSession))
     }
 }
