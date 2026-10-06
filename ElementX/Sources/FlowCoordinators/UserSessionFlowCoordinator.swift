@@ -509,7 +509,8 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         } catch {
             flowParameters.userIndicatorController.retractIndicatorWithId(loadingID)
             DiagLog.write("Meeting", "meeting link ensureRoom FAILED code=\(code): \(error.localizedDescription)")
-            flowParameters.userIndicatorController.submitIndicator(.init(title: L10n.errorUnknown))
+            let message = (error as? MeetingLinkError)?.errorDescription ?? L10n.errorUnknown
+            flowParameters.userIndicatorController.submitIndicator(.init(title: message))
         }
     }
 

@@ -1883,3 +1883,10 @@
 "stalk_meeting_join" = "Присоединиться";
 "stalk_share_sdk_log" = "Поделиться логом SDK (шифрование)";
 "stalk_ailock_network_failed" = "Не удалось связаться с Айлоком. Проверьте соединение и попробуйте ещё раз.";
+
+// STALK-968: meeting link errors.
+"stalk_meeting_link_cancelled" = "Встреча отменена.";
+"stalk_meeting_link_expired" = "Срок действия ссылки истёк. Попросите организатора прислать новую ссылку.";
+"stalk_meeting_link_forbidden" = "У вас нет доступа к этой встрече. Обратитесь к организатору.";
+"stalk_meeting_link_unauthorized" = "Чтобы открыть встречу, войдите в аккаунт ещё раз.";
+"stalk_meeting_link_not_found" = "Встреча не найдена. Проверьте ссылку.";

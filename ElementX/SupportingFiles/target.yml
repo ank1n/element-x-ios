@@ -136,6 +136,7 @@ targets:
         aps-environment: production
         com.apple.developer.associated-domains:
         - applinks:stalk.implica.ru
+        - applinks:market.implica.ru
         - applinks:call.stalk.implica.ru
         # - applinks:localhost?mode=developer # developer mode only works with https (but self-signed is fine).
         - webcredentials:stalk.implica.ru

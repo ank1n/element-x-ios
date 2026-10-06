@@ -242,7 +242,7 @@ final class AppSettings {
     /// A URL describing how history sharing works
     private(set) var historySharingDetailsURL: URL = "https://stalk.implica.ru"
     /// Any domains that sTalk web may be hosted on - used for handling links.
-    private(set) var elementWebHosts = ["stalk.implica.ru"]
+    private(set) var elementWebHosts = ["stalk.implica.ru", "market.implica.ru"]
     /// The domain that account provisioning links will be hosted on - used for handling the links.
     private(set) var accountProvisioningHost = "stalk.implica.ru"
     /// The App Store URL for Element Pro, shown to the user when a homeserver requires that app.

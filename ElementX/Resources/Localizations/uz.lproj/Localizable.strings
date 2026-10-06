@@ -1522,3 +1522,10 @@
 "troubleshoot_notifications_test_blocked_users_title" = "Bloklangan foydalanuvchilar";
 "troubleshoot_notifications_entry_point_push_history_title" = "Bildirishnoma tarixi";
 "troubleshoot_notifications_entry_point_title" = "Bildirishnomalar bilan bog‘liq muammolarni bartaraf etish";
+
+// STALK-968: meeting link errors.
+"stalk_meeting_link_cancelled" = "Uchrashuv bekor qilingan.";
+"stalk_meeting_link_expired" = "Havolaning amal qilish muddati tugagan. Tashkilotchidan yangi havola soʻrang.";
+"stalk_meeting_link_forbidden" = "Sizda bu uchrashuvga kirish huquqi yoʻq. Tashkilotchiga murojaat qiling.";
+"stalk_meeting_link_unauthorized" = "Uchrashuvni ochish uchun hisobingizga qayta kiring.";
+"stalk_meeting_link_not_found" = "Uchrashuv topilmadi. Havolani tekshiring.";

@@ -92,6 +92,9 @@ struct AppRouteURLParser {
     }
     
     func route(from url: URL) -> AppRoute? {
+        if URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.contains(where: { $0.name == "no_universal_links" }) == true {
+            return nil
+        }
         for parser in urlParsers {
             if let appRoute = parser.route(from: url) {
                 return appRoute
@@ -144,13 +147,56 @@ private struct MeetLinkURLParser: URLParser {
     let domains: [String]
 
     func route(from url: URL) -> AppRoute? {
-        guard let host = url.host, domains.contains(host) else { return nil }
-        // Expecting exactly /meet/s/<code>
+        guard let link = StalkServerLink(url: url), domains.contains(link.host), let code = link.meetingCode else { return nil }
+        return .meeting(code: code)
+    }
+}
+
+/// STALK-968: keep a server link's origin until authentication has completed.
+/// A code from another server must never be resolved using the current session's token.
+struct StalkServerLink {
+    let url: URL
+    let host: String
+    let meetingCode: String?
+    let browserURL: URL
+
+    init?(url: URL) {
+        guard ["https", "ru.implica.stalk"].contains(url.scheme?.lowercased() ?? ""),
+              let host = url.host?.lowercased(), url.user == nil, url.password == nil else { return nil }
         let parts = url.pathComponents.filter { $0 != "/" }
-        guard parts.count == 3, parts[0] == "meet", parts[1] == "s", !parts[2].isEmpty else {
+        let code: String?
+        if parts.count == 2, parts[0] == "meet" {
+            code = parts[1]
+        } else if parts.count == 3, parts[0] == "meet", parts[1] == "s" {
+            code = parts[2]
+        } else if parts.isEmpty,
+                  let fragment = url.fragment,
+                  fragment.hasPrefix("/room/") || fragment.hasPrefix("/user/") {
+            code = nil
+        } else {
             return nil
         }
-        return .meeting(code: parts[2])
+        if let code, code.range(of: "^[A-Za-z0-9_-]+$", options: .regularExpression) == nil { return nil }
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        components.scheme = "https"
+        var query = (components.queryItems ?? []).filter { $0.name != "no_universal_links" }
+        query.append(URLQueryItem(name: "no_universal_links", value: "true"))
+        components.queryItems = query
+        guard let browserURL = components.url else { return nil }
+        self.url = url
+        self.host = host
+        meetingCode = code
+        self.browserURL = browserURL
+    }
+
+    func shouldOpenInBrowser(knownHosts: [String], homeserver: String?, mayRestoreSession: Bool) -> Bool {
+        if !knownHosts.contains(host) { return true }
+        if URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.contains(where: { $0.name == "no_universal_links" }) == true { return true }
+        if let homeserver {
+            let sessionURL = URL(string: homeserver.contains("://") ? homeserver : "https://\(homeserver)")
+            return sessionURL?.host?.lowercased() != host
+        }
+        return meetingCode != nil && !mayRestoreSession
     }
 }
 
@@ -224,12 +270,13 @@ private struct ElementWebURLParser: URLParser {
     }
     
     private func buildMatrixToURL(from url: URL) -> URL? {
-        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-            return url
-        }
+        guard let link = StalkServerLink(url: url), link.meetingCode == nil,
+              ["https", "ru.implica.stalk"].contains(url.scheme?.lowercased() ?? ""),
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
         
         for domain in domains where domain == url.host {
             components.host = "matrix.to"
+            components.scheme = "https"
             for path in paths {
                 components.fragment?.replace("/\(path)", with: "")
             }
@@ -238,7 +285,7 @@ private struct ElementWebURLParser: URLParser {
             return matrixToURL
         }
         
-        return url
+        return nil
     }
 }
 

@@ -9,6 +9,30 @@ import Foundation
 import os.log
 import SwiftUI
 
+enum MeetingLinkError: Error, LocalizedError, Equatable {
+    case cancelled, expired, forbidden, unauthorized, notFound
+
+    var errorDescription: String? {
+        switch self {
+        case .cancelled: NSLocalizedString("stalk_meeting_link_cancelled", value: "This meeting has been cancelled.", comment: "Meeting link error")
+        case .expired: NSLocalizedString("stalk_meeting_link_expired", value: "This meeting link has expired. Ask the organiser for a new link.", comment: "Meeting link error")
+        case .forbidden: NSLocalizedString("stalk_meeting_link_forbidden", value: "You don't have access to this meeting. Contact the organiser.", comment: "Meeting link error")
+        case .unauthorized: NSLocalizedString("stalk_meeting_link_unauthorized", value: "Sign in again to open this meeting.", comment: "Meeting link error")
+        case .notFound: NSLocalizedString("stalk_meeting_link_not_found", value: "This meeting could not be found. Check the link.", comment: "Meeting link error")
+        }
+    }
+
+    static func forHTTPStatus(_ status: Int) -> MeetingLinkError? {
+        switch status {
+        case 401: .unauthorized
+        case 403: .forbidden
+        case 404: .notFound
+        case 410: .expired
+        default: nil
+        }
+    }
+}
+
 private let meetingsLog = OSLog(subsystem: "ru.implica.stalk", category: "Meetings")
 
 // MARK: - Meeting rooms registry (STMOB-263)
@@ -239,6 +263,7 @@ struct MeetingRequest: Encodable {
 
 class MeetingsService {
     private let homeserver: String
+    private let session: URLSession
     private let accessTokenProvider: () throws -> String
 
     let meetingsSubject = CurrentValueSubject<[Meeting], Never>([])
@@ -281,8 +306,9 @@ class MeetingsService {
 
     /// Initialize with a closure that returns a fresh access token each time.
     /// OIDC tokens expire frequently; calling matrixAccessToken() each request ensures we use a valid one.
-    init(homeserver: String, accessTokenProvider: @escaping () throws -> String, forceTokenRefresh: (() async -> Void)? = nil) {
+    init(homeserver: String, accessTokenProvider: @escaping () throws -> String, forceTokenRefresh: (() async -> Void)? = nil, session: URLSession = .shared) {
         self.homeserver = homeserver.hasSuffix("/") ? String(homeserver.dropLast()) : homeserver
+        self.session = session
         self.accessTokenProvider = accessTokenProvider
         self.forceTokenRefresh = forceTokenRefresh
         os_log(.default, log: meetingsLog, "MeetingsService init: homeserver=%{public}@", self.homeserver)
@@ -310,7 +336,7 @@ class MeetingsService {
             request.timeoutInterval = 15
 
             do {
-                let (data, response) = try await URLSession.shared.data(for: request)
+                let (data, response) = try await session.data(for: request)
                 let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
 
                 if statusCode == 401, attempt < 2 {
@@ -353,7 +379,7 @@ class MeetingsService {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             request.timeoutInterval = 15
 
-            let (respData, response) = try await URLSession.shared.data(for: request)
+            let (respData, response) = try await session.data(for: request)
             data = respData
             statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
 
@@ -410,7 +436,7 @@ class MeetingsService {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 15
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             throw URLError(.badServerResponse)
         }
@@ -441,10 +467,7 @@ class MeetingsService {
     func ensureRoom(code: String, userId: String) async throws -> String {
         let body = try JSONSerialization.data(withJSONObject: ["code": code, "userId": userId])
         let data = try await apiRequest("POST", path: "/api/meet/ensure-room", body: body)
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let roomId = json["roomId"] as? String, !roomId.isEmpty else {
-            throw URLError(.cannotParseResponse)
-        }
+        let roomId = try Self.meetingRoomID(from: data)
         os_log(.default, log: meetingsLog, "ensureRoom: code=%{public}@ → roomId=%{public}@", code, roomId)
         // STMOB-263: запоминаем комнату встречи в тот момент, когда узнали её id.
         // Комната создаётся meet-api лениво (первый вход) и через sync попадает в
@@ -452,6 +475,14 @@ class MeetingsService {
         // котором встреча висит в общем списке. Здесь мы знаем id сразу.
         MeetingRoomRegistry.remember(roomId, source: "ensureRoom")
         return roomId
+    }
+
+    static func meetingRoomID(from data: Data) throws -> String {
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw URLError(.cannotParseResponse) }
+        if json["cancelled"] as? Bool == true { throw MeetingLinkError.cancelled }
+        if json["expired"] as? Bool == true { throw MeetingLinkError.expired }
+        guard let roomID = json["roomId"] as? String, !roomID.isEmpty else { throw URLError(.cannotParseResponse) }
+        return roomID
     }
 
     func fetchHolidays() async throws -> [String] {
@@ -504,7 +535,7 @@ class MeetingsService {
             request.timeoutInterval = 15
             request.httpBody = body
 
-            let (respData, response) = try await URLSession.shared.data(for: request)
+            let (respData, response) = try await session.data(for: request)
             data = respData
             statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
 
@@ -520,6 +551,7 @@ class MeetingsService {
         DiagLog.write("Meetings", "\(method) \(path) → HTTP \(statusCode), \(data.count)B")
         guard (200...299).contains(statusCode) else {
             os_log(.error, log: meetingsLog, "%{public}@ %{public}@ => HTTP %d", method, path, statusCode)
+            if path == "/api/meet/ensure-room", let error = MeetingLinkError.forHTTPStatus(statusCode) { throw error }
             throw URLError(.badServerResponse)
         }
         return data

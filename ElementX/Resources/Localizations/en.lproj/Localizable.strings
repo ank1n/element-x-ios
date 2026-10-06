@@ -2013,3 +2013,10 @@
 "stalk_meeting_join" = "Join";
 "stalk_share_sdk_log" = "Share SDK log (encryption)";
 "stalk_ailock_network_failed" = "Could not reach Ailock. Check your connection and try again.";
+
+// STALK-968: meeting link errors.
+"stalk_meeting_link_cancelled" = "This meeting has been cancelled.";
+"stalk_meeting_link_expired" = "This meeting link has expired. Ask the organiser for a new link.";
+"stalk_meeting_link_forbidden" = "You don’t have access to this meeting. Contact the organiser.";
+"stalk_meeting_link_unauthorized" = "Sign in again to open this meeting.";
+"stalk_meeting_link_not_found" = "This meeting could not be found. Check the link.";

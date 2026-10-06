@@ -126,4 +126,62 @@ class AppRouteURLParserTests: XCTestCase {
         
         XCTAssertEqual(route, .userProfile(userID: id))
     }
+
+    // STALK-968: scheduled/ad-hoc links and their server/session boundaries.
+    func testMeetingLinksAndCustomSchemePreserveTheirCode() throws {
+        for text in ["https://stalk.implica.ru/meet/s/code_1-A", "https://market.implica.ru/meet/code_1-A", "ru.implica.stalk://stalk.implica.ru/meet/s/code_1-A"] {
+            XCTAssertEqual(try appRouteURLParser.route(from: XCTUnwrap(URL(string: text))), .meeting(code: "code_1-A"))
+        }
+    }
+
+    func testMeetingAssetsAndInvalidCodesAreNotLinks() throws {
+        for text in ["https://stalk.implica.ru/meet/app.js", "https://stalk.implica.ru/meet/style.css", "https://stalk.implica.ru/meet/s/a.b", "https://stalk.implica.ru/meet/s/a/extra", "http://stalk.implica.ru/meet/s/code"] {
+            XCTAssertNil(try appRouteURLParser.route(from: XCTUnwrap(URL(string: text))))
+            XCTAssertNil(try StalkServerLink(url: XCTUnwrap(URL(string: text))))
+        }
+    }
+
+    func testChatCustomSchemeOpensTheSameRoom() throws {
+        let id = "!room:stalk.implica.ru"
+        for host in ["stalk.implica.ru", "market.implica.ru"] {
+            XCTAssertEqual(try appRouteURLParser.route(from: XCTUnwrap(URL(string: "ru.implica.stalk://\(host)/#/room/\(id)"))), .room(roomID: id, via: []))
+        }
+    }
+
+    func testMarketingRootAndUnknownHostsAreNotAppRoutes() throws {
+        for text in ["https://stalk.implica.ru/", "https://unknown.example/meet/s/code", "https://unknown.example/#/room/!room:stalk.implica.ru"] {
+            XCTAssertNil(try appRouteURLParser.route(from: XCTUnwrap(URL(string: text))))
+        }
+    }
+
+    func testGuestMeetingOpensBrowserButRestoringSessionWaits() throws {
+        let link = try XCTUnwrap(try StalkServerLink(url: XCTUnwrap(URL(string: "https://stalk.implica.ru/meet/s/code"))))
+        XCTAssertTrue(link.shouldOpenInBrowser(knownHosts: appSettings.elementWebHosts, homeserver: nil, mayRestoreSession: false))
+        XCTAssertFalse(link.shouldOpenInBrowser(knownHosts: appSettings.elementWebHosts, homeserver: nil, mayRestoreSession: true))
+        XCTAssertFalse(link.shouldOpenInBrowser(knownHosts: appSettings.elementWebHosts, homeserver: "https://stalk.implica.ru", mayRestoreSession: false))
+    }
+
+    func testChatCanWaitForLoginAndRejectsWrongServerAfterLogin() throws {
+        let link = try XCTUnwrap(try StalkServerLink(url: XCTUnwrap(URL(string: "ru.implica.stalk://market.implica.ru/#/room/!room:market.implica.ru"))))
+        XCTAssertFalse(link.shouldOpenInBrowser(knownHosts: appSettings.elementWebHosts, homeserver: nil, mayRestoreSession: false))
+        XCTAssertTrue(link.shouldOpenInBrowser(knownHosts: appSettings.elementWebHosts, homeserver: "https://stalk.implica.ru", mayRestoreSession: false))
+        XCTAssertFalse(link.shouldOpenInBrowser(knownHosts: appSettings.elementWebHosts, homeserver: "market.implica.ru", mayRestoreSession: false))
+        XCTAssertTrue(link.browserURL.absoluteString.contains("no_universal_links=true"))
+        XCTAssertEqual(link.browserURL.fragment, "/room/!room:market.implica.ru")
+    }
+
+    func testUnknownMeetingHostFallsBackEvenDuringRestore() throws {
+        let link = try XCTUnwrap(try StalkServerLink(url: XCTUnwrap(URL(string: "https://unknown.example/meet/code"))))
+        XCTAssertTrue(link.shouldOpenInBrowser(knownHosts: appSettings.elementWebHosts, homeserver: nil, mayRestoreSession: true))
+    }
+
+    func testBrowserBypassCannotLoopBackIntoApp() throws {
+        let url = try XCTUnwrap(URL(string: "https://stalk.implica.ru/meet/code?no_universal_links=true&other=1"))
+        XCTAssertNil(appRouteURLParser.route(from: url))
+        let link = try XCTUnwrap(StalkServerLink(url: url))
+        XCTAssertTrue(link.shouldOpenInBrowser(knownHosts: appSettings.elementWebHosts, homeserver: "stalk.implica.ru", mayRestoreSession: false))
+        let query = try XCTUnwrap(URLComponents(url: link.browserURL, resolvingAgainstBaseURL: false)?.queryItems)
+        XCTAssertEqual(query.filter { $0.name == "no_universal_links" }.count, 1)
+        XCTAssertTrue(query.contains(URLQueryItem(name: "other", value: "1")))
+    }
 }

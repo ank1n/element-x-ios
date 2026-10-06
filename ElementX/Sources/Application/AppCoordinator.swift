@@ -121,6 +121,7 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
     private let appRouteURLParser: AppRouteURLParser
     
     private var storedAppRoute: AppRoute?
+    private var storedAppRouteSourceURL: URL?
     @Consumable private var storedInlineReply: (roomID: String, message: String)?
     @Consumable private var storedRoomsToAwait: Set<String>?
 
@@ -292,11 +293,22 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
 
     func handleDeepLink(_ url: URL, isExternalURL: Bool) -> Bool {
         // Parse into an AppRoute to redirect these in a type safe way.
+        let serverLink = StalkServerLink(url: url)
+        if let serverLink,
+           serverLink.shouldOpenInBrowser(knownHosts: appSettings.elementWebHosts,
+                                          homeserver: userSession?.clientProxy.homeserver,
+                                          mayRestoreSession: stateMachine.state == .initial || stateMachine.state == .restoringSession) {
+            UIApplication.shared.open(serverLink.browserURL)
+            return true
+        }
+        func handleLinkRoute(_ route: AppRoute) {
+            handleAppRoute(route, sourceURL: serverLink?.url)
+        }
         
         if let route = appRouteURLParser.route(from: url) {
             switch route {
             case .accountProvisioningLink:
-                handleAppRoute(route)
+                handleLinkRoute(route)
             case .genericCallLink(let url):
                 if let userSessionFlowCoordinator {
                     userSessionFlowCoordinator.handleAppRoute(route, animated: true)
@@ -306,34 +318,34 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
             case .meeting:
                 // STMOB-216: meeting links need a signed-in session to resolve the
                 // code → room, so route through normal app-route handling.
-                handleAppRoute(route)
+                handleLinkRoute(route)
             case .userProfile(let userID):
                 if isExternalURL {
-                    handleAppRoute(route)
+                    handleLinkRoute(route)
                 } else {
                     handleAppRoute(.roomMemberDetails(userID: userID))
                 }
             case .room(let roomID, let via):
                 if isExternalURL {
-                    handleAppRoute(route)
+                    handleLinkRoute(route)
                 } else {
                     handleAppRoute(.childRoom(roomID: roomID, via: via))
                 }
             case .roomAlias(let alias):
                 if isExternalURL {
-                    handleAppRoute(route)
+                    handleLinkRoute(route)
                 } else {
                     handleAppRoute(.childRoomAlias(alias))
                 }
             case .event(let eventID, let roomID, let via):
                 if isExternalURL {
-                    handleAppRoute(route)
+                    handleLinkRoute(route)
                 } else {
                     handleAppRoute(.childEvent(eventID: eventID, roomID: roomID, via: via))
                 }
             case .eventOnRoomAlias(let eventID, let alias):
                 if isExternalURL {
-                    handleAppRoute(route)
+                    handleLinkRoute(route)
                 } else {
                     handleAppRoute(.childEventOnRoomAlias(eventID: eventID, alias: alias))
                 }
@@ -758,6 +770,12 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
     }
     
     private func startAuthentication() {
+        // A failed restore must preserve the guest meeting path rather than force login.
+        if case .meeting? = storedAppRoute, let url = storedAppRouteSourceURL, let link = StalkServerLink(url: url) {
+            storedAppRoute = nil
+            storedAppRouteSourceURL = nil
+            UIApplication.shared.open(link.browserURL)
+        }
         let encryptionKeyProvider = EncryptionKeyProvider()
         let authenticationService = AuthenticationService(userSessionStore: userSessionStore,
                                                           encryptionKeyProvider: encryptionKeyProvider,
@@ -793,7 +811,15 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         
         if storedAppRoute?.isAuthenticationRoute == false,
            let storedAppRoute = storedAppRoute.take() {
-            userSessionFlowCoordinator.handleAppRoute(storedAppRoute, animated: false)
+            let sourceURL = storedAppRouteSourceURL.take()
+            if let sourceURL, let link = StalkServerLink(url: sourceURL),
+               link.shouldOpenInBrowser(knownHosts: appSettings.elementWebHosts,
+                                        homeserver: userSession.clientProxy.homeserver,
+                                        mayRestoreSession: false) {
+                await UIApplication.shared.open(link.browserURL)
+            } else {
+                userSessionFlowCoordinator.handleAppRoute(storedAppRoute, animated: false)
+            }
         }
         
         if let storedInlineReply {
@@ -1134,7 +1160,7 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         .store(in: &cancellables)
     }
     
-    private func handleAppRoute(_ appRoute: AppRoute) {
+    private func handleAppRoute(_ appRoute: AppRoute, sourceURL: URL? = nil) {
         var handled = false
         
         switch appRoute {
@@ -1152,6 +1178,7 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         
         if !handled {
             storedAppRoute = appRoute
+            storedAppRouteSourceURL = sourceURL
         }
     }
     
