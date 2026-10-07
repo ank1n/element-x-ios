@@ -7,12 +7,15 @@
 import Combine
 import Foundation
 import os.log
+import UIKit
 
 typealias CallsListScreenViewModelType = StateStoreViewModel<CallsListScreenViewState, CallsListScreenViewAction>
 
 protocol CallsListScreenViewModelProtocol {
     var actionsPublisher: AnyPublisher<CallsListScreenViewModelAction, Never> { get }
     var context: CallsListScreenViewModelType.Context { get }
+    func setActive(_ active: Bool)
+    func stop()
 }
 
 class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenViewModelProtocol {
@@ -32,14 +35,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
     /// Set of recording IDs that have been listened to (persisted)
     private var listenedRecordingIDs: Set<String> = []
     /// Cache of resolved room data (contactId → avatar, name, participants)
-    private var resolvedRoomData: [String: ResolvedRoomInfo] = [:]
-
-    private struct ResolvedRoomInfo {
-        var contactName: String?
-        var avatarURL: URL?
-        var participantCount: Int?
-        var participantAvatarURLs: [URL]?
-    }
+    private var resolvedRoomData: [String: CallHistoryRoomInfo] = [:]
 
     private static let listenedCacheKey = "listened-recording-ids"
 
@@ -50,11 +46,24 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
     init(userSession: UserSessionProtocol,
          localCallHistoryService: LocalCallHistoryServiceProtocol? = nil,
          callHistoryService: CallHistoryServiceProtocol? = nil,
-         audioPlayer: AudioPlayerProtocol = AudioPlayer()) {
+         audioPlayer: AudioPlayerProtocol = AudioPlayer(),
+         cacheService: STalkCacheService? = nil,
+         isActive: Bool = true,
+         now: @escaping () -> Date = Date.init,
+         applicationIsActive: @escaping () -> Bool = { UIApplication.shared.applicationState == .active },
+         roomHistoryLoader: (() async throws -> [String: [CallHistoryItem]])? = nil) {
         self.userSession = userSession
         self.localCallHistoryService = localCallHistoryService ?? ServiceLocator.shared.localCallHistoryService
         self.callHistoryService = callHistoryService
         self.audioPlayer = audioPlayer
+        self.cacheService = cacheService ?? ServiceLocator.shared.cacheService
+        cacheKey = CallHistoryCacheSnapshot.key(userID: userSession.clientProxy.userID, homeserver: userSession.clientProxy.homeserver)
+        self.isActive = isActive
+        self.now = now
+        self.applicationIsActive = applicationIsActive
+        self.roomHistoryLoader = roomHistoryLoader
+        previousLocalCalls = self.localCallHistoryService.getAllCalls()
+        localRevision = CallHistoryCacheSnapshot.revision(previousLocalCalls)
 
         var initialState = CallsListScreenViewState()
         initialState.userID = userSession.clientProxy.userID
@@ -68,11 +77,10 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         loadListenedRecordingIDs()
         setupMeetingsService()
 
-        // Load all data sources once, then build list
-        loadAllCallData()
-
-        // Subscribe to local changes for future updates only (new calls while app is open)
+        updateCallHistoryFromLocal(previousLocalCalls)
+        DiagLog.write("CallHistory", "local history shown immediately: count=\(previousLocalCalls.count)")
         setupLocalHistorySubscription()
+        loadCachedHistory()
     }
 
     override func process(viewAction: CallsListScreenViewAction) {
@@ -96,9 +104,8 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         case .seekPlayback(let progress):
             Task { await audioPlayer.seek(to: progress) }
         case .refresh:
-            initialLoadDone = false
-            loadAllCallData()
-            Task { await meetingsService?.fetchMeetings() }
+            refreshIfNeeded(force: true)
+            refreshMeetingsIfNeeded(force: true)
         case .rsvpMeeting(let meetingId, let response):
             handleRSVP(meetingId: meetingId, response: response)
         case .joinMeeting(let meeting):
@@ -108,40 +115,235 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         }
     }
 
-    // MARK: - Initial Data Load
+    // MARK: - Cached history and background refresh
 
-    private var initialLoadDone = false
+    private var snapshot = CallHistoryCacheSnapshot()
+    private let cacheService: STalkCacheService?
+    private let cacheKey: String
+    private let now: () -> Date
+    private let applicationIsActive: () -> Bool
+    private let roomHistoryLoader: (() async throws -> [String: [CallHistoryItem]])?
+    private var isActive: Bool
+    private var stopped = false
+    private var cacheLoaded = false
+    private var localRevision: String
+    private var previousLocalCalls: [LocalCallHistoryItem]
+    private var cacheTask: Task<Void, Never>?
+    private var refreshTask: Task<Void, Never>?
+    private var avatarTask: Task<Void, Never>?
+    private var meetingsTask: Task<Void, Never>?
+    private var meetingsRetryAfter = Date.distantPast
+    private var retryAfter: Date = .distantPast
+    private var forceAfterCurrentRefresh = false
+    private var roomTokenRefreshTask: Task<String?, Never>?
+    private static let retryInterval: TimeInterval = 30
 
-    /// Load all 3 data sources, then build list once
-    private func loadAllCallData() {
-        Task { [weak self] in
+    func setActive(_ active: Bool) {
+        isActive = active
+        if active {
+            refreshIfNeeded()
+            refreshMeetingsIfNeeded()
+            resolveAvatars()
+        } else {
+            refreshTask?.cancel()
+            avatarTask?.cancel()
+            meetingsTask?.cancel()
+        }
+    }
+
+    func stop() {
+        stopped = true
+        isActive = false
+        cacheTask?.cancel()
+        refreshTask?.cancel()
+        avatarTask?.cancel()
+        meetingsTask?.cancel()
+        roomTokenRefreshTask?.cancel()
+        callsCancellables.removeAll()
+        stopProgressTimer()
+        audioPlayer.stop()
+    }
+
+    private func loadCachedHistory() {
+        cacheTask = Task { [weak self] in
             guard let self else { return }
-
-            // 1. Server recordings
-            let currentUserID = userSession.clientProxy.userID
-            if let service = callHistoryService {
-                do {
-                    let recordings = try await service.fetchRecordings(currentUserID: currentUserID)
-                    await MainActor.run { self.serverRecordings = recordings }
-                    await ServiceLocator.shared.cacheService?.save(recordings, forKey: Self.recordingsCacheKey, ttl: Self.recordingsCacheTTL)
-                } catch {
-                    // Try cache
-                    if let cached = await ServiceLocator.shared.cacheService?.load([CallHistoryItem].self, forKey: Self.recordingsCacheKey) {
-                        await MainActor.run { self.serverRecordings = cached }
+            if let cached = await cacheService?.load(CallHistoryCacheSnapshot.self, forKey: cacheKey), !stopped {
+                snapshot = cached
+                state.meetings = cached.meetings
+                resolvedRoomData = cached.rooms
+                if cached.localRevision != localRevision {
+                    snapshot.recordingsFetchedAt = nil
+                    snapshot.roomEventsFetchedAt = nil
+                    for call in previousLocalCalls {
+                        snapshot.roomFetchedAt[call.roomID] = nil
                     }
                 }
+                rebuildFetchedHistory()
+                DiagLog.write("CallHistory", "cache restored: recordings=\(cached.recordings.count), roomCalls=\(cached.roomCalls.values.reduce(0) { $0 + $1.count })")
             }
+            guard !Task.isCancelled, !stopped else { return }
+            cacheLoaded = true
+            updateCallHistoryFromLocal(localCallHistoryService.getAllCalls())
+            refreshIfNeeded()
+            refreshMeetingsIfNeeded()
+        }
+    }
 
-            // 2. Room event calls (parallel would be ideal but sequential is simpler)
-            await self.loadCallEventsFromRoomsSync()
+    private func refreshIfNeeded(force: Bool = false, rerunIfLoading: Bool = false) {
+        guard cacheLoaded, isActive, applicationIsActive(), !stopped else { return }
+        if refreshTask != nil {
+            forceAfterCurrentRefresh = forceAfterCurrentRefresh || rerunIfLoading
+            return
+        }
+        guard force || now() >= retryAfter else { return }
+        let recordingsNeeded = callHistoryService != nil && (force || !CallHistoryCacheSnapshot.isFresh(snapshot.recordingsFetchedAt, now: now()))
+        let roomsNeeded: Bool
+        if roomHistoryLoader != nil {
+            roomsNeeded = force || !CallHistoryCacheSnapshot.isFresh(snapshot.roomEventsFetchedAt, now: now())
+        } else {
+            roomsNeeded = userSession.clientProxy is ClientProxy &&
+                userSession.clientProxy.staticRoomSummaryProvider.statePublisher.value.isLoaded &&
+                roomsToRefresh(force: force).isEmpty == false
+        }
+        guard recordingsNeeded || roomsNeeded else {
+            DiagLog.write("CallHistory", "fresh cache: no history requests")
+            return
+        }
+        retryAfter = now().addingTimeInterval(Self.retryInterval)
+        state.isRefreshingHistory = true
+        state.isLoading = state.callHistory.isEmpty && snapshot.recordingsFetchedAt == nil && snapshot.roomCalls.isEmpty
+        let revisionAtStart = localRevision
+        let started = ContinuousClock.now
+        DiagLog.write("CallHistory", "refresh started: recordings=\(recordingsNeeded), rooms=\(roomsNeeded), force=\(force)")
+        refreshTask = Task { [weak self] in
+            guard let self else { return }
+            await withTaskGroup(of: Void.self) { group in
+                if recordingsNeeded { group.addTask { await self.refreshRecordings(revision: revisionAtStart) } }
+                if roomsNeeded { group.addTask { await self.refreshRoomHistory(force: force, revision: revisionAtStart) } }
+            }
+            refreshTask = nil
+            guard !stopped else { return }
+            state.isLoading = false
+            state.isRefreshingHistory = false
+            await persistHistory()
+            resolveAvatars(force: true)
+            DiagLog.write("CallHistory", "refresh finished: rows=\(state.callHistory.count), durationMs=\(Self.elapsedMilliseconds(since: started)), cancelled=\(Task.isCancelled)")
+            let pendingForce = forceAfterCurrentRefresh
+            forceAfterCurrentRefresh = false
+            if Task.isCancelled { retryAfter = .distantPast }
+            if pendingForce || (Task.isCancelled && isActive && applicationIsActive()) { refreshIfNeeded(force: pendingForce) }
+        }
+    }
 
-            // 3. Build final list with local + server + room events
-            await MainActor.run {
-                let localCalls = self.localCallHistoryService.getAllCalls()
-                self.initialLoadDone = true
-                self.updateCallHistoryFromLocal(localCalls)
+    private func refreshRecordings(revision: String) async {
+        guard let callHistoryService else { return }
+        let started = ContinuousClock.now
+        do {
+            let recordings = try await callHistoryService.fetchRecordings(currentUserID: userSession.clientProxy.userID)
+            guard !Task.isCancelled, !stopped else { return }
+            snapshot.recordings = recordings
+            snapshot.recordingsFetchedAt = localRevision == revision ? now() : nil
+            rebuildFetchedHistory()
+            updateCallHistoryFromLocal(localCallHistoryService.getAllCalls())
+            await persistHistory()
+            DiagLog.write("CallHistory", "recordings updated: count=\(recordings.count), durationMs=\(Self.elapsedMilliseconds(since: started))")
+        } catch {
+            if !Task.isCancelled { DiagLog.write("CallHistory", "recordings unavailable: errorCode=\((error as NSError).code); cached history retained") }
+        }
+    }
+
+    private func roomsToRefresh(force: Bool) -> [String] {
+        let summaries = userSession.clientProxy.staticRoomSummaryProvider.roomListPublisher.value
+        return Array(Set(summaries.filter { $0.activeMembersCount <= 10 }.map(\.id)))
+            .filter { force || !CallHistoryCacheSnapshot.isFresh(snapshot.roomFetchedAt[$0], now: now()) }
+            .sorted()
+    }
+
+    private func refreshRoomHistory(force: Bool, revision: String) async {
+        if let roomHistoryLoader {
+            do {
+                let rooms = try await roomHistoryLoader()
+                guard !Task.isCancelled, !stopped else { return }
+                snapshot.roomCalls = rooms
+                snapshot.roomEventsFetchedAt = localRevision == revision ? now() : nil
+                rebuildFetchedHistory()
+                updateCallHistoryFromLocal(localCallHistoryService.getAllCalls())
+                await persistHistory()
+            } catch {
+                if !Task.isCancelled { DiagLog.write("CallHistory", "room history unavailable; cached history retained") }
+            }
+            return
+        }
+        guard let client = userSession.clientProxy as? ClientProxy,
+              let token = try? client.matrixAccessToken(), !token.isEmpty else { return }
+        let roomIDs = roomsToRefresh(force: force)
+        let homeserver = client.homeserver.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let ownUserID = client.userID
+        let cutoff = now().addingTimeInterval(-30 * 24 * 3600)
+        roomTokenRefreshTask = nil
+        var iterator = roomIDs.makeIterator()
+        var succeeded = 0
+        await withTaskGroup(of: (String, [CallHistoryItem]?).self) { group in
+            func enqueue(_ roomID: String) {
+                group.addTask {
+                    guard let events = await self.fetchCallMemberEvents(roomID: roomID, homeserver: homeserver, accessToken: token) else { return (roomID, nil) }
+                    let calls = await self.extractCallSessions(events, roomID: roomID, ownUserID: ownUserID, cutoffDate: cutoff, sessionGapMs: 60000)
+                    return (roomID, calls)
+                }
+            }
+            for _ in 0..<4 {
+                if let roomID = iterator.next() { enqueue(roomID) }
+            }
+            for await (roomID, calls) in group {
+                guard !Task.isCancelled, !stopped else { group.cancelAll(); break }
+                if let calls {
+                    snapshot.roomCalls[roomID] = calls
+                    snapshot.roomFetchedAt[roomID] = localRevision == revision ? now() : nil
+                    succeeded += 1
+                    rebuildFetchedHistory()
+                    updateCallHistoryFromLocal(localCallHistoryService.getAllCalls())
+                }
+                if let roomID = iterator.next() { enqueue(roomID) }
             }
         }
+        if !Task.isCancelled {
+            await persistHistory()
+            DiagLog.write("CallHistory", "room scan: requested=\(roomIDs.count), succeeded=\(succeeded), concurrency=4")
+        }
+    }
+
+    private func rebuildFetchedHistory() {
+        serverRecordings = snapshot.recordings
+        for call in snapshot.roomCalls.values.flatMap({ $0 }) {
+            if !serverRecordings.contains(where: { $0.contactId == call.contactId && abs($0.timestamp.timeIntervalSince(call.timestamp)) < 300 }) {
+                serverRecordings.append(call)
+            }
+        }
+    }
+
+    private func persistHistory() async {
+        snapshot.localRevision = localRevision
+        snapshot.rooms = resolvedRoomData
+        await cacheService?.save(snapshot, forKey: cacheKey, ttl: CallHistoryCacheSnapshot.freshnessInterval)
+    }
+
+    private func refreshMeetingsIfNeeded(force: Bool = false) {
+        guard cacheLoaded, isActive, applicationIsActive(), !stopped, let meetingsService, meetingsTask == nil,
+              force || (now() >= meetingsRetryAfter && !CallHistoryCacheSnapshot.isFresh(snapshot.meetingsFetchedAt, now: now())) else { return }
+        meetingsRetryAfter = now().addingTimeInterval(Self.retryInterval)
+        state.isMeetingsLoading = state.meetings.isEmpty && snapshot.meetingsFetchedAt == nil
+        meetingsTask = Task { [weak self] in
+            await meetingsService.fetchMeetings()
+            guard let self else { return }
+            meetingsTask = nil
+            state.isMeetingsLoading = false
+            if Task.isCancelled { meetingsRetryAfter = .distantPast }
+        }
+    }
+
+    private static func elapsedMilliseconds(since start: ContinuousClock.Instant) -> Int64 {
+        let duration = start.duration(to: .now).components
+        return duration.seconds * 1000 + duration.attoseconds / 1_000_000_000_000_000
     }
 
     // MARK: - Local History Subscription
@@ -150,8 +352,41 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         localCallHistoryService.callHistoryPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] localCalls in
-                guard let self, self.initialLoadDone else { return }
+                guard let self, !self.stopped else { return }
+                let revision = CallHistoryCacheSnapshot.revision(localCalls)
+                if revision != self.localRevision {
+                    self.snapshot.recordingsFetchedAt = nil
+                    self.snapshot.roomEventsFetchedAt = nil
+                    for call in self.previousLocalCalls + localCalls {
+                        self.snapshot.roomFetchedAt[call.roomID] = nil
+                    }
+                    self.localRevision = revision
+                    self.previousLocalCalls = localCalls
+                    self.refreshIfNeeded(force: true, rerunIfLoading: true)
+                }
                 self.updateCallHistoryFromLocal(localCalls)
+            }
+            .store(in: &callsCancellables)
+        userSession.clientProxy.staticRoomSummaryProvider.statePublisher
+            .map(\.isLoaded)
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] loaded in if loaded { self?.refreshIfNeeded() } }
+            .store(in: &callsCancellables)
+        NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.refreshIfNeeded()
+                self?.refreshMeetingsIfNeeded()
+            }
+            .store(in: &callsCancellables)
+        NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.refreshTask?.cancel()
+                self?.avatarTask?.cancel()
+                self?.meetingsTask?.cancel()
+                self?.roomTokenRefreshTask?.cancel()
             }
             .store(in: &callsCancellables)
     }
@@ -159,7 +394,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
     /// Кэш записей с сервера (egressId -> recording info)
     private var serverRecordings: [CallHistoryItem] = []
 
-    private func updateCallHistoryFromLocal(_ localCalls: [LocalCallHistoryItem]) {
+    private func updateCallHistoryFromLocal(_ localCalls: [LocalCallHistoryItem], resolveMetadata: Bool = true) {
         MXLog.info("📞 Updating call history from local: \(localCalls.count) calls, server recordings: \(serverRecordings.count)")
 
         // Конвертируем локальные записи в CallHistoryItem
@@ -227,94 +462,60 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         }
 
         // Only update state if data actually changed (preserves scroll position on navigation back)
-        if state.callHistory.map(\.id) != calls.map(\.id) || state.isLoading {
+        for i in calls.indices {
+            calls[i].isListened = listenedRecordingIDs.contains(calls[i].id)
+        }
+        if state.callHistory != calls || state.isLoading {
             state.callHistory = calls
             applyListenedStatus()
         }
-        state.isLoading = false
+        state.isLoading = calls.isEmpty && (!cacheLoaded || (state.isRefreshingHistory && snapshot.recordingsFetchedAt == nil && snapshot.roomCalls.isEmpty))
 
         // Resolve avatars for rooms not yet cached
         let unresolvedRoomIDs = Set(calls.map(\.contactId)).subtracting(resolvedRoomData.keys)
-        if !unresolvedRoomIDs.isEmpty {
+        if resolveMetadata, !unresolvedRoomIDs.isEmpty {
             resolveAvatars()
         }
     }
 
     /// Resolves avatar URLs and participant info for call history items from Matrix room data
-    private func resolveAvatars() {
+    private func resolveAvatars(force: Bool = false) {
+        guard isActive, applicationIsActive(), !stopped, avatarTask == nil,
+              userSession.clientProxy.staticRoomSummaryProvider.statePublisher.value.isLoaded else { return }
+        let ids = Set(state.callHistory.map(\.contactId)).filter { force || resolvedRoomData[$0] == nil }
+        guard !ids.isEmpty else { return }
         let ownUserID = userSession.clientProxy.userID
-        // Take a snapshot to work on off-main-thread
-        let snapshot = state.callHistory
-        Task {
-            var items = snapshot
-            var changed = false
-
-            for i in items.indices {
-                let roomID = items[i].contactId
-                guard let roomProxyType = await userSession.clientProxy.roomForIdentifier(roomID),
-                      case .joined(let roomProxy) = roomProxyType else { continue }
-
-                let info = roomProxy.infoPublisher.value
-                let memberCount = Int(info.activeMembersCount)
-
-                if memberCount != items[i].participantCount {
-                    items[i].participantCount = memberCount
-                    changed = true
-                }
-
-                // Resolve room name for calls with default name
-                let currentName = items[i].contactName
-                if currentName == SL10n.callDefault || currentName == SL10n.callsVideoCall {
-                    if let roomName = info.displayName, !roomName.isEmpty, roomName != "Empty Room" {
-                        items[i].contactName = roomName
-                        changed = true
-                    }
-                }
-
-                if memberCount > 2 {
-                    if let members = await roomProxy.members() {
-                        let otherMembers = members.filter { $0.userID != ownUserID }
-                        items[i].participantAvatarURLs = otherMembers.compactMap(\.avatarURL)
-                        let memberNames = otherMembers.compactMap(\.displayName)
-                        if !memberNames.isEmpty, items[i].contactName == SL10n.callDefault || items[i].contactName == SL10n.callsVideoCall {
-                            items[i].contactName = memberNames.count <= 2
-                                ? memberNames.joined(separator: ", ")
-                                : "\(memberNames.prefix(2).joined(separator: ", ")) +\(memberNames.count - 2)"
-                        }
-                        changed = true
-                    }
+        avatarTask = Task { [weak self] in
+            guard let self else { return }
+            for roomID in ids {
+                guard !Task.isCancelled, !stopped else { break }
+                // Metadata must not wake sync for a room unavailable in the local SDK.
+                guard userSession.clientProxy.roomMembership(roomID: roomID) == .joined,
+                      case let .joined(room) = await userSession.clientProxy.roomForIdentifier(roomID) else { continue }
+                let info = room.infoPublisher.value
+                var metadata = CallHistoryRoomInfo(contactName: info.displayName, participantCount: Int(info.activeMembersCount))
+                if info.activeMembersCount > 2, let members = await room.members() {
+                    let otherMembers = members.filter { $0.userID != ownUserID }
+                    metadata.participantAvatarURLs = otherMembers.compactMap(\.avatarURL)
                 } else {
-                    if items[i].avatarURL == nil {
-                        let resolvedURL: URL? = switch info.avatar {
-                        case .heroes(let heroes) where heroes.count == 1: heroes[0].avatarURL
-                        case .room(_, _, let url): url
-                        case .space(_, _, let url): url
-                        default: nil
-                        }
-                        if let resolvedURL {
-                            items[i].avatarURL = resolvedURL
-                            changed = true
-                        }
+                    metadata.avatarURL = switch info.avatar {
+                    case .heroes(let heroes) where heroes.count == 1: heroes[0].avatarURL
+                    case .room(_, _, let url): url
+                    case .space(_, _, let url): url
+                    default: nil
                     }
                 }
+                guard !Task.isCancelled, !stopped else { break }
+                resolvedRoomData[roomID] = metadata
             }
-
-            // Save to cache + single batch UI update
-            if changed {
-                await MainActor.run {
-                    for item in items {
-                        self.resolvedRoomData[item.contactId] = ResolvedRoomInfo(contactName: item.contactName,
-                                                                                 avatarURL: item.avatarURL,
-                                                                                 participantCount: item.participantCount,
-                                                                                 participantAvatarURLs: item.participantAvatarURLs)
-                    }
-                    self.state.callHistory = items
-                }
-            }
+            avatarTask = nil
+            guard !Task.isCancelled, !stopped else { return }
+            // Merge metadata into the latest list, never restore an obsolete snapshot.
+            updateCallHistoryFromLocal(localCallHistoryService.getAllCalls(), resolveMetadata: false)
+            await persistHistory()
         }
     }
 
-    /// Находит запись с сервера, соответствующую локальному звонку
     private func findMatchingRecording(for localCall: LocalCallHistoryItem) -> CallHistoryItem? {
         serverRecordings.first { recording in
             isRecordingMatchingCall(recording, localCall: localCall)
@@ -363,149 +564,43 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
 
     // MARK: - Call Events from Matrix Rooms
 
-    /// Fetch call history from Matrix room events (call.member).
-    /// This covers calls WITHOUT recordings that wouldn't appear from the recording API.
-    /// Async version that merges room event calls into serverRecordings without triggering UI update
-    private func loadCallEventsFromRoomsSync() async {
-        let homeserver = userSession.clientProxy.homeserver.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let ownUserID = userSession.clientProxy.userID
-        let concreteProxy = userSession.clientProxy as? ClientProxy
-
-        await concreteProxy?.forceTokenRefresh()
-        guard let token = try? concreteProxy?.matrixAccessToken() else { return }
-
-        let summaries = userSession.clientProxy.roomSummaryProvider.roomListPublisher.value
-        let callRoomIDs = summaries.filter { $0.activeMembersCount <= 10 }.map(\.id)
-
-        var callEvents: [CallHistoryItem] = []
-        let thirtyDaysAgo = Date().addingTimeInterval(-30 * 24 * 3600)
-
-        for roomID in callRoomIDs {
-            guard let events = await fetchCallMemberEvents(roomID: roomID, homeserver: homeserver, accessToken: token) else { continue }
-            guard !events.isEmpty else { continue }
-            let calls = extractCallSessions(events, roomID: roomID, ownUserID: ownUserID, cutoffDate: thirtyDaysAgo, sessionGapMs: 60000)
-            callEvents.append(contentsOf: calls)
-        }
-
-        await MainActor.run {
-            for call in callEvents {
-                let alreadyExists = serverRecordings.contains { existing in
-                    existing.contactId == call.contactId &&
-                        abs(existing.timestamp.timeIntervalSince(call.timestamp)) < 300
-                }
-                if !alreadyExists {
-                    serverRecordings.append(call)
-                }
-            }
-        }
-    }
-
-    private func loadCallEventsFromRooms() {
-        let homeserver = userSession.clientProxy.homeserver.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let ownUserID = userSession.clientProxy.userID
-        let concreteProxy = userSession.clientProxy as? ClientProxy
-
-        MXLog.info("📞 loadCallEventsFromRooms: starting... (proxy: \(concreteProxy != nil))")
-
-        Task {
-            // Force token refresh before fetching (MAS tokens expire every 15 min)
-            await concreteProxy?.forceTokenRefresh()
-
-            guard let token = try? concreteProxy?.matrixAccessToken() else {
-                MXLog.error("📞 loadCallEventsFromRooms: no access token after refresh")
-                return
-            }
-
-            // Get rooms from SDK room list
-            let summaries = userSession.clientProxy.roomSummaryProvider.roomListPublisher.value
-            // Only check DM rooms and small group rooms (where calls happen)
-            let callRoomIDs = summaries.filter { $0.activeMembersCount <= 10 }.map(\.id)
-
-            MXLog.info("📞 Loading call events from \(callRoomIDs.count) rooms")
-
-            // Debug: write room scan info
-            var scanDebug = ["ROOMS SCAN: \(callRoomIDs.count) rooms, homeserver=\(homeserver), hasToken=\(token.prefix(10))...\n"]
-
-            var callEvents: [CallHistoryItem] = []
-            let thirtyDaysAgo = Date().addingTimeInterval(-30 * 24 * 3600)
-            let sessionGapMs = 60000 // Same as web: 60s gap = new call session
-
-            for roomID in callRoomIDs {
-                guard let events = await fetchCallMemberEvents(roomID: roomID, homeserver: homeserver, accessToken: token) else {
-                    scanDebug.append("  \(roomID.prefix(30)): FAILED (nil)\n")
-                    continue
-                }
-                if events.isEmpty {
-                    continue
-                }
-                scanDebug.append("  \(roomID.prefix(30)): \(events.count) events\n")
-                // Dump first 3 events for debug
-                for e in events.prefix(3) {
-                    let ts = e["origin_server_ts"] as? Int ?? 0
-                    let sender = e["sender"] as? String ?? "?"
-                    let content = e["content"] as? [String: Any] ?? [:]
-                    let memberships = content["memberships"] as? [[String: Any]] ?? []
-                    let application = content["application"] as? String
-                    scanDebug.append("    ts=\(ts) sender=\(sender.prefix(20)) memberships=\(memberships.count) app=\(application ?? "nil") keys=\(content.keys.sorted())\n")
-                }
-
-                // Group into call sessions (like web's extractCallSessions)
-                let calls = extractCallSessions(events, roomID: roomID, ownUserID: ownUserID, cutoffDate: thirtyDaysAgo, sessionGapMs: sessionGapMs)
-                callEvents.append(contentsOf: calls)
-            }
-            try? scanDebug.joined().write(toFile: NSTemporaryDirectory() + "stalk_roomscan_debug.txt", atomically: true, encoding: .utf8)
-
-            MXLog.info("📞 Found \(callEvents.count) calls from room events")
-            // Debug: write room event calls to tmp file
-            let df2 = DateFormatter(); df2.dateFormat = "yyyy-MM-dd HH:mm"
-            var debugLines2 = ["ROOM EVENT CALLS: \(callEvents.count)\n"]
-            for c in callEvents.sorted(by: { $0.timestamp > $1.timestamp }) {
-                debugLines2.append("\(c.id.prefix(35)) | \(df2.string(from: c.timestamp)) | \(c.contactName)\n")
-            }
-            try? debugLines2.joined().write(toFile: NSTemporaryDirectory() + "stalk_roomcalls_debug.txt", atomically: true, encoding: .utf8)
-
-            await MainActor.run {
-                // Merge with existing — add only calls that don't match server recordings
-                for call in callEvents {
-                    let alreadyExists = serverRecordings.contains { existing in
-                        existing.contactId == call.contactId &&
-                            abs(existing.timestamp.timeIntervalSince(call.timestamp)) < 300
-                    }
-                    if !alreadyExists {
-                        serverRecordings.append(call)
-                    }
-                }
-                let localCalls = localCallHistoryService.getAllCalls()
-                updateCallHistoryFromLocal(localCalls)
-            }
-        }
-    }
-
     /// Fetch call.member events from a room via Matrix API
     private func fetchCallMemberEvents(roomID: String, homeserver: String, accessToken: String) async -> [[String: Any]]? {
-        guard let encodedRoomID = roomID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { return nil }
-
-        let filterJSON = "{\"types\":[\"org.matrix.msc3401.call.member\"]}"
-        guard let encodedFilter = filterJSON.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "\(homeserver)/_matrix/client/v3/rooms/\(encodedRoomID)/messages?dir=b&limit=100&filter=\(encodedFilter)") else { return nil }
-
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 10
-
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              let httpResponse = response as? HTTPURLResponse else { return nil }
-
-        if httpResponse.statusCode == 401 {
-            MXLog.info("📞 fetchCallMemberEvents: 401 for room \(roomID.prefix(20))")
-            return nil
+        let pathCharacters = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))
+        guard let encodedRoomID = roomID.addingPercentEncoding(withAllowedCharacters: pathCharacters),
+              var components = URLComponents(string: "\(homeserver)/_matrix/client/v3/rooms/\(encodedRoomID)/messages") else { return nil }
+        components.queryItems = [URLQueryItem(name: "dir", value: "b"), URLQueryItem(name: "limit", value: "100"),
+                                 URLQueryItem(name: "filter", value: "{\"types\":[\"org.matrix.msc3401.call.member\",\"m.call.member\"]}")]
+        guard let url = components.url else { return nil }
+        var token = accessToken
+        for attempt in 0...1 {
+            guard !Task.isCancelled, isActive, applicationIsActive() else { return nil }
+            var request = URLRequest(url: url)
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.timeoutInterval = 10
+            guard let (data, response) = try? await URLSession.shared.data(for: request),
+                  let httpResponse = response as? HTTPURLResponse else { return nil }
+            if httpResponse.statusCode == 401, attempt == 0 {
+                if roomTokenRefreshTask == nil {
+                    roomTokenRefreshTask = Task { [weak self] in
+                        guard let client = self?.userSession.clientProxy as? ClientProxy else { return nil }
+                        await client.forceTokenRefresh()
+                        return try? client.matrixAccessToken()
+                    }
+                }
+                guard let fresh = await roomTokenRefreshTask?.value, !fresh.isEmpty else { return nil }
+                token = fresh
+                continue
+            }
+            guard httpResponse.statusCode == 200,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let chunk = json["chunk"] as? [[String: Any]] else {
+                DiagLog.write("CallHistory", "room history HTTP \(httpResponse.statusCode); previous cached entries retained")
+                return nil
+            }
+            return chunk
         }
-
-        guard httpResponse.statusCode == 200,
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let chunk = json["chunk"] as? [[String: Any]] else { return nil }
-
-        return chunk
+        return nil
     }
 
     /// Group call.member events into call sessions (mirrors web's extractCallSessions)
@@ -530,7 +625,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
             let duration = TimeInterval(sessionEnd - sessionStart) / 1000
             let isMissed = isIncoming && !allParticipants.contains(ownUserID)
 
-            sessions.append(CallHistoryItem(id: "rtc_\(roomID.hashValue)_\(sessionStart)",
+            sessions.append(CallHistoryItem(id: "rtc_\(CallHistoryCacheSnapshot.digest(roomID))_\(sessionStart)",
                                             contactName: SL10n.callDefault,
                                             contactId: roomID,
                                             callType: isIncoming ? .incoming : .outgoing,
@@ -617,69 +712,6 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         }
 
         return calls
-    }
-
-    // MARK: - Server Recordings
-
-    private static let recordingsCacheKey = "recordings-list"
-    private static let recordingsCacheTTL: TimeInterval = 300 // 5 minutes
-
-    private func loadRecordingsFromServer(forceRefresh: Bool = false) {
-        // 1. Always show cache instantly (for fast UI — no spinner)
-        Task {
-            if let cached = await ServiceLocator.shared.cacheService?.load([CallHistoryItem].self, forKey: Self.recordingsCacheKey) {
-                await MainActor.run {
-                    serverRecordings = cached
-                    let localCalls = localCallHistoryService.getAllCalls()
-                    updateCallHistoryFromLocal(localCalls)
-                    MXLog.info("📞 Loaded \(cached.count) recordings from cache")
-                }
-            }
-        }
-
-        // 2. Always fetch from server to check for updates (new recordings from other devices etc.)
-        guard let callHistoryService else {
-            MXLog.info("📞 No call history service configured, skipping server fetch")
-            return
-        }
-
-        MXLog.info("📞 Fetching recordings from server...")
-
-        let currentUserID = userSession.clientProxy.userID
-        Task {
-            do {
-                let recordings = try await callHistoryService.fetchRecordings(currentUserID: currentUserID)
-                MXLog.info("📞 Updated \(recordings.count) recordings from server")
-                // Debug: write recordings to tmp file for inspection
-                let df = DateFormatter(); df.dateFormat = "yyyy-MM-dd HH:mm"
-                var debugLines = ["SERVER RECORDINGS: \(recordings.count)\n"]
-                for r in recordings {
-                    debugLines.append("\(r.id.prefix(25)) | \(df.string(from: r.timestamp)) | \(r.contactName)\n")
-                }
-                try? debugLines.joined().write(toFile: NSTemporaryDirectory() + "stalk_recordings_debug.txt", atomically: true, encoding: .utf8)
-
-                // Save to cache
-                await ServiceLocator.shared.cacheService?.save(recordings, forKey: Self.recordingsCacheKey, ttl: Self.recordingsCacheTTL)
-
-                await MainActor.run {
-                    serverRecordings = recordings
-                    let localCalls = localCallHistoryService.getAllCalls()
-                    updateCallHistoryFromLocal(localCalls)
-                }
-            } catch {
-                MXLog.error("📞 Failed to fetch recordings: \(error)")
-                await MainActor.run {
-                    state.isLoading = false
-                }
-            }
-        }
-    }
-
-    /// Invalidate recordings cache (call after ending a call)
-    static func invalidateRecordingsCache() {
-        Task {
-            await ServiceLocator.shared.cacheService?.invalidate(forKey: recordingsCacheKey)
-        }
     }
 
     // MARK: - Audio Playback
@@ -948,15 +980,17 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
                                           forceTokenRefresh: { await concreteProxy.forceTokenRefresh() })
 
         meetingsService?.meetingsSubject
+            .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] (meetings: [Meeting]) in
-                self?.state.meetings = meetings
-                self?.state.isMeetingsLoading = false
+                guard let self, !self.stopped else { return }
+                self.state.meetings = meetings
+                self.snapshot.meetings = meetings
+                self.snapshot.meetingsFetchedAt = self.now()
+                self.state.isMeetingsLoading = false
+                Task { await self.persistHistory() }
             }
             .store(in: &callsCancellables)
-
-        state.isMeetingsLoading = true
-        Task { await meetingsService?.fetchMeetings() }
     }
 
     private func handleRSVP(meetingId: Int, response: String) {
@@ -1147,44 +1181,23 @@ class CallHistoryService: NSObject, CallHistoryServiceProtocol, URLSessionDelega
 
     func fetchRecordings(currentUserID: String?) async throws -> [CallHistoryItem] {
         let url = baseURL.appendingPathComponent("api/recording/list")
-        MXLog.info("📞 FETCH: URL = \(url.absoluteString)")
-
-        // Retry up to 3 times, refreshing token on 401
-        var lastError: Error?
-        for attempt in 1...3 {
-            // Get fresh token each attempt (SDK may have refreshed it)
-            let token = (try? accessTokenProvider?()) ?? accessToken
-
+        for attempt in 0...1 {
+            let token = try accessTokenProvider?() ?? accessToken
+            guard let token, !token.isEmpty else { throw URLError(.userAuthenticationRequired) }
+            try Task.checkCancellation()
             var request = URLRequest(url: url)
-            request.httpMethod = "GET"
-            if let token {
-                request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.timeoutInterval = 30
+            let (data, response) = try await urlSession.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+            DiagLog.write("CallHistory", "recordings HTTP \(status), bytes=\(data.count)")
+            if status == 401, attempt == 0, let forceTokenRefresh {
+                await forceTokenRefresh()
+                continue
             }
-            request.timeoutInterval = 30.0
-
-            do {
-                MXLog.info("📞 FETCH: Attempt \(attempt)...")
-                let (data, response) = try await urlSession.data(for: request)
-                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
-                MXLog.info("📞 FETCH: HTTP \(statusCode), data size: \(data.count)")
-
-                // On 401, wait for SDK to refresh token and retry
-                if statusCode == 401, attempt < 3 {
-                    MXLog.info("📞 FETCH: 401 — forcing SDK token refresh...")
-                    await forceTokenRefresh?()
-                    continue
-                }
-
-                return try processResponse(data: data, response: response, currentUserID: currentUserID, apiBaseURL: baseURL)
-            } catch {
-                MXLog.error("📞 FETCH: Attempt \(attempt) failed: \(error)")
-                lastError = error
-                if attempt < 3 {
-                    try? await Task.sleep(for: .seconds(1))
-                }
-            }
+            return try processResponse(data: data, response: response, currentUserID: currentUserID, apiBaseURL: baseURL)
         }
-        throw lastError ?? CallHistoryError.invalidResponse
+        throw URLError(.userAuthenticationRequired)
     }
 
     private func processResponse(data: Data, response: URLResponse, currentUserID: String?, apiBaseURL: URL? = nil) throws -> [CallHistoryItem] {

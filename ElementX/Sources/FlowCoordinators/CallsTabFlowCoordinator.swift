@@ -20,6 +20,7 @@ class CallsTabFlowCoordinator: FlowCoordinatorProtocol {
 
     private var callsListCoordinator: CallsListScreenCoordinator?
     private var callHistoryService: CallHistoryServiceProtocol?
+    private var isActive = false
 
     enum State: StateType {
         case initial
@@ -63,6 +64,11 @@ class CallsTabFlowCoordinator: FlowCoordinatorProtocol {
         callsListCoordinator?.stop()
     }
 
+    func setActive(_ active: Bool) {
+        isActive = active
+        callsListCoordinator?.setActive(active)
+    }
+
     // MARK: - Private
 
     private func configureStateMachine() {
@@ -85,7 +91,8 @@ class CallsTabFlowCoordinator: FlowCoordinatorProtocol {
         self.callHistoryService = callHistoryService
 
         let parameters = CallsListScreenCoordinatorParameters(userSession: userSession,
-                                                              callHistoryService: callHistoryService)
+                                                              callHistoryService: callHistoryService,
+                                                              isActive: isActive)
         let coordinator = CallsListScreenCoordinator(parameters: parameters)
 
         coordinator.actionsPublisher.sink { [weak self] action in

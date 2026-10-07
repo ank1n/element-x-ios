@@ -4,7 +4,48 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
+import CryptoKit
 import Foundation
+
+/// Persist each source independently, including its freshness and room presentation.
+struct CallHistoryCacheSnapshot: Codable {
+    var recordings: [CallHistoryItem] = []
+    var meetings: [Meeting] = []
+    var meetingsFetchedAt: Date?
+    var roomCalls: [String: [CallHistoryItem]] = [:]
+    var recordingsFetchedAt: Date?
+    var roomEventsFetchedAt: Date?
+    var roomFetchedAt: [String: Date] = [:]
+    var localRevision: String?
+    var rooms: [String: CallHistoryRoomInfo] = [:]
+
+    static let freshnessInterval: TimeInterval = 300
+
+    static func key(userID: String, homeserver: String) -> String {
+        "call-history-v2-" + digest(userID + "\n" + homeserver.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
+    }
+
+    static func isFresh(_ date: Date?, now: Date) -> Bool {
+        guard let date else { return false }
+        let age = now.timeIntervalSince(date)
+        return age >= 0 && age < freshnessInterval
+    }
+
+    static func revision(_ calls: [LocalCallHistoryItem]) -> String {
+        digest(calls.map { "\($0.id)|\($0.roomID)|\($0.startedAt.timeIntervalSince1970)|\($0.endedAt?.timeIntervalSince1970.description ?? "")|\($0.recordingEgressId ?? "")|\($0.isMissed)" }.sorted().joined(separator: "\n"))
+    }
+
+    static func digest(_ text: String) -> String {
+        SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+struct CallHistoryRoomInfo: Codable {
+    var contactName: String?
+    var avatarURL: URL?
+    var participantCount: Int?
+    var participantAvatarURLs: [URL]?
+}
 
 enum CallsListScreenViewAction {
     case showSettings
@@ -40,6 +81,7 @@ struct NewCallContact: Identifiable {
 struct CallsListScreenViewState: BindableState {
     var callHistory: [CallHistoryItem] = []
     var isLoading = false
+    var isRefreshingHistory = false
     var searchQuery = ""
 
     /// Новый звонок

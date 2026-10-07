@@ -238,6 +238,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
             Task { @MainActor [weak self] in self?.observeSelectedTabForPresence() }
         }
 
+        callsTabFlowCoordinator.setActive(selectedTab == .calls)
         guard let presence = AppCoordinator.sharedPresenceService else { return }
         presence.setSuspended(.chats, selectedTab != .chats)
         presence.setSuspended(.contacts, selectedTab != .contacts)

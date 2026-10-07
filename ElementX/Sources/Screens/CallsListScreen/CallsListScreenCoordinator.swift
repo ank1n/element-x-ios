@@ -10,6 +10,7 @@ import SwiftUI
 struct CallsListScreenCoordinatorParameters {
     let userSession: UserSessionProtocol
     let callHistoryService: CallHistoryServiceProtocol?
+    var isActive = true
 }
 
 enum CallsListScreenCoordinatorAction {
@@ -31,7 +32,8 @@ final class CallsListScreenCoordinator: CoordinatorProtocol {
         self.parameters = parameters
 
         viewModel = CallsListScreenViewModel(userSession: parameters.userSession,
-                                             callHistoryService: parameters.callHistoryService)
+                                             callHistoryService: parameters.callHistoryService,
+                                             isActive: parameters.isActive)
     }
 
     func start() {
@@ -57,7 +59,11 @@ final class CallsListScreenCoordinator: CoordinatorProtocol {
     }
 
     func stop() {
-        // Cleanup if needed
+        viewModel.stop()
+    }
+
+    func setActive(_ active: Bool) {
+        viewModel.setActive(active)
     }
 
     func toPresentable() -> AnyView {

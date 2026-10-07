@@ -19,9 +19,9 @@ actor STalkCacheService {
         let expiry: Date
     }
 
-    init() {
+    init(cacheDirectory: URL? = nil) {
         let base = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first!
-        cacheDir = base.appendingPathComponent("ru.implica.stalk/api-cache", isDirectory: true)
+        cacheDir = cacheDirectory ?? base.appendingPathComponent("ru.implica.stalk/api-cache", isDirectory: true)
         try? fileManager.createDirectory(at: cacheDir, withIntermediateDirectories: true)
     }
 
