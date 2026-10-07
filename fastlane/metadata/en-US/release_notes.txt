@@ -1,1 +1,8 @@
-Version 26.04.05 — redesigned calls tab, video conference improvements, iOS 26 support.
+In this update:
+
+• Fixed call membership recovery on unstable networks: participants who can be heard reappear in the participant list.
+• Call history appears immediately from cache and refreshes in the background, making repeated visits faster.
+• Added group call layouts, video visibility filters and participant pinning. Your selected layout is restored when the participant count changes.
+• Improved opening chat and meeting links in the app.
+• Direct chats show contact presence and no longer include a topic field.
+• Improved contact lookup, presence updates and opening chats from notifications.
