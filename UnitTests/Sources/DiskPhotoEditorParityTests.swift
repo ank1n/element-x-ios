@@ -410,6 +410,29 @@ final class DiskPhotoEditorParityTests: XCTestCase {
         XCTAssertFalse(fourGB.allows(CGSize(width: 8064, height: 6048)))
     }
 
+    func testSimulatorAllowanceUsesFreePagesAndOnlyQuarterOfInactivePages() {
+        let allowance = DiskPhotoEditMemoryBudget.computeSimulatorAllowance(freePages: 8192, inactivePages: 32768, pageSize: 4096)
+        XCTAssertEqual(allowance, 64 * 1024 * 1024)
+        XCTAssertEqual(DiskPhotoEditMemoryBudget.computeSimulatorAllowance(freePages: 1, inactivePages: 3, pageSize: 16384), 16384)
+        let budget = DiskPhotoEditMemoryBudget(physicalMemory: 8 * 1024 * 1024 * 1024, availableMemory: allowance)
+        XCTAssertTrue(budget.allows(CGSize(width: 1000, height: 1000)))
+        XCTAssertFalse(budget.allows(CGSize(width: 2000, height: 2000)))
+    }
+
+    func testSimulatorAllowanceKeepsUnavailableStatisticsFailClosed() {
+        XCTAssertEqual(DiskPhotoEditMemoryBudget.computeSimulatorAllowance(freePages: 0, inactivePages: 0, pageSize: 4096), 0)
+        XCTAssertEqual(DiskPhotoEditMemoryBudget.computeSimulatorAllowance(freePages: 8192, inactivePages: 32768, pageSize: 0), 0)
+        let zero = DiskPhotoEditMemoryBudget(physicalMemory: 8 * 1024 * 1024 * 1024, availableMemory: 0)
+        XCTAssertFalse(zero.allows(CGSize(width: 1, height: 1)), "Real-device zero must remain a denial regardless of physical RAM")
+    }
+
+    func testSimulatorAllowanceCapsLargeAndOverflowingEstimates() {
+        let cap: UInt64 = 512 * 1024 * 1024
+        XCTAssertEqual(DiskPhotoEditMemoryBudget.computeSimulatorAllowance(freePages: cap / 16384 + 1, inactivePages: 0, pageSize: 16384), cap)
+        XCTAssertEqual(DiskPhotoEditMemoryBudget.computeSimulatorAllowance(freePages: .max, inactivePages: .max, pageSize: 4096), cap)
+        XCTAssertEqual(DiskPhotoEditMemoryBudget.computeSimulatorAllowance(freePages: .max - 1, inactivePages: 0, pageSize: 16384), cap)
+    }
+
     func test48MPGateIncludesMaskPatchAndOrientationWorkingMemory() {
         let gb: UInt64 = 1024 * 1024 * 1024
         let native48 = CGSize(width: 8064, height: 6048)
