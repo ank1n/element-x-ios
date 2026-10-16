@@ -16,6 +16,8 @@ import SwiftUI
 /// это осознанное решение «как отдаёт веб, так и показываем», а не недосмотр.
 struct StalkFileShareView: View {
     let fileShare: StalkFileShare
+    var showsPermission = true
+    var isExternalLink = false
     let onTap: () -> Void
 
     var body: some View {
@@ -75,14 +77,16 @@ struct StalkFileShareView: View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 7) {
                 sizeText
-                permissionPill
+                if showsPermission { permissionPill }
+                if isExternalLink { externalLinkPill }
                 avatarsRow
             }
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 7) {
                     sizeText
-                    permissionPill
+                    if showsPermission { permissionPill }
+                    if isExternalLink { externalLinkPill }
                 }
                 avatarsRow
             }
@@ -110,6 +114,17 @@ struct StalkFileShareView: View {
     /// `fixedSize` — пилюля не переносится по буквам, как бы её ни зажимало.
     private var permissionPill: some View {
         Text(fileShare.permission.title)
+            .font(.system(size: 11.5, weight: .bold))
+            .lineLimit(1)
+            .fixedSize()
+            .foregroundStyle(Color.stalkFileSharePermissionText)
+            .padding(.vertical, 1)
+            .padding(.horizontal, 7)
+            .background(Color.stalkFileShareAccent, in: Capsule())
+    }
+
+    private var externalLinkPill: some View {
+        Text(NSLocalizedString("stalk_disk_external_link", value: "Внешняя ссылка", comment: "Public Disk link label"))
             .font(.system(size: 11.5, weight: .bold))
             .lineLimit(1)
             .fixedSize()
