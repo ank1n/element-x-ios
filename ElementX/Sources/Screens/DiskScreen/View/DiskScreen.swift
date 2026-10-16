@@ -14,6 +14,15 @@ struct DiskScreen: View {
         VStack(spacing: 0) {
             categoryBar
             folderStrip
+            if let message = context.errorText, !context.displayedEntries.isEmpty {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+                    Text(message).font(.footnote)
+                    Spacer(minLength: 0)
+                    Button(NSLocalizedString("stalk_disk_retry", value: "Повторить", comment: "Disk retry")) { Task { await context.reload() } }
+                }
+                .padding(12)
+            }
             content
         }
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
@@ -44,16 +53,16 @@ struct DiskScreen: View {
             }
         }
         .sheet(isPresented: $photos) {
-            DiskPhotosScreen(service: context.photoService, mediaProvider: context.mediaProvider, callActive: context.callActive) { context.openPhotoInChat($0) }
+            DiskPhotosScreen(service: context.photoService, mediaProvider: context.mediaProvider, callActive: context.callActive, resolveMatrixSource: context.resolveMatrixSource, openMatrix: { context.openPhotoInChat($0) })
         }
         .onAppear { context.onAppear() }
         .refreshable { await context.reload() }
-        // Поиск по имени: при первом запросе VM докачивает все страницы,
-        // чтобы искать по всему Диску, а не по загруженному куску.
+        // Every source receives the query; result snippets need not match the filename.
         .searchable(text: $context.searchQuery,
                     placement: .navigationBarDrawer(displayMode: .always),
                     prompt: NSLocalizedString("stalk_disk_search", tableName: "Localizable",
                                               value: "Поиск по файлам", comment: "Disk search prompt"))
+        .onSubmit(of: .search) { Task { await context.searchNow() } }
         // Тот же системный просмотрщик, что и для вложений в чате.
         .interactiveQuickLook(item: $context.previewItem, allowEditing: false)
         // Системное «Поделиться» — файл уходит в любое приложение (решение dp).
@@ -88,7 +97,7 @@ struct DiskScreen: View {
                 // эндпоинте и в общий список не попадает по построению.
                 chip(title: NSLocalizedString("stalk_disk_shared_with_me", tableName: "Localizable",
                                               value: "Доступно мне", comment: "Disk: shared with me"),
-                     count: context.showingShared ? context.sharedFiles.count : nil,
+                     count: context.showingShared ? context.displayedSharedFiles.count : nil,
                      isSelected: context.showingShared) {
                     context.showingShared.toggle()
                 }
@@ -263,11 +272,11 @@ struct DiskScreen: View {
 
     @ViewBuilder
     private var content: some View {
-        if context.isLoading, context.files.isEmpty {
+        if context.isLoading, context.displayedEntries.isEmpty {
             Spacer()
             ProgressView()
             Spacer()
-        } else if let errorText = context.errorText {
+        } else if let errorText = context.errorText, context.displayedEntries.isEmpty {
             errorState(errorText)
         } else if context.showingShared {
             sharedList
@@ -276,6 +285,8 @@ struct DiskScreen: View {
             // и «Вне папок» показываются обычным списком со строкой «назад»,
             // активный поиск — всегда по файлам.
             foldersGrid
+        } else if context.displayedEntries.isEmpty, context.hasMoreFiles {
+            VStack { Spacer(); paginationFooter; Spacer() }
         } else if context.displayedEntries.isEmpty {
             // Гейт по ОБЪЕДИНЁННОМУ списку: свои файлы + диск-документы + расшаренное.
             // По одним своим на свежем аккаунте сохранённый ответ Айлока прятался
@@ -293,12 +304,16 @@ struct DiskScreen: View {
     }
 
     private var list: some View {
-        List(context.displayedEntries) { entry in
-            // Плоский список во всю ширину (dp: у вставного слишком много пустых
-            // полей по бокам — имени файла нужен каждый пункт ширины).
-            entryRow(entry)
-                .listRowBackground(Color(.systemBackground))
-                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+        List {
+            ForEach(context.displayedEntries) { entry in
+                // Плоский список во всю ширину (dp: у вставного слишком много пустых
+                // полей по бокам — имени файла нужен каждый пункт ширины).
+                entryRow(entry)
+                    .listRowBackground(Color(.systemBackground))
+                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                    .task { await context.loadMoreIfNeeded(currentEntry: entry) }
+            }
+            paginationFooter
         }
         .listStyle(.plain)
     }
@@ -315,12 +330,11 @@ struct DiskScreen: View {
                             isDownloading: context.downloadingFileID == file.id,
                             sharedProfiles: context.sharedProfiles,
                             roomNames: context.roomNames,
-                            mediaProvider: context.mediaProvider)
+                            mediaProvider: file.canDownload ? context.mediaProvider : nil)
             }
             .buttonStyle(.plain)
             .contextMenu { actions(for: file) }
             .onAppear { context.ensureSharedProfiles(file) }
-            .task { await context.loadMoreIfNeeded(currentItem: file) }
         case .shared(let file):
             Button {
                 context.selectShared(file)
@@ -328,7 +342,7 @@ struct DiskScreen: View {
                 DiskSharedFileRow(file: file,
                                   isDownloading: context.downloadingFileID == file.id,
                                   profiles: context.sharedProfiles,
-                                  mediaProvider: context.mediaProvider)
+                                  mediaProvider: file.canDownload && !file.needsKeys ? context.mediaProvider : nil)
             }
             .buttonStyle(.plain)
             .contextMenu { sharedActions(for: file) }
@@ -372,38 +386,59 @@ struct DiskScreen: View {
         ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
                 ForEach(context.displayedEntries) { entry in
-                    switch entry {
-                    case .own(let file):
-                        Button {
-                            context.selectFile(file)
-                        } label: {
-                            DiskFileCard(file: file,
-                                         isDownloading: context.downloadingFileID == file.id,
-                                         thumbnail: context.thumbnails[file.id],
-                                         sharedProfiles: context.sharedProfiles,
-                                         mediaProvider: context.mediaProvider)
+                    Group {
+                        switch entry {
+                        case .own(let file):
+                            Button {
+                                context.selectFile(file)
+                            } label: {
+                                DiskFileCard(file: file,
+                                             isDownloading: context.downloadingFileID == file.id,
+                                             thumbnail: context.thumbnails[file.id],
+                                             sharedProfiles: context.sharedProfiles,
+                                             mediaProvider: file.canDownload ? context.mediaProvider : nil)
+                            }
+                            .buttonStyle(.plain)
+                            .contextMenu { actions(for: file) }
+                            .onAppear {
+                                context.ensureThumbnail(file)
+                                context.ensureSharedProfiles(file)
+                            }
+                        case .shared(let file):
+                            Button {
+                                context.selectShared(file)
+                            } label: {
+                                DiskSharedFileCard(file: file, isDownloading: context.downloadingFileID == file.id)
+                            }
+                            .buttonStyle(.plain)
+                            .contextMenu { sharedActions(for: file) }
+                            .onAppear { context.ensureOwnerProfile(file) }
                         }
-                        .buttonStyle(.plain)
-                        .contextMenu { actions(for: file) }
-                        .onAppear {
-                            context.ensureThumbnail(file)
-                            context.ensureSharedProfiles(file)
-                        }
-                        .task { await context.loadMoreIfNeeded(currentItem: file) }
-                    case .shared(let file):
-                        Button {
-                            context.selectShared(file)
-                        } label: {
-                            DiskSharedFileCard(file: file, isDownloading: context.downloadingFileID == file.id)
-                        }
-                        .buttonStyle(.plain)
-                        .contextMenu { sharedActions(for: file) }
-                        .onAppear { context.ensureOwnerProfile(file) }
                     }
+                    // Trigger from the visible merged entry, including a shared/document tail.
+                    .task { await context.loadMoreIfNeeded(currentEntry: entry) }
                 }
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 16)
+            paginationFooter
+        }
+    }
+
+    @ViewBuilder
+    private var paginationFooter: some View {
+        if context.hasMoreFiles, !context.showingShared {
+            HStack {
+                Spacer()
+                if context.isLoadingMore { ProgressView() }
+                else { Button(NSLocalizedString("stalk_disk_load_more", value: "Загрузить ещё", comment: "Load more Disk files")) { Task { await context.loadMore() } } }
+                Spacer()
+            }
+            .padding(12)
+            .onAppear {
+                guard context.errorText == nil else { return }
+                Task { await context.loadMore() }
+            }
         }
     }
 
@@ -419,15 +454,16 @@ struct DiskScreen: View {
         }
         .listStyle(.plain)
         .overlay {
-            if context.isLoadingShared, context.sharedFiles.isEmpty {
+            if context.isLoadingShared, context.displayedSharedFiles.isEmpty {
                 ProgressView()
-            } else if context.sharedFiles.isEmpty {
+            } else if context.displayedSharedFiles.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "person.2")
                         .font(.system(size: 40))
                         .foregroundStyle(.secondary)
-                    Text(NSLocalizedString("stalk_disk_shared_empty", tableName: "Localizable",
-                                           value: "Вам пока ничего не расшарили", comment: "Disk: shared empty"))
+                    Text(context.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        ? NSLocalizedString("stalk_disk_shared_empty", value: "Вам пока ничего не расшарили", comment: "Disk: shared empty")
+                        : NSLocalizedString("stalk_disk_search_empty", value: "Ничего не найдено", comment: "Disk search: no results"))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -462,7 +498,7 @@ struct DiskScreen: View {
         // Системный share sheet: файл уходит в любое приложение, не только
         // внутри sTalk. У зашифрованных пункта НЕТ вовсе (решение dp): их
         // содержимое расшифровывает только чат, и пункт был бы обманкой.
-        if !file.isEncrypted {
+        if !file.isEncrypted, file.canDownload {
             Button {
                 context.share(file)
             } label: {
@@ -473,7 +509,7 @@ struct DiskScreen: View {
 
         // Диск-документы и копии шаринга живут без Matrix-события — их
         // «Переслать» уходит содержимым через пикер комнат (dp).
-        if !context.hasChatEvent(file), !file.isEncrypted {
+        if !context.hasChatEvent(file), !file.isEncrypted, file.canDownload {
             Button {
                 context.forwardAsFile(file)
             } label: {
@@ -490,11 +526,13 @@ struct DiskScreen: View {
                                         value: "Найти в чате", comment: "Disk action"), systemImage: "bubble.left.and.text.bubble.right")
             }
 
-            Button {
-                context.forward(file)
-            } label: {
-                Label(NSLocalizedString("stalk_disk_action_forward", tableName: "Localizable",
-                                        value: "Переслать", comment: "Disk action"), systemImage: "arrowshape.turn.up.right")
+            if file.canDownload {
+                Button {
+                    context.forward(file)
+                } label: {
+                    Label(NSLocalizedString("stalk_disk_action_forward", tableName: "Localizable",
+                                            value: "Переслать", comment: "Disk action"), systemImage: "arrowshape.turn.up.right")
+                }
             }
         }
     }
@@ -526,6 +564,7 @@ struct DiskScreen: View {
                 Task { await context.reload() }
             }
             .buttonStyle(.borderedProminent)
+            paginationFooter
             Spacer()
         }
     }

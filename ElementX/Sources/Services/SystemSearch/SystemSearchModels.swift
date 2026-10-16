@@ -16,6 +16,8 @@ struct SystemSearchConditions: Codable, Equatable {
     var sort: String?
     var sender: String?
     var senderName: String?
+    var unsupported: [String]?
+    var pendingSenderQuery: String?
 
     static let allowedTypes = ["message", "room_name", "room_topic", "task", "comment", "page", "disk_doc", "attachment", "meeting", "transcript", "voice_transcript"]
     static let allowedFormats = ["presentation", "spreadsheet", "document", "pdf", "image", "archive", "text"]
@@ -24,15 +26,18 @@ struct SystemSearchConditions: Codable, Equatable {
             roomIds.allSatisfy { $0.hasPrefix("!") && $0.contains(":") && !$0.contains(" ") } &&
             (format.map(Self.allowedFormats.contains) ?? true) && (sort == nil || sort == "newest") && has.allSatisfy { $0 == "email" } &&
             (sender.map { $0.hasPrefix("@") && $0.contains(":") && !$0.contains(" ") } ?? true) &&
-            ["all", "week", "month", "year", "range"].contains(period) && (rangeFrom.isEmpty || rangeTo.isEmpty || rangeFrom <= rangeTo)
+            ["all", "week", "month", "year", "range"].contains(period) &&
+            (period != "range" || !rangeFrom.isEmpty || !rangeTo.isEmpty) &&
+            (rangeFrom.isEmpty || rangeTo.isEmpty || rangeFrom <= rangeTo)
     }
 
     var canSearch: Bool {
-        !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !types.isEmpty || !roomIds.isEmpty || sender != nil
+        !(topic ?? query).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !types.isEmpty || !roomIds.isEmpty || sender != nil || format != nil || !has.isEmpty ||
+            ["week", "month", "year"].contains(period) || (period == "range" && (!rangeFrom.isEmpty || !rangeTo.isEmpty))
     }
 
     func queryItems(offset: Int = 0, viewType: String? = nil, now: Date = Date()) throws -> [URLQueryItem] {
-        guard valid, canSearch, offset >= 0, offset <= 10000 else { throw SystemSearchError.invalidConditions }
+        guard valid, canSearch, pendingSenderQuery == nil, offset >= 0, offset <= 10000 else { throw SystemSearchError.invalidConditions }
         var items = [URLQueryItem(name: "q", value: topic ?? query), .init(name: "mode", value: mode), .init(name: "limit", value: "20"), .init(name: "offset", value: String(offset))]
         func add(_ key: String, _ value: String?) {
             if let value, !value.isEmpty { items.append(.init(name: key, value: value)) }
@@ -64,10 +69,37 @@ struct SystemSearchTarget: Codable, Hashable {
     var project_id: String?
     var comment_id: String?
     var page_id: String?
+    var user_id: String? = nil
 }
 
 struct SystemSearchHit: Decodable, Identifiable {
-    struct Metadata: Decodable { var room: String?; var author: String?; var filename: String? }
+    struct Metadata: Decodable {
+        var room: String?; var author: String?; var filename: String?
+        var intake: Bool?; var archived: Bool?; var series_collapsed: Int?
+        private enum CodingKeys: String, CodingKey { case room, author, filename, intake, archived, series_collapsed }
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            room = try? c.decode(String.self, forKey: .room)
+            author = try? c.decode(String.self, forKey: .author)
+            filename = try? c.decode(String.self, forKey: .filename)
+            intake = try? c.decode(Bool.self, forKey: .intake)
+            archived = try? c.decode(Bool.self, forKey: .archived)
+            series_collapsed = try? c.decode(Int.self, forKey: .series_collapsed)
+        }
+    }
+
+    var badges: [String] {
+        var labels: [String] = []
+        if ["task", "comment"].contains(entity_type) {
+            if meta?.intake == true { labels.append(NSLocalizedString("Intake", comment: "Search result badge")) }
+            if meta?.archived == true { labels.append(NSLocalizedString("В архиве", comment: "Search result badge")) }
+        }
+        if entity_type == "meeting", let count = meta?.series_collapsed, count > 0 {
+            labels.append(String(format: NSLocalizedString("stalk_search_series_remaining", comment: "Additional meeting series occurrence count"), Int64(count)))
+        }
+        return labels
+    }
+
     let id: String
     let entity_type: String
     var facet_type: String?

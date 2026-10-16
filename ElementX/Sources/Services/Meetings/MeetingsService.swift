@@ -5,6 +5,7 @@
 //
 
 import Combine
+import CoreFoundation
 import Foundation
 import os.log
 import SwiftUI
@@ -323,6 +324,130 @@ class MeetingsService {
         try accessTokenProvider()
     }
 
+    /// Only the session's origin is trusted; message URLs never choose an API host.
+    static func meetingOrigin(_ url: URL) -> URL? {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              ["https", "http"].contains(components.scheme?.lowercased() ?? ""),
+              components.host != nil, components.user == nil, components.password == nil else { return nil }
+        components.scheme = components.scheme?.lowercased()
+        components.host = components.host?.lowercased()
+        components.path = ""
+        components.query = nil
+        components.fragment = nil
+        if (components.scheme?.lowercased() == "https" && components.port == 443)
+            || (components.scheme?.lowercased() == "http" && components.port == 80) {
+            components.port = nil
+        }
+        return components.url
+    }
+
+    var meetingAPIOrigin: URL? {
+        URL(string: homeserver.hasPrefix("http") ? homeserver : "https://\(homeserver)").flatMap(Self.meetingOrigin)
+    }
+
+    /// A read-only public-info lookup, including guests absent from GET /api/meetings.
+    /// Identity is supplied by the timeline session, or resolved using this exact token for
+    /// legacy callers. A changed/revoked session must never publish old private metadata.
+    func fetchMeetingLinkPreview(code: String, userID: String? = nil) async -> MeetingLinkPreview {
+        guard code.range(of: #"\A[A-Za-z0-9_-]+\z"#, options: .regularExpression) != nil,
+              let origin = meetingAPIOrigin else { return .networkError }
+        for attempt in 0...1 {
+            guard let token = try? currentAccessToken() else { return .unauthenticated }
+            do {
+                let (data, status) = try await previewRequest(origin: origin, path: "api/meetings/public-info/\(code)", token: token)
+                if status == 401, attempt == 0, let forceTokenRefresh {
+                    await forceTokenRefresh()
+                    continue
+                }
+                switch status {
+                case 401: return .unauthenticated
+                case 403: return .forbidden
+                case 404: return .missing
+                case 410: return .expired
+                case 200...299: break
+                default: return .networkError
+                }
+                guard var info = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return .networkError }
+                // JSONSerialization bridges both JSON booleans and numbers to NSNumber.
+                // Match web's === true rather than admitting numeric 1 as a guest flag.
+                let guestAllowed = (info["guest_allowed"] as? NSNumber).map {
+                    CFGetTypeID($0) == CFBooleanGetTypeID() && $0.boolValue
+                } ?? false
+                let participants = info["participants"] as? [[String: Any]] ?? []
+                var reader = userID
+                let claimedMember = reader.map { id in
+                    info["creator_id"] as? String == id || participants.contains { $0["user_id"] as? String == id }
+                } ?? false
+                // The locator can be replaced during account switching while an old timeline
+                // still exists. Verify its claimed reader against the token before admitting a
+                // private preview or fetching member-only enrichment.
+                if !guestAllowed || (claimedMember && info["id"] as? Int != nil) {
+                    guard !token.isEmpty else { return .unauthenticated }
+                    let (identity, identityStatus) = try await previewRequest(origin: origin, path: "_matrix/client/v3/account/whoami", token: token)
+                    if identityStatus == 401 { return .unauthenticated }
+                    if (200...299).contains(identityStatus) {
+                        guard let actualReader = try (JSONSerialization.jsonObject(with: identity) as? [String: Any])?["user_id"] as? String,
+                              !actualReader.isEmpty else { return .networkError }
+                        if let reader, reader != actualReader { return .unauthenticated }
+                        reader = actualReader
+                    } else {
+                        return .networkError
+                    }
+                }
+                let isMember = reader.map { id in
+                    !id.isEmpty && (info["creator_id"] as? String == id || participants.contains { $0["user_id"] as? String == id })
+                } ?? false
+                guard guestAllowed || isMember else { return .forbidden }
+                // Public-info is intentionally smaller than the calendar model. Normalise only
+                // after admission; never require a list entry or calendar membership for guests.
+                let id = info["id"] as? Int
+                info["id"] = id ?? 0
+                info["meeting_code"] = code
+                info["guest_access"] = guestAllowed
+                info["access_level"] = guestAllowed ? "public" : "invite"
+                info["is_indefinite"] = info["end_time"] == nil || info["end_time"] is NSNull
+                info["participants"] = participants.map { participant in
+                    var value = participant
+                    // Web also permits "tentative". The preview only needs participant IDs;
+                    // don't let the calendar's narrower RSVP enum reject an authorised card.
+                    if !["pending", "accepted", "declined"].contains(value["rsvp"] as? String ?? "") {
+                        value["rsvp"] = "pending"
+                    }
+                    return value
+                }
+                // Private enrichment is best effort and never replaces authorised public fields.
+                info["attachments"] = []
+                let minimal = try Self.decoder.decode(Meeting.self, from: JSONSerialization.data(withJSONObject: info))
+                if isMember, let id, id > 0,
+                   let (extra, extraStatus) = try? await previewRequest(origin: origin, path: "api/meetings/\(id)", token: token),
+                   (200...299).contains(extraStatus),
+                   let details = try? JSONSerialization.jsonObject(with: extra) as? [String: Any] {
+                    if let attachments = details["attachments"] as? [[String: Any]] { info["attachments"] = attachments }
+                    if let color = details["color_label"] as? String { info["color_label"] = color }
+                }
+                let meeting = (try? Self.decoder.decode(Meeting.self, from: JSONSerialization.data(withJSONObject: info))) ?? minimal
+                guard !Task.isCancelled, (try? currentAccessToken()) == token else { return .unauthenticated }
+                return .available(meeting)
+            } catch let error as URLError where error.code == .userAuthenticationRequired {
+                return .unauthenticated
+            } catch {
+                return .networkError
+            }
+        }
+        return .unauthenticated
+    }
+
+    private func previewRequest(origin: URL, path: String, token: String) async throws -> (Data, Int) {
+        guard !Task.isCancelled, (try? currentAccessToken()) == token else { throw URLError(.userAuthenticationRequired) }
+        var request = URLRequest(url: origin.appendingPathComponent(path))
+        request.timeoutInterval = 10
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        if !token.isEmpty { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        let (data, response) = try await session.data(for: request, delegate: MeetingPreviewRedirectDelegate())
+        guard !Task.isCancelled, (try? currentAccessToken()) == token else { throw URLError(.userAuthenticationRequired) }
+        return (data, (response as? HTTPURLResponse)?.statusCode ?? -1)
+    }
+
     func fetchMeetings() async {
         guard let url = URL(string: "\(homeserver)/api/meetings") else { return }
 
@@ -555,5 +680,16 @@ class MeetingsService {
             throw URLError(.badServerResponse)
         }
         return data
+    }
+}
+
+/// Preview endpoints must not redirect a session token or metadata to another origin.
+private final class MeetingPreviewRedirectDelegate: NSObject, URLSessionTaskDelegate {
+    func urlSession(_ session: URLSession,
+                    task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(nil)
     }
 }

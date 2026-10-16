@@ -11,6 +11,83 @@ import os.log
 
 private let ailockVoiceLog = OSLog(subsystem: "ru.implica.stalk", category: "AilockVoice")
 
+protocol AilockVoiceAudioSessionProtocol: AnyObject {
+    var category: AVAudioSession.Category { get }
+    var mode: AVAudioSession.Mode { get }
+    var categoryOptions: AVAudioSession.CategoryOptions { get }
+    func setCategory(_ category: AVAudioSession.Category, mode: AVAudioSession.Mode, options: AVAudioSession.CategoryOptions) throws
+    func setActive(_ active: Bool, options: AVAudioSession.SetActiveOptions) throws
+}
+
+extension AVAudioSession: AilockVoiceAudioSessionProtocol { }
+
+/// Dictation may restore only the configuration it still owns. A call can take
+/// the shared session before CallKit's observer catches up, including during cleanup.
+final class AilockVoiceAudioSessionLease {
+    private struct Configuration: Equatable {
+        let category: AVAudioSession.Category
+        let mode: AVAudioSession.Mode
+        let options: AVAudioSession.CategoryOptions
+    }
+
+    private let session: AilockVoiceAudioSessionProtocol
+    private let isCallInProgress: () -> Bool
+    private var previous: Configuration?
+    private var dictation: Configuration?
+    private var activated = false
+
+    init(session: AilockVoiceAudioSessionProtocol, isCallInProgress: @escaping () -> Bool) {
+        self.session = session
+        self.isCallInProgress = isCallInProgress
+    }
+
+    private var configuration: Configuration {
+        Configuration(category: session.category, mode: session.mode, options: session.categoryOptions)
+    }
+
+    private var callOwnsSession: Bool {
+        isCallInProgress() || session.mode == .voiceChat || session.mode == .videoChat
+    }
+
+    var ownsSession: Bool {
+        guard let dictation else { return false }
+        return !callOwnsSession && configuration == dictation
+    }
+
+    func activate() throws {
+        guard !callOwnsSession else { throw AilockVoiceError.callInProgress }
+        guard previous == nil else { throw AilockVoiceError.recorderFailed }
+        previous = configuration
+        do {
+            try session.setCategory(.record, mode: .default, options: [.allowBluetooth])
+            // Store our requested state, not a call configuration observed after takeover.
+            dictation = Configuration(category: .record, mode: .default, options: [.allowBluetooth])
+            guard ownsSession else { throw AilockVoiceError.callInProgress }
+            try session.setActive(true, options: [])
+            activated = true
+            guard ownsSession else { throw AilockVoiceError.callInProgress }
+        } catch {
+            release()
+            throw error
+        }
+    }
+
+    func release() {
+        let restore = previous
+        let didActivate = activated
+        let owned = ownsSession
+        // Clear even on takeover, so a later cancel/finish cannot restore stale settings.
+        previous = nil
+        activated = false
+        defer { dictation = nil }
+        guard owned, ownsSession, let restore else { return }
+        if didActivate { try? session.setActive(false, options: .notifyOthersOnDeactivation) }
+        // A synchronous session callback can configure a call during deactivation.
+        guard ownsSession else { return }
+        try? session.setCategory(restore.category, mode: restore.mode, options: restore.options)
+    }
+}
+
 // MARK: - Запись
 
 /// Диктовка для поля ввода Айлока.
@@ -22,12 +99,12 @@ final class AilockVoiceRecorder {
     private var recorder: AVAudioRecorder?
     private var fileURL: URL?
 
-    /// Категория и режим аудио-сессии до начала записи — возвращаем их как было.
-    /// Глухая деактивация ломала бы чужой сценарий, если он держит сессию.
-    private var previousCategory: AVAudioSession.Category?
-    private var previousMode: AVAudioSession.Mode?
-    private var previousOptions: AVAudioSession.CategoryOptions?
-    private var didActivateSession = false
+    private let sessionLease: AilockVoiceAudioSessionLease
+
+    init(isCallActive: @escaping () -> Bool = { false }) {
+        sessionLease = AilockVoiceAudioSessionLease(session: AVAudioSession.sharedInstance(),
+                                                    isCallInProgress: { isCallActive() || AilockVoiceRecorder.isCallInProgress })
+    }
 
     /// Клиентский предел записи.
     ///
@@ -55,16 +132,13 @@ final class AilockVoiceRecorder {
         // Во время звонка микрофон и маршрутизацию не забираем: переключение категории
         // посреди разговора рвёт звук у обеих сторон.
         guard !Self.isCallInProgress else { throw AilockVoiceError.callInProgress }
+        guard recorder == nil else { throw AilockVoiceError.recorderFailed }
 
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("ailock-voice", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let url = directory.appendingPathComponent("\(UUID().uuidString).wav")
 
-        let session = AVAudioSession.sharedInstance()
-        previousCategory = session.category
-        previousMode = session.mode
-        previousOptions = session.categoryOptions
         // Конфигурация сессии — минимально возможная, и это выстрадано двумя сборками.
         // 310: `.record` + `.duckOthers` → OSStatus -50 (опция допустима только для
         // playAndRecord / playback / multiRoute).
@@ -72,10 +146,6 @@ final class AilockVoiceRecorder {
         // ВОСПРОИЗВЕДЕНИЯ речи и с категорией записи тоже даёт -50 (лог 211).
         // Правило на будущее: для диктовки — только `.record` + `.default`, любые
         // «улучшения» режима и опций проверять на устройстве, а не по смыслу названия.
-        try session.setCategory(.record, mode: .default, options: [.allowBluetooth])
-        try session.setActive(true)
-        didActivateSession = true
-
         let settings: [String: Any] = [
             AVFormatIDKey: Int(kAudioFormatLinearPCM),
             AVSampleRateKey: 16000,
@@ -85,14 +155,18 @@ final class AilockVoiceRecorder {
             AVLinearPCMIsBigEndianKey: false
         ]
 
-        DiagLog.write("AilockVoice", "сессия: category=\(session.category.rawValue) mode=\(session.mode.rawValue)")
-
-        let recorder = try AVAudioRecorder(url: url, settings: settings)
-        recorder.isMeteringEnabled = true
-        guard recorder.record() else { throw AilockVoiceError.recorderFailed }
-
-        self.recorder = recorder
         fileURL = url
+        do {
+            try sessionLease.activate()
+            let recorder = try AVAudioRecorder(url: url, settings: settings)
+            self.recorder = recorder
+            recorder.isMeteringEnabled = true
+            guard sessionLease.ownsSession else { throw AilockVoiceError.callInProgress }
+            guard recorder.record() else { throw AilockVoiceError.recorderFailed }
+        } catch {
+            cancel()
+            throw error
+        }
         os_log(.default, log: ailockVoiceLog, "запись начата")
     }
 
@@ -147,19 +221,7 @@ final class AilockVoiceRecorder {
     }
 
     private func stopSession() {
-        guard didActivateSession else { return }
-        didActivateSession = false
-
-        let session = AVAudioSession.sharedInstance()
-        try? session.setActive(false, options: .notifyOthersOnDeactivation)
-        // Возвращаем сессию в исходное состояние — следующий сценарий (звонок,
-        // голосовое сообщение, плеер) не должен получить наши настройки записи.
-        if let previousCategory {
-            try? session.setCategory(previousCategory, mode: previousMode ?? .default, options: previousOptions ?? [])
-        }
-        previousCategory = nil
-        previousMode = nil
-        previousOptions = nil
+        sessionLease.release()
     }
 }
 

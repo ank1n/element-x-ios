@@ -78,6 +78,9 @@ struct DiskFile: Identifiable, Codable, Equatable {
     let folderID: String?
     let starred: Bool
     let sharedWith: [String]?
+    var owner: String?
+    var readOnly = false
+    var canDownload = true
 
     /// Ключ строки. У файлов из чата это событие, у Диск-документов — блоб.
     /// Оба сразу отсутствовать не могут: тогда запись нечем открыть, и разбор
@@ -101,13 +104,16 @@ struct DiskFile: Identifiable, Codable, Equatable {
         case folderID = "folderId"
         case starred
         case sharedWith
+        case owner, canDownload
+        case readOnly = "readonly"
     }
 
     /// Ручной конструктор для записей НЕ из /api/files (Диск-документы из
     /// /disk-docs): форма того ответа другая, декодер ниже им не подходит.
     init(eventID: String?, roomID: String?, blobID: String?, sender: String, filename: String,
          mimetype: String, size: Int64, msgtype: String, category: DiskFileCategory, mxcURL: String,
-         ts: Int64, isEncrypted: Bool, folderID: String?, starred: Bool, sharedWith: [String]?) {
+         ts: Int64, isEncrypted: Bool, folderID: String?, starred: Bool, sharedWith: [String]?,
+         owner: String? = nil, readOnly: Bool = false, canDownload: Bool = true) {
         self.eventID = eventID
         self.roomID = roomID
         self.blobID = blobID
@@ -123,6 +129,9 @@ struct DiskFile: Identifiable, Codable, Equatable {
         self.folderID = folderID
         self.starred = starred
         self.sharedWith = sharedWith
+        self.owner = owner
+        self.readOnly = readOnly
+        self.canDownload = canDownload
     }
 
     init(from decoder: Decoder) throws {
@@ -148,7 +157,12 @@ struct DiskFile: Identifiable, Codable, Equatable {
             folderID = try? c.decodeIfPresent(String.self, forKey: .folderID)
         }
         starred = try c.decodeIfPresent(Bool.self, forKey: .starred) ?? false
-        sharedWith = try c.decodeIfPresent([String].self, forKey: .sharedWith)
+        struct Recipient: Decodable { let user: String }
+        sharedWith = (try? c.decodeIfPresent([String].self, forKey: .sharedWith))
+            ?? (try? c.decodeIfPresent([Recipient].self, forKey: .sharedWith))?.map(\.user)
+        owner = try c.decodeIfPresent(String.self, forKey: .owner)
+        readOnly = try c.decodeIfPresent(Bool.self, forKey: .readOnly) ?? false
+        canDownload = try c.decodeIfPresent(Bool.self, forKey: .canDownload) ?? true
     }
 }
 
@@ -231,6 +245,8 @@ struct DiskSharedFile: Identifiable, Equatable {
     var photo: DiskPhoto.EXIF?
     var tags: [String] = []
     var folderId: Int?
+    var contentHit = false
+    var fromPath: String?
 
     struct Recipient: Decodable, Equatable {
         let user: String
@@ -250,7 +266,7 @@ struct DiskSharedFile: Identifiable, Equatable {
 extension DiskSharedFile: Decodable {
     private enum CodingKeys: String, CodingKey {
         case owner, ownerDisplay, eventId, blobId, mxc, name, mimetype, size,
-             permission, isDiskDoc, viaFolderName, needsKeys, canDownload, ts, recipients, sharedWith, addedTs, photo, tags, folderId
+             permission, isDiskDoc, viaFolderName, needsKeys, canDownload, ts, recipients, sharedWith, addedTs, photo, tags, folderId, contentHit, fromPath
     }
 
     init(from decoder: Decoder) throws {
@@ -272,6 +288,8 @@ extension DiskSharedFile: Decodable {
         photo = try c.decodeIfPresent(DiskPhoto.EXIF.self, forKey: .photo)
         tags = try c.decodeIfPresent([String].self, forKey: .tags) ?? []
         folderId = try c.decodeIfPresent(Int.self, forKey: .folderId)
+        contentHit = try c.decodeIfPresent(Bool.self, forKey: .contentHit) ?? false
+        fromPath = try c.decodeIfPresent(String.self, forKey: .fromPath)
         // Сервер шлёт ts ДРОБНЫМ (1785590849703.323 — миллисекунды с хвостом);
         // целочисленное чтение роняло разбор всего ответа.
         if let doubleTS = try? c.decodeIfPresent(Double.self, forKey: .ts) {
@@ -290,9 +308,11 @@ struct DiskFolder: Identifiable, Equatable {
     let id: String
     let name: String
     let count: Int
+    var parentID: String?
+    var kind: String?
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, count
+        case id, name, count, parentId, kind
     }
 }
 
@@ -306,6 +326,9 @@ extension DiskFolder: Decodable {
         }
         name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
         count = try c.decodeIfPresent(Int.self, forKey: .count) ?? 0
+        if let numeric = try? c.decodeIfPresent(Int64.self, forKey: .parentId) { parentID = String(numeric) }
+        else { parentID = try c.decodeIfPresent(String.self, forKey: .parentId) }
+        kind = try c.decodeIfPresent(String.self, forKey: .kind)
     }
 }
 
@@ -330,18 +353,20 @@ enum DiskServiceError: Error, LocalizedError {
     case invalidURL
     case unauthorized
     case http(Int)
+    case incompleteListing
     var errorDescription: String? {
         switch self {
-        case .invalidURL: "Не удалось распознать ссылку или файл."
-        case .unauthorized: "Войдите снова, чтобы открыть Диск."
+        case .invalidURL: NSLocalizedString("stalk_disk_service_invalid_url", value: "Не удалось распознать ссылку или файл.", comment: "Invalid Disk resource URL")
+        case .unauthorized: NSLocalizedString("stalk_disk_service_unauthorized", value: "Войдите снова, чтобы открыть Диск.", comment: "Disk session expired")
+        case .incompleteListing: NSLocalizedString("stalk_disk_service_incomplete", value: "Список загружен не полностью. Повторите загрузку оставшихся файлов.", comment: "Incomplete Disk listing")
         case .http(let status):
             switch status {
-            case 403: "Нет доступа к этому действию или оно отключено администратором."
-            case 404: "Объект удалён или у вас больше нет доступа."
-            case 409: "Данные изменились. Обновите список и повторите действие."
-            case 413: "Слишком большой объём данных. Уточните фильтр или выберите меньше файлов."
-            case 429: "Слишком много запросов. Повторите немного позже."
-            default: "Диск временно недоступен (\(status)). Повторите попытку."
+            case 403: NSLocalizedString("stalk_disk_service_forbidden", value: "Нет доступа к этому действию или оно отключено администратором.", comment: "Disk access denied")
+            case 404: NSLocalizedString("stalk_disk_service_not_found", value: "Объект удалён или у вас больше нет доступа.", comment: "Disk object unavailable")
+            case 409: NSLocalizedString("stalk_disk_service_conflict", value: "Данные изменились. Обновите список и повторите действие.", comment: "Disk version conflict")
+            case 413: NSLocalizedString("stalk_disk_service_too_large", value: "Слишком большой объём данных. Уточните фильтр или выберите меньше файлов.", comment: "Disk request too large")
+            case 429: NSLocalizedString("stalk_disk_service_rate_limited", value: "Слишком много запросов. Повторите немного позже.", comment: "Disk request throttled")
+            default: String(format: NSLocalizedString("stalk_disk_service_http", value: "Диск временно недоступен (%d). Повторите попытку.", comment: "Disk failure HTTP status"), status)
             }
         }
     }
@@ -358,6 +383,14 @@ enum DiskServiceError: Error, LocalizedError {
 /// Авторизация — Matrix-токен пользователя: проверено живым запросом, без заголовка
 /// сервис отвечает 401 «Authorization required».
 final class DiskService {
+    static func fileCategory(filename: String, mimetype: String) -> DiskFileCategory {
+        let mime = mimetype.lowercased()
+        let type = UTType(filenameExtension: URL(fileURLWithPath: filename).pathExtension)
+        if mime.hasPrefix("image/") || ((mime.isEmpty || mime == "application/octet-stream") && type?.conforms(to: .image) == true) { return .images }
+        if mime.hasPrefix("audio/") || mime.hasPrefix("video/") || ((mime.isEmpty || mime == "application/octet-stream") && (type?.conforms(to: .audio) == true || type?.conforms(to: .movie) == true)) { return .media }
+        return .documents
+    }
+
     private let baseURL: String
     private let accessTokenProvider: () throws -> String
     private let forceTokenRefresh: (() async -> Void)?
@@ -382,24 +415,29 @@ final class DiskService {
     }
 
     /// Список файлов. `before` — курсор из `nextBefore` предыдущей страницы.
-    func fetchFiles(category: DiskFileCategory? = nil, before: String? = nil, beforeId: String? = nil, folder: String? = nil, roomID: String? = nil, query search: String? = nil) async throws -> (files: [DiskFile], nextBefore: String?, nextBeforeId: String?) {
+    func fetchFiles(category: DiskFileCategory? = nil, before: String? = nil, beforeId: String? = nil, folder: String? = nil, roomID: String? = nil, query search: String? = nil) async throws -> (files: [DiskFile], nextBefore: String?, nextBeforeId: String?, warning: String?) {
+        if let search, !search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if before == nil {
+                return try await initialSearchFiles(query: search, category: category, folder: folder, roomID: roomID)
+            }
+            do { return try await fetchIndexedFiles(query: search, cursor: before, category: category, folder: folder, roomID: roomID) }
+            catch {
+                if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
+                try Task.checkCancellation()
+                if before?.hasPrefix("catalogue:") == true { throw error }
+                // Search-index outages must not remove the existing filename search.
+                let fallback = try await fetchCatalogueMatches(query: search, cursor: "catalogue:", category: category, folder: folder, roomID: roomID)
+                return (fallback.files, fallback.nextBefore, nil, DiskServiceError.incompleteListing.localizedDescription)
+            }
+        }
         var components = URLComponents(string: "\(baseURL)/api/files")
         var query: [URLQueryItem] = []
-        if let search, !search.isEmpty { query.append(.init(name: "q", value: search)) }
-        if let folder {
-            // Содержимое конкретной папки (контракт Molly, 02.08).
-            query.append(URLQueryItem(name: "folder", value: folder))
-        }
+        // These filters run AFTER the backend's bounded DB window. Traverse the
+        // unfiltered keyset and retain its cursor even when no visible rows match.
+        // In particular, the backend folder branch does not apply before/before_id.
         if let roomID {
             // Файлы конкретного чата (dp: чаты как папки; параметр из контракта).
             query.append(URLQueryItem(name: "room_id", value: roomID))
-        }
-        if let category, category != .other {
-            // Имя параметра — `filter`, НЕ `category`. Проверено на проде: с
-            // `category=images` сервер молча отдаёт всё (14 записей, обе категории),
-            // с `filter=images` — только изображения (8). Молчаливое игнорирование
-            // означало бы, что любая вкладка показывает одно и то же.
-            query.append(URLQueryItem(name: "filter", value: category.rawValue))
         }
         if let before, !before.isEmpty {
             // `nextBefore` — не непрозрачный курсор, а метка времени события
@@ -434,7 +472,198 @@ final class DiskService {
         let tail = decoded.nextBefore == nil ? "" : ", есть ещё"
         let lost = decoded.skipped == 0 ? "" : ", пропущено непонятых: \(decoded.skipped)"
         DiagLog.write("Disk", "список: \(decoded.files.count) файлов\(tail)\(lost)")
-        return (decoded.files, decoded.nextBefore, decoded.nextBeforeId)
+        let needle = search?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let visible = decoded.files.filter { file in
+            (category == nil || file.category == category) &&
+                (folder == nil || file.folderID == folder) &&
+                (needle.isEmpty || file.filename.localizedCaseInsensitiveContains(needle))
+        }
+        return (visible, decoded.nextBefore, decoded.nextBeforeId, decoded.skipped == 0 ? nil : DiskServiceError.incompleteListing.localizedDescription)
+    }
+
+    private typealias FilePage = (files: [DiskFile], nextBefore: String?, nextBeforeId: String?, warning: String?)
+
+    /// Recent catalogue names must not wait behind many index pages or depend on index
+    /// timestamp/metadata support. Both initial sources are read concurrently, with no
+    /// shared cache; later index pagination can revisit the catalogue and the VM dedups.
+    private func initialSearchFiles(query: String, category: DiskFileCategory?, folder: String?, roomID: String?) async throws -> FilePage {
+        func capture(_ operation: () async throws -> FilePage) async -> Result<FilePage, Error> {
+            do { return try await .success(operation()) } catch { return .failure(error) }
+        }
+        async let indexed = capture { try await fetchIndexedFiles(query: query, cursor: nil, category: category, folder: folder, roomID: roomID) }
+        async let catalogue = capture { try await fetchCatalogueMatches(query: query, cursor: "catalogue:", category: category, folder: folder, roomID: roomID) }
+        let (indexResult, catalogueResult) = await (indexed, catalogue)
+        try Task.checkCancellation()
+        for result in [indexResult, catalogueResult] {
+            if case let .failure(error) = result,
+               error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
+        }
+        let indexPage = try? indexResult.get()
+        let cataloguePage = try? catalogueResult.get()
+        guard indexPage != nil || cataloguePage != nil else {
+            if case let .failure(error) = indexResult { throw error }
+            throw DiskServiceError.incompleteListing
+        }
+
+        var merged: [String: DiskFile] = [:]
+        for var file in (indexPage?.files ?? []) + (cataloguePage?.files ?? []) {
+            if let old = merged[file.id] {
+                file.canDownload = file.canDownload && old.canDownload
+                file.readOnly = file.readOnly || old.readOnly
+                file.owner = file.owner ?? old.owner
+            }
+            merged[file.id] = file
+        }
+        let warning = indexPage?.warning ?? cataloguePage?.warning ??
+            (indexPage == nil || cataloguePage == nil ? DiskServiceError.incompleteListing.localizedDescription : nil)
+        // Do not jump to the catalogue tail here: older index pages still need hydration.
+        // When indexing is unavailable, retain the actual catalogue continuation instead.
+        let next = indexPage != nil ? indexPage?.nextBefore : cataloguePage?.nextBefore
+        let id = indexPage != nil ? indexPage?.nextBeforeId : cataloguePage?.nextBeforeId
+        return (merged.values.sorted { $0.ts == $1.ts ? $0.id > $1.id : $0.ts > $1.ts }, next, id, warning)
+    }
+
+    private struct CatalogueCursor: Codable {
+        let before: String?
+        let id: String?
+    }
+
+    /// Also traverse the unfiltered catalogue after index results: this preserves substring
+    /// and E2EE-name matches which a lexical index cannot necessarily represent.
+    private func fetchCatalogueMatches(query: String, cursor: String, category: DiskFileCategory?, folder: String?, roomID: String?) async throws -> (files: [DiskFile], nextBefore: String?, nextBeforeId: String?, warning: String?) {
+        let payload = String(cursor.dropFirst("catalogue:".count))
+        let position: CatalogueCursor
+        if payload.isEmpty { position = .init(before: nil, id: nil) }
+        else {
+            guard let data = Data(base64Encoded: payload) else { throw DiskServiceError.incompleteListing }
+            position = try JSONDecoder().decode(CatalogueCursor.self, from: data)
+        }
+        let page = try await fetchFiles(before: position.before, beforeId: position.id, roomID: roomID)
+        var next: String?
+        if let before = page.nextBefore {
+            let data = try JSONEncoder().encode(CatalogueCursor(before: before, id: page.nextBeforeId))
+            next = "catalogue:" + data.base64EncodedString()
+        } else if let tail = page.files.last, let event = tail.eventID, tail.ts > 0,
+                  position.before != String(tail.ts) || position.id != event {
+            // Go may omit its continuation when a bounded DB window contains mostly
+            // non-file URL events. Still advance past the actual unfiltered file tail.
+            let data = try JSONEncoder().encode(CatalogueCursor(before: String(tail.ts), id: event))
+            next = "catalogue:" + data.base64EncodedString()
+        }
+        return (page.files.filter {
+            $0.filename.localizedCaseInsensitiveContains(query) &&
+                (category == nil || $0.category == category) && (folder == nil || $0.folderID == folder)
+        }, next, nil, page.warning ?? (next == nil ? DiskServiceError.incompleteListing.localizedDescription : nil))
+    }
+
+    /// Search the full ACL-filtered attachment index, then hydrate actual catalogue cards.
+    /// A search hit alone never grants download access or invents folder membership.
+    private func fetchIndexedFiles(query: String, cursor: String?, category: DiskFileCategory?, folder: String?, roomID: String?) async throws -> (files: [DiskFile], nextBefore: String?, nextBeforeId: String?, warning: String?) {
+        if let cursor, cursor.hasPrefix("catalogue:") {
+            return try await fetchCatalogueMatches(query: query, cursor: cursor, category: category, folder: folder, roomID: roomID)
+        }
+        struct Hit: Decodable {
+            struct Target: Decodable { let kind: String; let room_id: String?; let event_id: String?; let file_id: String? }
+            let entity_type: String
+            let target: Target?
+            let created_at: String?
+            let snippet: String?
+            let contentHit: Bool?
+
+            var provesContentMatch: Bool {
+                if contentHit == true { return true }
+                guard let snippet, let start = snippet.firstIndex(of: "\u{0002}"),
+                      let end = snippet[start...].firstIndex(of: "\u{0003}") else { return false }
+                return snippet.index(after: start) < end
+            }
+        }
+        struct Response: Decodable { let total: Int; let results: [Hit] }
+        struct Hydrated { let order: Int; let file: DiskFile?; let incomplete: Bool }
+        let offset: Int
+        if let cursor {
+            guard cursor.hasPrefix("search:"), let value = Int(cursor.dropFirst(7)), (0...10000).contains(value) else { throw DiskServiceError.incompleteListing }
+            offset = value
+        } else { offset = 0 }
+        var url = URLComponents(string: "\(baseURL)/api/search")
+        url?.queryItems = [.init(name: "q", value: query), .init(name: "mode", value: "basic"),
+                           .init(name: "type", value: "attachment"), .init(name: "sort", value: "newest"),
+                           .init(name: "limit", value: "20"), .init(name: "offset", value: String(offset))]
+        if let roomID { url?.queryItems?.append(.init(name: "room", value: roomID)) }
+        let data = try await get(url?.url)
+        let response = try JSONDecoder().decode(Response.self, from: data)
+        guard response.total >= 0, !response.results.isEmpty || offset >= response.total else { throw DiskServiceError.incompleteListing }
+
+        func hydrate(_ order: Int) async throws -> Hydrated {
+            try Task.checkCancellation()
+            let hit = response.results[order]
+            // `type=attachment` selects a display facet, not a navigation entity.
+            // Native file targets (including disk_doc entities in this facet) are
+            // already loaded through shelf/shared with authoritative ACLs. They need
+            // neither room hydration nor synthetic rights derived from index metadata.
+            if ["disk_doc", "attachment"].contains(hit.entity_type),
+               let target = hit.target, target.kind == "file", let id = target.file_id,
+               !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               id.rangeOfCharacter(from: .controlCharacters) == nil {
+                return Hydrated(order: order, file: nil, incomplete: false)
+            }
+            let iso = ISO8601DateFormatter()
+            iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let noFraction = ISO8601DateFormatter()
+            guard hit.entity_type == "attachment", let target = hit.target, target.kind == "room",
+                  let room = target.room_id, let event = target.event_id, let created = hit.created_at,
+                  room.hasPrefix("!"), event.hasPrefix("$"),
+                  let date = iso.date(from: created) ?? noFraction.date(from: created),
+                  let timestamp = Int64(exactly: (date.timeIntervalSince1970 * 1000).rounded()) else {
+                return Hydrated(order: order, file: nil, incomplete: true)
+            }
+            if let roomID, room != roomID { return Hydrated(order: order, file: nil, incomplete: false) }
+            do {
+                // The strict (ts,eventId) cursor includes the target via a greater suffix.
+                // Verify BOTH identifiers on the authoritative response; never take the
+                // nearest row or use index timestamps as a substitute for file metadata.
+                let page = try await fetchFiles(before: String(timestamp), beforeId: event + "~", roomID: room)
+                try Task.checkCancellation()
+                guard let file = page.files.first(where: { $0.eventID == event && $0.roomID == room }) else {
+                    return Hydrated(order: order, file: nil, incomplete: true)
+                }
+                // Stopwords/one-character queries can yield an unfiltered index response.
+                // Only actual filename matches or explicit lexical/content evidence qualify.
+                guard file.filename.localizedCaseInsensitiveContains(query) || hit.provesContentMatch,
+                      category == nil || file.category == category,
+                      folder == nil || file.folderID == folder else {
+                    return Hydrated(order: order, file: nil, incomplete: false)
+                }
+                return Hydrated(order: order, file: file, incomplete: false)
+            } catch {
+                try Task.checkCancellation()
+                return Hydrated(order: order, file: nil, incomplete: true)
+            }
+        }
+        // At most four HTTP hydrations; completion order never changes result order.
+        let hydrated = try await withThrowingTaskGroup(of: Hydrated.self) { group in
+            var next = 0
+            for _ in 0..<min(4, response.results.count) {
+                let order = next; next += 1
+                group.addTask { try await hydrate(order) }
+            }
+            var rows: [Hydrated] = []
+            while let row = try await group.next() {
+                try Task.checkCancellation()
+                rows.append(row)
+                if next < response.results.count {
+                    let order = next; next += 1
+                    group.addTask { try await hydrate(order) }
+                }
+            }
+            return rows
+        }
+        try Task.checkCancellation()
+        let nextOffset = offset + response.results.count
+        let capped = nextOffset > 10000 && nextOffset < response.total
+        let incomplete = capped || hydrated.contains { $0.incomplete }
+        let next: String? = capped ? nil : nextOffset < response.total ? "search:\(nextOffset)" : "catalogue:"
+        return (hydrated.sorted { $0.order < $1.order }.compactMap(\.file), next, nil,
+                incomplete ? DiskServiceError.incompleteListing.localizedDescription : nil)
     }
 
     /// «Доступно мне»: `GET /api/files/shared-with-me` (контракт Molly, 02.08).
@@ -494,19 +723,23 @@ final class DiskService {
     /// из Айлока). В общий /api/files они НЕ входят (живая проба 03.08: свежий
     /// документ в списке не появился) — веб подмешивает их отдельным запросом,
     /// повторяем его контракт.
-    func fetchDiskDocs() async throws -> [DiskFile] {
-        struct Response: Decodable { let docs: [LenientDoc]? }
+    func fetchDiskDocs(query search: String? = nil) async throws -> [DiskFile] {
+        struct Response: Decodable { let docs: [LenientDoc]?; var hasMore: Bool? }
         struct Doc: Decodable {
             let blobId: String
             let name: String?
             let mimetype: String?
             let size: Int64?
             let ts: Double?
+            let folderID: String?
             let starred: Bool?
+            let owner: String?
+            let readOnly: Bool
+            let canDownload: Bool
             let sharedWith: [Recipient]?
             struct Recipient: Decodable { let user: String? }
 
-            enum CodingKeys: String, CodingKey { case blobId, name, mimetype, size, ts, starred, sharedWith }
+            enum CodingKeys: String, CodingKey { case blobId, name, mimetype, size, ts, starred, sharedWith, folderId, owner, canDownload, readonly }
 
             init(from decoder: Decoder) throws {
                 let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -517,12 +750,17 @@ final class DiskService {
                 } else {
                     blobId = try c.decode(String.self, forKey: .blobId)
                 }
+                if let numeric = try? c.decodeIfPresent(Int64.self, forKey: .folderId) { folderID = String(numeric) }
+                else { folderID = try? c.decodeIfPresent(String.self, forKey: .folderId) }
                 name = try? c.decodeIfPresent(String.self, forKey: .name)
                 mimetype = try? c.decodeIfPresent(String.self, forKey: .mimetype)
                 size = try? c.decodeIfPresent(Int64.self, forKey: .size)
                 ts = try? c.decodeIfPresent(Double.self, forKey: .ts)
                 starred = try? c.decodeIfPresent(Bool.self, forKey: .starred)
                 sharedWith = try? c.decodeIfPresent([Recipient].self, forKey: .sharedWith)
+                owner = try c.decodeIfPresent(String.self, forKey: .owner)
+                readOnly = try c.decodeIfPresent(Bool.self, forKey: .readonly) ?? false
+                canDownload = try c.decodeIfPresent(Bool.self, forKey: .canDownload) ?? !readOnly
             }
         }
         // Поштучный разбор, как у shared-with-me: одна непонятая запись не
@@ -534,13 +772,21 @@ final class DiskService {
             }
         }
 
-        let data = try await get(URL(string: "\(baseURL)/api/files/disk-docs"))
-        let wrapped: [LenientDoc]
-        do {
-            wrapped = try (JSONDecoder().decode(Response.self, from: data)).docs ?? []
-        } catch {
-            DiagLog.write("Disk", "disk-docs не разобрался (\(data.count) байт): \(error)")
-            throw error
+        var wrapped: [LenientDoc] = []
+        var offset = 0
+        while true {
+            try Task.checkCancellation()
+            var url = URLComponents(string: "\(baseURL)/api/files/disk-docs")
+            url?.queryItems = [.init(name: "scope", value: "shelf"), .init(name: "limit", value: "500"), .init(name: "offset", value: String(offset)), .init(name: "order", value: "id")]
+            if let search, !search.isEmpty { url?.queryItems?.append(.init(name: "q", value: search)) }
+            let data = try await get(url?.url)
+            let response = try JSONDecoder().decode(Response.self, from: data)
+            let page = response.docs ?? []
+            wrapped += page
+            let more = response.hasMore ?? (page.count == 500)
+            guard more else { break }
+            guard offset < 50000 else { throw DiskServiceError.http(413) }
+            offset += 500
         }
         let docs = wrapped.compactMap(\.doc).filter { !$0.blobId.isEmpty }
         if docs.count < wrapped.count {
@@ -548,19 +794,18 @@ final class DiskService {
         }
         return docs.map { doc in
             let mime = doc.mimetype ?? ""
-            let category: DiskFileCategory = if mime.hasPrefix("image/") { .images }
-            else if mime.hasPrefix("video/") || mime.hasPrefix("audio/") { .media }
-            else { .documents }
+            let category = Self.fileCategory(filename: doc.name ?? "", mimetype: mime)
             return DiskFile(eventID: nil, roomID: nil, blobID: doc.blobId,
-                            sender: "", filename: doc.name ?? "", mimetype: mime,
+                            sender: doc.owner ?? "", filename: doc.name ?? "", mimetype: mime,
                             size: doc.size ?? 0, msgtype: "m.file", category: category,
                             mxcURL: "",
                             // Int64(Double) трапается на мусорном значении вне
                             // диапазона — exactly+rounded безопасно даёт 0.
                             ts: Int64(exactly: (doc.ts ?? 0).rounded()) ?? 0,
                             isEncrypted: false,
-                            folderID: nil, starred: doc.starred ?? false,
-                            sharedWith: doc.sharedWith?.compactMap(\.user).filter { !$0.isEmpty })
+                            folderID: doc.folderID, starred: doc.starred ?? false,
+                            sharedWith: doc.sharedWith?.compactMap(\.user).filter { !$0.isEmpty },
+                            owner: doc.owner, readOnly: doc.readOnly, canDownload: doc.canDownload)
         }
     }
 
@@ -568,11 +813,15 @@ final class DiskService {
     /// появляется в общем списке файлов и открывается вебом как документ.
     /// Контракт — как у веба (FileIndexApi.uploadDiskDoc): сырое тело POST'ом,
     /// имя и тип в query, лимит сервера 40 МБ.
-    func uploadDiskDoc(filename: String, mimetype: String, data: Data) async throws {
+    func uploadDiskDoc(filename: String, mimetype: String, data: Data, folderID: String? = nil) async throws {
         var components = URLComponents(string: "\(baseURL)/api/files/blob")
         components?.queryItems = [URLQueryItem(name: "diskDoc", value: "1"),
                                   URLQueryItem(name: "filename", value: filename),
                                   URLQueryItem(name: "mimetype", value: mimetype)]
+        if let folderID {
+            guard let id = Int64(folderID), id > 0 else { throw DiskServiceError.invalidURL }
+            components?.queryItems?.append(.init(name: "folderId", value: String(id)))
+        }
         // URLComponents оставляет «+» сырым (по RFC он в query разрешён), а
         // form-urlencoded-парсер Node на сервере декодирует его пробелом:
         // «C++ разбор.md» доехал бы как «C   разбор.md». Веб шлёт %2B — дожимаем
@@ -673,9 +922,13 @@ final class DiskService {
     /// Один повтор на 401: токен мог протухнуть, SDK обновляет его в фоне.
     /// Тот же приём, что в сервисе встреч.
     private func get(_ url: URL?) async throws -> Data {
-        guard let url else { throw DiskServiceError.invalidURL }
+        guard let url, var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { throw DiskServiceError.invalidURL }
+        // Go's query parser treats a literal plus as a space; preserve C++ and event IDs.
+        components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+        guard let url = components.url else { throw DiskServiceError.invalidURL }
 
         for attempt in 1...2 {
+            try Task.checkCancellation()
             let token = try accessTokenProvider()
             var request = URLRequest(url: url)
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -697,6 +950,7 @@ final class DiskService {
                 throw error
             }
             let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+            try Task.checkCancellation()
 
             if status == 200 { return data }
 

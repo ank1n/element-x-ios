@@ -247,6 +247,7 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
             // сервис отвечает 401 «Authorization required».
             let filesProxy = userSession.clientProxy
             let filesConcrete = filesProxy as? ClientProxy
+            let matrixPhotos = DiskMatrixMediaResolver(client: filesProxy)
             let diskCoordinator = DiskScreenCoordinator(parameters: .init(baseURL: sessionBaseURL,
                                                                           accessTokenProvider: { try filesProxy.matrixAccessToken() },
                                                                           forceTokenRefresh: { await filesConcrete?.forceTokenRefresh() },
@@ -261,7 +262,8 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
                                                                                   return room.infoPublisher.value.displayName
                                                                               }
                                                                               return nil
-                                                                          }, ongoingCallRoomID: flowParameters.ongoingCallRoomIDPublisher))
+                                                                          }, ongoingCallRoomID: flowParameters.ongoingCallRoomIDPublisher,
+                                                                          resolveMatrixSource: { await matrixPhotos.source(for: $0) }))
             diskCoordinator.actionsPublisher
                 .sink { [weak self] action in
                     switch action {

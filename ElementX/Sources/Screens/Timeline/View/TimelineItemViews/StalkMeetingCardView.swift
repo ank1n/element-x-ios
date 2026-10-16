@@ -12,29 +12,93 @@ import SwiftUI
 /// взяты из вёрстки веба — Molly выгрузила их из `MeetingLinkBody.tsx` и CSS,
 /// чтобы одна и та же встреча выглядела одинаково на телефоне и в браузере.
 ///
-/// Пока встреча грузится или не нашлась — показываем ССЫЛКУ, а не заглушку:
-/// у пользователя должен остаться рабочий способ попасть на встречу.
+/// A recognised local link stays a card even when admission fails. Only an available,
+/// non-cancelled meeting can open the existing ensure-room navigation route.
 struct StalkMeetingCardView: View {
     let code: String
     let fallbackText: String
+    private let extractedLink: StalkMeetingLink.Link?
 
     @Environment(\.openURL) private var openURL
+    @Environment(\.timelineContext) private var context
 
-    @State private var meeting: Meeting?
-    @State private var didLoad = false
+    @State private var result: MeetingLinkPreview?
+    @State private var attempt = 0
+    @State private var loadedIdentity: String?
+
+    init(code: String, fallbackText: String) {
+        self.code = code
+        self.fallbackText = fallbackText
+        extractedLink = nil
+    }
+
+    init(link: StalkMeetingLink.Link) {
+        code = link.code
+        fallbackText = String(link.fallback.characters)
+        extractedLink = link
+    }
+
+    private var localLink: StalkMeetingLink.Link? {
+        guard let host = context?.viewState.homeserver.flatMap(URL.init(string:)),
+              let origin = MeetingsService.meetingOrigin(host) else { return nil }
+        if let lookup = ServiceLocator.shared.meetingLookup, lookup.origin != origin { return nil }
+        let href = extractedLink?.url.absoluteString ?? fallbackText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let link = StalkMeetingLink.link(href, homeserver: host), link.code == code else { return nil }
+        return link
+    }
+
+    private var identity: String {
+        [code, localLink?.url.absoluteString ?? "", context?.viewState.ownUserID ?? "",
+         ServiceLocator.shared.meetingLookup.map { String(describing: ObjectIdentifier($0)) } ?? "", String(attempt)].joined(separator: "|")
+    }
 
     var body: some View {
+        let requestIdentity = identity
+        let currentResult = loadedIdentity == requestIdentity ? result : nil
         Group {
-            if let meeting {
+            if localLink == nil {
+                fallbackLink
+            } else if case let .available(meeting)? = currentResult {
                 card(meeting)
             } else {
-                fallbackLink
+                unavailableCard(currentResult)
             }
         }
-        .task {
-            guard !didLoad else { return }
-            didLoad = true
-            meeting = await ServiceLocator.shared.meetingLookup?.meeting(code: code)
+        .task(id: requestIdentity) {
+            result = nil
+            loadedIdentity = requestIdentity
+            guard localLink != nil else { return }
+            let next = await ServiceLocator.shared.meetingLookup?.preview(code: code, userID: context?.viewState.ownUserID) ?? .unauthenticated
+            guard !Task.isCancelled, identity == requestIdentity else { return }
+            result = next
+        }
+    }
+
+    private func unavailableCard(_ result: MeetingLinkPreview?) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(NSLocalizedString("Meeting", comment: "Meeting card title"), systemImage: "calendar").font(.headline)
+            Text(Self.statusText(result)).font(.subheadline)
+                .accessibilityAddTraits(.updatesFrequently)
+            Button(SL10n.meetingJoin) { }.disabled(true)
+            if result == .networkError {
+                Button(NSLocalizedString("Retry", comment: "Retry loading meeting card")) { attempt += 1 }
+                    .buttonStyle(.bordered)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: 330, alignment: .leading)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 13))
+    }
+
+    static func statusText(_ result: MeetingLinkPreview?) -> String {
+        switch result {
+        case nil: NSLocalizedString("Loading meeting…", comment: "Meeting card loading status")
+        case .forbidden?: MeetingLinkError.forbidden.localizedDescription
+        case .missing?: MeetingLinkError.notFound.localizedDescription
+        case .expired?: MeetingLinkError.expired.localizedDescription
+        case .unauthenticated?: MeetingLinkError.unauthorized.localizedDescription
+        case .networkError?: NSLocalizedString("Couldn't load this meeting. Try again.", comment: "Meeting card network error")
+        case .available?: ""
         }
     }
 
@@ -65,9 +129,10 @@ struct StalkMeetingCardView: View {
                     row(icon: "person", text: Self.organiser(meeting))
                 }
 
-                if !isCancelled {
-                    joinButton(palette: palette)
+                if isCancelled {
+                    Text(MeetingLinkError.cancelled.localizedDescription).font(.subheadline)
                 }
+                joinButton(palette: palette).disabled(isCancelled)
             }
             .padding(.init(top: 9, leading: 15, bottom: 9, trailing: 12))
         }
@@ -106,11 +171,13 @@ struct StalkMeetingCardView: View {
             Image(systemName: meeting.isEncrypted ? "lock.fill" : "lock.open")
                 .font(.system(size: 11))
                 .foregroundStyle(meeting.isEncrypted ? Self.encryptedColor : Self.mutedColor)
+                .accessibilityLabel(meeting.isEncrypted ? NSLocalizedString("Встреча зашифрована", comment: "Meeting encryption badge") : NSLocalizedString("Встреча не зашифрована", comment: "Meeting encryption badge"))
 
             if meeting.allowsGuests {
                 Image(systemName: "person.badge.plus")
                     .font(.system(size: 11))
                     .foregroundStyle(Self.guestColor)
+                    .accessibilityLabel(NSLocalizedString("Доступ для гостей разрешён", comment: "Meeting guest access badge"))
             }
 
             if let attachments = meeting.attachments, !attachments.isEmpty {
@@ -121,6 +188,8 @@ struct StalkMeetingCardView: View {
                         .font(.system(size: 10.5, weight: .bold))
                 }
                 .foregroundStyle(Self.attachmentColor)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(String(format: NSLocalizedString("stalk_meeting_attachments_count", comment: "Meeting attachment count"), Int64(attachments.count)))
             }
         }
     }
@@ -141,9 +210,7 @@ struct StalkMeetingCardView: View {
         Button {
             // Ведём себя ровно как тап по самой ссылке: приложение уже умеет
             // разрешать код встречи в комнату и открывать звонок (STMOB-216).
-            if let url = URL(string: fallbackText) {
-                openURL(url)
-            }
+            if let url = localLink?.url { openURL(url) }
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "video.fill")
@@ -162,12 +229,12 @@ struct StalkMeetingCardView: View {
     // MARK: - Фолбэк
 
     private var fallbackLink: some View {
-        Text(fallbackText)
+        Text(extractedLink?.fallback ?? AttributedString(fallbackText))
             .font(.body)
             .foregroundStyle(StalkTheme.accent)
             .underline()
             .onTapGesture {
-                if let url = URL(string: fallbackText) { openURL(url) }
+                if let url = extractedLink?.url ?? URL(string: fallbackText.trimmingCharacters(in: .whitespacesAndNewlines)) { openURL(url) }
             }
     }
 

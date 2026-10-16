@@ -178,6 +178,9 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
             Task { await presentCallScreen(meetingCode: code) }
         case .systemSearchTarget(let target, let title):
             switch target.kind {
+            case "user":
+                guard let id = target.user_id, id.hasPrefix("@"), id.contains(":"), !id.contains(" ") else { return }
+                handleAppRoute(.userProfile(userID: id), animated: animated)
             case "room":
                 guard let room = target.room_id, room.hasPrefix("!") else { return }
                 if let event = target.event_id, event.hasPrefix("$") { handleAppRoute(.childEvent(eventID: event, roomID: room, via: []), animated: animated) }

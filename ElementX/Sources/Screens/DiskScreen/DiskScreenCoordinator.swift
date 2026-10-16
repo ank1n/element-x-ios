@@ -30,6 +30,7 @@ struct DiskScreenCoordinatorParameters {
     /// Имя комнаты по roomID — «в какой группе запощен файл» (dp).
     let roomNameResolver: ((String) async -> String?)?
     var ongoingCallRoomID: CurrentValuePublisher<String?, Never>?
+    var resolveMatrixSource: ((DiskFile) async -> MediaSourceProxy?)?
 }
 
 final class DiskScreenCoordinator: CoordinatorProtocol {
@@ -49,7 +50,7 @@ final class DiskScreenCoordinator: CoordinatorProtocol {
                                         mediaProvider: parameters.mediaProvider,
                                         profileResolver: parameters.profileResolver,
                                         roomNameResolver: parameters.roomNameResolver,
-                                        ongoingCallRoomID: parameters.ongoingCallRoomID)
+                                        ongoingCallRoomID: parameters.ongoingCallRoomID, resolveMatrixSource: parameters.resolveMatrixSource)
 
         viewModel.actionsPublisher
             .sink { [weak self] action in

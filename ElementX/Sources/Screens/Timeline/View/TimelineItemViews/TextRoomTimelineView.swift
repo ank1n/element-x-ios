@@ -30,19 +30,18 @@ struct TextRoomTimelineView: View, TextBasedRoomTimelineViewProtocol {
             // Пока встреча грузится или не нашлась — остаётся сама ссылка.
             if let fileShare = timelineItem.content.fileShare {
                 StalkFileShareView(fileShare: fileShare) { context?.send(viewAction: .stalkFileShareTapped(itemID: timelineItem.id)) }
-            } else if let code = timelineItem.content.meetingCode {
-                StalkMeetingCardView(code: code, fallbackText: timelineItem.content.body)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
                     if cards.count != 1 || timelineItem.body.trimmingCharacters(in: .whitespacesAndNewlines) != cards[0].url.absoluteString {
-                        if let attributedString = timelineItem.content.formattedBody {
-                            FormattedBodyText(attributedString: attributedString,
-                                              additionalWhitespacesCount: timelineItem.additionalWhitespaces(),
-                                              boostFontSize: timelineItem.shouldBoost)
-                        } else {
-                            FormattedBodyText(text: timelineItem.body,
-                                              additionalWhitespacesCount: timelineItem.additionalWhitespaces(),
-                                              boostFontSize: timelineItem.shouldBoost)
+                        ForEach(Array(meetingParts.enumerated()), id: \.offset) { index, part in
+                            switch part {
+                            case .text(let text):
+                                FormattedBodyText(attributedString: text,
+                                                  additionalWhitespacesCount: index == meetingParts.count - 1 ? timelineItem.additionalWhitespaces() : 0,
+                                                  boostFontSize: timelineItem.shouldBoost)
+                            case .meeting(let link):
+                                StalkMeetingCardView(link: link).padding(.bottom, 14)
+                            }
                         }
                     }
                     ForEach(cards) { card in
@@ -71,11 +70,17 @@ struct TextRoomTimelineView: View, TextBasedRoomTimelineViewProtocol {
     }
     
     private var otherLinkURLs: [URL] {
-        linkMetadata.keys.filter { !isDiskURL($0) }
+        linkMetadata.keys.filter { !isNativeCardURL($0) }
     }
 
-    private func isDiskURL(_ url: URL) -> Bool {
-        StalkDiskCard(url: url, homeserver: context?.viewState.homeserver.flatMap(URL.init(string:))) != nil
+    private var meetingParts: [StalkMeetingLink.Part] {
+        StalkMeetingLink.parts(in: timelineItem.body, formattedBody: timelineItem.content.formattedBody,
+                               homeserver: context?.viewState.homeserver.flatMap(URL.init(string:)))
+    }
+
+    private func isNativeCardURL(_ url: URL) -> Bool {
+        let origin = context?.viewState.homeserver.flatMap(URL.init(string:))
+        return StalkDiskCard(url: url, homeserver: origin) != nil || StalkMeetingLink.link(url.absoluteString, homeserver: origin) != nil
     }
 
     private var diskCards: [StalkDiskCard] {
@@ -89,7 +94,7 @@ struct TextRoomTimelineView: View, TextBasedRoomTimelineViewProtocol {
         }
         
         await withTaskGroup { taskGroup in
-            for url in timelineItem.links.filter({ !isDiskURL($0) }).prefix(Self.maxLinkPreviewsToRender) {
+            for url in timelineItem.links.filter({ !isNativeCardURL($0) }).prefix(Self.maxLinkPreviewsToRender) {
                 taskGroup.addTask {
                     if case let .success(metadata) = await context?.viewState.linkMetadataProvider?.fetchMetadataFor(url: url) {
                         await MainActor.run {

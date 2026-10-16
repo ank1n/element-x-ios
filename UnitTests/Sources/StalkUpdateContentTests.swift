@@ -41,7 +41,7 @@ final class StalkUpdateContentTests: XCTestCase {
         XCTAssertNil(StalkCustomEmoji.atomicRange(in: "`:capybara:`", at: NSRange(location: 6, length: 1)))
     }
 
-    func testSearchPlanPreservesManualFiltersAndRejectsUnknownRestrictions() throws {
+    func testSearchPlanPreservesManualFiltersAndReportsUnsupportedRestrictions() throws {
         var original = SystemSearchConditions(); original.query = "Документы за неделю"; original.types = ["disk_doc"]; original.period = "week"
         let valid = #"{"q":"договор","types":["message"],"from":"2026-01-01","to":null,"room":null,"sender":null,"sort":null,"format":null,"has":[],"expand":[],"unsupported":[]}"#
         let plan = try SystemSearchService.decodePlan(valid, preserving: original)
@@ -49,7 +49,10 @@ final class StalkUpdateContentTests: XCTestCase {
         XCTAssertEqual(plan.period, "week")
         XCTAssertEqual(plan.query, original.query)
         XCTAssertEqual(plan.mode, "smart")
-        XCTAssertThrowsError(try SystemSearchService.decodePlan(valid.replacingOccurrences(of: "\"unsupported\":[]", with: "\"unsupported\":[\"owner\"]"), preserving: original))
+        let partial = try SystemSearchService.decodePlan(valid.replacingOccurrences(of: "\"unsupported\":[]", with: "\"unsupported\":[\"owner\"]"), preserving: original)
+        XCTAssertEqual(partial.unsupported, ["owner"])
+        XCTAssertEqual(partial.types, original.types)
+        XCTAssertEqual(partial.period, original.period)
     }
 
     func testSearchPaginationAndSourceFiltersAreSentToServer() throws {

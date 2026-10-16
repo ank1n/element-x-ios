@@ -33,6 +33,8 @@ struct DiskPhoto: Identifiable, Equatable {
     var owner: String?
     var tags: [String] = []
     var modified: Date?
+    var snippet: String?
+    var snippetMatch: String?
     var id: String {
         reference.key
     }
@@ -61,6 +63,7 @@ struct DiskPhotoAlbum: Codable, Identifiable, Equatable {
     var members: Int?
     var coverBlobId: String?
     var coverMatrix: DiskPhotoReference?
+    var updatedAt: Int64? = nil
     var canAdd: Bool {
         ["owner", "manage", "add"].contains(role ?? "")
     }
@@ -77,7 +80,9 @@ struct DiskPhotoAlbum: Codable, Identifiable, Equatable {
 struct DiskPhotoSystem: Codable, Identifiable, Equatable { let id: Int; let name: String; var aliases: [String]? }
 struct DiskPhotoAssignment: Decodable {
     struct Hint: Decodable { let id: String; let evidence: String }
+    struct SystemHint: Decodable, Equatable { let id: Int; let evidence: String }
     let item: DiskPhotoReference
+    var suggestions: [SystemHint]? = nil
     var systems: [Int]?
     var categories: [String]?
     var categorySuggestions: [Hint]?
@@ -123,3 +128,75 @@ struct DiskPhotoSavedFilter: Codable, Identifiable { let id: Int; let name: Stri
 struct DiskPhotoAlbumMember: Codable, Identifiable { let user: String; let role: String; var display: String?; var id: String {
     user
 } }
+
+/// Photo-specific folder metadata also retains album timestamps and safe thumbnail covers.
+struct DiskPhotoFolder: Decodable, Identifiable, Equatable {
+    let id: Int
+    let name: String
+    var parentId: Int? = nil
+    var kind: String? = nil
+    var trashed: Bool? = nil
+    var updatedAt: Int64? = nil
+    var coverBlobId: String? = nil
+
+    static func descendants(of roots: Set<Int>, in folders: [Self]) -> Set<Int> {
+        var result = roots
+        var pending = Array(roots)
+        let children = Dictionary(grouping: folders, by: { $0.parentId })
+        while let id = pending.popLast() {
+            for child in children[id] ?? [] where result.insert(child.id).inserted {
+                pending.append(child.id)
+            }
+        }
+        return result
+    }
+
+    func path(in folders: [Self]) -> String {
+        var parts = [name]; var parent = parentId; var seen: Set<Int> = [id]
+        while let id = parent, seen.insert(id).inserted, let folder = folders.first(where: { $0.id == id }) {
+            parts.insert(folder.name, at: 0); parent = folder.parentId
+        }
+        return parts.joined(separator: " / ")
+    }
+}
+
+extension DiskPhotoFilterConditions {
+    func matchesFolder(_ id: Int?, folders: [DiskPhotoFolder]) -> Bool {
+        let excluded = DiskPhotoFolder.descendants(of: Set(excludedFolders ?? []), in: folders)
+        if let id, excluded.contains(id) { return false }
+        guard let folder, folder != 0 else { return true }
+        guard let id else { return false }
+        return DiskPhotoFolder.descendants(of: [folder], in: folders).contains(id)
+    }
+}
+
+extension DiskPhotoAssignment {
+    func includes(system: Int) -> Bool {
+        systems?.contains(system) == true || suggestions?.contains(where: { $0.id == system }) == true
+    }
+}
+
+/// A slide becomes eligible for its display timer only after that exact photo loads.
+struct DiskPhotoSlideshow {
+    var playing = false
+    private(set) var photoID: String?
+    private(set) var ready = false
+
+    mutating func beginLoading(_ id: String) {
+        photoID = id; ready = false
+    }
+
+    mutating func loaded(_ id: String) {
+        guard photoID == id else { return }
+        ready = true
+    }
+
+    mutating func failed(_ id: String) {
+        guard photoID == id else { return }
+        ready = false; playing = false
+    }
+
+    func canAdvance(_ id: String) -> Bool {
+        playing && ready && photoID == id
+    }
+}

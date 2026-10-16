@@ -175,60 +175,78 @@ final class DiskScreenViewModel: ObservableObject {
     @Published private(set) var diskDocs: [DiskFile] = []
     @Published private(set) var isLoadingShared = false
 
-    /// «Доступно мне» после фильтра поиска.
+    /// shared-with-me annotates content hits but does NOT filter its returned rows.
     var displayedSharedFiles: [DiskSharedFile] {
-        let query = searchQuery.trimmingCharacters(in: .whitespaces)
-        guard !query.isEmpty else { return sharedFiles }
-        return sharedFiles.filter { $0.name.localizedCaseInsensitiveContains(query) }
+        let query = normalizedQuery
+        return sharedFiles.filter { file in
+            let category = DiskService.fileCategory(filename: file.name, mimetype: file.mimetype)
+            guard selectedCategory == nil || category == selectedCategory,
+                  selectedFolder == nil || file.folderId.map(String.init) == selectedFolder?.id,
+                  !showingNoFolder || file.folderId == nil else { return false }
+            return query.isEmpty || file.contentHit ||
+                ([file.name, file.owner, file.ownerDisplay ?? "", file.viaFolderName ?? "", file.fromPath ?? ""] + file.tags)
+                .contains { $0.localizedCaseInsensitiveContains(query) }
+        }
     }
 
-    /// Объединённый список для экрана (dp: расшаренное должно быть видно и в
-    /// общем списке). Свои — как раньше; расшаренные подмешиваются по времени,
-    /// но только в «Все» без папки: в категориях и папках их место не определено
-    /// (серверной категории у них нет), а в чипе «Доступно мне» они и так одни.
     var displayedEntries: [DiskListEntry] {
-        if showingShared {
-            return displayedSharedFiles.map { .shared($0) }
-        }
+        if showingShared { return displayedSharedFiles.map { .shared($0) } }
         var entries: [DiskListEntry] = displayedFiles.map { .own($0) }
-        if selectedFolder == nil, !showingNoFolder, selectedChatRoomID == nil {
-            let query = searchQuery.trimmingCharacters(in: .whitespaces)
-            // Диск-документы (в т.ч. сохранённые ответы Айлока) в /api/files не
-            // входят — подмешиваем тем же правилом, что и расшаренное.
-            //
-            // С 04.08 сервер считает их и в категориях (Molly, коммит 45914a9),
-            // по mimetype — тем же правилом, что и мы у себя в fetchDiskDocs.
-            // Поэтому подмешиваем не только во «Все»: иначе чип «Документы»
-            // показывал бы число больше, чем содержимое вкладки — ровно то
-            // расхождение, ради которого правку и делали, только с другой стороны.
-            var docs = query.isEmpty ? diskDocs : diskDocs.filter { $0.filename.localizedCaseInsensitiveContains(query) }
-            if let selectedCategory {
-                docs = docs.filter { $0.category == selectedCategory }
+        if selectedChatRoomID == nil {
+            let docs = diskDocs.filter { doc in
+                if let category = selectedCategory, doc.category != category { return false }
+                if let folder = selectedFolder, doc.folderID != folder.id { return false }
+                if showingNoFolder, doc.folderID != nil { return false }
+                return true
             }
-            entries.append(contentsOf: docs.map { .own($0) })
-            // Расшаренное остаётся только во «Все»: серверной категории у него
-            // нет, и в счётчиках stats оно не участвует.
-            var shared: [DiskSharedFile] = []
-            if selectedCategory == nil {
-                shared = query.isEmpty ? sharedFiles : sharedFiles.filter { $0.name.localizedCaseInsensitiveContains(query) }
-                entries.append(contentsOf: shared.map { .shared($0) })
-            }
-            if !docs.isEmpty || !shared.isEmpty {
-                entries.sort { $0.ts > $1.ts }
+            entries += docs.map { .own($0) }
+            if selectedFolder == nil, !showingNoFolder, selectedCategory == nil { entries += displayedSharedFiles.map { .shared($0) } }
+        }
+        // Prefer shelf metadata (personal folder, real owner) while retaining the most
+        // restrictive ACL from duplicate sources. Timestamp order must never grant rights.
+        var merged: [String: DiskListEntry] = [:]
+        for entry in entries {
+            let key = Self.identity(entry)
+            if let old = merged[key] {
+                switch (old, entry) {
+                case let (.own(previous), .own(current)):
+                    var file = current
+                    file.canDownload = previous.canDownload && current.canDownload
+                    file.readOnly = previous.readOnly || current.readOnly
+                    file.owner = current.owner ?? previous.owner
+                    merged[key] = .own(file)
+                case let (.own(previous), .shared(shared)), let (.shared(shared), .own(previous)):
+                    var file = previous
+                    file.canDownload = file.canDownload && shared.canDownload && !shared.needsKeys
+                    file.readOnly = file.readOnly || !["write", "full"].contains(shared.permission)
+                    file.owner = file.owner ?? shared.owner
+                    merged[key] = .own(file)
+                case (.shared, .shared): break
+                }
+            } else {
+                merged[key] = entry
             }
         }
-        return entries
+        return merged.values.sorted { $0.ts == $1.ts ? $0.id < $1.id : $0.ts > $1.ts }
+    }
+
+    private static func identity(_ entry: DiskListEntry) -> String {
+        switch entry {
+        case let .own(file): file.blobID.map { "blob:" + $0 } ?? "event:" + file.id
+        case let .shared(file): file.blobID.map { "blob:" + $0 } ?? "event:" + file.id
+        }
     }
 
     func loadShared() async {
+        let generation = requestGeneration
+        let query = normalizedQuery
         isLoadingShared = true
-        defer { isLoadingShared = false }
+        defer { if requestGeneration == generation { isLoadingShared = false } }
         do {
-            sharedFiles = try await service.fetchSharedWithMe()
-        } catch {
-            DiagLog.write("Disk", "shared-with-me не загрузился: \(error)")
-            errorText = Self.describe(error)
-        }
+            let result = try await service.fetchSharedWithMe(query: query)
+            guard requestGeneration == generation, !Task.isCancelled else { return }
+            sharedFiles = result
+        } catch { if requestGeneration == generation, !Task.isCancelled { errorText = Self.describe(error) } }
     }
 
     /// Открыть расшаренный файл. `needsKeys` — честный отказ до сети: право
@@ -275,13 +293,27 @@ final class DiskScreenViewModel: ObservableObject {
 
     private static let foldersKey = "ru.implica.stalk.diskShowsFolders"
 
-    /// Поиск по имени. При первом непустом запросе докачиваем ВСЕ страницы
-    /// пагинации: иначе поиск молча ищет только по загруженному куску и врёт.
+    /// Search is sent to every server source, with stale requests cancelled/ignored.
     @Published var searchQuery = "" {
         didSet {
-            guard oldValue != searchQuery, !searchQuery.isEmpty else { return }
-            Task { await ensureAllLoaded() }
+            guard oldValue != searchQuery else { return }
+            queryTask?.cancel()
+            requestGeneration += 1
+            files = []; sharedFiles = []; diskDocs = []
+            nextBefore = nil; nextBeforeId = nil
+            hasMoreFiles = false; allLoaded = false; isLoadingMore = false
+            isLoading = true
+            queryTask = Task { [weak self] in
+                do { try await Task.sleep(for: .milliseconds(250)); try Task.checkCancellation(); await self?.reload() }
+                catch { }
+            }
         }
+    }
+
+    private var queryTask: Task<Void, Never>?
+    private var requestGeneration = 0
+    private var normalizedQuery: String {
+        searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Профили получателей шаринга: userID → имя + аватар. Наполняется лениво,
@@ -319,6 +351,7 @@ final class DiskScreenViewModel: ObservableObject {
     @Published private(set) var callActive = false
     private var photoCallSubscription: AnyCancellable?
     let mediaProvider: MediaProviderProtocol?
+    let resolveMatrixSource: ((DiskFile) async -> MediaSourceProxy?)?
     private let profileResolver: ((String) async -> UserProfileProxy?)?
     private let roomNameResolver: ((String) async -> String?)?
 
@@ -327,7 +360,8 @@ final class DiskScreenViewModel: ObservableObject {
     private var roomNamesInFlight: Set<String> = []
     private var nextBefore: String?
     private var nextBeforeId: String?
-    private var isLoadingMore = false
+    @Published private(set) var isLoadingMore = false
+    @Published private(set) var hasMoreFiles = false
 
     private let temporaryFiles = StalkTemporaryFiles()
     private let actionsSubject: PassthroughSubject<DiskScreenViewModelAction, Never> = .init()
@@ -339,9 +373,11 @@ final class DiskScreenViewModel: ObservableObject {
          mediaProvider: MediaProviderProtocol?,
          profileResolver: ((String) async -> UserProfileProxy?)? = nil,
          roomNameResolver: ((String) async -> String?)? = nil,
-         ongoingCallRoomID: CurrentValuePublisher<String?, Never>? = nil) {
+         ongoingCallRoomID: CurrentValuePublisher<String?, Never>? = nil,
+         resolveMatrixSource: ((DiskFile) async -> MediaSourceProxy?)? = nil) {
         self.service = service
         self.mediaProvider = mediaProvider
+        self.resolveMatrixSource = resolveMatrixSource
         self.profileResolver = profileResolver
         self.roomNameResolver = roomNameResolver
         let saved = UserDefaults.standard.string(forKey: Self.layoutKey)
@@ -359,37 +395,20 @@ final class DiskScreenViewModel: ObservableObject {
 
     /// Файлы после фильтра поиска — то, что реально видит экран.
     var displayedFiles: [DiskFile] {
-        var result = files
-        // «Вне папок» — клиентский срез: серверного фильтра под него нет.
-        if showingNoFolder {
-            result = result.filter { $0.folderID == nil }
-        }
-        let query = searchQuery.trimmingCharacters(in: .whitespaces)
-        guard !query.isEmpty else { return result }
-        return result.filter { $0.filename.localizedCaseInsensitiveContains(query) }
+        showingNoFolder ? files.filter { $0.folderID == nil } : files
     }
 
     /// Докачать весь список для честного поиска. Кап страниц — защита от
     /// бесконечного курсора; текущие объёмы (сотни файлов) покрывает с запасом.
     private func ensureAllLoaded() async {
-        guard !allLoaded, !isLoadingMore else { return }
-        isLoadingMore = true
-        defer { isLoadingMore = false }
+        guard !allLoaded, !showingShared, !isLoading, !isLoadingMore else { return }
         var pages = 0
-        while let before = nextBefore, pages < 25 {
-            do {
-                let page = try await service.fetchFiles(category: selectedCategory, before: before, beforeId: nextBeforeId, folder: selectedFolder?.id, roomID: selectedChatRoomID)
-                let known = Set(files.map(\.id))
-                files.append(contentsOf: page.files.filter { !known.contains($0.id) })
-                nextBeforeId = page.nextBeforeId
-                nextBefore = page.nextBefore
-            } catch {
-                DiagLog.write("Disk", "докачка для поиска оборвалась: \(error)")
-                return
-            }
+        while hasMoreFiles, pages < 25, !Task.isCancelled {
+            await loadMore()
+            if errorText != nil { return }
             pages += 1
         }
-        if nextBefore == nil { allLoaded = true }
+        if hasMoreFiles, !Task.isCancelled { errorText = DiskServiceError.incompleteListing.localizedDescription }
     }
 
     // MARK: - Аватарки шаринга и миниатюры
@@ -448,7 +467,7 @@ final class DiskScreenViewModel: ObservableObject {
     /// «Переслать» свой файл БЕЗ Matrix-события (Диск-документ, копия шаринга):
     /// пересылать нечего событием — уходит содержимым.
     func forwardAsFile(_ file: DiskFile) {
-        guard !file.isEncrypted else { return }
+        guard !file.isEncrypted, file.canDownload else { return }
         downloadingFileID = file.id
         Task { [weak self] in
             defer { self?.downloadingFileID = nil }
@@ -503,7 +522,7 @@ final class DiskScreenViewModel: ObservableObject {
     /// Зашифрованные сервер отдать не может (ключи только у комнаты) —
     /// их карточка остаётся с глифом и замком.
     func canThumbnail(_ file: DiskFile) -> Bool {
-        file.category == .images && !file.isEncrypted && !file.mxcURL.isEmpty
+        file.canDownload && file.category == .images && !file.isEncrypted && !file.mxcURL.isEmpty
     }
 
     func ensureThumbnail(_ file: DiskFile) {
@@ -533,7 +552,7 @@ final class DiskScreenViewModel: ObservableObject {
     }
 
     func forward(_ file: DiskFile) {
-        guard let roomID = file.roomID, let eventID = file.eventID else { return }
+        guard file.canDownload, let roomID = file.roomID, let eventID = file.eventID else { return }
         actionsSubject.send(.forward(roomID: roomID, eventID: eventID))
     }
 
@@ -548,68 +567,86 @@ final class DiskScreenViewModel: ObservableObject {
         Task { await reload() }
     }
 
-    func reload() async {
-        isLoading = true
-        errorText = nil
-        nextBefore = nil
-        nextBeforeId = nil
-        allLoaded = false
+    func searchNow() async {
+        queryTask?.cancel(); queryTask = nil
+        await reload()
+    }
 
-        // Счётчики, папки и список независимы: пустая статистика или упавшие
-        // папки не должны прятать файлы.
+    func reload() async {
+        requestGeneration += 1
+        let generation = requestGeneration
+        let query = normalizedQuery
+        let category = selectedCategory; let folder = selectedFolder?.id; let room = selectedChatRoomID
+        isLoading = true; isLoadingMore = false; errorText = nil; nextBefore = nil; nextBeforeId = nil; allLoaded = false; hasMoreFiles = false
+        defer { if requestGeneration == generation { isLoading = false } }
         async let statsTask = try? service.fetchStats()
         async let foldersTask = try? service.fetchFolders()
+        async let sharedTask = try? service.fetchSharedWithMe(query: query)
+        async let docsTask = try? service.fetchDiskDocs(query: query)
         do {
-            let page = try await service.fetchFiles(category: selectedCategory, folder: selectedFolder?.id, roomID: selectedChatRoomID)
+            let page = try await service.fetchFiles(category: category, folder: folder, roomID: room, query: query)
+            guard requestGeneration == generation, !Task.isCancelled else { return }
             files = page.files
-            nextBefore = page.nextBefore
-            nextBeforeId = page.nextBeforeId
-        } catch is CancellationError {
-            // Переключение фильтра отменяет предыдущий запрос. Это не сбой, и
-            // показывать по нему баннер — значит давать ложную ошибку на каждом
-            // втором тапе по категориям.
-            return
-        } catch let error as URLError where error.code == .cancelled {
-            return
+            updateCursor(before: page.nextBefore, id: page.nextBeforeId)
+            if let warning = page.warning { errorText = warning; allLoaded = false }
         } catch {
-            errorText = Self.describe(error)
-            files = []
+            guard requestGeneration == generation, !Task.isCancelled else { return }
+            errorText = Self.describe(error); files = []
         }
-        stats = await statsTask
-        folders = await (foldersTask) ?? []
-        // Расшаренное грузим вместе со списком: dp ждёт его и в общем списке.
-        sharedFiles = await (try? service.fetchSharedWithMe()) ?? sharedFiles
-        diskDocs = await (try? service.fetchDiskDocs()) ?? diskDocs
-        isLoading = false
+        let results = await (statsTask, foldersTask, sharedTask, docsTask)
+        guard requestGeneration == generation, !Task.isCancelled else { return }
+        stats = results.0; folders = results.1 ?? []
+        sharedFiles = results.2 ?? []; diskDocs = results.3 ?? []
+        if results.2 == nil || results.3 == nil {
+            errorText = errorText ?? NSLocalizedString("stalk_disk_search_partial", value: "Не удалось загрузить часть результатов. Повторите поиск.", comment: "Partial Disk search failure")
+        }
     }
 
     /// Подгрузка следующей страницы по курсору. Без него список обрывается на
     /// первой выдаче, а сервер отдаёт `nextBefore` именно для продолжения.
     func loadMoreIfNeeded(currentItem: DiskFile) async {
-        guard let nextBefore, !isLoadingMore,
-              currentItem.id == files.last?.id else { return }
-        isLoadingMore = true
-        defer { isLoadingMore = false }
+        await loadMoreIfNeeded(currentEntry: .own(currentItem))
+    }
 
+    func loadMoreIfNeeded(currentEntry: DiskListEntry) async {
+        guard currentEntry.id == displayedEntries.last?.id, errorText == nil else { return }
+        await loadMore()
+    }
+
+    private func updateCursor(before: String?, id: String?) {
+        nextBefore = before; nextBeforeId = id
+        hasMoreFiles = before != nil
+        allLoaded = !hasMoreFiles
+    }
+
+    /// Advance through pages hidden by a query/category/folder until visible progress or
+    /// a real endpoint end. A footer can call this even when there is no visible last row.
+    func loadMore() async {
+        guard nextBefore != nil, !showingShared, !isLoading, !isLoadingMore else { return }
+        let generation = requestGeneration
+        isLoadingMore = true
+        defer { if requestGeneration == generation { isLoadingMore = false } }
+        let originalVisible = Set(displayedEntries.map(\.id))
+        var cursors = Set<String>()
+        var pages = 0
         do {
-            let page = try await service.fetchFiles(category: selectedCategory, before: nextBefore, beforeId: nextBeforeId, folder: selectedFolder?.id, roomID: selectedChatRoomID)
-            // Дубликаты возможны, если между страницами что-то добавилось.
-            let known = Set(files.map(\.id))
-            let fresh = page.files.filter { !known.contains($0.id) }
-            files.append(contentsOf: fresh)
-            // Compare the entire cursor: files may have the same timestamp.
-            // A repeated composite cursor stops pagination; an advanced one is retained.
-            if page.nextBefore == nil || (page.nextBefore == nextBefore && page.nextBeforeId == nextBeforeId) {
-                DiagLog.write("Disk", "догрузка: конец выдачи или повтор курсора (курсор \(page.nextBefore ?? "nil")) — считаю список полным")
-                self.nextBefore = nil
-                nextBeforeId = nil
-            } else {
-                self.nextBefore = page.nextBefore
-                nextBeforeId = page.nextBeforeId
+            while let before = nextBefore {
+                try Task.checkCancellation()
+                let id = nextBeforeId
+                guard pages < 25, cursors.insert(before + "\n" + (id ?? "")).inserted else { throw DiskServiceError.incompleteListing }
+                let page = try await service.fetchFiles(category: selectedCategory, before: before, beforeId: id, folder: selectedFolder?.id, roomID: selectedChatRoomID, query: normalizedQuery)
+                guard requestGeneration == generation, !Task.isCancelled else { return }
+                var known = Set(files.map(\.id))
+                files.append(contentsOf: page.files.filter { known.insert($0.id).inserted })
+                if page.nextBefore == before, page.nextBeforeId == id { throw DiskServiceError.incompleteListing }
+                updateCursor(before: page.nextBefore, id: page.nextBeforeId)
+                if let warning = page.warning { errorText = warning; allLoaded = false; return }
+                pages += 1
+                if !Set(displayedEntries.map(\.id)).subtracting(originalVisible).isEmpty { return }
             }
         } catch {
-            // Молча: обрыв догрузки не должен ронять уже показанный список.
-            DiagLog.write("Disk", "догрузка не удалась: \(error)")
+            guard requestGeneration == generation, !Task.isCancelled else { return }
+            errorText = Self.describe(error)
         }
     }
 
@@ -620,6 +657,10 @@ final class DiskScreenViewModel: ObservableObject {
     /// содержимое не развернуть. Поэтому для таких файлов уводим в чат, где событие
     /// уже расшифровано, вместо того чтобы показывать заведомо битую заглушку.
     func selectFile(_ file: DiskFile) {
+        guard file.canDownload else {
+            errorText = NSLocalizedString("stalk_disk_download_forbidden", value: "Владелец запретил скачивание. Откройте документ в веб-просмотре Диска.", comment: "Download forbidden")
+            return
+        }
         // Уводим в чат только когда там ЕСТЬ что открывать: у Диск-документов и
         // копий для шаринга Matrix-события нет вовсе, и переход вёл бы в никуда.
         if file.isEncrypted, let roomID = file.roomID, let eventID = file.eventID {
@@ -662,7 +703,7 @@ final class DiskScreenViewModel: ObservableObject {
     /// Для зашифрованных не вызывается вовсе — у них и пункта меню нет
     /// (решение dp); guard — страховка на случай нового вызова.
     func share(_ file: DiskFile) {
-        guard !file.isEncrypted else { return }
+        guard !file.isEncrypted, file.canDownload else { return }
         downloadingFileID = file.id
         Task { [weak self] in
             defer { self?.downloadingFileID = nil }
@@ -675,6 +716,7 @@ final class DiskScreenViewModel: ObservableObject {
     /// хэндл медиапровайдера удаляет свой файл при освобождении, и share sheet
     /// остался бы с мёртвой ссылкой.
     private func localURL(for file: DiskFile) async -> URL? {
+        guard file.canDownload else { return nil }
         if file.mxcURL.isEmpty, let blobID = file.blobID {
             do {
                 let data = try await service.fetchBlob(id: blobID)
@@ -739,6 +781,7 @@ final class DiskScreenViewModel: ObservableObject {
 
     private static func describe(_ error: Error) -> String {
         switch error {
+        case DiskServiceError.incompleteListing: error.localizedDescription
         case DiskServiceError.unauthorized:
             NSLocalizedString("stalk_disk_error_auth", tableName: "Localizable",
                               value: "Нет доступа к диску. Попробуйте войти заново.", comment: "Disk auth error")

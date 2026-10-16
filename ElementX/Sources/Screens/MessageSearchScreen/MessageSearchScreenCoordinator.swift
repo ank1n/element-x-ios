@@ -10,11 +10,13 @@ import SwiftUI
 struct MessageSearchScreenCoordinatorParameters {
     let clientProxy: ClientProxyProtocol
     let roomSummaryProvider: RoomSummaryProviderProtocol?
+    var isCallActive: () -> Bool = { false }
 }
 
 final class MessageSearchScreenCoordinator: CoordinatorProtocol {
     private let viewModel: MessageSearchScreenViewModel
     private let client: ClientProxyProtocol
+    private let isCallActive: () -> Bool
 
     private var cancellables = Set<AnyCancellable>()
     private let actionsSubject: PassthroughSubject<MessageSearchScreenCoordinatorAction, Never> = .init()
@@ -24,6 +26,7 @@ final class MessageSearchScreenCoordinator: CoordinatorProtocol {
 
     init(parameters: MessageSearchScreenCoordinatorParameters) {
         client = parameters.clientProxy
+        isCallActive = parameters.isCallActive
         let searchService = MessageSearchService(homeserverURL: parameters.clientProxy.homeserver,
                                                  accessTokenProvider: { try parameters.clientProxy.matrixAccessToken() },
                                                  forceTokenRefresh: { await parameters.clientProxy.forceTokenRefresh() })
@@ -43,7 +46,7 @@ final class MessageSearchScreenCoordinator: CoordinatorProtocol {
     }
 
     func toPresentable() -> AnyView {
-        AnyView(SystemSearchScreen(client: client) { [weak self] target, title in
+        AnyView(SystemSearchScreen(client: client, isCallActive: isCallActive) { [weak self] target, title in
             self?.actionsSubject.send(.systemTarget(target, title: title))
         })
     }
