@@ -39,6 +39,7 @@ enum ComposerToolbarViewModelAction {
 }
 
 enum ComposerToolbarViewAction {
+    case insertCustomEmoji(String)
     case composerAppeared
     case composerDisappeared
     

@@ -98,7 +98,7 @@ struct MessageText: UIViewRepresentable {
         textView.layoutManager.usesFontLeading = false
         textView.backgroundColor = .clear
         if let attributedText = try? NSAttributedString(attributedString, including: \.elementX) {
-            textView.attributedText = attributedText
+            textView.attributedText = StalkCustomEmoji.render(attributedText)
         }
         textView.delegate = context.coordinator
         return textView
@@ -108,7 +108,7 @@ struct MessageText: UIViewRepresentable {
         if let newAttributedText = try? NSAttributedString(attributedString, including: \.elementX),
            uiView.attributedText != newAttributedText {
             uiView.flushPills()
-            uiView.attributedText = newAttributedText
+            uiView.attributedText = StalkCustomEmoji.render(newAttributedText)
         }
 
         context.coordinator.openURLAction = openURLAction

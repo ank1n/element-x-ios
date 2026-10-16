@@ -15,12 +15,18 @@ struct StickerRoomTimelineView: View {
     
     var body: some View {
         TimelineStyler(timelineItem: timelineItem) {
-            LoadableImage(mediaSource: timelineItem.animatedPreview ?? timelineItem.imageInfo.source,
-                          mediaType: .timelineItem(uniqueID: timelineItem.id.uniqueID),
-                          blurhash: timelineItem.blurhash,
-                          size: timelineItem.imageInfo.size,
-                          mediaProvider: context?.mediaProvider) {
-                placeholder
+            Group {
+                if let builtin = SharedStickerPack.capybaras.items.first(where: { $0.mxc == timelineItem.imageInfo.source.url.absoluteString }) {
+                    Image("stalk-capy-" + builtin.id).resizable().scaledToFit()
+                } else {
+                    LoadableImage(mediaSource: timelineItem.animatedPreview ?? timelineItem.imageInfo.source,
+                                  mediaType: .timelineItem(uniqueID: timelineItem.id.uniqueID),
+                                  blurhash: timelineItem.blurhash,
+                                  size: timelineItem.imageInfo.size,
+                                  mediaProvider: context?.mediaProvider) {
+                        placeholder
+                    }
+                }
             }
             .aspectRatio(timelineItem.imageInfo.aspectRatio ?? 1, contentMode: .fit)
             .frame(maxWidth: 136, maxHeight: 136)

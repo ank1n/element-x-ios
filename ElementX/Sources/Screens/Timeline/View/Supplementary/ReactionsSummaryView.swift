@@ -80,7 +80,7 @@ private struct ReactionSummaryButton: View {
     
     var label: some View {
         HStack(spacing: 4) {
-            Text(reaction.displayKey)
+            StalkEmojiGlyph(value: reaction.key)
                 .font(.compound.headingSM)
                 .foregroundColor(textColor)
             if reaction.count > 1 {

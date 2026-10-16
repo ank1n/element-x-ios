@@ -30,7 +30,7 @@ struct EmojiPickerScreen: View {
                                     feedbackGenerator.impactOccurred()
                                     context.send(viewAction: .emojiTapped(emoji: emoji))
                                 } label: {
-                                    Text(emoji.value)
+                                    StalkEmojiGlyph(value: emoji.value)
                                         .padding(9.0)
                                         .font(.compound.headingXL)
                                         .background(Circle()
@@ -64,10 +64,11 @@ struct EmojiPickerScreen: View {
     }
     
     private func accessibilityLabel(for emoji: String) -> String {
+        let name = StalkCustomEmoji.lookup(emoji)?.label ?? emoji
         if context.viewState.selectedEmojis.contains(emoji) {
-            return L10n.a11yRemoveReaction(emoji)
+            return L10n.a11yRemoveReaction(name)
         } else {
-            return L10n.a11yAddReaction(emoji)
+            return L10n.a11yAddReaction(name)
         }
     }
     

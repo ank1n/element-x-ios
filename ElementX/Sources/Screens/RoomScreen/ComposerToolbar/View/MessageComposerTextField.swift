@@ -179,6 +179,16 @@ private struct UITextViewWrapper: UIViewRepresentable {
             self.pasteHandler = pasteHandler
         }
 
+        func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText replacement: String) -> Bool {
+            guard replacement.isEmpty, let atomic = StalkCustomEmoji.atomicRange(in: textView.text ?? "", at: range), atomic != range else { return true }
+            let text = NSMutableAttributedString(attributedString: textView.attributedText)
+            text.replaceCharacters(in: atomic, with: "")
+            textView.attributedText = text
+            textView.selectedRange = NSRange(location: atomic.location, length: 0)
+            self.text.wrappedValue = text
+            return false
+        }
+
         func textViewDidChange(_ textView: UITextView) {
             text.wrappedValue = textView.attributedText
         }
@@ -196,6 +206,10 @@ private struct UITextViewWrapper: UIViewRepresentable {
         }
         
         func textViewDidChangeSelection(_ textView: UITextView) {
+            if textView.selectedRange.length == 0, let atomic = StalkCustomEmoji.atomicRange(in: textView.text ?? "", at: textView.selectedRange) {
+                let cursor = textView.selectedRange.location
+                textView.selectedRange = NSRange(location: cursor - atomic.location < atomic.length / 2 ? atomic.location : NSMaxRange(atomic), length: 0)
+            }
             DispatchQueue.main.async {
                 if self.selectedRange.wrappedValue != textView.selectedRange {
                     self.selectedRange.wrappedValue = textView.selectedRange

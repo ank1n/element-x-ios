@@ -126,7 +126,7 @@ final class StalkCompatibilityTests: XCTestCase {
         let cache = STalkCacheService(cacheDirectory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
         let service = SharedStickerService(client: client, session: session, cache: cache) { _ in }
         await service.load()
-        XCTAssertEqual(service.packs.count, 1)
+        XCTAssertTrue(service.packs.contains { $0.id == "hello" })
         XCTAssertEqual(service.preferences.favorites, ["hello"])
         let success = await service.send(sticker)
         XCTAssertTrue(success)

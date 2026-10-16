@@ -275,7 +275,9 @@ struct AttributedStringBuilder: AttributedStringBuilderProtocol {
                 }
                 
             case "img":
-                if let alt = try? childElement.attr("alt"), !alt.isEmpty {
+                if childElement.hasAttr("data-mx-emoticon"), let alt = try? childElement.attr("alt"), !alt.isEmpty {
+                    content = NSMutableAttributedString(string: alt)
+                } else if let alt = try? childElement.attr("alt"), !alt.isEmpty {
                     content = NSMutableAttributedString(string: "[img: \(alt)]")
                 } else {
                     content = NSMutableAttributedString(string: "[img]")

@@ -29,6 +29,8 @@ struct EmojiPickerEmojiCategoryViewData: Identifiable {
     
     var name: String {
         switch id {
+        case "stalk-capybara":
+            return "Капибары"
         case "people":
             return L10n.emojiPickerCategoryPeople
         case "nature":

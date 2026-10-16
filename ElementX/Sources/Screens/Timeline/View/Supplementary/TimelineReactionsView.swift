@@ -148,13 +148,13 @@ struct TimelineReactionButton: View {
     
     private var accessibilityLabel: String {
         if reaction.isHighlighted {
-            return reaction.count > 1 ? L10n.tr("Localizable", "screen_room_timeline_reaction_including_you_a11y", reaction.count - 1, reaction.displayKey) : L10n.screenRoomTimelineReactionYouA11y(reaction.displayKey)
+            return reaction.count > 1 ? L10n.tr("Localizable", "screen_room_timeline_reaction_including_you_a11y", reaction.count - 1, (StalkCustomEmoji.lookup(reaction.key)?.label ?? reaction.displayKey)) : L10n.screenRoomTimelineReactionYouA11y((StalkCustomEmoji.lookup(reaction.key)?.label ?? reaction.displayKey))
         }
-        return L10n.tr("Localizable", "screen_room_timeline_reaction_a11y", reaction.count, reaction.displayKey)
+        return L10n.tr("Localizable", "screen_room_timeline_reaction_a11y", reaction.count, (StalkCustomEmoji.lookup(reaction.key)?.label ?? reaction.displayKey))
     }
     
     private var toggleReactionAccessibilityActionName: String {
-        reaction.isHighlighted ? L10n.a11yRemoveReaction(reaction.displayKey) : L10n.a11yAddReaction(reaction.displayKey)
+        reaction.isHighlighted ? L10n.a11yRemoveReaction((StalkCustomEmoji.lookup(reaction.key)?.label ?? reaction.displayKey)) : L10n.a11yAddReaction((StalkCustomEmoji.lookup(reaction.key)?.label ?? reaction.displayKey))
     }
     
     var body: some View {
@@ -179,7 +179,7 @@ struct TimelineReactionButton: View {
                 // Designs have bodyMD for the key but practically this makes
                 // emojis too big. bodySM gives a more appropriate size when compared
                 // to the count text and the lineHeight/padding in the designs.
-                Text(reaction.displayKey)
+                StalkEmojiGlyph(value: reaction.key)
                     .font(.compound.bodySM)
                 if reaction.count > 1 {
                     Text(String(reaction.count))

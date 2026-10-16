@@ -181,6 +181,18 @@ final class ComposerToolbarViewModel: ComposerToolbarViewModelType, ComposerTool
 
     override func process(viewAction: ComposerToolbarViewAction) {
         switch viewAction {
+        case .insertCustomEmoji(let shortcode):
+            guard StalkCustomEmoji.lookup(shortcode) != nil else { return }
+            if context.composerFormattingEnabled {
+                wysiwygViewModel.textView.insertText(shortcode + " ")
+            } else {
+                let text = NSMutableAttributedString(attributedString: state.bindings.plainComposerText)
+                let range = state.bindings.selectedRange
+                guard NSMaxRange(range) <= text.length else { return }
+                text.replaceCharacters(in: range, with: shortcode + " ")
+                state.bindings.plainComposerText = text
+                state.bindings.selectedRange = NSRange(location: range.location + (shortcode as NSString).length + 1, length: 0)
+            }
         case .composerAppeared:
             if !hasAppeard {
                 hasAppeard = true
@@ -197,7 +209,7 @@ final class ComposerToolbarViewModel: ComposerToolbarViewModelType, ComposerTool
             default:
                 if context.composerFormattingEnabled {
                     actionsSubject.send(.sendMessage(plain: wysiwygViewModel.content.markdown,
-                                                     html: wysiwygViewModel.content.html,
+                                                     html: StalkCustomEmoji.formatted(plain: wysiwygViewModel.content.markdown, html: wysiwygViewModel.content.html),
                                                      mode: state.composerMode,
                                                      intentionalMentions: wysiwygViewModel.getMentionsState().toIntentionalMentions()))
                 } else {
@@ -451,7 +463,7 @@ final class ComposerToolbarViewModel: ComposerToolbarViewModelType, ComposerTool
     
     private func sendPlainComposerText() {
         let plainComposerContent = plainComposerContent
-        actionsSubject.send(.sendMessage(plain: plainComposerContent.text, html: nil,
+        actionsSubject.send(.sendMessage(plain: plainComposerContent.text, html: StalkCustomEmoji.formatted(plain: plainComposerContent.text, html: nil),
                                          mode: state.composerMode,
                                          intentionalMentions: .init(userIDs: plainComposerContent.mentionedUserIDs, atRoom: plainComposerContent.containsAtRoomMention)))
     }

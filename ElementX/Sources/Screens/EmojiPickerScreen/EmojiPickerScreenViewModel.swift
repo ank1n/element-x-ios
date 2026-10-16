@@ -37,7 +37,7 @@ class EmojiPickerScreenViewModel: EmojiPickerScreenViewModelType, EmojiPickerScr
         case let .search(searchString: searchString):
             Task {
                 let categories = await emojiProvider.categories(searchString: searchString)
-                state.categories = convert(emojiCategories: categories)
+                state.categories = convert(emojiCategories: categories, query: searchString)
             }
         case let .emojiTapped(emoji: emoji):
             Task { await selectEmoji(emoji) }
@@ -56,19 +56,21 @@ class EmojiPickerScreenViewModel: EmojiPickerScreenViewModelType, EmojiPickerScr
         }
     }
     
-    private func convert(emojiCategories: [EmojiCategory]) -> [EmojiPickerEmojiCategoryViewData] {
-        emojiCategories.compactMap { emojiCategory in
+    private func convert(emojiCategories: [EmojiCategory], query: String? = nil) -> [EmojiPickerEmojiCategoryViewData] {
+        let custom = StalkCustomEmoji.all.filter { query?.isEmpty != false || $0.label.localizedCaseInsensitiveContains(query!) || $0.shortcode.localizedCaseInsensitiveContains(query!) }
+        let native = emojiCategories.compactMap { emojiCategory in
             let emojisViewData: [EmojiPickerEmojiViewData] = emojiCategory.emojis.compactMap { emojiItem in
                 EmojiPickerEmojiViewData(id: "\(emojiCategory.id)-\(emojiItem.id)", value: emojiItem.unicode)
             }
             
             return EmojiPickerEmojiCategoryViewData(id: emojiCategory.id, emojis: emojisViewData)
         }
+        return (custom.isEmpty ? [] : [.init(id: "stalk-capybara", emojis: custom.map { .init(id: $0.id, value: $0.mxc) })]) + native
     }
     
     private func selectEmoji(_ emoji: EmojiPickerEmojiViewData) async {
         MXLog.debug("Selected \(emoji) for \(itemID)")
-        emojiProvider.markEmojiAsFrequentlyUsed(emoji.value)
+        if StalkCustomEmoji.lookup(emoji.value) == nil { emojiProvider.markEmojiAsFrequentlyUsed(emoji.value) }
         
         guard case let .event(_, eventOrTransactionID) = itemID else { fatalError("Attempted to react to a virtual item.") }
         

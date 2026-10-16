@@ -16,10 +16,12 @@ struct RoomAttachmentPicker: View {
     @Environment(\.isEnabled) private var isEnabled
     @State private var showingPicker = false
     @State private var showingStickers = false
+    @State private var showingEmoji = false
 
     var body: some View {
         Button {
             showingStickers = false
+            showingEmoji = false
             showingPicker = true
         } label: {
             CompoundIcon(asset: Asset.Images.composerAttachment, size: .custom(30), relativeTo: .compound.headingLG)
@@ -31,13 +33,28 @@ struct RoomAttachmentPicker: View {
         .accessibilityIdentifier(A11yIdentifiers.roomScreen.composerToolbar.openComposeOptions)
         .sheet(isPresented: $showingPicker) {
             Group {
-                if showingStickers, let service = context.viewState.stickerService {
+                if showingEmoji {
+                    NavigationStack {
+                        ScrollView {
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 70))]) {
+                                ForEach(StalkCustomEmoji.all) { emoji in
+                                    Button {
+                                        context.send(viewAction: .insertCustomEmoji(emoji.shortcode))
+                                        showingPicker = false
+                                    } label: { Image(emoji.asset).resizable().scaledToFit().frame(width: 64, height: 64) }
+                                        .accessibilityLabel(emoji.label)
+                                }
+                            }.padding()
+                        }.navigationTitle("Капибары")
+                            .toolbar { Button(L10n.actionClose) { showingPicker = false } }
+                    }
+                } else if showingStickers, let service = context.viewState.stickerService {
                     SharedStickerPicker(service: service, mediaProvider: context.mediaProvider)
                 } else {
-                    AttachmentPickerSheet(context: context, isPresented: $showingPicker) { showingStickers = true }
+                    AttachmentPickerSheet(context: context, isPresented: $showingPicker, onStickers: { showingStickers = true }, onEmoji: { showingEmoji = true })
                 }
             }
-            .presentationDetents(showingStickers ? [.large] : [.height(200)])
+            .presentationDetents((showingStickers || showingEmoji) ? [.large] : [.height(200)])
             .presentationCornerRadius(20)
             .presentationDragIndicator(.visible)
             .presentationBackground(Color(UIColor.systemBackground))
@@ -51,6 +68,7 @@ private struct AttachmentPickerSheet: View {
     @ObservedObject var context: ComposerToolbarViewModel.Context
     @Binding var isPresented: Bool
     let onStickers: () -> Void
+    let onEmoji: () -> Void
 
     private let columns = [
         GridItem(.flexible(), spacing: 12),
@@ -102,6 +120,7 @@ private struct AttachmentPickerSheet: View {
                     .accessibilityIdentifier("room.stickers")
             }
 
+            attachmentButton(icon: "face.smiling.fill", color: .orange, title: "Эмодзи", action: onEmoji)
             attachmentButton(icon: "chart.bar.fill",
                              color: .cyan,
                              title: SL10n.attachPoll) {

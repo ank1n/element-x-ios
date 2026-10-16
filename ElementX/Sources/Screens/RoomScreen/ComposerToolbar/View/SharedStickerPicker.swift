@@ -81,8 +81,10 @@ struct SharedStickerPicker: View {
                                 Button {
                                     Task { if await service.send(item) { dismiss() } }
                                 } label: {
-                                    if let url = URL(string: item.thumbnailMxc ?? item.mxc),
-                                       let source = try? MediaSourceProxy(url: url, mimeType: item.thumbnailMxc == nil ? item.mimetype : "image/png") {
+                                    if let builtin = SharedStickerPack.capybaras.items.first(where: { $0.mxc == item.mxc }) {
+                                        Image("stalk-capy-" + builtin.id).resizable().scaledToFit().frame(width: 85, height: 85)
+                                    } else if let url = URL(string: item.thumbnailMxc ?? item.mxc),
+                                              let source = try? MediaSourceProxy(url: url, mimeType: item.thumbnailMxc == nil ? item.mimetype : "image/png") {
                                         LoadableImage(mediaSource: source, mediaType: .generic, size: .init(width: 96, height: 96), mediaProvider: mediaProvider) {
                                             ProgressView()
                                         }

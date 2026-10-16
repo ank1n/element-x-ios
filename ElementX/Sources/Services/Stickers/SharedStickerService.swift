@@ -23,8 +23,8 @@ struct SharedSticker: Codable, Equatable, Identifiable {
     }
 
     var isValid: Bool {
-        !id.isEmpty && Self.isMXC(mxc) && mimetype == "image/webp" && size >= 0 &&
-            (1...512).contains(w) && (1...512).contains(h) &&
+        !id.isEmpty && Self.isMXC(mxc) && ["image/webp", "image/png"].contains(mimetype) && size >= 0 &&
+            (1...(mimetype == "image/png" ? 2048 : 512)).contains(w) && (1...(mimetype == "image/png" ? 2048 : 512)).contains(h) &&
             (thumbnailMxc.map(Self.isMXC) ?? true) && (animatedPreviewMxc.map(Self.isMXC) ?? true)
     }
 
@@ -69,7 +69,7 @@ struct SharedStickerPack: Codable, Equatable, Identifiable {
         }
         var ids = Set<String>()
         return try JSONDecoder().decode(Catalogue.self, from: data).packs.compactMap(\.value).filter {
-            !$0.id.isEmpty && ids.insert($0.id).inserted && (1...120).contains($0.items.count) && $0.items.allSatisfy(\.isValid)
+            !$0.id.isEmpty && ids.insert($0.id).inserted && (1...120).contains($0.items.count) && $0.items.allSatisfy { $0.isValid && $0.mimetype == "image/webp" }
         }
     }
 }
@@ -102,7 +102,7 @@ struct SharedStickerPreferences: Codable, Equatable {
 /// Preferences use the same Matrix account data as web, never a global defaults key.
 @MainActor
 final class SharedStickerService: ObservableObject {
-    @Published private(set) var packs: [SharedStickerPack] = []
+    @Published private(set) var packs: [SharedStickerPack] = [.capybaras]
     @Published private(set) var preferences = SharedStickerPreferences()
     @Published private(set) var loading = false
     @Published private(set) var sending = false
@@ -138,7 +138,7 @@ final class SharedStickerService: ObservableObject {
         defer { loading = false }
         if !loaded {
             if let saved = await cache?.load(Snapshot.self, forKey: key) {
-                packs = saved.packs
+                packs = [.capybaras] + saved.packs.filter { $0.id != SharedStickerPack.capybaras.id }
                 preferences = saved.preferences
                 pending = saved.pending
             }
@@ -146,7 +146,7 @@ final class SharedStickerService: ObservableObject {
         }
         if catalogueFetchedAt.map({ Date().timeIntervalSince($0) < 60 }) != true {
             do {
-                packs = try await SharedStickerPack.decodeCatalogue(request(path: "/_stalk/stickers/catalog"))
+                packs = try await [.capybaras] + (SharedStickerPack.decodeCatalogue(request(path: "/_stalk/stickers/catalog")))
                 catalogueFetchedAt = Date()
                 await persist()
             } catch {
