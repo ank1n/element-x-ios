@@ -125,13 +125,18 @@ struct CallScreen: View {
             }
         }
         .sheet(isPresented: $showParticipants) {
-            CallParticipantsSheet(participants: context.viewState.participants,
-                                  activeParticipantIDs: Set(context.viewState.activeCallParticipantIDs),
-                                  mediaProvider: context.viewState.mediaProvider)
-                .presentationDetents([.medium, .large])
-                .presentationCornerRadius(20)
-                .presentationDragIndicator(.visible)
-                .presentationBackground(Color(UIColor.systemBackground))
+            Group {
+                if let manager = context.viewState.liveKitRoomManager {
+                    NativeCallParticipantsPanel(manager: manager, known: context.viewState.participants, invited: context.viewState.invitedParticipantIDs,
+                                                mediaProvider: context.viewState.mediaProvider) { context.send(viewAction: .inviteParticipant($0)) }
+                } else {
+                    CallParticipantsSheet(participants: context.viewState.participants, activeParticipantIDs: Set(context.viewState.activeCallParticipantIDs), mediaProvider: context.viewState.mediaProvider)
+                }
+            }
+            .presentationDetents([.medium, .large])
+            .presentationCornerRadius(20)
+            .presentationDragIndicator(.visible)
+            .presentationBackground(Color(UIColor.systemBackground))
         }
     }
 

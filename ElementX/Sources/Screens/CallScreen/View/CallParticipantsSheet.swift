@@ -11,6 +11,9 @@ struct CallParticipantsSheet: View {
     let participants: [CallParticipantInfo]
     let activeParticipantIDs: Set<String>
     let mediaProvider: MediaProviderProtocol?
+    var raisedHandIDs: [String] = []
+    var invitedIDs: Set<String> = []
+    var onInvite: ((String) -> Void)?
 
     private let stalkAccent = StalkTheme.accent
 
@@ -39,7 +42,7 @@ struct CallParticipantsSheet: View {
                     // Others
                     if !notInCall.isEmpty {
                         HStack {
-                            Text(SL10n.contactsOffline)
+                            Text(NSLocalizedString("Не в звонке", comment: "Local call participant control or status"))
                                 .font(.system(size: 13, weight: .medium))
                                 .foregroundColor(.secondary)
                             Spacer()
@@ -61,7 +64,9 @@ struct CallParticipantsSheet: View {
     // MARK: - Filtered lists
 
     private var activeInCall: [CallParticipantInfo] {
-        participants.filter { activeParticipantIDs.contains($0.userID) }
+        participants.filter { activeParticipantIDs.contains($0.userID) }.sorted {
+            (raisedHandIDs.firstIndex(of: $0.userID) ?? Int.max) < (raisedHandIDs.firstIndex(of: $1.userID) ?? Int.max)
+        }
     }
 
     private var notInCall: [CallParticipantInfo] {
@@ -91,13 +96,20 @@ struct CallParticipantsSheet: View {
 
             Spacer()
 
+            if let rank = raisedHandIDs.firstIndex(of: participant.userID) {
+                Label("\(rank + 1)", systemImage: "hand.raised.fill").foregroundStyle(.orange)
+            }
+            if !isActive {
+                if invitedIDs.contains(participant.userID) { Text(NSLocalizedString("Приглашение отправлено", comment: "Local call participant control or status")).font(.caption).foregroundStyle(.secondary) }
+                if let onInvite { Button(invitedIDs.contains(participant.userID) ? NSLocalizedString("Позвать ещё", comment: "Local call participant control or status") : NSLocalizedString("Позвать", comment: "Local call participant control or status")) { onInvite(participant.userID) }.font(.caption) }
+            }
             // Status
             if isActive {
                 HStack(spacing: 4) {
                     Circle()
                         .fill(.green)
                         .frame(width: 8, height: 8)
-                    Text(SL10n.contactsOnlineStatus)
+                    Text(NSLocalizedString("В звонке", comment: "Local call participant control or status"))
                         .font(.system(size: 12))
                         .foregroundColor(.green)
                 }

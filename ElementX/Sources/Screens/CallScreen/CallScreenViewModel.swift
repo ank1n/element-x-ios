@@ -56,6 +56,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
 
     /// sTalk: Native LiveKit room manager
     private let liveKitRoomManager = LiveKitRoomManager()
+    private var pendingParticipantInvites = Set<String>()
 
     /// sTalk: LiveKit room name extracted from JWT token (for recording-api)
     private var interceptedLiveKitRoomName: String?
@@ -520,6 +521,14 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             state.bindings.showSpeakerPickerHandler?()
         case .toggleSpeaker:
             toggleSpeaker()
+        case .inviteParticipant(let userID):
+            guard state.participants.contains(where: { $0.userID == userID }), pendingParticipantInvites.insert(userID).inserted else { return }
+            Task { [weak self] in
+                guard let self else { return }
+                defer { pendingParticipantInvites.remove(userID) }
+                let sent = await nativeCallSession?.invite(userID: userID) ?? false
+                if !sent { ServiceLocator.shared.userIndicatorController.submitIndicator(.init(title: String(localized: "stalk_call_invite_failed", defaultValue: "Не удалось позвать участника. Повторите попытку."))) }
+            }
         case .toggleHandRaise:
             Task { await toggleHandRaise() }
         case .toggleScreenShare:
@@ -753,6 +762,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                                                     roomProxy: roomProxy,
                                                     enableCameraOnConnect: startWithVideoEnabled)
                     self.nativeCallSession = session
+                    session.$notifiedUserIDs.receive(on: DispatchQueue.main).sink { [weak self] ids in
+                        self?.state.invitedParticipantIDs = ids
+                    }.store(in: &cancellables)
 
                     // Observe session state
                     session.$sessionState
@@ -1655,6 +1667,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
 
     private func loadParticipants() {
         guard case .roomCall(let roomProxy, _, _, _, _, _) = configuration.kind else { return }
+        roomProxy.membersPublisher.receive(on: DispatchQueue.main).sink { [weak self] members in
+            self?.state.participants = members.filter(\.isActive).map { .init(userID: $0.userID, displayName: $0.displayName, avatarURL: $0.avatarURL) }
+        }.store(in: &cancellables)
 
         Task { [weak self] in
             guard let members = await roomProxy.members() else { return }
@@ -1673,12 +1688,16 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     // MARK: - Call Timer
 
     private func startCallTimer() {
+        callTimerTask?.cancel()
+        let anchor = ContinuousClock.now
+        let baseDuration = state.callElapsedTime
         callTimerTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
                 guard !Task.isCancelled, let self else { return }
                 await MainActor.run {
-                    self.state.callElapsedTime += 1
+                    let elapsed = anchor.duration(to: .now).components
+                    self.state.callElapsedTime = baseDuration + Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
                 }
             }
         }

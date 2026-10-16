@@ -104,6 +104,35 @@ final class LiveKitRoomManager: ObservableObject {
     /// Делегат `didUpdateMetadata` обновляет state, SwiftUI views рендерят
     /// overlay-иконку поверх их тайлов.
     @Published private(set) var raisedHandsSIDs: Set<String> = []
+    @Published private(set) var orderedHandSIDs: [String] = []
+    @Published private(set) var locallyMutedIdentities: Set<String> = []
+    private var previousRemoteVolumes: [String: Double] = [:]
+
+    func isLocallyMuted(sid: String) -> Bool {
+        guard let identity = remoteParticipants.first(where: { $0.sid?.stringValue == sid })?.identity?.stringValue else { return false }
+        return locallyMutedIdentities.contains(identity)
+    }
+
+    func toggleLocalMute(sid: String) {
+        guard let participant = remoteParticipants.first(where: { $0.sid?.stringValue == sid }), let identity = participant.identity?.stringValue else { return }
+        if locallyMutedIdentities.contains(identity) {
+            locallyMutedIdentities.remove(identity)
+            for publication in participant.audioTracks {
+                (publication.track as? RemoteAudioTrack)?.volume = previousRemoteVolumes[identity] ?? 1
+            }
+            previousRemoteVolumes[identity] = nil
+        } else {
+            previousRemoteVolumes[identity] = participant.audioTracks.compactMap { ($0.track as? RemoteAudioTrack)?.volume }.first ?? 1
+            locallyMutedIdentities.insert(identity)
+            for publication in participant.audioTracks {
+                (publication.track as? RemoteAudioTrack)?.volume = 0
+            }
+        }
+    }
+
+    private func updateHandQueue(_ current: Set<String>) {
+        orderedHandSIDs = orderedHandSIDs.filter(current.contains) + current.subtracting(orderedHandSIDs).sorted()
+    }
 
     /// LiveKit room name (used for recording-api)
     var roomName: String? {
@@ -514,6 +543,7 @@ final class LiveKitRoomManager: ObservableObject {
     }
 
     func disconnect() async {
+        locallyMutedIdentities = []; previousRemoteVolumes = [:]; orderedHandSIDs = []; raisedHandsSIDs = []
         reconnectURL = nil
         reconnectToken = nil
         savedKeyProvider = nil
@@ -1449,8 +1479,13 @@ final class LiveKitRoomManager: ObservableObject {
                 current.insert(sid)
             }
         }
-        if current != raisedHandsSIDs {
-            raisedHandsSIDs = current
+        if let localSID = room.localParticipant.sid?.stringValue, Self.parseHandRaised(room.localParticipant.metadata) { current.insert(localSID) }
+        if current != raisedHandsSIDs { raisedHandsSIDs = current }
+        updateHandQueue(current)
+        for participant in remoteParticipants where locallyMutedIdentities.contains(participant.identity?.stringValue ?? "") {
+            for publication in participant.audioTracks {
+                (publication.track as? RemoteAudioTrack)?.volume = 0
+            }
         }
 
         // STMOB: get local video track, исключая muted publications.
@@ -1648,6 +1683,7 @@ extension LiveKitRoomManager: RoomDelegate {
             } else {
                 self.raisedHandsSIDs.remove(sid)
             }
+            self.updateHandQueue(self.raisedHandsSIDs)
             MXLog.info("sTalk LiveKit: hand raise update sid=\(sid) raised=\(isRaised) total=\(self.raisedHandsSIDs.count)")
             // STMOB-152 build 176: DiagLog для realtime correlation с Molly
             // hand raise bridge. INCOMING metadata от remote participant

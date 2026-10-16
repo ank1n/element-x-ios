@@ -115,6 +115,7 @@ struct NativeCallGridView: View {
                                 onPin: onPin, onUnpin: onUnpin, onShowContact: onShowContact)
             }
         }
+        .environment(\.nativeCallRoomManager, roomManager)
     }
 }
 
@@ -2130,6 +2131,7 @@ struct CallPictureInPictureSource: UIViewRepresentable {
 
 /// Native menus keep pin/layout/contact actions local to this call view.
 private struct CallParticipantMenu: ViewModifier {
+    @Environment(\.nativeCallRoomManager) private var roomManager
     let sid: String?
     let identity: String?
     let participants: [CallParticipantInfo]
@@ -2157,7 +2159,7 @@ private struct CallParticipantMenu: ViewModifier {
                 }
             }
             .overlay(alignment: .topTrailing) {
-                if (sid != nil && onPin != nil) || contact != nil {
+                if (roomManager != nil && sid != nil) || (sid != nil && onPin != nil) || contact != nil {
                     Menu { actions } label: {
                         Image(systemName: "ellipsis")
                             .foregroundStyle(.white)
@@ -2173,6 +2175,7 @@ private struct CallParticipantMenu: ViewModifier {
 
     @ViewBuilder
     private var actions: some View {
+        if let roomManager, let sid { CallLocalMuteButton(manager: roomManager, sid: sid) }
         if let sid, onPin != nil {
             Button { onPin?(sid, .speaker) } label: {
                 Label(NSLocalizedString("stalk_call_pin_speaker", value: "Pin with thumbnails", comment: "Call pin action"), systemImage: "pin")

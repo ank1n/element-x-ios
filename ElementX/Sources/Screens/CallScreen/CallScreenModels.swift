@@ -51,6 +51,7 @@ struct CallScreenViewState: BindableState {
     var callParticipantsCount = 0
     var participants: [CallParticipantInfo] = []
     var activeCallParticipantIDs: [String] = []
+    var invitedParticipantIDs: Set<String> = []
     var mediaProvider: MediaProviderProtocol?
 
     // sTalk: native call control state
@@ -158,6 +159,7 @@ enum CallScreenViewAction {
     case toggleVideo
     case showSpeakerPicker
     case toggleSpeaker
+    case inviteParticipant(String)
     case toggleHandRaise
     case toggleScreenShare
     case toggleCallBackground

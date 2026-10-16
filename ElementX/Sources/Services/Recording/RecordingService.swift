@@ -71,7 +71,7 @@ class RecordingService: RecordingServiceProtocol {
     private var currentEgressId: String?
     private var stateResetTask: Task<Void, Never>?
     private var durationTimer: Task<Void, Never>?
-    private var recordingStartTime: Date?
+    private var recordingStartTime: ContinuousClock.Instant?
 
     init(baseURL: URL, accessToken: String? = nil, urlSession: URLSession? = nil) {
         self.baseURL = baseURL
@@ -137,7 +137,7 @@ class RecordingService: RecordingServiceProtocol {
             }
 
             currentEgressId = egressId
-            recordingStartTime = Date()
+            recordingStartTime = .now
             stateSubject.send(.recording(egressId: egressId, duration: 0))
 
             // Start duration timer
@@ -293,7 +293,8 @@ class RecordingService: RecordingServiceProtocol {
                       let self,
                       let startTime = self.recordingStartTime else { return }
 
-                let duration = Date().timeIntervalSince(startTime)
+                let elapsed = startTime.duration(to: .now).components
+                let duration = Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
                 self.stateSubject.send(.recording(egressId: egressId, duration: duration))
             }
         }

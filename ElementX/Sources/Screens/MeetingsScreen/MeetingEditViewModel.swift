@@ -107,10 +107,7 @@ class MeetingEditViewModel: MeetingEditViewModelType {
                 endDate = Calendar.current.date(byAdding: .day, value: 1, to: endDate) ?? endDate
             }
 
-            // Generate meeting_code for new meetings (needed for shareable links)
-            let meetingCode: String? = state.meetingId == nil
-                ? String(UUID().uuidString.lowercased().prefix(11))
-                : nil
+            let meetingCode: String? = nil // Only the server issues a usable link after saving.
 
             var request = MeetingRequest(title: state.bindings.title,
                                          description: state.bindings.description,
