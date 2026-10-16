@@ -67,7 +67,7 @@ class VoiceMessageCache: VoiceMessageCacheProtocol {
         } else {
             try FileManager.default.copyItem(at: source, to: destination)
         }
-        try (destination as NSURL).setResourceValue(URLFileProtection.complete, forKey: .fileProtectionKey)
+        try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: destination.path)
     }
     
     private func cacheURL(for mediaSource: MediaSourceProxy) -> URL {

@@ -92,11 +92,19 @@ class SecurityAndPrivacyScreenViewModelTests: XCTestCase {
     func testSingleUnknownSpaceMembersAccessCanBeReselected() async throws {
         let singleRoom = [SpaceServiceRoomProtocol].mockSingleRoom
         let space = singleRoom[0]
-        setupViewModel(joinedParentSpaces: [], joinRule: .restricted(rules: [.roomMembership(roomId: space.id)]))
-        
-        let deferred = deferFulfillment(context.$viewState) { $0.selectableJoinedSpaces.count == 0 }
+        setupViewModel(joinedParentSpaces: [],
+                       joinRule: .restricted(rules: [.roomMembership(roomId: space.id)]),
+                       isVisibleInPublicDirectory: false)
+
+        // An empty space list is also the initial state; wait for the async settings first.
+        let deferred = deferFulfillment(context.$viewState) {
+            $0.canonicalAlias == "#room:matrix.org" &&
+                $0.currentSettings.isVisibileInRoomDirectory == false &&
+                $0.bindings.desiredSettings.isVisibileInRoomDirectory == false
+        }
         try await deferred.fulfill()
         
+        XCTAssertTrue(context.viewState.selectableJoinedSpaces.isEmpty)
         XCTAssertEqual(context.viewState.currentSettings.accessType, .spaceMembers(spaceIDs: [space.id]))
         XCTAssertEqual(context.desiredSettings, context.viewState.currentSettings)
         XCTAssertTrue(context.viewState.isSpaceMembersOptionSelectable)
@@ -425,7 +433,8 @@ class SecurityAndPrivacyScreenViewModelTests: XCTestCase {
     
     private func setupViewModel(joinedParentSpaces: [SpaceServiceRoomProtocol],
                                 topLevelSpaces: [SpaceServiceRoomProtocol] = [],
-                                joinRule: JoinRule) {
+                                joinRule: JoinRule,
+                                isVisibleInPublicDirectory: Bool = true) {
         let appSettings = AppSettings()
         appSettings.spaceSettingsEnabled = true
         appSettings.knockingEnabled = true
@@ -433,7 +442,7 @@ class SecurityAndPrivacyScreenViewModelTests: XCTestCase {
                                               canonicalAlias: "#room:matrix.org",
                                               members: .allMembersAsCreator,
                                               joinRule: joinRule,
-                                              isVisibleInPublicDirectory: true))
+                                              isVisibleInPublicDirectory: isVisibleInPublicDirectory))
         roomProxy.updateJoinRuleReturnValue = .success(())
         roomProxy.updateRoomDirectoryVisibilityReturnValue = .success(())
         
