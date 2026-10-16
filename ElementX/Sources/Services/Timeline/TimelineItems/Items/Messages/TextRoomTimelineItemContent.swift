@@ -16,4 +16,5 @@ struct TextRoomTimelineItemContent: Hashable {
     /// STMOB-274: код встречи, если тело сообщения ЦЕЛИКОМ — ссылка `/meet/s/<код>`.
     /// Тогда вместо строки рисуется карточка встречи, как в вебе.
     var meetingCode: String?
+    var fileShare: StalkFileShare?
 }

@@ -58,6 +58,7 @@ enum TimelineViewAction {
     /// Matrix-медиа, а в блоб-хранилище Диска, поэтому путь свой.
     case stalkFileShareTapped(itemID: TimelineItemIdentifier)
     case stalkDiskReferenceTapped(blobID: String)
+    case stalkDiskLinkTapped(URL)
     case itemSendInfoTapped(itemID: TimelineItemIdentifier)
     case toggleReaction(key: String, itemID: TimelineItemIdentifier)
     case sendReadReceiptIfNeeded(TimelineItemIdentifier)
@@ -112,6 +113,7 @@ struct TimelineViewState: BindableState {
     var timelineState: TimelineState // check the doc before changing this
 
     var ownUserID: String
+    var homeserver: String?
     var canCurrentUserSendMessage = false
     var canCurrentUserRedactOthers = false
     var canCurrentUserRedactSelf = false

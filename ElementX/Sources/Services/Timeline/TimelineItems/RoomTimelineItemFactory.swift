@@ -120,7 +120,7 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
                              canBeRepliedTo: eventItemProxy.canBeRepliedTo,
                              shouldBoost: eventItemProxy.shouldBoost,
                              sender: eventItemProxy.sender,
-                             content: buildTextTimelineItemContent(textMessageContent),
+                             content: buildTextTimelineItemContent(textMessageContent, fileShare: StalkFileShare.parse(originalJSON: eventItemProxy.debugInfo.originalJSON)),
                              properties: .init(replyDetails: buildTimelineItemReplyDetails(messageLikeContent.inReplyTo),
                                                isThreaded: messageLikeContent.threadRoot != nil,
                                                threadSummary: buildTimelineItemThreadSummary(messageLikeContent.threadSummary),
@@ -508,7 +508,7 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
     
     // MARK: - Message events content
     
-    private func buildTextTimelineItemContent(_ messageContent: TextMessageContent) -> TextRoomTimelineItemContent {
+    private func buildTextTimelineItemContent(_ messageContent: TextMessageContent, fileShare: StalkFileShare? = nil) -> TextRoomTimelineItemContent {
         let htmlBody = messageContent.formatted?.format == .html ? messageContent.formatted?.body : nil
         let formattedBody = (htmlBody != nil ? attributedStringBuilder.fromHTML(htmlBody) : attributedStringBuilder.fromPlain(messageContent.body))
         
@@ -518,7 +518,8 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
         return .init(body: messageContent.body,
                      formattedBody: formattedBody,
                      formattedBodyHTMLString: htmlBody,
-                     meetingCode: StalkMeetingLink.code(in: messageContent.body))
+                     meetingCode: StalkMeetingLink.code(in: messageContent.body),
+                     fileShare: fileShare)
     }
     
     private func buildAudioTimelineItemContent(_ messageContent: AudioMessageContent) -> AudioRoomTimelineItemContent {

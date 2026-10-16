@@ -1789,3 +1789,8 @@
 "Презентации" = "Taqdimotlar";
 "Таблицы" = "Elektron jadvallar";
 "Архивы" = "Arxivlar";
+
+/* Disk file navigation cards. */
+"stalk_disk_file_link" = "Disk fayli";
+"stalk_disk_external_link" = "Tashqi havola";
+"stalk_disk_open_link" = "Havolani ochish";

@@ -24,23 +24,30 @@ struct TextRoomTimelineView: View, TextBasedRoomTimelineViewProtocol {
     }
     
     var body: some View {
-        TimelineStyler(timelineItem: timelineItem) {
+        let cards = diskCards
+        return TimelineStyler(timelineItem: timelineItem) {
             // STMOB-274: ссылка на встречу разворачивается в карточку, как в вебе.
             // Пока встреча грузится или не нашлась — остаётся сама ссылка.
-            if let code = timelineItem.content.meetingCode {
+            if let fileShare = timelineItem.content.fileShare {
+                StalkFileShareView(fileShare: fileShare) { context?.send(viewAction: .stalkFileShareTapped(itemID: timelineItem.id)) }
+            } else if let code = timelineItem.content.meetingCode {
                 StalkMeetingCardView(code: code, fallbackText: timelineItem.content.body)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
-                    if let attributedString = timelineItem.content.formattedBody {
-                        FormattedBodyText(attributedString: attributedString,
-                                          additionalWhitespacesCount: timelineItem.additionalWhitespaces(),
-                                          boostFontSize: timelineItem.shouldBoost)
-                    } else {
-                        FormattedBodyText(text: timelineItem.body,
-                                          additionalWhitespacesCount: timelineItem.additionalWhitespaces(),
-                                          boostFontSize: timelineItem.shouldBoost)
+                    if cards.count != 1 || timelineItem.body.trimmingCharacters(in: .whitespacesAndNewlines) != cards[0].url.absoluteString {
+                        if let attributedString = timelineItem.content.formattedBody {
+                            FormattedBodyText(attributedString: attributedString,
+                                              additionalWhitespacesCount: timelineItem.additionalWhitespaces(),
+                                              boostFontSize: timelineItem.shouldBoost)
+                        } else {
+                            FormattedBodyText(text: timelineItem.body,
+                                              additionalWhitespacesCount: timelineItem.additionalWhitespaces(),
+                                              boostFontSize: timelineItem.shouldBoost)
+                        }
                     }
-                
+                    ForEach(cards) { card in
+                        StalkDiskLinkCardView(card: card) { context?.send(viewAction: .stalkDiskLinkTapped(card.url)) }
+                    }
                     ForEach(StalkDiskLink.labelledDocumentIDs(in: timelineItem.body), id: \.self) { id in
                         Button {
                             context?.send(viewAction: .stalkDiskReferenceTapped(blobID: id))
@@ -48,9 +55,9 @@ struct TextRoomTimelineView: View, TextBasedRoomTimelineViewProtocol {
                             Label(String(localized: "stalk_disk_open_document", defaultValue: "Открыть документ"), systemImage: "doc.text")
                         }.buttonStyle(.bordered)
                     }
-                    if context?.viewState.linkPreviewsEnabled ?? false, !linkMetadata.keys.isEmpty {
+                    if context?.viewState.linkPreviewsEnabled ?? false, !otherLinkURLs.isEmpty {
                         VStack(spacing: 8) {
-                            ForEach(linkMetadata.keys, id: \.absoluteString) { url in
+                            ForEach(otherLinkURLs, id: \.absoluteString) { url in
                                 let metadata = linkMetadata[url]?.metadata ?? context?.viewState.linkMetadataProvider?.metadataItems[url]?.metadata
                                 LinkPreviewView(url: url, metadata: metadata)
                             }
@@ -63,13 +70,26 @@ struct TextRoomTimelineView: View, TextBasedRoomTimelineViewProtocol {
         .task { await fetchLinkPreviews() }
     }
     
+    private var otherLinkURLs: [URL] {
+        linkMetadata.keys.filter { !isDiskURL($0) }
+    }
+
+    private func isDiskURL(_ url: URL) -> Bool {
+        StalkDiskCard(url: url, homeserver: context?.viewState.homeserver.flatMap(URL.init(string:))) != nil
+    }
+
+    private var diskCards: [StalkDiskCard] {
+        StalkDiskCard.links(in: timelineItem.body, formattedBody: timelineItem.content.formattedBody,
+                            homeserver: context?.viewState.homeserver.flatMap(URL.init(string:)))
+    }
+
     private func fetchLinkPreviews() async {
         guard context?.viewState.linkPreviewsEnabled ?? false else {
             return
         }
         
         await withTaskGroup { taskGroup in
-            for url in timelineItem.links.prefix(Self.maxLinkPreviewsToRender) {
+            for url in timelineItem.links.filter({ !isDiskURL($0) }).prefix(Self.maxLinkPreviewsToRender) {
                 taskGroup.addTask {
                     if case let .success(metadata) = await context?.viewState.linkMetadataProvider?.fetchMetadataFor(url: url) {
                         await MainActor.run {

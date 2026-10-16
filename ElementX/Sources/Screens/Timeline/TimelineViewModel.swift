@@ -98,6 +98,7 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
                                                        isDirectOneToOneRoom: roomProxy.isDirectOneToOneRoom,
                                                        timelineState: TimelineState(focussedEvent: focussedEventID.map { .init(eventID: $0, appearance: .immediate) }),
                                                        ownUserID: roomProxy.ownUserID,
+                                                       homeserver: userSession.clientProxy.homeserver,
                                                        hideTimelineMedia: hideTimelineMedia,
                                                        isViewSourceEnabled: appSettings.viewSourceEnabled,
                                                        areThreadsEnabled: appSettings.threadsEnabled,
@@ -164,6 +165,9 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
             Task { await timelineController.processItemDisappearance(id) }
         case .mediaTapped(let id):
             Task { await handleMediaTapped(with: id) }
+        case .stalkDiskLinkTapped(let url):
+            actionsSubject.send(.composer(action: .removeFocus))
+            appMediator.open(url)
         case .stalkDiskReferenceTapped(let id):
             Task { await openDiskDocumentReference(id: id, name: "") }
         case .stalkFileShareTapped(let id):
@@ -658,22 +662,25 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
     /// Содержимое лежит в блоб-хранилище Диска, а не в Matrix-медиа, поэтому обычный
     /// путь вложения здесь не годится: у события нет ни mxc-адреса, ни ключей.
     private func handleStalkFileShareTapped(with itemID: TimelineItemIdentifier) async {
-        guard let item = state.timelineState.itemViewStates.first(where: { $0.identifier == itemID })?.type,
-              case .notice(let noticeItem) = item,
-              let fileShare = noticeItem.content.fileShare else {
-            return
+        guard let item = state.timelineState.itemViewStates.first(where: { $0.identifier == itemID })?.type else { return }
+        let share: StalkFileShare?
+        switch item {
+        case .notice(let notice): share = notice.content.fileShare
+        case .text(let text): share = text.content.fileShare
+        default: share = nil
         }
-
-        await openDiskDocumentReference(id: fileShare.blobID, name: fileShare.name)
+        guard let share else { return }
+        await openDiskDocumentReference(id: share.blobID, name: share.name, isDiskDocument: share.isDiskDocument)
     }
 
-    private func openDiskDocumentReference(id: String, name: String) async {
+    private func openDiskDocumentReference(id: String, name: String, isDiskDocument: Bool = true) async {
         guard UUID(uuidString: id) != nil,
               var url = URLComponents(string: userSession.clientProxy.homeserver) else { return }
         var fragment = URLComponents(); fragment.path = "/files/open"
-        fragment.queryItems = [.init(name: "blob", value: id), .init(name: "disk", value: "1"), .init(name: "name", value: name)]
+        fragment.queryItems = [.init(name: "blob", value: id), .init(name: "disk", value: isDiskDocument ? "1" : "0"), .init(name: "name", value: name)]
         url.scheme = "ru.implica.stalk"; url.path = "/"; url.query = nil; url.fragment = fragment.string
         guard let target = url.url else { return }
+        actionsSubject.send(.composer(action: .removeFocus))
         appMediator.open(target)
     }
 

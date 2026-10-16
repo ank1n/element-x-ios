@@ -1794,3 +1794,8 @@
 "Презентации" = "Presentations";
 "Таблицы" = "Spreadsheets";
 "Архивы" = "Archives";
+
+/* Disk file navigation cards. */
+"stalk_disk_file_link" = "Disk file";
+"stalk_disk_external_link" = "External link";
+"stalk_disk_open_link" = "Open link";

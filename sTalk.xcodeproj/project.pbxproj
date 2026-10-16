@@ -142,6 +142,7 @@
 		151838DB4B69F4CA737B758B /* LeaveSpaceHandleSDKMock.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0A6BB2FE8D9CCCCE7120B0F /* LeaveSpaceHandleSDKMock.swift */; };
 		151FB101EC26D2F1C2C0AF03 /* RoomSelectionScreenViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19581EDF4A7B8FB0DB212F3E /* RoomSelectionScreenViewModel.swift */; };
 		152BE67066AA296B0611663A /* TimelineItemFactoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A35F6D2FDC3D81390D272B2C /* TimelineItemFactoryTests.swift */; };
+		158E563436C337E96B96F349 /* StalkDiskCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59CAE07E40C1D949FAF17FBA /* StalkDiskCard.swift */; };
 		15B22630A126769D49FA73A1 /* LocationSharingScreenModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAA7670C148CF751D8DDE69F /* LocationSharingScreenModels.swift */; };
 		15F39C62DBF4187CE9E48F6A /* XCTestCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2E51608E1DBBDF93BAE56FF /* XCTestCase.swift */; };
 		16B96EA74DA656437F7C67D8 /* LinkNewDeviceScreenViewModelProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0FC86F3AF57D93DDA10DA79 /* LinkNewDeviceScreenViewModelProtocol.swift */; };
@@ -299,6 +300,7 @@
 		2DC3956C717E1BACDE9D8503 /* RoomScreenViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4757588FEA5E0240EAA8401A /* RoomScreenViewModel.swift */; };
 		2DCCD72C7E238D46D2B9155F /* Strings+Untranslated.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10347A74B249C914BCE4ADA /* Strings+Untranslated.swift */; };
 		2DDCEEC764835BD298C6A2A5 /* ComposerDraftServiceMock.swift in Sources */ = {isa = PBXBuildFile; fileRef = A505A43438E162B529249EEC /* ComposerDraftServiceMock.swift */; };
+		2E3D9FB29E280A7EAA1C92B8 /* StalkDiskCardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29AD2138856D1146E8B85CE3 /* StalkDiskCardTests.swift */; };
 		2E3E4D33EA0AE0031F85F341 /* ResolveVerifiedUserSendFailureScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D9DA9F6B6EE03DE52E12F28 /* ResolveVerifiedUserSendFailureScreen.swift */; };
 		2E4DE141F8D4CC895B5B7353 /* RoomRole.swift in Sources */ = {isa = PBXBuildFile; fileRef = D472B30244D2B447AF8F59AF /* RoomRole.swift */; };
 		2E7E3E01EBB53C353ED06E37 /* DeactivateAccountScreenModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDAA44F280CCC270F07E5FCB /* DeactivateAccountScreenModels.swift */; };
@@ -1581,6 +1583,7 @@
 		FB85470D9A701BE5AC5B381C /* JoinRoomScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CFC7A88F9FB11174FCBD676 /* JoinRoomScreen.swift */; };
 		FB8B1116ACD46B326A19D0C9 /* ProposedViewSize.swift in Sources */ = {isa = PBXBuildFile; fileRef = 352462A92C1F9400D8EDA589 /* ProposedViewSize.swift */; };
 		FB953D3BAEB82E1FFF1183EA /* NavigationModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4CDA9E3561E510B51BE727B /* NavigationModule.swift */; };
+		FBEC7D544F30D6577C5D1740 /* StalkDiskLinkCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC052657500A5D40CBF04F87 /* StalkDiskLinkCardView.swift */; };
 		FBF5C0986350FB22A8479763 /* CompletionSuggestionServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB7EA323B38DF6D4B358178D /* CompletionSuggestionServiceTests.swift */; };
 		FC220375C69736DCBD19D387 /* RageshakeConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B052D1807F713B139260DE8D /* RageshakeConfiguration.swift */; };
 		FC24809BC27FAB5966AA47EA /* EncryptionResetScreenModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E7E9427E70576F1365BAE44 /* EncryptionResetScreenModels.swift */; };
@@ -1949,6 +1952,7 @@
 		28D7FF4801DF76D99D70F56A /* NotificationSettingsScreenViewModelProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationSettingsScreenViewModelProtocol.swift; sourceTree = "<group>"; };
 		28F4D08EC2F2FAA167AD3444 /* TraceLogPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TraceLogPack.swift; sourceTree = "<group>"; };
 		2928745D62BBB4B8B10D15D6 /* ShareExtensionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareExtensionModels.swift; sourceTree = "<group>"; };
+		29AD2138856D1146E8B85CE3 /* StalkDiskCardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StalkDiskCardTests.swift; sourceTree = "<group>"; };
 		29C945F4DC21B34D5B318537 /* MeetingEditViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingEditViewModelTests.swift; sourceTree = "<group>"; };
 		29DAAC729102FDDD688F0539 /* NativeLoginScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeLoginScreen.swift; sourceTree = "<group>"; };
 		29FC145D1630318BFAD0FD18 /* IntentionalMentions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentionalMentions.swift; sourceTree = "<group>"; };
@@ -2254,6 +2258,7 @@
 		5953BFBE1ED759748414ADFE /* ImageCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageCache.swift; sourceTree = "<group>"; };
 		59583E24020FA27E6C776841 /* EventBasedTimelineItemProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventBasedTimelineItemProtocol.swift; sourceTree = "<group>"; };
 		597147BDD51BDF6994FA9F8F /* AudioRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRecorder.swift; sourceTree = "<group>"; };
+		59CAE07E40C1D949FAF17FBA /* StalkDiskCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StalkDiskCard.swift; sourceTree = "<group>"; };
 		59E1F89FC67FD4AB5C6CB665 /* NotificationContentBuilderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationContentBuilderTests.swift; sourceTree = "<group>"; };
 		5B21C465B7A03FFC9B915867 /* RoomFlowCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomFlowCoordinator.swift; sourceTree = "<group>"; };
 		5B71BFB09885B150F3437F0B /* nl */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = nl; path = nl.lproj/InfoPlist.strings; sourceTree = "<group>"; };
@@ -3013,6 +3018,7 @@
 		DB7C80B7BD385070DC1F044C /* RoomMemberDetailsViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomMemberDetailsViewModelTests.swift; sourceTree = "<group>"; };
 		DBE62D01193D513E6BCEA9E3 /* target.yml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = target.yml; sourceTree = "<group>"; };
 		DBF7445006D2A5E62BDFB5B0 /* RoomScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomScreen.swift; sourceTree = "<group>"; };
+		DC052657500A5D40CBF04F87 /* StalkDiskLinkCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StalkDiskLinkCardView.swift; sourceTree = "<group>"; };
 		DC6668C56A0B6129C879CF72 /* InviteUsersScreenViewModelProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InviteUsersScreenViewModelProtocol.swift; sourceTree = "<group>"; };
 		DC6FD984F43F844D0D6DF690 /* CameraPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPicker.swift; sourceTree = "<group>"; };
 		DC9BD2230C94A5036852729E /* SpacesAnnouncementSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpacesAnnouncementSheetView.swift; sourceTree = "<group>"; };
@@ -5573,6 +5579,7 @@
 				B23B8D7081D8D0D22DB34E59 /* ReadMarkerRoomTimelineView.swift */,
 				F9653017FDBC3DBE7F24AEEA /* RedactedRoomTimelineView.swift */,
 				C73A9EE8DFAC7ABBA23C1A2A /* SeparatorRoomTimelineView.swift */,
+				DC052657500A5D40CBF04F87 /* StalkDiskLinkCardView.swift */,
 				55754F4F5FC2A383B8485E94 /* StalkFileShareView.swift */,
 				B8BE362DF51F0E5544616D7C /* StalkMeetingCardView.swift */,
 				078714C80700241E059389DB /* StateRoomTimelineView.swift */,
@@ -5751,6 +5758,7 @@
 			children = (
 				0202AFFB353345BEE433D197 /* DiskIndexService.swift */,
 				BECF2798CDF654B24E495701 /* DiskService.swift */,
+				59CAE07E40C1D949FAF17FBA /* StalkDiskCard.swift */,
 				5D7601857C638BFC3D740653 /* StalkDiskLink.swift */,
 				B71E6477F1892C540AEF6DF5 /* StalkFileShare.swift */,
 			);
@@ -6426,6 +6434,7 @@
 				5FEA79DC32437C9CFE228C88 /* SpaceListScreenViewModelTests.swift */,
 				FBF9481B007FF7652383FA20 /* SpaceScreenViewModelTests.swift */,
 				3C3B29247428AA4DD2972E25 /* StalkCompatibilityTests.swift */,
+				29AD2138856D1146E8B85CE3 /* StalkDiskCardTests.swift */,
 				98BCF4B9972AD94E45C5C3B7 /* StalkThemeTests.swift */,
 				99752DC175663B51C9390F12 /* StalkUpdateContentTests.swift */,
 				561108F5741CAF7A6ED62D14 /* StalkUpdatePhotoTests.swift */,
@@ -8426,6 +8435,7 @@
 				84DB89BD2A3CA52FB2FDD1D4 /* SpaceListScreenViewModelTests.swift in Sources */,
 				C904BFDBB0AB6D2757297993 /* SpaceScreenViewModelTests.swift in Sources */,
 				8D9A3F471DC20472C11565B2 /* StalkCompatibilityTests.swift in Sources */,
+				2E3D9FB29E280A7EAA1C92B8 /* StalkDiskCardTests.swift in Sources */,
 				5EDB7BA3035ACEA6C3EC8B5A /* StalkThemeTests.swift in Sources */,
 				4F4AB39A5F5DF5C154091FDB /* StalkUpdateContentTests.swift in Sources */,
 				FC9E992A3BF1A68D69C65A8F /* StalkUpdatePhotoTests.swift in Sources */,
@@ -9397,7 +9407,9 @@
 				6158B41ECCAB9C1D54BCB98D /* SplashScreenCoordinator.swift in Sources */,
 				2CE554FA591C8B3DE5E382B2 /* StackedAvatarsView.swift in Sources */,
 				3D4D8596AB77FDCA7539BDC7 /* StalkCustomEmoji.swift in Sources */,
+				158E563436C337E96B96F349 /* StalkDiskCard.swift in Sources */,
 				AF0AF840CFBCB0118B85B335 /* StalkDiskLink.swift in Sources */,
+				FBEC7D544F30D6577C5D1740 /* StalkDiskLinkCardView.swift in Sources */,
 				6701823347886BBD8BC91B3F /* StalkFileShare.swift in Sources */,
 				F99EAE5EDDC1D045052FAF4F /* StalkFileShareView.swift in Sources */,
 				545436078456539EB99BA152 /* StalkMeetingCardView.swift in Sources */,

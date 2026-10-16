@@ -23,6 +23,13 @@ struct NoticeRoomTimelineView: View, TextBasedRoomTimelineViewProtocol {
                 StalkFileShareView(fileShare: fileShare) {
                     context.send(viewAction: .stalkFileShareTapped(itemID: timelineItem.id))
                 }
+            } else if !diskCards.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    FormattedBodyText(text: timelineItem.content.body, additionalWhitespacesCount: timelineItem.additionalWhitespaces())
+                    ForEach(diskCards) { card in
+                        StalkDiskLinkCardView(card: card) { context.send(viewAction: .stalkDiskLinkTapped(card.url)) }
+                    }
+                }
             } else {
                 // Spacing: 6 = label spacing - formatted text padding
 
@@ -40,6 +47,11 @@ struct NoticeRoomTimelineView: View, TextBasedRoomTimelineViewProtocol {
                 .padding(.leading, 4) // Trailing padding is provided by FormattedBodyText
             }
         }
+    }
+
+    private var diskCards: [StalkDiskCard] {
+        StalkDiskCard.links(in: timelineItem.body, formattedBody: timelineItem.content.formattedBody,
+                            homeserver: context.viewState.homeserver.flatMap(URL.init(string:)))
     }
 }
 

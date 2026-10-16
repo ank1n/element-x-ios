@@ -27,7 +27,7 @@ struct StalkFileShareView: View {
                     Text(fileShare.name)
                         .font(.system(size: 13.5, weight: .bold))
                         .foregroundStyle(Color.stalkFileShareTitle)
-                        .lineLimit(1)
+                        .lineLimit(2)
                         .truncationMode(.middle)
 
                     metaRow

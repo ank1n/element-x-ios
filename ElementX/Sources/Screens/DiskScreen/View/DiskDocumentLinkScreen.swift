@@ -38,6 +38,7 @@ struct DiskDocumentLinkScreen: View {
         .navigationTitle(String(localized: "stalk_disk_title", defaultValue: "Диск"))
         .navigationBarTitleDisplayMode(.inline)
         .interactiveQuickLook(item: $preview, allowEditing: false)
+        .onAppear { UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil) }
         .task { await load() }
     }
 

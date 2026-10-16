@@ -46,8 +46,8 @@ struct SystemSearchScreen: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Button("Найти") { model.search() }.buttonStyle(.borderedProminent)
-                Button("Умный поиск") { model.search(smart: true) }.disabled(model.loading || model.conditions.query.isEmpty)
+                Button("Найти") { submitSearch() }.buttonStyle(.borderedProminent)
+                Button("Умный поиск") { submitSearch(smart: true) }.disabled(model.loading || model.conditions.query.isEmpty)
                 Spacer()
                 Button { filters = true } label: { Image(systemName: "line.3.horizontal.decrease.circle") }.accessibilityLabel("Условия поиска")
                 Button { history = true } label: { Image(systemName: "clock") }.accessibilityLabel("История и закреплённые")
@@ -98,12 +98,17 @@ struct SystemSearchScreen: View {
         .navigationTitle("Поиск по системе")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: Binding(get: { model.conditions.query }, set: { model.updateQuery($0) }), placement: .navigationBarDrawer(displayMode: .always), prompt: "Сообщения, файлы, встречи, задачи")
-        .onSubmit(of: .search) { model.search() }
+        .onSubmit(of: .search) { submitSearch() }
         .onAppear { model.resume() }
         .onDisappear { model.stop() }
         .sheet(isPresented: $filters) { filterSheet }
         .sheet(isPresented: $history) { historySheet }
         .sheet(isPresented: $senders) { senderSheet }
+    }
+
+    private func submitSearch(smart: Bool = false) {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        model.search(smart: smart)
     }
 
     private var filterSheet: some View {
