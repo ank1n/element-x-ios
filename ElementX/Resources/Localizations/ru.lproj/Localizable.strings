@@ -1906,3 +1906,17 @@
 "stalk_call_view_contact" = "Посмотреть контакт";
 "stalk_call_pinned" = "Закреплённый участник";
 "stalk_call_view_local_only" = "Меняет только ваш вид звонка";
+
+/* Shared stickers and server search compatibility. */
+"stalk_stickers_title" = "Стикеры";
+"stalk_stickers_recent" = "Недавние";
+"stalk_stickers_favorite" = "В избранное";
+"stalk_stickers_unfavorite" = "Убрать из избранного";
+"stalk_stickers_search" = "Поиск стикеров";
+"stalk_stickers_empty" = "Нет стикеров";
+"stalk_stickers_recent_hint" = "Здесь появятся 10 последних отправленных стикеров. Выберите набор выше.";
+"stalk_stickers_empty_hint" = "Попробуйте другой запрос или набор.";
+"stalk_stickers_load_error" = "Не удалось загрузить наборы. Попробуйте ещё раз.";
+"stalk_stickers_send_error" = "Не удалось отправить стикер. Проверьте права и повторите попытку.";
+"stalk_stickers_sync_error" = "Настройки сохранены на устройстве. Синхронизация будет повторена.";
+"stalk_search_unavailable" = "Поиск временно недоступен. Попробуйте ещё раз.";

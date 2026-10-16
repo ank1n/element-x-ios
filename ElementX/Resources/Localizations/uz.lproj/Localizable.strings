@@ -1545,3 +1545,17 @@
 "stalk_call_view_contact" = "Kontaktni koʻrish";
 "stalk_call_pinned" = "Mahkamlangan ishtirokchi";
 "stalk_call_view_local_only" = "Faqat sizdagi koʻrinishni oʻzgartiradi";
+
+/* Shared stickers and server search compatibility. */
+"stalk_stickers_title" = "Stikerlar";
+"stalk_stickers_recent" = "Oxirgilar";
+"stalk_stickers_favorite" = "Sevimlilarga qo‘shish";
+"stalk_stickers_unfavorite" = "Sevimlilardan olib tashlash";
+"stalk_stickers_search" = "Stikerlarni qidirish";
+"stalk_stickers_empty" = "Stikerlar yo‘q";
+"stalk_stickers_recent_hint" = "Oxirgi yuborilgan 10 ta stiker shu yerda ko‘rinadi. Yuqoridan to‘plamni tanlang.";
+"stalk_stickers_empty_hint" = "Boshqa so‘rov yoki to‘plamni sinab ko‘ring.";
+"stalk_stickers_load_error" = "Stiker to‘plamlarini yuklab bo‘lmadi. Qayta urinib ko‘ring.";
+"stalk_stickers_send_error" = "Stikerni yuborib bo‘lmadi. Ruxsatlarni tekshiring va qayta urining.";
+"stalk_stickers_sync_error" = "Sozlamalar qurilmada saqlandi. Sinxronlash qayta uriniladi.";
+"stalk_search_unavailable" = "Qidiruv vaqtincha ishlamayapti. Qayta urinib ko‘ring.";

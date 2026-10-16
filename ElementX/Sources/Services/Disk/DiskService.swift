@@ -162,11 +162,12 @@ struct DiskFile: Identifiable, Codable, Equatable {
 private struct DiskFilesResponse: Decodable {
     let files: [DiskFile]
     let nextBefore: String?
+    let nextBeforeId: String?
     /// Сколько записей не разобралось. Ноль в норме; ненулевое пишем в лог.
     let skipped: Int
 
     private enum CodingKeys: String, CodingKey {
-        case files, nextBefore
+        case files, nextBefore, nextBeforeId
     }
 
     /// Обёртка, превращающая ошибку разбора элемента в `nil` вместо броска.
@@ -180,6 +181,7 @@ private struct DiskFilesResponse: Decodable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        nextBeforeId = try c.decodeIfPresent(String.self, forKey: .nextBeforeId)
         let raw = try c.decode([Lenient].self, forKey: .files)
         let parsed = raw.compactMap(\.file)
         // Запись без единого идентификатора открыть нечем — показывать её нельзя.
@@ -333,23 +335,27 @@ final class DiskService {
     private let accessTokenProvider: () throws -> String
     private let forceTokenRefresh: (() async -> Void)?
 
-    private let session: URLSession = {
+    private let session: URLSession
+
+    private static func makeSession() -> URLSession {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 20
         config.waitsForConnectivity = true
         return URLSession(configuration: config)
-    }()
+    }
 
     init(baseURL: String,
          accessTokenProvider: @escaping () throws -> String,
-         forceTokenRefresh: (() async -> Void)? = nil) {
+         forceTokenRefresh: (() async -> Void)? = nil,
+         session: URLSession? = nil) {
         self.baseURL = baseURL
         self.accessTokenProvider = accessTokenProvider
         self.forceTokenRefresh = forceTokenRefresh
+        self.session = session ?? Self.makeSession()
     }
 
     /// Список файлов. `before` — курсор из `nextBefore` предыдущей страницы.
-    func fetchFiles(category: DiskFileCategory? = nil, before: String? = nil, folder: String? = nil, roomID: String? = nil) async throws -> (files: [DiskFile], nextBefore: String?) {
+    func fetchFiles(category: DiskFileCategory? = nil, before: String? = nil, beforeId: String? = nil, folder: String? = nil, roomID: String? = nil) async throws -> (files: [DiskFile], nextBefore: String?, nextBeforeId: String?) {
         var components = URLComponents(string: "\(baseURL)/api/files")
         var query: [URLQueryItem] = []
         if let folder {
@@ -372,6 +378,9 @@ final class DiskService {
             // (например 1783922871243). Параметр `before` проверен: вторая страница
             // возвращает другие файлы, `until`/`since`/`from` игнорируются.
             query.append(URLQueryItem(name: "before", value: before))
+        }
+        if let before, !before.isEmpty, let beforeId, !beforeId.isEmpty {
+            query.append(URLQueryItem(name: "before_id", value: beforeId))
         }
         components?.queryItems = query.isEmpty ? nil : query
 
@@ -397,7 +406,7 @@ final class DiskService {
         let tail = decoded.nextBefore == nil ? "" : ", есть ещё"
         let lost = decoded.skipped == 0 ? "" : ", пропущено непонятых: \(decoded.skipped)"
         DiagLog.write("Disk", "список: \(decoded.files.count) файлов\(tail)\(lost)")
-        return (decoded.files, decoded.nextBefore)
+        return (decoded.files, decoded.nextBefore, decoded.nextBeforeId)
     }
 
     /// «Доступно мне»: `GET /api/files/shared-with-me` (контракт Molly, 02.08).

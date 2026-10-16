@@ -21,7 +21,13 @@ struct MessageSearchScreen: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if context.viewState.results.isEmpty, !context.viewState.isLoading, !context.viewState.bindings.searchQuery.isEmpty {
+            if let error = context.viewState.errorText {
+                VStack {
+                    Text(error).foregroundStyle(.secondary)
+                    Button(L10n.actionRetry) { context.send(viewAction: .search) }
+                }.padding()
+            }
+            if context.viewState.errorText == nil, context.viewState.results.isEmpty, !context.viewState.isLoading, !context.viewState.bindings.searchQuery.isEmpty {
                 emptyState
             } else if context.viewState.results.isEmpty, context.viewState.bindings.searchQuery.isEmpty {
                 promptState

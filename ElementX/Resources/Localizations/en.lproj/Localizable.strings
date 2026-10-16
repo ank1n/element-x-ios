@@ -2036,3 +2036,17 @@
 "stalk_call_view_contact" = "View contact";
 "stalk_call_pinned" = "Pinned participant";
 "stalk_call_view_local_only" = "Only changes your view";
+
+/* Shared stickers and server search compatibility. */
+"stalk_stickers_title" = "Stickers";
+"stalk_stickers_recent" = "Recent";
+"stalk_stickers_favorite" = "Add to favorites";
+"stalk_stickers_unfavorite" = "Remove from favorites";
+"stalk_stickers_search" = "Search stickers";
+"stalk_stickers_empty" = "No stickers";
+"stalk_stickers_recent_hint" = "Your 10 most recently sent stickers will appear here. Choose a pack above.";
+"stalk_stickers_empty_hint" = "Try a different search or pack.";
+"stalk_stickers_load_error" = "Could not load sticker packs. Please try again.";
+"stalk_stickers_send_error" = "Could not send the sticker. Check your permissions and try again.";
+"stalk_stickers_sync_error" = "Preferences are saved on this device. Sync will be retried.";
+"stalk_search_unavailable" = "Search is temporarily unavailable. Please try again.";

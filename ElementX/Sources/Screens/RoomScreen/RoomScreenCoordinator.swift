@@ -104,7 +104,10 @@ final class RoomScreenCoordinator: CoordinatorProtocol {
                                                          mentionDisplayHelper: ComposerMentionDisplayHelper(timelineContext: timelineViewModel.context),
                                                          appSettings: parameters.appSettings,
                                                          analyticsService: parameters.analytics,
-                                                         composerDraftService: parameters.composerDraftService)
+                                                         composerDraftService: parameters.composerDraftService,
+                                                         stickerService: SharedStickerService(client: parameters.userSession.clientProxy) { sticker in
+                                                             try await parameters.roomProxy.sendSticker(sticker, threadRoot: parameters.timelineController.timelineKind.threadRootEventID)
+                                                         })
         self.composerViewModel = composerViewModel
     }
     

@@ -364,6 +364,8 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
                                        canBeRepliedTo: eventItemProxy.canBeRepliedTo,
                                        sender: eventItemProxy.sender,
                                        imageInfo: imageInfo,
+                                       animatedPreview: SharedSticker.animatedPreview(from: eventItemProxy.debugInfo.originalJSON,
+                                                                                      originalMXC: imageInfo.source.url.absoluteString),
                                        blurhash: info.blurhash,
                                        properties: .init(replyDetails: buildTimelineItemReplyDetails(messageLikeContent.inReplyTo),
                                                          isThreaded: messageLikeContent.threadRoot != nil,

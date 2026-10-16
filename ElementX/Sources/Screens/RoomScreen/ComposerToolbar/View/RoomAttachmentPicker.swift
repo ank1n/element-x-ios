@@ -15,9 +15,11 @@ struct RoomAttachmentPicker: View {
 
     @Environment(\.isEnabled) private var isEnabled
     @State private var showingPicker = false
+    @State private var showingStickers = false
 
     var body: some View {
         Button {
+            showingStickers = false
             showingPicker = true
         } label: {
             CompoundIcon(asset: Asset.Images.composerAttachment, size: .custom(30), relativeTo: .compound.headingLG)
@@ -28,11 +30,17 @@ struct RoomAttachmentPicker: View {
         .accessibilityLabel(L10n.actionAddToTimeline)
         .accessibilityIdentifier(A11yIdentifiers.roomScreen.composerToolbar.openComposeOptions)
         .sheet(isPresented: $showingPicker) {
-            AttachmentPickerSheet(context: context, isPresented: $showingPicker)
-                .presentationDetents([.height(200)])
-                .presentationCornerRadius(20)
-                .presentationDragIndicator(.visible)
-                .presentationBackground(Color(UIColor.systemBackground))
+            Group {
+                if showingStickers, let service = context.viewState.stickerService {
+                    SharedStickerPicker(service: service, mediaProvider: context.mediaProvider)
+                } else {
+                    AttachmentPickerSheet(context: context, isPresented: $showingPicker) { showingStickers = true }
+                }
+            }
+            .presentationDetents(showingStickers ? [.large] : [.height(200)])
+            .presentationCornerRadius(20)
+            .presentationDragIndicator(.visible)
+            .presentationBackground(Color(UIColor.systemBackground))
         }
     }
 }
@@ -42,6 +50,7 @@ struct RoomAttachmentPicker: View {
 private struct AttachmentPickerSheet: View {
     @ObservedObject var context: ComposerToolbarViewModel.Context
     @Binding var isPresented: Bool
+    let onStickers: () -> Void
 
     private let columns = [
         GridItem(.flexible(), spacing: 12),
@@ -84,6 +93,13 @@ private struct AttachmentPickerSheet: View {
                     context.send(viewAction: .attach(.location))
                 }
                 .accessibilityIdentifier(A11yIdentifiers.roomScreen.attachmentPickerLocation)
+            }
+
+            if context.viewState.stickerService != nil {
+                attachmentButton(icon: "face.smiling", color: .yellow,
+                                 title: String(localized: "stalk_stickers_title", defaultValue: "Стикеры"), action: onStickers)
+                    .disabled(!context.viewState.canSend)
+                    .accessibilityIdentifier("room.stickers")
             }
 
             attachmentButton(icon: "chart.bar.fill",

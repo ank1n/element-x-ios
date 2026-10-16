@@ -15,14 +15,15 @@ struct StickerRoomTimelineView: View {
     
     var body: some View {
         TimelineStyler(timelineItem: timelineItem) {
-            LoadableImage(mediaSource: timelineItem.imageInfo.source,
+            LoadableImage(mediaSource: timelineItem.animatedPreview ?? timelineItem.imageInfo.source,
                           mediaType: .timelineItem(uniqueID: timelineItem.id.uniqueID),
                           blurhash: timelineItem.blurhash,
                           size: timelineItem.imageInfo.size,
                           mediaProvider: context?.mediaProvider) {
                 placeholder
             }
-            .timelineMediaFrame(imageInfo: timelineItem.imageInfo)
+            .aspectRatio(timelineItem.imageInfo.aspectRatio ?? 1, contentMode: .fit)
+            .frame(maxWidth: 136, maxHeight: 136)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(L10n.commonSticker), \(timelineItem.body)")
             .onTapGesture {

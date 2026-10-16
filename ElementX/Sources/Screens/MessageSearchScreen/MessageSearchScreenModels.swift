@@ -21,6 +21,7 @@ enum MessageSearchScreenViewModelAction {
 struct MessageSearchScreenViewState: BindableState {
     var results: [MessageSearchScreenResult] = []
     var isLoading = false
+    var errorText: String?
     var totalCount = 0
     var hasMore = false
     var bindings = MessageSearchScreenBindings()

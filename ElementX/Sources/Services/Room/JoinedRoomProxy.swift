@@ -104,6 +104,12 @@ class JoinedRoomProxy: JoinedRoomProxyProtocol {
         }
     }
     
+    func sendSticker(_ sticker: SharedSticker, threadRoot: String?) async throws {
+        guard sticker.isValid else { throw RoomProxyError.invalidMedia }
+        // SDK handles encryption, transaction IDs and local echo.
+        try await room.sendRaw(eventType: "m.sticker", content: sticker.content(threadRoot: threadRoot))
+    }
+
     /// Достоверное состояние шифрования комнаты для СТАРТА ЗВОНКА.
     ///
     /// `RoomInfoProxy.isEncrypted` схлопывает `unknown` в `false` — для сообщений это

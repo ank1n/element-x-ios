@@ -138,6 +138,8 @@ private struct LoadableImageContent<TransformerView: View, PlaceholderView: View
                 transformer(AnyView(Image(uiImage: image).resizable()))
             case (.gifData, true):
                 transformer(AnyView(KFAnimatedImage(source: .provider(self))))
+            case (.webpData(let data), true):
+                transformer(AnyView(AnimatedStickerDataView(data: data)))
             case (.none, _), (_, false):
                 if let blurHashView {
                     if shouldRender {
@@ -247,6 +249,7 @@ private class ContentLoader: ObservableObject {
     enum Content: Equatable {
         case image(UIImage)
         case gifData(Data)
+        case webpData(Data)
     }
     
     private let mediaProvider: MediaProviderProtocol?
@@ -261,6 +264,7 @@ private class ContentLoader: ObservableObject {
             return cachedContent
         }
         
+        if isWebP { return cachedContent }
         if isGIF {
             if let image = mediaProvider?.imageFromSource(mediaSource),
                let data = image.kf.data(format: .GIF) {
@@ -281,9 +285,9 @@ private class ContentLoader: ObservableObject {
     
     @MainActor
     func load() async {
-        if isGIF {
+        if isGIF || isWebP {
             if case let .success(data) = await mediaProvider?.loadImageDataFromSource(mediaSource) {
-                cachedContent = .gifData(data)
+                cachedContent = isWebP ? .webpData(data) : .gifData(data)
             }
         } else {
             guard let task = mediaProvider?.loadImageRetryingOnReconnection(mediaSource, size: size) else {
@@ -303,6 +307,10 @@ private class ContentLoader: ObservableObject {
         imageLoadingCancellable?.cancel()
     }
     
+    private var isWebP: Bool {
+        mediaSource.mimeType == "image/webp"
+    }
+
     private var isGIF: Bool {
         mediaSource.mimeType == "image/gif"
     }

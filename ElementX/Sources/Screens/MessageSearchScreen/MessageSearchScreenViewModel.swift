@@ -69,6 +69,7 @@ class MessageSearchScreenViewModel: MessageSearchScreenViewModelType {
             nextBatch = nil
         }
 
+        state.errorText = nil
         state.isLoading = true
 
         searchTask = Task { [weak self] in
@@ -83,14 +84,15 @@ class MessageSearchScreenViewModel: MessageSearchScreenViewModelType {
                     let newResults = response.results.map { result in
                         MessageSearchScreenResult(eventID: result.eventID,
                                                   roomID: result.roomID,
-                                                  roomName: self.roomName(for: result.roomID),
+                                                  roomName: result.roomName ?? self.roomName(for: result.roomID),
                                                   senderName: result.senderDisplayName,
                                                   body: result.body,
                                                   timestamp: result.timestamp)
                     }
 
                     if append {
-                        self.state.results.append(contentsOf: newResults)
+                        let known = Set(self.state.results.map(\.id))
+                        self.state.results.append(contentsOf: newResults.filter { !known.contains($0.id) })
                     } else {
                         self.state.results = newResults
                     }
@@ -104,6 +106,7 @@ class MessageSearchScreenViewModel: MessageSearchScreenViewModelType {
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
                     self.state.isLoading = false
+                    self.state.errorText = NSLocalizedString("stalk_search_unavailable", value: "Поиск временно недоступен. Попробуйте ещё раз.", comment: "Search")
                     MXLog.error("sTalk: Message search failed: \(error)")
                 }
             }

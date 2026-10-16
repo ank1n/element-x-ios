@@ -53,7 +53,8 @@ final class ComposerToolbarViewModel: ComposerToolbarViewModelType, ComposerTool
          mentionDisplayHelper: MentionDisplayHelper,
          appSettings: AppSettings,
          analyticsService: AnalyticsService,
-         composerDraftService: ComposerDraftServiceProtocol) {
+         composerDraftService: ComposerDraftServiceProtocol,
+         stickerService: SharedStickerService? = nil) {
         self.initialText = initialText
         self.wysiwygViewModel = wysiwygViewModel
         self.completionSuggestionService = completionSuggestionService
@@ -72,6 +73,7 @@ final class ComposerToolbarViewModel: ComposerToolbarViewModelType, ComposerTool
                                                               bindings: .init()),
                    mediaProvider: mediaProvider)
         
+        state.stickerService = stickerService
         state.keyCommands = [
             .enter { [weak self] in
                 self?.process(viewAction: .sendMessage)

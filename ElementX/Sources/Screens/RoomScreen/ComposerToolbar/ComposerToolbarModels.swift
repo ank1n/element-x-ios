@@ -74,6 +74,7 @@ struct ComposerToolbarViewState: BindableState {
     var composerEmpty = true
     /// Could be false if sending is disabled in the room
     var canSend = true
+    var stickerService: SharedStickerService?
     var suggestions: [SuggestionItem] = []
     var audioPlayerState: AudioPlayerState
     var audioRecorderState: AudioRecorderState

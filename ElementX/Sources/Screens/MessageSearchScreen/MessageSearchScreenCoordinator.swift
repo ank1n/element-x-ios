@@ -23,7 +23,8 @@ final class MessageSearchScreenCoordinator: CoordinatorProtocol {
 
     init(parameters: MessageSearchScreenCoordinatorParameters) {
         let searchService = MessageSearchService(homeserverURL: parameters.clientProxy.homeserver,
-                                                 accessTokenProvider: { try parameters.clientProxy.matrixAccessToken() })
+                                                 accessTokenProvider: { try parameters.clientProxy.matrixAccessToken() },
+                                                 forceTokenRefresh: { await parameters.clientProxy.forceTokenRefresh() })
         viewModel = MessageSearchScreenViewModel(searchService: searchService,
                                                  roomSummaryProvider: parameters.roomSummaryProvider)
 

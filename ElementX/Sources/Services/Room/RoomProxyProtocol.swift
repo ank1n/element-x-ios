@@ -74,6 +74,8 @@ struct RTCDeclinedEvent {
 
 // sourcery: AutoMockable
 protocol JoinedRoomProxyProtocol: RoomProxyProtocol {
+    func sendSticker(_ sticker: SharedSticker, threadRoot: String?) async throws
+
     var infoPublisher: CurrentValuePublisher<RoomInfoProxyProtocol, Never> { get }
 
     var membersPublisher: CurrentValuePublisher<[RoomMemberProxyProtocol], Never> { get }
@@ -232,5 +234,11 @@ extension JoinedRoomProxyProtocol {
             .compactMap { $0.userID.split(separator: ":").last.map(String.init) }
             .uniqued()
             .prefix(maxCount)
+    }
+}
+
+extension JoinedRoomProxyProtocol {
+    func sendSticker(_ sticker: SharedSticker, threadRoot: String?) async throws {
+        throw RoomProxyError.invalidMedia
     }
 }

@@ -20,6 +20,7 @@ struct StickerRoomTimelineItem: EventBasedTimelineItemProtocol, Equatable {
     
     let imageInfo: ImageInfoProxy
     
+    var animatedPreview: MediaSourceProxy?
     var blurhash: String?
     
     var properties = RoomTimelineItemProperties()

@@ -322,6 +322,7 @@ final class DiskScreenViewModel: ObservableObject {
     @Published private(set) var roomNames: [String: String] = [:]
     private var roomNamesInFlight: Set<String> = []
     private var nextBefore: String?
+    private var nextBeforeId: String?
     private var isLoadingMore = false
 
     private let actionsSubject: PassthroughSubject<DiskScreenViewModelAction, Never> = .init()
@@ -365,9 +366,10 @@ final class DiskScreenViewModel: ObservableObject {
         var pages = 0
         while let before = nextBefore, pages < 25 {
             do {
-                let page = try await service.fetchFiles(category: selectedCategory, before: before, folder: selectedFolder?.id, roomID: selectedChatRoomID)
+                let page = try await service.fetchFiles(category: selectedCategory, before: before, beforeId: nextBeforeId, folder: selectedFolder?.id, roomID: selectedChatRoomID)
                 let known = Set(files.map(\.id))
                 files.append(contentsOf: page.files.filter { !known.contains($0.id) })
+                nextBeforeId = page.nextBeforeId
                 nextBefore = page.nextBefore
             } catch {
                 DiagLog.write("Disk", "докачка для поиска оборвалась: \(error)")
@@ -537,6 +539,7 @@ final class DiskScreenViewModel: ObservableObject {
         isLoading = true
         errorText = nil
         nextBefore = nil
+        nextBeforeId = nil
         allLoaded = false
 
         // Счётчики, папки и список независимы: пустая статистика или упавшие
@@ -547,6 +550,7 @@ final class DiskScreenViewModel: ObservableObject {
             let page = try await service.fetchFiles(category: selectedCategory, folder: selectedFolder?.id, roomID: selectedChatRoomID)
             files = page.files
             nextBefore = page.nextBefore
+            nextBeforeId = page.nextBeforeId
         } catch is CancellationError {
             // Переключение фильтра отменяет предыдущий запрос. Это не сбой, и
             // показывать по нему баннер — значит давать ложную ошибку на каждом
@@ -575,20 +579,20 @@ final class DiskScreenViewModel: ObservableObject {
         defer { isLoadingMore = false }
 
         do {
-            let page = try await service.fetchFiles(category: selectedCategory, before: nextBefore, folder: selectedFolder?.id, roomID: selectedChatRoomID)
+            let page = try await service.fetchFiles(category: selectedCategory, before: nextBefore, beforeId: nextBeforeId, folder: selectedFolder?.id, roomID: selectedChatRoomID)
             // Дубликаты возможны, если между страницами что-то добавилось.
             let known = Set(files.map(\.id))
             let fresh = page.files.filter { !known.contains($0.id) }
             files.append(contentsOf: fresh)
-            // Защита от зацикленного курсора (лог dp 214: «бесконечный лоадер,
-            // список не пополняется»): страница без ЕДИНОГО нового файла или
-            // с тем же курсором — это конец списка, что бы сервер ни обещал.
-            // Иначе .task последней строки просит ту же страницу вечно.
-            if fresh.isEmpty || page.nextBefore == nextBefore {
-                DiagLog.write("Disk", "догрузка: страница без новых (курсор \(page.nextBefore ?? "nil")) — считаю список полным")
+            // Compare the entire cursor: files may have the same timestamp.
+            // A repeated composite cursor stops pagination; an advanced one is retained.
+            if page.nextBefore == nil || (page.nextBefore == nextBefore && page.nextBeforeId == nextBeforeId) {
+                DiagLog.write("Disk", "догрузка: конец выдачи или повтор курсора (курсор \(page.nextBefore ?? "nil")) — считаю список полным")
                 self.nextBefore = nil
+                nextBeforeId = nil
             } else {
                 self.nextBefore = page.nextBefore
+                nextBeforeId = page.nextBeforeId
             }
         } catch {
             // Молча: обрыв догрузки не должен ронять уже показанный список.
