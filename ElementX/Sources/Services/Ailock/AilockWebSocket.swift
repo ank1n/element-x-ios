@@ -194,6 +194,11 @@ actor AilockWebSocket {
             }
 
         case "agent.file":
+            let parts = url.pathComponents
+            let expected = parts.firstIndex(of: "sessions").flatMap { parts.indices.contains($0 + 1) ? parts[$0 + 1] : nil }
+            if let declared = payload["conversation_id"] as? String, let expected, declared != expected { break }
+            if let raw = payload["url"] as? String, let ref = AilockAttachmentReference(path: raw), let expected,
+               ref.conversationID != expected.lowercased() { break }
             // По текущему коду движка событие несёт только url/filename/mime_type/conversation_id.
             // `attachment_id` читаем на будущее: когда агентские файлы переедут в chat_attachments
             // (M24 Ф3), скачивание заработает без правок клиента.

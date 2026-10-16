@@ -5,6 +5,7 @@
 //
 
 import Combine
+import CryptoKit
 import Foundation
 
 typealias WidgetsListScreenViewModelType = StateStoreViewModel<WidgetsListScreenViewState, WidgetsListScreenViewAction>
@@ -16,6 +17,7 @@ protocol WidgetsListScreenViewModelProtocol {
 
 class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScreenViewModelProtocol {
     private let userSession: UserSessionProtocol
+    private let availability: ApplicationAvailabilityService
     private let actionsSubject: PassthroughSubject<WidgetsListScreenViewModelAction, Never> = .init()
     private var widgetsCancellables: Set<AnyCancellable> = []
 
@@ -23,8 +25,9 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
         actionsSubject.eraseToAnyPublisher()
     }
 
-    init(userSession: UserSessionProtocol) {
+    init(userSession: UserSessionProtocol, availability: ApplicationAvailabilityService? = nil) {
         self.userSession = userSession
+        self.availability = availability ?? ApplicationAvailabilityService(client: userSession.clientProxy)
 
         var initialState = WidgetsListScreenViewState()
         initialState.userID = userSession.clientProxy.userID
@@ -42,7 +45,15 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
         case .showSettings:
             actionsSubject.send(.showSettings)
         case .selectWidget(let widget):
-            actionsSubject.send(.openWidget(widget))
+            Task {
+                await availability.refresh(force: true)
+                if availability.allows(widget.id) {
+                    actionsSubject.send(.openWidget(widget))
+                } else {
+                    state.errorMessage = String(localized: "stalk_application_disabled", defaultValue: "Приложение отключено или его доступность временно не удалось проверить.")
+                    state.widgets.removeAll { !availability.allows($0.id) }
+                }
+            }
         case .refresh:
             fetchWidgets(forceRefresh: true)
         }
@@ -88,18 +99,29 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
 
     // MARK: - Apps API
 
-    private static let widgetsCacheKey = "widgets-list"
+    private var widgetsCacheKey: String {
+        "widgets-list-v2-" + SHA256.hash(data: Data((serverBaseURL + "\n" + userSession.clientProxy.userID).utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
     private static let widgetsCacheTTL: TimeInterval = 3600 // 1 hour
 
     private func fetchWidgets(forceRefresh: Bool = false) {
         Task { [weak self] in
             guard let self else { return }
 
+            await availability.refresh(force: forceRefresh)
+            guard !availability.failed else {
+                state.widgets = []
+                state.errorMessage = String(localized: "stalk_application_availability_error", defaultValue: "Не удалось проверить доступность приложений. Повторите попытку.")
+                state.isLoading = false
+                return
+            }
+            state.errorMessage = nil
             // 1. Always show cache instantly (for fast UI).
             // STMOB-274: кэш рисуем СРАЗУ, не дожидаясь пробы доступности встроенных
             // приложений — иначе вкладка висела бы пустой всё время сетевого запроса.
-            if let cached = await ServiceLocator.shared.cacheService?.load([WidgetItem].self, forKey: Self.widgetsCacheKey) {
-                self.state.widgets = cached
+            if let cached = await ServiceLocator.shared.cacheService?.load([WidgetItem].self, forKey: widgetsCacheKey) {
+                self.state.widgets = cached.filter { availability.allows($0.id) }
                 self.state.isLoading = false
                 MXLog.info("sTalk: Loaded \(cached.count) widgets from cache")
                 self.state.widgets = await self.mergingLocalBuiltins(into: cached)
@@ -118,7 +140,7 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
 
                 // Save to cache. Локальные записи в кэш НЕ попадают — иначе осядут там на TTL
                 // и переживут появление настоящей записи на сервере.
-                await ServiceLocator.shared.cacheService?.save(widgets, forKey: Self.widgetsCacheKey, ttl: Self.widgetsCacheTTL)
+                await ServiceLocator.shared.cacheService?.save(widgets, forKey: widgetsCacheKey, ttl: Self.widgetsCacheTTL)
                 MXLog.info("sTalk: Updated \(widgets.count) widgets from server")
             } catch {
                 MXLog.error("sTalk: Failed to fetch widgets: \(error)")
@@ -246,7 +268,7 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
         }
         result = applying(availability: ailockAvailable, to: result, id: WidgetItem.ailockAppID, local: WidgetItem.ailock)
 
-        return result
+        return result.filter { availability.allows($0.id) }
     }
 
     /// Проба доступности сервиса с кэшом на пару «аккаунт+домен».

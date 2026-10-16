@@ -315,7 +315,7 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
                 } else {
                     presentCallScreen(genericCallLink: url)
                 }
-            case .meeting:
+            case .meeting, .diskDocument:
                 // STMOB-216: meeting links need a signed-in session to resolve the
                 // code → room, so route through normal app-route handling.
                 handleLinkRoute(route)
@@ -771,7 +771,8 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
     
     private func startAuthentication() {
         // A failed restore must preserve the guest meeting path rather than force login.
-        if case .meeting? = storedAppRoute, let url = storedAppRouteSourceURL, let link = StalkServerLink(url: url) {
+        if storedAppRoute != nil, let url = storedAppRouteSourceURL, let link = StalkServerLink(url: url),
+           link.meetingCode != nil || StalkDiskLink(url: url) != nil {
             storedAppRoute = nil
             storedAppRouteSourceURL = nil
             UIApplication.shared.open(link.browserURL)

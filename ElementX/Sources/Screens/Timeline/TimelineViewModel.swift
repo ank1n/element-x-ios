@@ -164,6 +164,8 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
             Task { await timelineController.processItemDisappearance(id) }
         case .mediaTapped(let id):
             Task { await handleMediaTapped(with: id) }
+        case .stalkDiskReferenceTapped(let id):
+            Task { await openDiskDocumentReference(id: id, name: "") }
         case .stalkFileShareTapped(let id):
             Task { await handleStalkFileShareTapped(with: id) }
         case .itemSendInfoTapped(let itemID):
@@ -662,26 +664,17 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
             return
         }
 
-        guard let service = ServiceLocator.shared.diskService else {
-            MXLog.warning("STMOB-275: файл из карточки не открыть — сервис Диска не поднят")
-            return
-        }
+        await openDiskDocumentReference(id: fileShare.blobID, name: fileShare.name)
+    }
 
-        state.showLoading = true
-        defer { state.showLoading = false }
-
-        do {
-            let data = try await service.fetchBlob(id: fileShare.blobID)
-            let directory = URL.temporaryDirectory.appending(path: "stalk-disk", directoryHint: .isDirectory)
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            // Имя как в карточке: его же показывают просмотрщик и «Поделиться».
-            let url = directory.appending(path: fileShare.name.isEmpty ? fileShare.blobID : fileShare.name)
-            try data.write(to: url, options: .atomic)
-            state.bindings.stalkFileSharePreview = MediaPreviewItem(file: .unmanaged(url: url), title: fileShare.name)
-        } catch {
-            DiagLog.write("Disk", "файл из карточки не скачался (\(fileShare.blobID)): \(error)")
-            userIndicatorController.submitIndicator(.init(title: L10n.errorUnknown))
-        }
+    private func openDiskDocumentReference(id: String, name: String) async {
+        guard UUID(uuidString: id) != nil,
+              var url = URLComponents(string: userSession.clientProxy.homeserver) else { return }
+        var fragment = URLComponents(); fragment.path = "/files/open"
+        fragment.queryItems = [.init(name: "blob", value: id), .init(name: "disk", value: "1"), .init(name: "name", value: name)]
+        url.scheme = "ru.implica.stalk"; url.path = "/"; url.query = nil; url.fragment = fragment.string
+        guard let target = url.url else { return }
+        appMediator.open(target)
     }
 
     private func handleMediaTapped(with itemID: TimelineItemIdentifier) async {

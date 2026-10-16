@@ -9,6 +9,7 @@ import SwiftUI
 
 struct WidgetsListScreenCoordinatorParameters {
     let userSession: UserSessionProtocol
+    var availability: ApplicationAvailabilityService?
 }
 
 enum WidgetsListScreenCoordinatorAction {
@@ -28,10 +29,15 @@ final class WidgetsListScreenCoordinator: CoordinatorProtocol {
     init(parameters: WidgetsListScreenCoordinatorParameters) {
         self.parameters = parameters
 
-        viewModel = WidgetsListScreenViewModel(userSession: parameters.userSession)
+        viewModel = WidgetsListScreenViewModel(userSession: parameters.userSession, availability: parameters.availability)
     }
 
     func start() {
+        if let availability = parameters.availability {
+            availability.$snapshot.removeDuplicates().dropFirst().sink { [weak self] _ in
+                self?.viewModel.context.send(viewAction: .refresh)
+            }.store(in: &cancellables)
+        }
         viewModel.actionsPublisher.sink { [weak self] action in
             guard let self else { return }
 

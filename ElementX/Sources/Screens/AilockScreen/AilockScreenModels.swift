@@ -44,6 +44,7 @@ enum AilockScreenViewModelAction {
 }
 
 struct AilockScreenViewState: BindableState {
+    var attachmentLoader: ((AilockFile) async throws -> URL)?
     var messages: [AilockMessage] = []
     /// Агент генерирует ответ — показываем индикатор и кнопку «стоп».
     var isRunning = false
@@ -136,6 +137,7 @@ struct AilockScreenViewStateBindings {
     var showDiskPicker = false
     /// Скачанный файл, который показываем системным листом «Поделиться».
     var sharedFile: AilockSharedFile?
+    var openedFile: MediaPreviewItem?
     /// STMOB-285: выбор модели нижним листом, а не выпадающим меню (референс
     /// Perplexity, решение dp 28.08). В меню не помещаются подписи и пометки,
     /// а список моделей у тенанта бывает длинным.

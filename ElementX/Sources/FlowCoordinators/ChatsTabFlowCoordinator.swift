@@ -12,6 +12,7 @@ import MatrixRustSDK
 import SwiftUI
 
 enum ChatsTabFlowCoordinatorAction {
+    case appRoute(AppRoute)
     case switchToChatsTab
     case showSettings
     case showChatBackupSettings
@@ -145,8 +146,12 @@ class ChatsTabFlowCoordinator: FlowCoordinatorProtocol {
             case .failure: showFailureIndicator()
             }
             
-        case .childEvent:
-            roomFlowCoordinator?.handleAppRoute(appRoute, animated: animated)
+        case .childEvent(let eventID, let roomID, let via):
+            if let roomFlowCoordinator {
+                roomFlowCoordinator.handleAppRoute(appRoute, animated: animated)
+            } else {
+                stateMachine.processEvent(.selectRoom(roomID: roomID, via: via, entryPoint: .eventID(eventID)), userInfo: .init(animated: animated))
+            }
         case .childEventOnRoomAlias(let eventID, let alias):
             switch await userSession.clientProxy.resolveRoomAlias(alias) {
             case .success(let resolved): await asyncHandleAppRoute(.childEvent(eventID: eventID, roomID: resolved.roomId, via: resolved.servers), animated: animated)
@@ -170,7 +175,7 @@ class ChatsTabFlowCoordinator: FlowCoordinatorProtocol {
             } else {
                 stateMachine.processEvent(.selectRoom(roomID: roomID, via: [], entryPoint: .transferOwnership))
             }
-        case .accountProvisioningLink, .settings, .chatBackupSettings, .call, .genericCallLink, .meeting:
+        case .accountProvisioningLink, .settings, .chatBackupSettings, .call, .genericCallLink, .meeting, .diskDocument, .systemSearchTarget:
             break // These routes cannot be handled.
         }
     }
@@ -715,6 +720,8 @@ class ChatsTabFlowCoordinator: FlowCoordinatorProtocol {
                 case .openRoomAtEvent(let roomID, let eventID):
                     self.sidebarNavigationStackCoordinator.pop()
                     self.handleAppRoute(.event(eventID: eventID, roomID: roomID, via: []), animated: true)
+                case .systemTarget(let target, let title):
+                    self.actionsSubject.send(.appRoute(.systemSearchTarget(target, title: title)))
                 case .dismiss:
                     self.sidebarNavigationStackCoordinator.pop()
                 }

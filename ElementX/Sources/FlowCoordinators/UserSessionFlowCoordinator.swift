@@ -176,6 +176,22 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
             presentCallScreen(genericCallLink: url)
         case .meeting(let code):
             Task { await presentCallScreen(meetingCode: code) }
+        case .systemSearchTarget(let target, let title):
+            switch target.kind {
+            case "room":
+                guard let room = target.room_id, room.hasPrefix("!") else { return }
+                if let event = target.event_id, event.hasPrefix("$") { handleAppRoute(.childEvent(eventID: event, roomID: room, via: []), animated: animated) }
+                else { handleAppRoute(.childRoom(roomID: room, via: []), animated: animated) }
+            case "recording":
+                navigationTabCoordinator.selectedTab = .calls
+                callsTabFlowCoordinator.handleAppRoute(appRoute, animated: animated)
+            default:
+                navigationTabCoordinator.selectedTab = .apps
+                appsTabFlowCoordinator.handleAppRoute(.systemSearchTarget(target, title: title), animated: animated)
+            }
+        case .diskDocument:
+            navigationTabCoordinator.selectedTab = .apps
+            appsTabFlowCoordinator.handleAppRoute(appRoute, animated: animated)
         case .roomList, .room, .roomAlias, .childRoom, .childRoomAlias,
              .roomDetails, .roomMemberDetails, .userProfile,
              .event, .eventOnRoomAlias, .childEvent, .childEventOnRoomAlias,
@@ -239,6 +255,7 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         }
 
         callsTabFlowCoordinator.setActive(selectedTab == .calls)
+        appsTabFlowCoordinator.setActive(selectedTab == .apps)
         guard let presence = AppCoordinator.sharedPresenceService else { return }
         presence.setSuspended(.chats, selectedTab != .chats)
         presence.setSuspended(.contacts, selectedTab != .contacts)
@@ -249,6 +266,8 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
             .sink { [weak self] action in
                 guard let self else { return }
                 switch action {
+                case .appRoute(let route):
+                    handleAppRoute(route, animated: true)
                 case .switchToChatsTab:
                     navigationTabCoordinator.selectedTab = .chats
                 case .showSettings:

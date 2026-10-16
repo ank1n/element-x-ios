@@ -7,6 +7,7 @@
 import Combine
 import Foundation
 import os.log
+import UniformTypeIdentifiers
 
 private let diskLog = OSLog(subsystem: "ru.implica.stalk", category: "Disk")
 
@@ -220,10 +221,16 @@ struct DiskSharedFile: Identifiable, Equatable {
     /// Право есть, но файл зашифрован и ключей комнаты у получателя нет —
     /// открыть НЕЛЬЗЯ, UI обязан показать это заранее (правило Molly).
     let needsKeys: Bool
+    let canDownload: Bool
     let ts: Int64
     /// Кому ещё доступен файл. Поле запрошено у Molly (dp: веб показывает всех
     /// в колонке «Доступ»); пока сервер его не шлёт — nil, зажжётся само.
     let recipients: [Recipient]?
+
+    var addedTs: Int64?
+    var photo: DiskPhoto.EXIF?
+    var tags: [String] = []
+    var folderId: Int?
 
     struct Recipient: Decodable, Equatable {
         let user: String
@@ -243,7 +250,7 @@ struct DiskSharedFile: Identifiable, Equatable {
 extension DiskSharedFile: Decodable {
     private enum CodingKeys: String, CodingKey {
         case owner, ownerDisplay, eventId, blobId, mxc, name, mimetype, size,
-             permission, isDiskDoc, viaFolderName, needsKeys, ts, recipients, sharedWith
+             permission, isDiskDoc, viaFolderName, needsKeys, canDownload, ts, recipients, sharedWith, addedTs, photo, tags, folderId
     }
 
     init(from decoder: Decoder) throws {
@@ -260,6 +267,11 @@ extension DiskSharedFile: Decodable {
         isDiskDoc = try c.decodeIfPresent(Bool.self, forKey: .isDiskDoc) ?? false
         viaFolderName = try c.decodeIfPresent(String.self, forKey: .viaFolderName)
         needsKeys = try c.decodeIfPresent(Bool.self, forKey: .needsKeys) ?? false
+        canDownload = try c.decodeIfPresent(Bool.self, forKey: .canDownload) ?? true
+        addedTs = try c.decodeIfPresent(Double.self, forKey: .addedTs).map(Int64.init)
+        photo = try c.decodeIfPresent(DiskPhoto.EXIF.self, forKey: .photo)
+        tags = try c.decodeIfPresent([String].self, forKey: .tags) ?? []
+        folderId = try c.decodeIfPresent(Int.self, forKey: .folderId)
         // Сервер шлёт ts ДРОБНЫМ (1785590849703.323 — миллисекунды с хвостом);
         // целочисленное чтение роняло разбор всего ответа.
         if let doubleTS = try? c.decodeIfPresent(Double.self, forKey: .ts) {
@@ -314,10 +326,25 @@ struct DiskStats: Decodable, Equatable {
     }
 }
 
-enum DiskServiceError: Error {
+enum DiskServiceError: Error, LocalizedError {
     case invalidURL
     case unauthorized
     case http(Int)
+    var errorDescription: String? {
+        switch self {
+        case .invalidURL: "Не удалось распознать ссылку или файл."
+        case .unauthorized: "Войдите снова, чтобы открыть Диск."
+        case .http(let status):
+            switch status {
+            case 403: "Нет доступа к этому действию или оно отключено администратором."
+            case 404: "Объект удалён или у вас больше нет доступа."
+            case 409: "Данные изменились. Обновите список и повторите действие."
+            case 413: "Слишком большой объём данных. Уточните фильтр или выберите меньше файлов."
+            case 429: "Слишком много запросов. Повторите немного позже."
+            default: "Диск временно недоступен (\(status)). Повторите попытку."
+            }
+        }
+    }
 }
 
 // MARK: - Сервис
@@ -355,9 +382,10 @@ final class DiskService {
     }
 
     /// Список файлов. `before` — курсор из `nextBefore` предыдущей страницы.
-    func fetchFiles(category: DiskFileCategory? = nil, before: String? = nil, beforeId: String? = nil, folder: String? = nil, roomID: String? = nil) async throws -> (files: [DiskFile], nextBefore: String?, nextBeforeId: String?) {
+    func fetchFiles(category: DiskFileCategory? = nil, before: String? = nil, beforeId: String? = nil, folder: String? = nil, roomID: String? = nil, query search: String? = nil) async throws -> (files: [DiskFile], nextBefore: String?, nextBeforeId: String?) {
         var components = URLComponents(string: "\(baseURL)/api/files")
         var query: [URLQueryItem] = []
+        if let search, !search.isEmpty { query.append(.init(name: "q", value: search)) }
         if let folder {
             // Содержимое конкретной папки (контракт Molly, 02.08).
             query.append(URLQueryItem(name: "folder", value: folder))
@@ -411,8 +439,10 @@ final class DiskService {
 
     /// «Доступно мне»: `GET /api/files/shared-with-me` (контракт Molly, 02.08).
     /// UNION прямых шар, каскада от расшаренных папок и Диск-документов.
-    func fetchSharedWithMe() async throws -> [DiskSharedFile] {
-        let data = try await get(URL(string: "\(baseURL)/api/files/shared-with-me"))
+    func fetchSharedWithMe(query: String? = nil) async throws -> [DiskSharedFile] {
+        var url = URLComponents(string: "\(baseURL)/api/files/shared-with-me")
+        if let query, !query.isEmpty { url?.queryItems = [.init(name: "q", value: query)] }
+        let data = try await get(url?.url)
         // Поштучный разбор, как у основного списка: одна непонятая запись не
         // должна прятать все расшаренные файлы.
         struct LenientShared: Decodable {
@@ -591,6 +621,54 @@ final class DiskService {
     }
 
     // MARK: - Транспорт
+
+    func downloadBlobFile(id: String, filename: String) async throws -> URL {
+        guard UUID(uuidString: id) != nil, let url = URL(string: baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/api/files/blob/" + id) else { throw DiskServiceError.invalidURL }
+        for attempt in 0...1 {
+            try Task.checkCancellation()
+            var request = URLRequest(url: url)
+            try request.setValue("Bearer \(accessTokenProvider())", forHTTPHeaderField: "Authorization")
+            let (temporary, response) = try await session.download(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if status == 401, attempt == 0 { try? FileManager.default.removeItem(at: temporary); await forceTokenRefresh?(); continue }
+            guard status == 200, response.url?.host == url.host else { try? FileManager.default.removeItem(at: temporary); throw DiskServiceError.http(status) }
+            let directory = URL.temporaryDirectory.appending(path: "disk-original-\(UUID().uuidString)", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let header = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Disposition") ?? ""
+            var suggested = filename
+            if let encoded = header.components(separatedBy: "filename*=UTF-8''").last, encoded != header {
+                suggested = encoded.components(separatedBy: ";")[0].removingPercentEncoding ?? filename
+            } else if let named = header.components(separatedBy: "filename=").last, named != header {
+                suggested = named.components(separatedBy: ";")[0].trimmingCharacters(in: CharacterSet(charactersIn: "\" "))
+            }
+            let ext = response.mimeType.flatMap { UTType(mimeType: $0)?.preferredFilenameExtension } ?? "bin"
+            var name = suggested.isEmpty ? "document-\(id)" : URL(fileURLWithPath: suggested).lastPathComponent
+            name = String(name.prefix(100))
+            if URL(fileURLWithPath: name).pathExtension.isEmpty { name += "." + ext }
+            let result = directory.appending(path: name)
+            try FileManager.default.moveItem(at: temporary, to: result)
+            return result
+        }
+        throw DiskServiceError.unauthorized
+    }
+
+    func photoRequest(path: String, method: String = "GET", body: [String: Any]? = nil) async throws -> Data {
+        guard URLComponents(string: path)?.path.components(separatedBy: "/").contains("..") != true, let url = URL(string: baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/api/files/" + path) else { throw DiskServiceError.invalidURL }
+        for attempt in 0...1 {
+            try Task.checkCancellation()
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 20
+            request.httpMethod = method
+            try request.setValue("Bearer \(accessTokenProvider())", forHTTPHeaderField: "Authorization")
+            if let body { request.httpBody = try JSONSerialization.data(withJSONObject: body); request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
+            let (data, response) = try await session.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if status == 401, attempt == 0 { await forceTokenRefresh?(); continue }
+            guard (200...299).contains(status) else { if status == 401 { throw DiskServiceError.unauthorized }; throw DiskServiceError.http(status) }
+            return data
+        }
+        throw DiskServiceError.unauthorized
+    }
 
     /// Один повтор на 401: токен мог протухнуть, SDK обновляет его в фоне.
     /// Тот же приём, что в сервисе встреч.

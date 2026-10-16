@@ -46,6 +46,8 @@ enum AppRoute: Hashable {
     /// STMOB-216: a sTalk meeting link (https://<host>/meet/s/<code>) — resolves the
     /// meeting code to a room and opens its native call.
     case meeting(code: String)
+    case diskDocument(StalkDiskLink)
+    case systemSearchTarget(SystemSearchTarget, title: String?)
     /// The settings screen.
     case settings
     /// The setting screen for key backup.
@@ -86,6 +88,7 @@ struct AppRouteURLParser {
             MatrixPermalinkParser(),
             ElementWebURLParser(domains: appSettings.elementWebHosts),
             MeetLinkURLParser(domains: appSettings.elementWebHosts),
+            DiskLinkURLParser(domains: appSettings.elementWebHosts),
             AccountProvisioningURLParser(domain: appSettings.accountProvisioningHost),
             ElementCallURLParser()
         ]
@@ -143,6 +146,14 @@ private struct AppGroupURLParser: URLParser {
 /// STMOB-216: parser for sTalk meeting links — `https://<host>/meet/s/<code>`.
 /// Returns `.meeting(code:)` so the app resolves the code to a room and opens
 /// the native call, instead of letting the link fall through to the browser.
+private struct DiskLinkURLParser: URLParser {
+    let domains: [String]
+    func route(from url: URL) -> AppRoute? {
+        guard let link = StalkDiskLink(url: url), domains.contains(link.host) else { return nil }
+        return .diskDocument(link)
+    }
+}
+
 private struct MeetLinkURLParser: URLParser {
     let domains: [String]
 
@@ -171,7 +182,7 @@ struct StalkServerLink {
             code = parts[2]
         } else if parts.isEmpty,
                   let fragment = url.fragment,
-                  fragment.hasPrefix("/room/") || fragment.hasPrefix("/user/") {
+                  fragment.hasPrefix("/room/") || fragment.hasPrefix("/user/") || StalkDiskLink(url: url) != nil {
             code = nil
         } else {
             return nil
@@ -196,7 +207,7 @@ struct StalkServerLink {
             let sessionURL = URL(string: homeserver.contains("://") ? homeserver : "https://\(homeserver)")
             return sessionURL?.host?.lowercased() != host
         }
-        return meetingCode != nil && !mayRestoreSession
+        return (meetingCode != nil || StalkDiskLink(url: url) != nil) && !mayRestoreSession
     }
 }
 

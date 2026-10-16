@@ -26,7 +26,7 @@ enum AilockHistoryParser {
     private static let imagePrefix = "__IMAGE_URL__:"
     private static let filePrefix = "__FILE_URL__:"
 
-    static func parse(rows: [[String: Any]]) -> [AilockMessage] {
+    static func parse(rows: [[String: Any]], conversationID: String? = nil) -> [AilockMessage] {
         let askUserQuestions = askUserCalls(in: rows)
         let askUserCallIDs = Set(askUserQuestions.keys)
 
@@ -44,7 +44,7 @@ enum AilockHistoryParser {
 
             // AIBOL-13 ч.1: вложения пользователя приезжают отдельным полем строки.
             // Формат полей не зафиксирован, поэтому читаем терпимо — по нескольким именам.
-            let rowAttachments = parseAttachments(row["attachments"])
+            let rowAttachments = parseAttachments(row["attachments"], conversationID: conversationID)
 
             // STMOB-285: «чем отвечено» у строки хода. Движок кладёт метку в
             // `metadata.llm`, шлюз может поднять её на верхний уровень — читаем
@@ -79,10 +79,10 @@ enum AilockHistoryParser {
                     continue
                 }
                 // Обычный результат инструмента в ленту не идёт — забираем только вложения.
-                let files = parseFiles(from: content)
+                let files = unique(rowAttachments + parseFiles(from: content))
                 guard !files.isEmpty else { continue }
                 if let last = messages.indices.last, case .assistant = messages[last].role {
-                    messages[last].files.append(contentsOf: files)
+                    messages[last].files = unique(messages[last].files + files)
                 } else {
                     messages.append(AilockMessage(id: identifier, role: .assistant, text: "", files: files, createdAt: createdAt))
                 }
@@ -113,7 +113,7 @@ enum AilockHistoryParser {
                     messages[last].llm = rowLLM
                 }
                 if !rowAttachments.isEmpty, let last = messages.indices.last {
-                    messages[last].files.append(contentsOf: rowAttachments)
+                    messages[last].files = unique(messages[last].files + rowAttachments)
                 }
 
             case "system":
@@ -183,12 +183,22 @@ enum AilockHistoryParser {
     /// Вложения строки истории. Имена полей у движка ещё не зафиксированы (перенос
     /// агентских файлов в `chat_attachments` — M24 Ф3), поэтому принимаем несколько
     /// вариантов и молча пропускаем то, что не опознали.
-    static func parseAttachments(_ raw: Any?) -> [AilockFile] {
+    private static func unique(_ files: [AilockFile]) -> [AilockFile] {
+        var seen = Set<String>()
+        return files.filter { seen.insert($0.identity).inserted }
+    }
+
+    static func parseAttachments(_ raw: Any?, conversationID: String? = nil) -> [AilockFile] {
         guard let items = raw as? [[String: Any]] else { return [] }
 
         return items.compactMap { item in
             let attachmentID = (item["attachment_id"] as? String) ?? (item["id"] as? String)
-            let url = item["url"] as? String
+            var url = item["url"] as? String
+            if url == nil, let conversationID, let attachmentID {
+                url = AilockAttachmentReference(conversationID: conversationID, attachmentID: attachmentID)?.path
+            }
+            if let conversationID, let url,
+               AilockAttachmentReference(path: url)?.conversationID != conversationID.lowercased() { return nil }
             guard attachmentID != nil || url != nil else { return nil }
 
             let filename = (item["filename"] as? String) ?? (item["name"] as? String) ?? "file"

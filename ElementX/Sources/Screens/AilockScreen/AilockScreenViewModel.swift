@@ -24,6 +24,7 @@ protocol AilockScreenViewModelProtocol {
 /// * итоговый текст ответа собирается только из дельт `agent.token`;
 /// * вложения загружаются в уже существующую беседу, т.е. после создания сессии.
 class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelProtocol {
+    private let temporaryFiles = StalkTemporaryFiles()
     private let service: AilockService
     /// nil — агента назначает gateway своим дефолтом.
     private let agentID: String?
@@ -89,6 +90,10 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
         var initialState = AilockScreenViewState()
         initialState.diskPicker = diskPicker
         super.init(initialViewState: initialState)
+        state.attachmentLoader = { [weak self] file in
+            guard let self else { throw CancellationError() }
+            return try await service.download(file: file, conversationID: conversationID)
+        }
 
         state.voiceLevelProvider = { [weak self] in self?.voiceRecorder.level() ?? 0 }
 
@@ -402,6 +407,12 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
                 try await socket.answer(questionID: answering.questionID, answer: text)
             } else {
                 try await socket.send(content: text, attachmentIDs: attachmentIDs)
+                if let index = state.messages.firstIndex(where: { $0.id == message.id }) {
+                    state.messages[index].files = attachments.map { file in
+                        guard let uploaded = uploadedAttachmentIDs[file.id] else { return file }
+                        return AilockFile(id: uploaded, filename: file.filename, mimeType: file.mimeType, url: nil, attachmentID: uploaded)
+                    }
+                }
             }
 
             // Кадр ушёл — только теперь отпускаем вложения. До этой строки они нужны
@@ -674,6 +685,7 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
             Task { [weak self] in await self?.refreshLLMSelection() }
 
         case .file(let file):
+            if state.messages.contains(where: { $0.files.contains(where: { $0.identity == file.identity }) }) { return }
             flushBuffer()
             if let index = streamingIndex() {
                 state.messages[index].files.append(file)
@@ -967,7 +979,13 @@ class AilockScreenViewModel: AilockScreenViewModelType, AilockScreenViewModelPro
             guard let self else { return }
             do {
                 let localURL = try await service.download(file: file, conversationID: conversationID)
-                state.bindings.sharedFile = AilockSharedFile(url: localURL)
+                temporaryFiles.urls.append(localURL)
+                try Task.checkCancellation()
+                if file.isImage {
+                    state.bindings.openedFile = MediaPreviewItem(file: .unmanaged(url: localURL), title: file.filename)
+                } else {
+                    state.bindings.sharedFile = AilockSharedFile(url: localURL)
+                }
             } catch {
                 guard !isCancellation(error) else { return }
                 handle(error: error)

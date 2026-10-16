@@ -7,6 +7,7 @@
 import Combine
 import Foundation
 import SwiftState
+import UIKit
 
 enum WidgetsTabFlowCoordinatorAction {
     case showSettings
@@ -24,6 +25,9 @@ enum WidgetsTabFlowCoordinatorAction {
 
 class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
     private let userSession: UserSessionProtocol
+    private let availability: ApplicationAvailabilityService
+    private var currentAppID: String?
+    private var availabilityTask: Task<Void, Never>?
     private var flowParameters: CommonFlowParameters
     private let navigationStackCoordinator: NavigationStackCoordinator
 
@@ -48,6 +52,7 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
 
     init(navigationStackCoordinator: NavigationStackCoordinator, flowParameters: CommonFlowParameters) {
         userSession = flowParameters.userSession
+        availability = ApplicationAvailabilityService(client: flowParameters.userSession.clientProxy)
         self.navigationStackCoordinator = navigationStackCoordinator
         self.flowParameters = flowParameters
 
@@ -61,6 +66,60 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
 
     func handleAppRoute(_ appRoute: AppRoute, animated: Bool) {
         clearRoute(animated: animated)
+        if case .diskDocument(let link) = appRoute {
+            Task { await openDiskDocument(link) }
+        } else if case .systemSearchTarget(let target, let title) = appRoute {
+            Task { await openSearchTarget(target, title: title) }
+        }
+    }
+
+    private func openSearchTarget(_ target: SystemSearchTarget, title: String?) async {
+        do {
+            switch target.kind {
+            case "file":
+                guard let id = target.file_id, UUID(uuidString: id) != nil else { throw SystemSearchError.targetUnavailable }
+                var fragment = URLComponents(); fragment.path = "/files/open"
+                fragment.queryItems = [.init(name: "blob", value: id), .init(name: "disk", value: "1"), .init(name: "name", value: title ?? "")]
+                var url = URLComponents(string: sessionBaseURL)!; url.fragment = fragment.string
+                guard let link = url.url.flatMap(StalkDiskLink.init(url:)) else { throw SystemSearchError.targetUnavailable }
+                await openDiskDocument(link)
+            case "meeting":
+                await availability.refresh(force: true)
+                guard availability.allows("meetings-calendar"), let raw = target.meeting_id, let id = Int(raw) else { throw SystemSearchError.targetUnavailable }
+                let client = userSession.clientProxy
+                let parameters = MeetingsScreenCoordinatorParameters(apiURL: sessionBaseURL, accessTokenProvider: { try client.matrixAccessToken() },
+                                                                     forceTokenRefresh: { await client.forceTokenRefresh() }, currentUserId: client.userID,
+                                                                     clientProxy: client, mediaProvider: userSession.mediaProvider, initialMeetingID: id)
+                let coordinator = MeetingsScreenCoordinator(parameters: parameters, navigationStackCoordinator: navigationStackCoordinator)
+                coordinator.actionsPublisher.sink { [weak self] action in
+                    if case .startCall(let room) = action { self?.actionsSubject.send(.startCall(roomID: room)) }
+                }.store(in: &cancellables)
+                currentAppID = "meetings-calendar"
+                navigationStackCoordinator.push(coordinator)
+            case "issue", "page":
+                await availability.refresh(force: true)
+                guard availability.allowsExternal("trackit") else { throw SystemSearchError.targetUnavailable }
+                let url = try await SystemSearchService(client: userSession.clientProxy).externalURL(for: target)
+                await UIApplication.shared.open(url)
+            default: throw SystemSearchError.targetUnavailable
+            }
+        } catch {
+            flowParameters.userIndicatorController.submitIndicator(.init(title: error.localizedDescription))
+        }
+    }
+
+    private func openDiskDocument(_ link: StalkDiskLink) async {
+        await availability.refresh(force: true)
+        guard availability.allows(WidgetItem.filesAppID) else {
+            flowParameters.userIndicatorController.submitIndicator(.init(title: String(localized: "stalk_application_disabled", defaultValue: "Приложение отключено или его доступность временно не удалось проверить.")))
+            return
+        }
+        currentAppID = WidgetItem.filesAppID
+        guard link.host == URL(string: sessionBaseURL)?.host?.lowercased() else { return }
+        let client = userSession.clientProxy
+        let service = DiskService(baseURL: sessionBaseURL, accessTokenProvider: { try client.matrixAccessToken() },
+                                  forceTokenRefresh: { await client.forceTokenRefresh() })
+        navigationStackCoordinator.push(DiskDocumentLinkCoordinator(link: link, service: service))
     }
 
     func clearRoute(animated: Bool) {
@@ -69,6 +128,25 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
 
     func stop() {
         widgetsListCoordinator?.stop()
+        availabilityTask?.cancel()
+    }
+
+    func setActive(_ active: Bool) {
+        availabilityTask?.cancel()
+        guard active else { return }
+        availabilityTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                if UIApplication.shared.applicationState == .active {
+                    await availability.refresh(force: true)
+                    if let id = currentAppID, !availability.allows(id) {
+                        navigationStackCoordinator.popToRoot(animated: true)
+                        currentAppID = nil
+                    }
+                }
+                try? await Task.sleep(for: .seconds(10))
+            }
+        }
     }
 
     // MARK: - Private
@@ -80,7 +158,7 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
     }
 
     private func showWidgetsListScreen() {
-        let parameters = WidgetsListScreenCoordinatorParameters(userSession: userSession)
+        let parameters = WidgetsListScreenCoordinatorParameters(userSession: userSession, availability: availability)
         let coordinator = WidgetsListScreenCoordinator(parameters: parameters)
 
         coordinator.actionsPublisher.sink { [weak self] action in
@@ -100,6 +178,15 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
     }
 
     private func presentWidget(_ widget: WidgetItem) {
+        Task {
+            await availability.refresh(force: true)
+            guard availability.allows(widget.id) else { return }
+            currentAppID = widget.id
+            launchWidget(widget)
+        }
+    }
+
+    private func launchWidget(_ widget: WidgetItem) {
         // Builtin apps get native screens
         if widget.isBuiltin {
             presentBuiltinApp(widget)
@@ -174,7 +261,7 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
                                                                                   return room.infoPublisher.value.displayName
                                                                               }
                                                                               return nil
-                                                                          }))
+                                                                          }, ongoingCallRoomID: flowParameters.ongoingCallRoomIDPublisher))
             diskCoordinator.actionsPublisher
                 .sink { [weak self] action in
                     switch action {

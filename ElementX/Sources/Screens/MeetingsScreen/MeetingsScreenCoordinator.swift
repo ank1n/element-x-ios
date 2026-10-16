@@ -19,6 +19,7 @@ struct MeetingsScreenCoordinatorParameters {
     let currentUserId: String
     let clientProxy: ClientProxyProtocol
     var mediaProvider: MediaProviderProtocol?
+    var initialMeetingID: Int?
 }
 
 final class MeetingsScreenCoordinator: CoordinatorProtocol {
@@ -63,6 +64,16 @@ final class MeetingsScreenCoordinator: CoordinatorProtocol {
     }
 
     // MARK: - Navigation
+
+    func start() {
+        if let id = parameters.initialMeetingID {
+            Task { [weak self] in
+                guard let self else { return }
+                do { let meeting = try await service.fetchMeeting(id: id); showDetail(meeting) }
+                catch { ServiceLocator.shared.userIndicatorController.submitIndicator(.init(title: error.localizedDescription)) }
+            }
+        }
+    }
 
     private func showDetail(_ meeting: Meeting) {
         let viewModel = MeetingDetailViewModel(meeting: meeting,

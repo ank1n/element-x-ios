@@ -14,6 +14,7 @@ struct MessageSearchScreenCoordinatorParameters {
 
 final class MessageSearchScreenCoordinator: CoordinatorProtocol {
     private let viewModel: MessageSearchScreenViewModel
+    private let client: ClientProxyProtocol
 
     private var cancellables = Set<AnyCancellable>()
     private let actionsSubject: PassthroughSubject<MessageSearchScreenCoordinatorAction, Never> = .init()
@@ -22,6 +23,7 @@ final class MessageSearchScreenCoordinator: CoordinatorProtocol {
     }
 
     init(parameters: MessageSearchScreenCoordinatorParameters) {
+        client = parameters.clientProxy
         let searchService = MessageSearchService(homeserverURL: parameters.clientProxy.homeserver,
                                                  accessTokenProvider: { try parameters.clientProxy.matrixAccessToken() },
                                                  forceTokenRefresh: { await parameters.clientProxy.forceTokenRefresh() })
@@ -41,11 +43,14 @@ final class MessageSearchScreenCoordinator: CoordinatorProtocol {
     }
 
     func toPresentable() -> AnyView {
-        AnyView(MessageSearchScreen(context: viewModel.context))
+        AnyView(SystemSearchScreen(client: client) { [weak self] target, title in
+            self?.actionsSubject.send(.systemTarget(target, title: title))
+        })
     }
 }
 
 enum MessageSearchScreenCoordinatorAction {
+    case systemTarget(SystemSearchTarget, title: String?)
     case openRoomAtEvent(roomID: String, eventID: String)
     case dismiss
 }

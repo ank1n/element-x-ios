@@ -41,6 +41,13 @@ struct TextRoomTimelineView: View, TextBasedRoomTimelineViewProtocol {
                                           boostFontSize: timelineItem.shouldBoost)
                     }
                 
+                    ForEach(StalkDiskLink.labelledDocumentIDs(in: timelineItem.body), id: \.self) { id in
+                        Button {
+                            context?.send(viewAction: .stalkDiskReferenceTapped(blobID: id))
+                        } label: {
+                            Label(String(localized: "stalk_disk_open_document", defaultValue: "Открыть документ"), systemImage: "doc.text")
+                        }.buttonStyle(.bordered)
+                    }
                     if context?.viewState.linkPreviewsEnabled ?? false, !linkMetadata.keys.isEmpty {
                         VStack(spacing: 8) {
                             ForEach(linkMetadata.keys, id: \.absoluteString) { url in

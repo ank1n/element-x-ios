@@ -234,6 +234,10 @@ final class DiskScreenViewModel: ObservableObject {
     /// Открыть расшаренный файл. `needsKeys` — честный отказ до сети: право
     /// есть, но содержимое зашифровано ключами комнаты, которых у нас нет.
     func selectShared(_ file: DiskSharedFile) {
+        guard file.canDownload else {
+            errorText = NSLocalizedString("stalk_disk_download_forbidden", tableName: "Localizable", value: "Владелец запретил скачивание. Откройте документ в веб-просмотре Диска.", comment: "Download forbidden")
+            return
+        }
         guard !file.needsKeys else {
             errorText = NSLocalizedString("stalk_disk_shared_no_keys", tableName: "Localizable",
                                           value: "Файл зашифрован, а ключей от его комнаты у вас нет — попросите владельца прислать файл в чат",
@@ -246,11 +250,8 @@ final class DiskScreenViewModel: ObservableObject {
             guard let self else { return }
             if file.mxcURL.isEmpty, let blobID = file.blobID {
                 do {
-                    let data = try await service.fetchBlob(id: blobID)
-                    let directory = URL.temporaryDirectory.appending(path: "stalk-disk", directoryHint: .isDirectory)
-                    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                    let url = directory.appending(path: file.name.isEmpty ? blobID : file.name)
-                    try data.write(to: url, options: .atomic)
+                    let url = try await service.downloadBlobFile(id: blobID, filename: file.name)
+                    temporaryFiles.urls.append(url)
                     previewItem = MediaPreviewItem(file: .unmanaged(url: url), title: file.name)
                 } catch {
                     DiagLog.write("Disk", "shared-блоб \(blobID) не скачался: \(error)")
@@ -314,6 +315,9 @@ final class DiskScreenViewModel: ObservableObject {
     private static let layoutKey = "ru.implica.stalk.diskLayout"
 
     private let service: DiskService
+    lazy var photoService = DiskPhotoService(disk: service)
+    @Published private(set) var callActive = false
+    private var photoCallSubscription: AnyCancellable?
     let mediaProvider: MediaProviderProtocol?
     private let profileResolver: ((String) async -> UserProfileProxy?)?
     private let roomNameResolver: ((String) async -> String?)?
@@ -325,6 +329,7 @@ final class DiskScreenViewModel: ObservableObject {
     private var nextBeforeId: String?
     private var isLoadingMore = false
 
+    private let temporaryFiles = StalkTemporaryFiles()
     private let actionsSubject: PassthroughSubject<DiskScreenViewModelAction, Never> = .init()
     var actionsPublisher: AnyPublisher<DiskScreenViewModelAction, Never> {
         actionsSubject.eraseToAnyPublisher()
@@ -333,7 +338,8 @@ final class DiskScreenViewModel: ObservableObject {
     init(service: DiskService,
          mediaProvider: MediaProviderProtocol?,
          profileResolver: ((String) async -> UserProfileProxy?)? = nil,
-         roomNameResolver: ((String) async -> String?)? = nil) {
+         roomNameResolver: ((String) async -> String?)? = nil,
+         ongoingCallRoomID: CurrentValuePublisher<String?, Never>? = nil) {
         self.service = service
         self.mediaProvider = mediaProvider
         self.profileResolver = profileResolver
@@ -341,6 +347,12 @@ final class DiskScreenViewModel: ObservableObject {
         let saved = UserDefaults.standard.string(forKey: Self.layoutKey)
         layout = saved.flatMap(DiskLayout.init(rawValue:)) ?? .list
         showsFolders = UserDefaults.standard.bool(forKey: Self.foldersKey)
+        photoCallSubscription = ongoingCallRoomID?.receive(on: DispatchQueue.main).sink { [weak self] in self?.callActive = $0 != nil }
+    }
+
+    func openPhotoInChat(_ file: DiskFile) {
+        guard let room = file.roomID, let event = file.eventID else { return }
+        actionsSubject.send(.openRoom(roomID: room, eventID: event))
     }
 
     // MARK: - Поиск
@@ -424,7 +436,7 @@ final class DiskScreenViewModel: ObservableObject {
     /// «Переслать» расшаренный файл в чат: скачиваем содержимое и отдаём во
     /// флоу с пикером комнат (маршрут Share Extension). needsKeys — пункта нет.
     func forwardShared(_ file: DiskSharedFile) {
-        guard !file.needsKeys else { return }
+        guard !file.needsKeys, file.canDownload else { return }
         downloadingFileID = file.id
         Task { [weak self] in
             defer { self?.downloadingFileID = nil }
@@ -448,6 +460,7 @@ final class DiskScreenViewModel: ObservableObject {
     /// Содержимое расшаренного файла во временном файле (общий путь для
     /// share sheet и пересылки).
     private func sharedLocalURL(for file: DiskSharedFile) async -> URL? {
+        guard file.canDownload, !file.needsKeys else { return nil }
         if file.mxcURL.isEmpty, let blobID = file.blobID {
             guard let data = try? await service.fetchBlob(id: blobID) else { return nil }
             return try? Self.writeShareTemp(data: data, filename: file.name.isEmpty ? blobID : file.name)
@@ -463,7 +476,7 @@ final class DiskScreenViewModel: ObservableObject {
     /// «Поделиться» для расшаренного файла: скачиваем и отдаём в share sheet.
     /// needsKeys — не вызывается вовсе (пункта в меню нет).
     func shareShared(_ file: DiskSharedFile) {
-        guard !file.needsKeys else { return }
+        guard !file.needsKeys, file.canDownload else { return }
         downloadingFileID = file.id
         Task { [weak self] in
             defer { self?.downloadingFileID = nil }

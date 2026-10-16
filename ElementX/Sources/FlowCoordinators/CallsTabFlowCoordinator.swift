@@ -54,6 +54,16 @@ class CallsTabFlowCoordinator: FlowCoordinatorProtocol {
 
     func handleAppRoute(_ appRoute: AppRoute, animated: Bool) {
         clearRoute(animated: animated)
+        if case .systemSearchTarget(let target, _) = appRoute, target.kind == "recording", let id = target.egress_id {
+            Task { [weak self] in
+                guard let self, let service = callHistoryService else { return }
+                do {
+                    let calls = try await service.fetchRecordings(currentUserID: userSession.clientProxy.userID)
+                    guard let call = calls.first(where: { $0.id == id }) else { throw SystemSearchError.targetUnavailable }
+                    showCallDetailScreen(call: call)
+                } catch { flowParameters.userIndicatorController.submitIndicator(.init(title: error.localizedDescription)) }
+            }
+        }
     }
 
     func clearRoute(animated: Bool) {

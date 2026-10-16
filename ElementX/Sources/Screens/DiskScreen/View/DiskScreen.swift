@@ -8,6 +8,7 @@ import SwiftUI
 
 struct DiskScreen: View {
     @ObservedObject var context: DiskScreenViewModel
+    @State private var photos = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -19,6 +20,9 @@ struct DiskScreen: View {
         .navigationTitle(NSLocalizedString("stalk_disk_title", tableName: "Localizable", value: "Диск", comment: "Disk screen title"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { photos = true } label: { Image(systemName: "photo.on.rectangle.angled") }.accessibilityLabel("Фото и коллекции")
+            }
             // Переключатель «по папкам» (dp): отдельный режим, а не лента.
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -38,6 +42,9 @@ struct DiskScreen: View {
                 .accessibilityLabel(NSLocalizedString("stalk_disk_toggle_layout", tableName: "Localizable",
                                                       value: "Вид списка", comment: "Disk layout toggle"))
             }
+        }
+        .sheet(isPresented: $photos) {
+            DiskPhotosScreen(service: context.photoService, mediaProvider: context.mediaProvider, callActive: context.callActive) { context.openPhotoInChat($0) }
         }
         .onAppear { context.onAppear() }
         .refreshable { await context.reload() }
@@ -340,7 +347,7 @@ struct DiskScreen: View {
                                     value: "Открыть", comment: "Disk action"), systemImage: "eye")
         }
 
-        if !file.needsKeys {
+        if !file.needsKeys, file.canDownload {
             // «Переслать» в чат: события у расшаренного нет — уходит содержимым
             // через пикер комнат (dp: «почему нет переслать»).
             Button {

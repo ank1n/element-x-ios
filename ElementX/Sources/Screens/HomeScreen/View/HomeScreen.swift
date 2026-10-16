@@ -41,6 +41,15 @@ struct HomeScreen: View {
             refreshButton
         }
         ToolbarItem(placement: .primaryAction) {
+            Button {
+                context.send(viewAction: .messageSearch)
+            } label: {
+                Image(systemName: "doc.text.magnifyingglass")
+            }
+            .accessibilityLabel("Поиск по системе")
+            .accessibilityIdentifier("stalk.systemSearch")
+        }
+        ToolbarItem(placement: .primaryAction) {
             if #available(iOS 26, *) {
                 newRoomButton
             } else {

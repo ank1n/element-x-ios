@@ -99,6 +99,7 @@ struct AilockChatScreen: View {
             pickedPhotos = []
             Task { await attach(photos: items) }
         }
+        .interactiveQuickLook(item: $context.openedFile, allowEditing: false)
         .sheet(item: $context.sharedFile) { file in
             AppActivityView(activityItems: [file.url])
                 .presentationDetents([.medium, .large])
@@ -329,19 +330,24 @@ struct AilockChatScreen: View {
         Button {
             context.send(viewAction: .openFile(file))
         } label: {
-            HStack(spacing: 10) {
-                Image(systemName: file.isImage ? "photo" : "doc")
-                    .font(.system(size: 16))
-                    .foregroundStyle(StalkTheme.accent)
-                Text(file.filename)
-                    .font(.subheadline)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .foregroundStyle(.primary)
-                if file.isDownloadable {
-                    Image(systemName: "arrow.down.circle")
-                        .font(.system(size: 14))
-                        .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 8) {
+                if file.isImage, file.isDownloadable {
+                    AilockAuthenticatedImage(file: file, load: context.viewState.attachmentLoader)
+                }
+                HStack(spacing: 10) {
+                    Image(systemName: file.isImage ? "photo" : "doc")
+                        .font(.system(size: 16))
+                        .foregroundStyle(StalkTheme.accent)
+                    Text(file.filename)
+                        .font(.subheadline)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .foregroundStyle(.primary)
+                    if file.isDownloadable {
+                        Image(systemName: "arrow.down.circle")
+                            .font(.system(size: 14))
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             .padding(.horizontal, 12)

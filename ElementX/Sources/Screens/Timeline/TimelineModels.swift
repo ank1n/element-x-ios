@@ -57,6 +57,7 @@ enum TimelineViewAction {
     /// STMOB-275: тап по карточке «поделился файлом» — содержимое лежит не в
     /// Matrix-медиа, а в блоб-хранилище Диска, поэтому путь свой.
     case stalkFileShareTapped(itemID: TimelineItemIdentifier)
+    case stalkDiskReferenceTapped(blobID: String)
     case itemSendInfoTapped(itemID: TimelineItemIdentifier)
     case toggleReaction(key: String, itemID: TimelineItemIdentifier)
     case sendReadReceiptIfNeeded(TimelineItemIdentifier)

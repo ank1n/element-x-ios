@@ -246,19 +246,13 @@ struct AilockFile: Identifiable, Equatable {
         mimeType.hasPrefix("image/")
     }
 
-    /// Можно ли файл скачать.
-    ///
-    /// STMOB-274, вердикт Shelly 30.07: файлы, произведённые агентом, движок пока кладёт
-    /// в локальный uploads-контур и отдаёт ссылкой `/api/v1/uploads/{uuid}`. Этот путь
-    /// door-2 сознательно НЕ проксирует (адресация по имени, владение не проверить —
-    /// решение STALK-653). Переписать ссылку на owner-scoped путь на клиенте нельзя:
-    /// в событии `agent.file` нет `attachment_id`. Перенос агентских файлов в
-    /// `chat_attachments` — M24 Ф3, ориентир 10.08. До тех пор такой файл показываем,
-    /// но кнопку скачивания не предлагаем — мёртвых кнопок в интерфейсе быть не должно.
+    var identity: String {
+        attachmentID ?? url.flatMap { AilockAttachmentReference(path: $0)?.attachmentID } ?? id
+    }
+
     var isDownloadable: Bool {
-        if attachmentID != nil { return true }
-        guard let url else { return false }
-        return !url.contains("/uploads/")
+        if let attachmentID { return AilockAttachmentReference(conversationID: "00000000-0000-0000-0000-000000000000", attachmentID: attachmentID) != nil }
+        return url.flatMap(AilockAttachmentReference.init(path:)) != nil
     }
 }
 
@@ -385,7 +379,7 @@ final class AilockService {
 
     init(homeserver: String,
          accessTokenProvider: @escaping () throws -> String,
-         forceTokenRefresh: (() async -> Void)? = nil) {
+         forceTokenRefresh: (() async -> Void)? = nil, session: URLSession? = nil) {
         let trimmed = homeserver.hasSuffix("/") ? String(homeserver.dropLast()) : homeserver
         engineBaseURL = "\(trimmed)/api/ailock/v1"
         self.accessTokenProvider = accessTokenProvider
@@ -394,7 +388,7 @@ final class AilockService {
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = 20
         configuration.timeoutIntervalForResource = 120
-        session = URLSession(configuration: configuration)
+        self.session = session ?? URLSession(configuration: configuration, delegate: AilockNoRedirectDelegate(), delegateQueue: nil)
 
         os_log(.default, log: ailockLog, "AilockService init: base=%{public}@", engineBaseURL)
     }
@@ -644,7 +638,7 @@ final class AilockService {
             throw AilockError.badResponse
         }
         let rows = json["messages"] as? [[String: Any]] ?? []
-        return AilockHistoryParser.parse(rows: rows)
+        return AilockHistoryParser.parse(rows: rows, conversationID: conversationID)
     }
 
     // MARK: - Файлы
@@ -652,6 +646,11 @@ final class AilockService {
     /// POST /conversations/{id}/attachments — multipart, поле `file`, ровно один файл на запрос.
     /// Полученный id уходит в WS-кадре вместе с текстом сообщения.
     func uploadAttachment(conversationID: String, fileURL: URL) async throws -> AilockFile {
+        let limits = try? await request(path: "/attachment-limits", method: "GET")
+        let limitsJSON = limits.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        let maximum = (limitsJSON?["max_file_bytes"] as? NSNumber)?.intValue ?? 100 * 1024 * 1024
+        let actualSize = try fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        guard actualSize <= maximum else { throw AilockError.fileTooLarge }
         let filename = fileURL.lastPathComponent
         let mimeType = Self.mimeType(for: fileURL)
         let fileData = try Data(contentsOf: fileURL)
@@ -683,35 +682,37 @@ final class AilockService {
     /// который door-2 пропускает). Если его нет, идём по ссылке из события; она может
     /// прийти относительной — тогда достраиваем от базы движка.
     func download(file: AilockFile, conversationID: String?) async throws -> URL {
-        let source: URL?
-        if let attachmentID = file.attachmentID, let conversationID {
-            source = URL(string: "\(apiBase)/conversations/\(Self.escape(conversationID))/attachments/\(Self.escape(attachmentID))")
-        } else if let raw = file.url {
-            source = absoluteURL(from: raw)
+        guard let conversationID else { throw AilockError.badResponse }
+        let reference: AilockAttachmentReference?
+        if let attachmentID = file.attachmentID {
+            reference = AilockAttachmentReference(conversationID: conversationID, attachmentID: attachmentID)
+            if let raw = file.url {
+                guard let supplied = AilockAttachmentReference(path: raw), supplied == reference else { throw AilockError.badResponse }
+            }
         } else {
-            source = nil
+            reference = file.url.flatMap(AilockAttachmentReference.init(path:))
         }
-
-        guard let url = source else { throw AilockError.badResponse }
-
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 60
-        if let token = try? accessTokenProvider() {
+        guard let reference, reference.conversationID == conversationID.lowercased(),
+              let url = URL(string: engineBaseURL + reference.path) else { throw AilockError.badResponse }
+        for attempt in 0...1 {
+            try Task.checkCancellation()
+            let token = try accessTokenProvider()
+            guard !token.isEmpty else { throw AilockError.badResponse }
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 60
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse, http.url == url else { throw AilockError.badResponse }
+            if http.statusCode == 401, attempt == 0 { await forceTokenRefresh?(); continue }
+            guard http.statusCode == 200 else { throw AilockError.http(status: http.statusCode, code: nil, detail: nil) }
+            let directory = URL.temporaryDirectory.appending(path: "ailock-attachment-\(UUID().uuidString)", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let filename = file.filename.isEmpty ? "file" : URL(fileURLWithPath: file.filename).lastPathComponent
+            let destination = directory.appending(path: String(filename.prefix(100)))
+            try data.write(to: destination, options: .atomic)
+            return destination
         }
-
-        let (data, response) = try await session.data(for: request)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-        guard status == 200 else {
-            throw AilockError.http(status: status, code: nil, detail: nil)
-        }
-
-        let destination = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
-        let fileURL = destination.appendingPathComponent(file.filename.isEmpty ? "file" : file.filename)
-        try data.write(to: fileURL)
-        return fileURL
+        throw AilockError.badResponse
     }
 
     func absoluteURL(from raw: String) -> URL? {
@@ -855,6 +856,7 @@ final class AilockService {
         case "gif": return "image/gif"
         case "heic": return "image/heic"
         case "webp": return "image/webp"
+        case "odt": return "application/vnd.oasis.opendocument.text"
         case "pdf": return "application/pdf"
         case "txt", "log": return "text/plain"
         case "md": return "text/markdown"
