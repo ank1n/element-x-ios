@@ -23,6 +23,9 @@ struct CallDetailScreen: View {
                     .padding(.top, 16)
                     .padding(.bottom, 12)
 
+                linkedTaskSummary
+                    .padding(.horizontal, 16)
+
                 if context.viewState.call.hasRecording {
                     audioPlayerBar
                         .padding(.horizontal, 16)
@@ -35,6 +38,11 @@ struct CallDetailScreen: View {
         .background(isCosmos ? Color(.systemGroupedBackground) : Color(.systemBackground))
         .navigationTitle(NSLocalizedString("stalk_calldetail_title", tableName: "Localizable", value: "Детали звонка", comment: "Call detail screen title"))
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear { context.send(viewAction: .appeared) }
+        .onDisappear { context.send(viewAction: .disappeared) }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            context.send(viewAction: .refreshTasks)
+        }
     }
 
     // MARK: - Header
@@ -99,6 +107,42 @@ struct CallDetailScreen: View {
 
     // MARK: - Audio Player Bar
 
+    @ViewBuilder
+    private var linkedTaskSummary: some View {
+        if let error = context.viewState.tasksError {
+            VStack(alignment: .leading, spacing: 8) {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.footnote).foregroundStyle(.secondary)
+                Button(L10n.actionRetry) { context.send(viewAction: .refreshTasks) }
+                    .disabled(context.viewState.isTasksLoading)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+            .padding(.bottom, 12)
+        } else if context.viewState.taskStatistics.total > 0 {
+            VStack(alignment: .leading, spacing: 8) {
+                Button { context.send(viewAction: .selectTab(.tasks)) } label: {
+                    CallTaskStatusSummary(statistics: context.viewState.taskStatistics)
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint(NSLocalizedString("stalk_call_tasks_open", value: "Open linked tasks", comment: "Open linked call tasks"))
+                if context.viewState.isTasksLoading {
+                    ProgressView(NSLocalizedString("stalk_call_tasks_refreshing", value: "Updating task statuses…", comment: "Refreshing linked task statuses"))
+                        .font(.caption)
+                }
+            }
+            .padding(12)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+            .padding(.bottom, 12)
+        } else if context.viewState.isTasksLoading {
+            ProgressView(NSLocalizedString("stalk_call_tasks_loading", value: "Loading linked tasks…", comment: "Loading linked call tasks"))
+                .font(.footnote)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, 12)
+        }
+    }
+
     private var audioPlayerBar: some View {
         VStack(spacing: 8) {
             HStack(spacing: 12) {
@@ -150,7 +194,9 @@ struct CallDetailScreen: View {
 
     @ViewBuilder
     private var transcriptionContent: some View {
-        if context.viewState.isTranscriptionLoading {
+        if context.viewState.selectedTab == .tasks, context.viewState.availableTabs.contains(.tasks) {
+            tabsView
+        } else if context.viewState.isTranscriptionLoading {
             VStack(spacing: 12) {
                 ProgressView()
                 Text(NSLocalizedString("stalk_calldetail_loading", tableName: "Localizable", value: "Загрузка...", comment: "Loading placeholder"))
@@ -248,10 +294,8 @@ struct CallDetailScreen: View {
 
     private var tasksTabView: some View {
         VStack(alignment: .leading, spacing: 16) {
-            let suggested = context.viewState.allSuggestedTasks
-            let created = context.viewState.createdTasks
-            let createdKeys = Set(created.map { "\($0.topicIndex)-\($0.taskIndex)" })
-            let pending = suggested.filter { !createdKeys.contains($0.id) }
+            let created = context.viewState.taskStatistics.uniqueTasks
+            let pending = context.viewState.pendingSuggestedTasks
 
             if context.viewState.isTasksLoading, created.isEmpty {
                 HStack { Spacer(); ProgressView(); Spacer() }
@@ -282,12 +326,12 @@ struct CallDetailScreen: View {
                 }
             }
 
-            if pending.isEmpty, created.isEmpty, !context.viewState.isTasksLoading {
+            if pending.isEmpty, created.isEmpty, !context.viewState.isTasksLoading, context.viewState.tasksError == nil {
                 VStack(spacing: 8) {
                     Image(systemName: "checkmark.circle")
                         .font(.system(size: 32))
                         .foregroundColor(.secondary)
-                    Text(NSLocalizedString("stalk_calldetail_no_suggested_tasks", tableName: "Localizable", value: "Нет предложенных задач", comment: "Empty state: no suggested tasks"))
+                    Text(NSLocalizedString("stalk_call_tasks_empty", tableName: "Localizable", value: "No linked tasks or suggestions", comment: "Call task empty state"))
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }

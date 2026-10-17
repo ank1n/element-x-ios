@@ -116,6 +116,8 @@ class CallsTabFlowCoordinator: FlowCoordinatorProtocol {
                 self.actionsSubject.send(.startCall(roomID: userId))
             case .showCallDetail(let call):
                 self.showCallDetailScreen(call: call)
+            case .showCallTasks(let call):
+                self.showCallDetailScreen(call: call, initialTab: .tasks)
             }
         }
         .store(in: &cancellables)
@@ -124,7 +126,7 @@ class CallsTabFlowCoordinator: FlowCoordinatorProtocol {
         callsListCoordinator = coordinator
     }
 
-    private func showCallDetailScreen(call: CallHistoryItem) {
+    private func showCallDetailScreen(call: CallHistoryItem, initialTab: CallDetailTab? = nil) {
         guard let callHistoryService else {
             MXLog.error("sTalk: CallHistoryService not available for call detail")
             return
@@ -133,7 +135,8 @@ class CallsTabFlowCoordinator: FlowCoordinatorProtocol {
         let parameters = CallDetailScreenCoordinatorParameters(call: call,
                                                                callHistoryService: callHistoryService,
                                                                mediaProvider: userSession.mediaProvider,
-                                                               clientProxy: userSession.clientProxy)
+                                                               clientProxy: userSession.clientProxy,
+                                                               initialTab: initialTab)
         let coordinator = CallDetailScreenCoordinator(parameters: parameters)
 
         coordinator.actionsPublisher.sink { [weak self] action in

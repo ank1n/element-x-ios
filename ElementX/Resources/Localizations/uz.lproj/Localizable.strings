@@ -1984,3 +1984,18 @@
 "stalk_file_share_permission_read" = "O‘qish";
 "stalk_file_share_permission_write" = "Yozish";
 "stalk_file_share_permission_full" = "To‘liq";
+
+/* Call history linked task counts and status summary */
+"stalk_call_tasks_summary_title" = "Bogʻlangan vazifalar";
+"stalk_call_tasks_total" = "Jami: %ld";
+"stalk_call_tasks_backlog" = "Rejada: %ld";
+"stalk_call_tasks_started" = "Bajarilmoqda: %ld";
+"stalk_call_tasks_completed" = "Bajarildi: %ld";
+"stalk_call_tasks_cancelled" = "Bekor qilingan: %ld";
+"stalk_call_tasks_unknown" = "Holati nomaʼlum: %ld";
+"stalk_call_tasks_refresh_failed" = "Vazifalar holatini yangilab boʻlmadi";
+"stalk_call_tasks_open" = "Bogʻlangan vazifalarni ochish";
+"stalk_call_tasks_refreshing" = "Vazifalar holati yangilanmoqda…";
+"stalk_call_tasks_loading" = "Bogʻlangan vazifalar yuklanmoqda…";
+"stalk_call_tasks_empty" = "Bogʻlangan yoki tavsiya etilgan vazifalar yoʻq";
+"stalk_call_linked_tasks_accessibility" = "Bogʻlangan vazifalarni ochish: %@";

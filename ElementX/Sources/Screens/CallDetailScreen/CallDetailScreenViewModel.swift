@@ -23,6 +23,11 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
     private var detailCancellables: Set<AnyCancellable> = []
     private var pollingCancellable: AnyCancellable?
     private var currentDownloadTask: Task<Void, Never>?
+    private var tasksRequest: Task<Void, Never>?
+    private var tasksRevision = 0
+    private var tasksVisible = true
+    private var userSelectedTab = false
+    private let initialTab: CallDetailTab?
 
     var actionsPublisher: AnyPublisher<CallDetailScreenViewModelAction, Never> {
         actionsSubject.eraseToAnyPublisher()
@@ -34,17 +39,23 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
          callHistoryService: CallHistoryServiceProtocol,
          mediaProvider: MediaProviderProtocol?,
          clientProxy: ClientProxyProtocol? = nil,
+         initialTab: CallDetailTab? = nil,
          audioPlayer: AudioPlayerProtocol = AudioPlayer()) {
         self.callHistoryService = callHistoryService
         self.clientProxy = clientProxy
         self.audioPlayer = audioPlayer
+        self.initialTab = initialTab
 
-        let initialState = CallDetailScreenViewState(call: call)
+        var initialState = CallDetailScreenViewState(call: call)
+        initialState.tasksTabRequested = initialTab == .tasks
+        if let initialTab { initialState.selectedTab = initialTab }
         // Build 114: mediaProvider обязателен — LoadableAvatarImage падает с
         // assertionFailure в DEBUG если context.mediaProvider == nil.
         super.init(initialViewState: initialState, mediaProvider: mediaProvider)
 
         setupAudioPlayerSubscription()
+        // Status totals and the Tasks tab share this one request, independently of transcription.
+        Task { await loadTasks(refresh: true) }
 
         // Build 115 diag: понять почему транскрипция не показывается на устройстве.
         DiagLog.write("CallDetail", "init: callId=\(call.id) hasRecording=\(call.hasRecording) recordingURL=\(call.recordingURL?.absoluteString ?? "nil")")
@@ -170,10 +181,25 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
 
     override func process(viewAction: CallDetailScreenViewAction) {
         switch viewAction {
+        case .appeared:
+            let returning = !tasksVisible
+            tasksVisible = true
+            if returning || !state.tasksHaveLoaded { Task { await loadTasks(refresh: true) } }
+        case .disappeared:
+            tasksVisible = false
+            tasksRevision += 1
+            tasksRequest?.cancel()
+            tasksRequest = nil
+            state.isTasksLoading = false
         case .dismiss:
+            tasksVisible = false
+            tasksRevision += 1
+            tasksRequest?.cancel()
             stopPlayback()
             actionsSubject.send(.dismiss)
         case .selectTab(let tab):
+            userSelectedTab = true
+            if tab == .tasks { state.tasksTabRequested = true }
             state.selectedTab = tab
         case .seekToTimestamp(let seconds):
             handleSeekToTimestamp(seconds)
@@ -233,6 +259,7 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
     deinit {
         pollingCancellable?.cancel()
         currentDownloadTask?.cancel()
+        tasksRequest?.cancel()
     }
 
     // MARK: - Transcription
@@ -252,10 +279,7 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
                 state.transcriptionData = data
                 state.isTranscriptionLoading = false
 
-                // Select first available tab
-                if let firstTab = state.availableTabs.first {
-                    state.selectedTab = firstTab
-                }
+                normalizeSelectedTab(preferDefault: !userSelectedTab && initialTab == nil)
                 let tabs = state.availableTabs.map(\.rawValue).joined(separator: ",")
                 DiagLog.write("CallDetail", "  availableTabs=\(tabs) selected=\(state.selectedTab.rawValue)")
 
@@ -263,15 +287,13 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
                     startPolling()
                 }
             }
-            // STALK-255 build 157: подтянуть созданные задачи если транскрипция завершена.
-            // Без этого вкладка "Задачи" пустая при первом открытии хотя в БД задачи есть.
-            if data.status == .completed {
-                await loadTasks(refresh: false)
-            }
         } catch {
             DiagLog.write("CallDetail", "  fetchTranscription FAIL \(error)")
             MXLog.error("CallDetail: Failed to fetch transcription: \(error)")
-            await MainActor.run { state.isTranscriptionLoading = false }
+            await MainActor.run {
+                state.isTranscriptionLoading = false
+                normalizeSelectedTab()
+            }
         }
     }
 
@@ -454,18 +476,59 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
     /// Подтянуть уже созданные TrackIT-задачи для этого звонка.
     /// Запускается при первом открытии вкладки "Задачи" и по action .refreshTasks.
     private func loadTasks(refresh: Bool) async {
-        guard let egressId else { return }
-        await MainActor.run { state.isTasksLoading = true }
-        do {
-            let tasks = try await callHistoryService.fetchCreatedTasks(egressId: egressId, refresh: refresh)
-            await MainActor.run {
-                state.createdTasks = tasks
-                state.isTasksLoading = false
+        guard tasksVisible, !state.call.taskRecordingIDs.isEmpty else { return }
+        if let tasksRequest { await tasksRequest.value; return }
+        tasksRevision += 1
+        let revision = tasksRevision
+        let ids = state.call.taskRecordingIDs
+        let service = callHistoryService
+        state.isTasksLoading = true
+        state.tasksError = nil
+        normalizeSelectedTab()
+        let request = Task { [weak self] in
+            do {
+                // Bound concurrency: status refresh can itself call TrackIT for each issue.
+                let rows = try await withThrowingTaskGroup(of: (Int, [CreatedTask]).self) { group in
+                    var next = 0
+                    for _ in 0..<min(4, ids.count) {
+                        let index = next; next += 1
+                        group.addTask { try await (index, service.fetchCreatedTasks(egressId: ids[index], refresh: refresh)) }
+                    }
+                    var pages: [(Int, [CreatedTask])] = []
+                    while let result = try await group.next() {
+                        try Task.checkCancellation()
+                        pages.append(result)
+                        if next < ids.count {
+                            let index = next; next += 1
+                            group.addTask { try await (index, service.fetchCreatedTasks(egressId: ids[index], refresh: refresh)) }
+                        }
+                    }
+                    return pages.sorted { $0.0 < $1.0 }.flatMap(\.1)
+                }
+                try Task.checkCancellation()
+                guard let self, tasksVisible, tasksRevision == revision else { return }
+                state.createdTasks = rows
+                state.taskStatistics = CallTaskStatistics(tasks: rows)
+                state.tasksHaveLoaded = true
+            } catch {
+                guard let self, !Task.isCancelled, tasksVisible, tasksRevision == revision else { return }
+                // Keep previous rows, but never present a failed/partial refresh as zero or fresh totals.
+                state.tasksError = NSLocalizedString("stalk_call_tasks_refresh_failed", value: "Could not update task statuses", comment: "Call task statuses refresh failed")
             }
-            DiagLog.write("CallDetail", "  loadTasks OK count=\(tasks.count)")
-        } catch {
-            await MainActor.run { state.isTasksLoading = false }
-            DiagLog.write("CallDetail", "  loadTasks FAIL \(error)")
+            guard let self, tasksVisible, tasksRevision == revision else { return }
+            state.isTasksLoading = false
+            tasksRequest = nil
+            normalizeSelectedTab()
+        }
+        tasksRequest = request
+        await request.value
+    }
+
+    private func normalizeSelectedTab(preferDefault: Bool = false) {
+        if state.isTranscriptionLoading, !state.tasksTabRequested, !userSelectedTab { return }
+        if preferDefault || !state.availableTabs.contains(state.selectedTab),
+           let first = state.availableTabs.first {
+            state.selectedTab = first
         }
     }
 
@@ -495,13 +558,26 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
                 // Заменяем или добавляем по (topicIndex, taskIndex) ключу — idempotent
                 // от сервера может вернуть существующую задачу. UI не должен
                 // дублировать карточки.
-                if let i = state.createdTasks.firstIndex(where: { $0.topicIndex == created.topicIndex && $0.taskIndex == created.taskIndex }) {
+                if let i = state.createdTasks.firstIndex(where: { $0.egressId == created.egressId && $0.topicIndex == created.topicIndex && $0.taskIndex == created.taskIndex }) {
                     state.createdTasks[i] = created
                 } else {
                     state.createdTasks.append(created)
                 }
                 state.projectPickerForTask = nil
+                state.taskStatistics = CallTaskStatistics(tasks: state.createdTasks)
+                state.tasksHaveLoaded = true
             }
+            if let clientProxy {
+                NotificationCenter.default.post(name: .stalkCallTasksChanged, object: nil,
+                                                userInfo: ["egressIDs": state.call.taskRecordingIDs,
+                                                           "userID": clientProxy.userID, "homeserver": clientProxy.homeserver])
+            }
+            // Revalidate all sessions, including idempotent creations; never increment a cached count.
+            tasksRevision += 1
+            tasksRequest?.cancel()
+            tasksRequest = nil
+            state.isTasksLoading = false
+            await loadTasks(refresh: true)
             DiagLog.write("CallDetail", "  createTask OK \(created.trackitProjectIdentifier ?? "?")-\(created.trackitSequenceId ?? 0)")
         } catch {
             await MainActor.run {
@@ -524,8 +600,7 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
            last != "play" {
             return last
         }
-        // Fallback: на симуляторе или при отсутствии recordingURL — call.id.
-        let id = state.call.id
-        return id.isEmpty ? nil : id
+        // Failed/non-playable recordings still have task metadata; local UUIDs are not API IDs.
+        return state.call.taskRecordingIDs.first
     }
 }

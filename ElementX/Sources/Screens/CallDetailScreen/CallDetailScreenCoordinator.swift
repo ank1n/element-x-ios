@@ -13,6 +13,7 @@ struct CallDetailScreenCoordinatorParameters {
     let mediaProvider: MediaProviderProtocol?
     /// Build 126: для resolve room avatar и members (transcript speakers).
     var clientProxy: ClientProxyProtocol?
+    var initialTab: CallDetailTab?
 }
 
 enum CallDetailScreenCoordinatorAction {
@@ -33,7 +34,8 @@ final class CallDetailScreenCoordinator: CoordinatorProtocol {
         viewModel = CallDetailScreenViewModel(call: parameters.call,
                                               callHistoryService: parameters.callHistoryService,
                                               mediaProvider: parameters.mediaProvider,
-                                              clientProxy: parameters.clientProxy)
+                                              clientProxy: parameters.clientProxy,
+                                              initialTab: parameters.initialTab)
     }
 
     func start() {
@@ -49,7 +51,9 @@ final class CallDetailScreenCoordinator: CoordinatorProtocol {
         .store(in: &cancellables)
     }
 
-    func stop() { }
+    func stop() {
+        viewModel.context.send(viewAction: .disappeared)
+    }
 
     func toPresentable() -> AnyView {
         AnyView(CallDetailScreen(context: viewModel.context))

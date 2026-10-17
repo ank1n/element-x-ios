@@ -55,6 +55,7 @@ enum CallsListScreenViewAction {
     case playRecording(CallHistoryItem)
     case seekPlayback(progress: Double)
     case showCallDetail(CallHistoryItem)
+    case showCallTasks(CallHistoryItem)
     case refresh
     // Meetings
     case rsvpMeeting(meetingId: Int, response: String)
@@ -66,6 +67,7 @@ enum CallsListScreenViewModelAction {
     case startCall(userId: String)
     case startGroupCall(userIDs: [String], isVideo: Bool)
     case showCallDetail(CallHistoryItem)
+    case showCallTasks(CallHistoryItem)
 }
 
 /// Контакт для экрана "Новый звонок"
@@ -135,6 +137,57 @@ struct CallHistoryItem: Identifiable, Equatable, Codable {
     var participantCount = 2
     /// Avatar URLs участников (для наложенных аватарок)
     var participantAvatarURLs: [URL] = []
+
+    /// Actual TrackIT issues across the logical call, supplied by the list API.
+    var createdTaskCount: Int?
+    var callId: String?
+    /// API egress IDs, including fragments without playable audio.
+    var recordingSessionIDs: [String]?
+
+    /// Never use `id`: merged local rows use a device UUID rather than an API ID.
+    var taskRecordingIDs: [String] {
+        var ids = recordingSessionIDs ?? []
+        if let recordingURL, recordingURL.deletingLastPathComponent().lastPathComponent == "play" {
+            ids.append(recordingURL.lastPathComponent)
+        }
+        return Self.uniqueRecordingIDs(ids)
+    }
+
+    var taskCountBadge: String? {
+        guard let createdTaskCount, createdTaskCount > 0 else { return nil }
+        return createdTaskCount > 99 ? "99+" : String(createdTaskCount)
+    }
+
+    static func uniqueRecordingIDs(_ ids: [String]) -> [String] {
+        var seen = Set<String>()
+        return ids.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && seen.insert($0).inserted }
+    }
+
+    /// Reconnect fragments carry a call-wide count; use the maximum, never a sum.
+    static func mergingTaskMetadata(in calls: [Self]) -> [Self] {
+        struct Key: Hashable {
+            let roomID: String
+            let callID: String
+        }
+        var ids: [Key: [String]] = [:]
+        var counts: [Key: Int] = [:]
+        for call in calls {
+            guard let callID = call.callId, !callID.isEmpty else { continue }
+            let key = Key(roomID: call.contactId, callID: callID)
+            ids[key] = uniqueRecordingIDs((ids[key] ?? []) + call.taskRecordingIDs)
+            if let count = call.createdTaskCount, count >= 0 {
+                counts[key] = max(counts[key] ?? 0, count)
+            }
+        }
+        return calls.map { call in
+            guard let callID = call.callId, !callID.isEmpty else { return call }
+            let key = Key(roomID: call.contactId, callID: callID)
+            var result = call
+            result.recordingSessionIDs = ids[key]
+            result.createdTaskCount = counts[key]
+            return result
+        }
+    }
 
     var hasRecording: Bool {
         recordingURL != nil
@@ -221,6 +274,10 @@ struct CallHistoryAPIItem: Codable {
     let duration: Int?
     let fileSize: Int?
 
+    var createdTaskCount: Int?
+    var callId: String?
+    var sessionIds: [String]?
+
     func toCallHistoryItem(currentUserID: String? = nil, apiBaseURL: URL? = nil) -> CallHistoryItem? {
         guard let startedAtString = startedAt,
               let startDate = Self.parseDate(startedAtString) else {
@@ -289,7 +346,10 @@ struct CallHistoryAPIItem: Codable {
                                duration: callDuration,
                                isMissed: false,
                                recordingURL: playbackURL,
-                               participantCount: max(participantCount, 2))
+                               participantCount: max(participantCount, 2),
+                               createdTaskCount: createdTaskCount,
+                               callId: callId,
+                               recordingSessionIDs: CallHistoryItem.uniqueRecordingIDs((sessionIds ?? []) + [egressId]))
     }
 
     /// Парсит дату в разных форматах от Recording API
@@ -312,5 +372,27 @@ struct CallHistoryAPIItem: Codable {
         // Формат 3: ISO8601 без миллисекунд "2026-02-04T10:17:11Z"
         isoFormatter.formatOptions = [.withInternetDateTime]
         return isoFormatter.date(from: string)
+    }
+}
+
+/// Keep malformed optional metadata from dropping the entire history response.
+/// Declaring the decoder here also retains the memberwise initializer used by callers.
+extension CallHistoryAPIItem {
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        egressId = try values.decode(String.self, forKey: .egressId)
+        roomName = try values.decode(String.self, forKey: .roomName)
+        status = try values.decode(Int.self, forKey: .status)
+        startedAt = try values.decodeIfPresent(String.self, forKey: .startedAt)
+        endedAt = try values.decodeIfPresent(String.self, forKey: .endedAt)
+        matrixRoomId = try values.decodeIfPresent(String.self, forKey: .matrixRoomId)
+        participants = try values.decodeIfPresent([RecordingParticipant].self, forKey: .participants)
+        initiatedBy = try values.decodeIfPresent(String.self, forKey: .initiatedBy)
+        duration = try values.decodeIfPresent(Int.self, forKey: .duration)
+        fileSize = try values.decodeIfPresent(Int.self, forKey: .fileSize)
+        let count = try? values.decode(Int.self, forKey: .createdTaskCount)
+        createdTaskCount = count.flatMap { $0 >= 0 ? $0 : nil }
+        callId = try? values.decode(String.self, forKey: .callId)
+        sessionIds = try? values.decode([String].self, forKey: .sessionIds)
     }
 }

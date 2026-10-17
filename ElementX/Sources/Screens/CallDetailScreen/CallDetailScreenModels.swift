@@ -6,6 +6,11 @@
 
 import Foundation
 
+extension Notification.Name {
+    /// Current-account call tasks changed; list counts are reloaded from recording/list.
+    static let stalkCallTasksChanged = Notification.Name("stalkCallTasksChanged")
+}
+
 // MARK: - Transcription API Models
 
 enum TranscriptionStatus: String, Codable {
@@ -222,6 +227,8 @@ enum CallDetailTab: String, CaseIterable {
 }
 
 enum CallDetailScreenViewAction {
+    case appeared
+    case disappeared
     case dismiss
     case selectTab(CallDetailTab)
     case seekToTimestamp(TimeInterval)
@@ -294,12 +301,27 @@ struct CallDetailScreenViewState: BindableState {
         return topics.compactMap(\.suggestedTasks).flatMap(\.self)
     }
 
+    /// Status/card deduplication may select another session's snapshot of the same issue.
+    /// Keep the original source links when deciding which suggestions were already converted.
+    var pendingSuggestedTasks: [SuggestedTask] {
+        let source = call.recordingURL?.lastPathComponent ?? call.taskRecordingIDs.first
+        let createdKeys = Set(createdTasks.filter {
+            $0.egressId == source && !($0.trackitIssueId ?? "").isEmpty
+        }.map { "\($0.topicIndex)-\($0.taskIndex)" })
+        return allSuggestedTasks.filter { !createdKeys.contains($0.id) }
+    }
+
     var hasTasks: Bool {
-        !allSuggestedTasks.isEmpty || !createdTasks.isEmpty
+        !allSuggestedTasks.isEmpty || taskStatistics.total > 0 ||
+            (call.createdTaskCount ?? 0) > 0 || isTasksLoading || tasksError != nil || tasksTabRequested
     }
 
     /// STALK-255 build 157: уже созданные TrackIT-задачи для звонка.
     var createdTasks: [CreatedTask] = []
+    var taskStatistics = CallTaskStatistics(tasks: [])
+    var tasksError: String?
+    var tasksHaveLoaded = false
+    var tasksTabRequested = false
     var isTasksLoading = false
     var trackItProjects: [TrackItProject] = []
     var isProjectsLoading = false

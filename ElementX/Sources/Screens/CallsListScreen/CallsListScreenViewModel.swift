@@ -101,6 +101,8 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
             handlePlayRecording(call)
         case .showCallDetail(let call):
             actionsSubject.send(.showCallDetail(call))
+        case .showCallTasks(let call):
+            actionsSubject.send(.showCallTasks(call))
         case .seekPlayback(let progress):
             Task { await audioPlayer.seek(to: progress) }
         case .refresh:
@@ -135,6 +137,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
     private var meetingsRetryAfter = Date.distantPast
     private var retryAfter: Date = .distantPast
     private var forceAfterCurrentRefresh = false
+    private var taskCountsInvalidated = false
     private var roomTokenRefreshTask: Task<String?, Never>?
     private static let retryInterval: TimeInterval = 30
 
@@ -169,6 +172,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
             guard let self else { return }
             if let cached = await cacheService?.load(CallHistoryCacheSnapshot.self, forKey: cacheKey), !stopped {
                 snapshot = cached
+                if taskCountsInvalidated { snapshot.recordingsFetchedAt = nil }
                 state.meetings = cached.meetings
                 resolvedRoomData = cached.rooms
                 if cached.localRevision != localRevision {
@@ -189,16 +193,19 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         }
     }
 
-    private func refreshIfNeeded(force: Bool = false, rerunIfLoading: Bool = false) {
+    private func refreshIfNeeded(force: Bool = false, rerunIfLoading: Bool = false, recordingsOnly: Bool = false) {
         guard cacheLoaded, isActive, applicationIsActive(), !stopped else { return }
         if refreshTask != nil {
             forceAfterCurrentRefresh = forceAfterCurrentRefresh || rerunIfLoading
             return
         }
-        guard force || now() >= retryAfter else { return }
-        let recordingsNeeded = callHistoryService != nil && (force || !CallHistoryCacheSnapshot.isFresh(snapshot.recordingsFetchedAt, now: now()))
+        guard force || taskCountsInvalidated || now() >= retryAfter else { return }
+        let refreshOnlyRecordings = recordingsOnly || taskCountsInvalidated
+        let recordingsNeeded = callHistoryService != nil && (force || taskCountsInvalidated || !CallHistoryCacheSnapshot.isFresh(snapshot.recordingsFetchedAt, now: now()))
         let roomsNeeded: Bool
-        if roomHistoryLoader != nil {
+        if refreshOnlyRecordings {
+            roomsNeeded = false
+        } else if roomHistoryLoader != nil {
             roomsNeeded = force || !CallHistoryCacheSnapshot.isFresh(snapshot.roomEventsFetchedAt, now: now())
         } else {
             roomsNeeded = userSession.clientProxy is ClientProxy &&
@@ -209,6 +216,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
             DiagLog.write("CallHistory", "fresh cache: no history requests")
             return
         }
+        if recordingsNeeded { taskCountsInvalidated = false }
         retryAfter = now().addingTimeInterval(Self.retryInterval)
         state.isRefreshingHistory = true
         state.isLoading = state.callHistory.isEmpty && snapshot.recordingsFetchedAt == nil && snapshot.roomCalls.isEmpty
@@ -231,7 +239,11 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
             let pendingForce = forceAfterCurrentRefresh
             forceAfterCurrentRefresh = false
             if Task.isCancelled { retryAfter = .distantPast }
-            if pendingForce || (Task.isCancelled && isActive && applicationIsActive()) { refreshIfNeeded(force: pendingForce) }
+            if pendingForce || (Task.isCancelled && isActive && applicationIsActive()) {
+                refreshIfNeeded(force: pendingForce)
+            } else if taskCountsInvalidated {
+                refreshIfNeeded(recordingsOnly: true)
+            }
         }
     }
 
@@ -242,7 +254,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
             let recordings = try await callHistoryService.fetchRecordings(currentUserID: userSession.clientProxy.userID)
             guard !Task.isCancelled, !stopped else { return }
             snapshot.recordings = recordings
-            snapshot.recordingsFetchedAt = localRevision == revision ? now() : nil
+            snapshot.recordingsFetchedAt = localRevision == revision && !taskCountsInvalidated ? now() : nil
             rebuildFetchedHistory()
             updateCallHistoryFromLocal(localCallHistoryService.getAllCalls())
             await persistHistory()
@@ -313,7 +325,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
     }
 
     private func rebuildFetchedHistory() {
-        serverRecordings = snapshot.recordings
+        serverRecordings = CallHistoryItem.mergingTaskMetadata(in: snapshot.recordings)
         for call in snapshot.roomCalls.values.flatMap({ $0 }) {
             if !serverRecordings.contains(where: { $0.contactId == call.contactId && abs($0.timestamp.timeIntervalSince(call.timestamp)) < 300 }) {
                 serverRecordings.append(call)
@@ -373,6 +385,19 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
             .receive(on: DispatchQueue.main)
             .sink { [weak self] loaded in if loaded { self?.refreshIfNeeded() } }
             .store(in: &callsCancellables)
+        NotificationCenter.default.publisher(for: .stalkCallTasksChanged)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] notification in
+                guard let self, !self.stopped,
+                      let userID = notification.userInfo?["userID"] as? String,
+                      let homeserver = notification.userInfo?["homeserver"] as? String,
+                      userID == self.userSession.clientProxy.userID,
+                      homeserver == self.userSession.clientProxy.homeserver else { return }
+                self.taskCountsInvalidated = true
+                self.snapshot.recordingsFetchedAt = nil
+                self.refreshIfNeeded(recordingsOnly: true)
+            }
+            .store(in: &callsCancellables)
         NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -408,25 +433,18 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
                 callType = .outgoing
             }
 
-            // Ищем запись для этого звонка по egressId или по времени
-            var recordingURL: URL?
-            if let egressId = local.recordingEgressId {
-                // Проверяем статус записи на сервере - URL будет только для завершенных записей
-                if let serverRecording = serverRecordings.first(where: { $0.id == egressId }),
-                   serverRecording.recordingURL != nil {
-                    recordingURL = serverRecording.recordingURL
-                } else {
-                    // Fallback: формируем URL напрямую — запись может быть ещё не обновлена на сервере
-                    let homeserver = userSession.clientProxy.homeserver
-                    let domain = URL(string: homeserver)?.host ?? "stalk.implica.ru"
-                    recordingURL = URL(string: "https://\(domain)/recording-api/api/recording/play/\(egressId)")
-                }
+            let matchedRecording = findMatchingRecording(for: local)
+            let recordingURL: URL?
+            if let matchedRecording {
+                recordingURL = matchedRecording.recordingURL
+            } else if let egressID = local.recordingEgressId {
+                let domain = URL(string: userSession.clientProxy.homeserver)?.host ?? "stalk.implica.ru"
+                recordingURL = URL(string: "https://\(domain)/recording-api/api/recording/play/\(egressID)")
             } else {
-                // Попробуем найти запись по roomID и близкому времени
-                if let matchingRecording = findMatchingRecording(for: local) {
-                    recordingURL = matchingRecording.recordingURL
-                }
+                recordingURL = nil
             }
+            let recordingIDs = CallHistoryItem.uniqueRecordingIDs((matchedRecording?.taskRecordingIDs ?? []) +
+                (local.recordingEgressId.map { [$0] } ?? []))
 
             return CallHistoryItem(id: local.id,
                                    contactName: local.displayName,
@@ -435,7 +453,10 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
                                    timestamp: local.startedAt,
                                    duration: local.duration,
                                    isMissed: local.isMissed,
-                                   recordingURL: recordingURL)
+                                   recordingURL: recordingURL,
+                                   createdTaskCount: matchedRecording?.createdTaskCount,
+                                   callId: matchedRecording?.callId,
+                                   recordingSessionIDs: recordingIDs.isEmpty ? nil : recordingIDs)
         }
 
         // Добавляем записи с сервера которые не имеют соответствия в локальной истории
@@ -517,13 +538,20 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
     }
 
     private func findMatchingRecording(for localCall: LocalCallHistoryItem) -> CallHistoryItem? {
-        serverRecordings.first { recording in
+        if let egressID = localCall.recordingEgressId,
+           let primary = serverRecordings.first(where: { $0.id == egressID }) {
+            return primary
+        }
+        return serverRecordings.first { recording in
             isRecordingMatchingCall(recording, localCall: localCall)
         }
     }
 
     /// Проверяет соответствует ли запись локальному звонку
     private func isRecordingMatchingCall(_ recording: CallHistoryItem, localCall: LocalCallHistoryItem) -> Bool {
+        if let egressID = localCall.recordingEgressId {
+            return recording.id == egressID || recording.taskRecordingIDs.contains(egressID)
+        }
         // Проверяем roomID (contactId в recording может быть matrixRoomId или encoded roomName)
         let roomMatches = recording.contactId == localCall.roomID ||
             recording.contactId.contains(localCall.roomID)
@@ -1216,8 +1244,10 @@ class CallHistoryService: NSObject, CallHistoryServiceProtocol, URLSessionDelega
             throw CallHistoryError.serverError(errorMessage)
         }
 
-        return recordings.compactMap { $0.toCallHistoryItem(currentUserID: currentUserID, apiBaseURL: apiBaseURL) }
-            .sorted { $0.timestamp > $1.timestamp }
+        return CallHistoryItem.mergingTaskMetadata(in: recordings.compactMap {
+            $0.toCallHistoryItem(currentUserID: currentUserID, apiBaseURL: apiBaseURL)
+        })
+        .sorted { $0.timestamp > $1.timestamp }
     }
 
     func fetchTranscription(egressId: String) async throws -> TranscriptionData {
@@ -1271,7 +1301,9 @@ class CallHistoryService: NSObject, CallHistoryServiceProtocol, URLSessionDelega
     private func performAuthenticatedRequest<T: Decodable>(url: URL, method: String, jsonBody: [String: Any]? = nil) async throws -> T {
         var lastError: Error?
         for attempt in 1...3 {
+            try Task.checkCancellation()
             let token = (try? accessTokenProvider?()) ?? accessToken
+            try Task.checkCancellation()
 
             var request = URLRequest(url: url)
             request.httpMethod = method
@@ -1285,11 +1317,15 @@ class CallHistoryService: NSObject, CallHistoryServiceProtocol, URLSessionDelega
             request.timeoutInterval = 30.0
 
             do {
+                try Task.checkCancellation()
                 let (data, response) = try await urlSession.data(for: request)
+                try Task.checkCancellation()
                 let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
 
                 if statusCode == 401, attempt < 3 {
+                    try Task.checkCancellation()
                     await forceTokenRefresh?()
+                    try Task.checkCancellation()
                     continue
                 }
 
@@ -1306,11 +1342,16 @@ class CallHistoryService: NSObject, CallHistoryServiceProtocol, URLSessionDelega
 
                 return try JSONDecoder().decode(T.self, from: data)
             } catch let permanent as PermanentFailure {
+                try Task.checkCancellation()
                 throw permanent.underlying
             } catch {
+                if error is CancellationError || (error as? URLError)?.code == .cancelled {
+                    throw error
+                }
+                try Task.checkCancellation()
                 lastError = error
                 if attempt < 3 {
-                    try? await Task.sleep(for: .seconds(1))
+                    try await Task.sleep(for: .seconds(1))
                 }
             }
         }
@@ -1333,11 +1374,21 @@ class CallHistoryService: NSObject, CallHistoryServiceProtocol, URLSessionDelega
     }
 
     func fetchCreatedTasks(egressId: String, refresh: Bool) async throws -> [CreatedTask] {
-        var components = URLComponents(url: baseURL.appendingPathComponent("api/recording/tasks/\(egressId)"), resolvingAgainstBaseURL: false)
-        if refresh {
-            components?.queryItems = [URLQueryItem(name: "refresh", value: "1")]
+        // Literal dot segments can be normalized by URL loading before reaching the API.
+        guard !egressId.isEmpty, egressId != ".", egressId != ".." else {
+            throw CallHistoryError.invalidResponse
         }
-        guard let url = components?.url else { throw CallHistoryError.invalidResponse }
+        // Encode the ID as one path component, including embedded slash/percent/query characters.
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+        guard let encodedID = egressId.addingPercentEncoding(withAllowedCharacters: allowed),
+              var components = URLComponents(url: baseURL.appendingPathComponent("api/recording/tasks"), resolvingAgainstBaseURL: false) else {
+            throw CallHistoryError.invalidResponse
+        }
+        components.percentEncodedPath += "/" + encodedID
+        if refresh {
+            components.queryItems = [URLQueryItem(name: "refresh", value: "1")]
+        }
+        guard let url = components.url else { throw CallHistoryError.invalidResponse }
         let resp: TasksListResponse = try await performAuthenticatedRequest(url: url, method: "GET")
         return resp.tasks
     }

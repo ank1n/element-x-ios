@@ -328,6 +328,8 @@ struct CallsListScreen: View {
                                 .foregroundColor(.compound.iconAccentTertiary)
                         }
                     }
+
+                    linkedTasksButton(call)
                 }
 
                 // Action buttons
@@ -642,6 +644,34 @@ struct CallsListScreen: View {
         }
     }
 
+    @ViewBuilder
+    private func linkedTasksButton(_ call: CallHistoryItem) -> some View {
+        if let badge = call.taskCountBadge, let count = call.createdTaskCount {
+            Button {
+                context.send(viewAction: .showCallTasks(call))
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "checklist")
+                    Text(badge)
+                        .monospacedDigit()
+                }
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(isCosmos ? accentBlue : Color.compound.textPrimary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Capsule().fill(isCosmos ? Color(UIColor.systemGray6) : Color.compound.bgSubtleSecondary))
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(String(format: NSLocalizedString("stalk_call_linked_tasks_accessibility",
+                                                                      tableName: "Localizable",
+                                                                      value: "Открыть связанные задачи: %@",
+                                                                      comment: "Opens linked tasks for a call; full task count"), String(count))))
+            .accessibilityIdentifier("callLinkedTasks_\(call.id)")
+        }
+    }
+
     private func cosmosCallCell(_ call: CallHistoryItem, isLast: Bool) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 14) {
@@ -702,6 +732,8 @@ struct CallsListScreen: View {
                                 .foregroundColor(accentBlue)
                         }
                     }
+
+                    linkedTasksButton(call)
                 }
 
                 // Action buttons

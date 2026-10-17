@@ -17,6 +17,7 @@ enum CallsListScreenCoordinatorAction {
     case showSettings
     case startCall(userId: String)
     case showCallDetail(CallHistoryItem)
+    case showCallTasks(CallHistoryItem)
 }
 
 final class CallsListScreenCoordinator: CoordinatorProtocol {
@@ -53,6 +54,8 @@ final class CallsListScreenCoordinator: CoordinatorProtocol {
                 }
             case .showCallDetail(let call):
                 self.actionsSubject.send(.showCallDetail(call))
+            case .showCallTasks(let call):
+                self.actionsSubject.send(.showCallTasks(call))
             }
         }
         .store(in: &cancellables)

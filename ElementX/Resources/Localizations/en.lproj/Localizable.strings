@@ -2426,3 +2426,18 @@
 /* Final parity coverage: SDK preflight, Disk paging and share permissions. */
 "Редактирование недоступно: SDK не подтвердил доступ к исходному сообщению. Повторите загрузку или откройте фото в чате." = "Editing is unavailable: the SDK could not confirm access to the original message. Retry loading or open the photo in chat.";
 "stalk_disk_load_more" = "Load more";
+
+/* Call history linked task counts and status summary */
+"stalk_call_tasks_summary_title" = "Linked tasks";
+"stalk_call_tasks_total" = "Total: %ld";
+"stalk_call_tasks_backlog" = "Backlog: %ld";
+"stalk_call_tasks_started" = "In progress: %ld";
+"stalk_call_tasks_completed" = "Completed: %ld";
+"stalk_call_tasks_cancelled" = "Cancelled: %ld";
+"stalk_call_tasks_unknown" = "Unknown status: %ld";
+"stalk_call_tasks_refresh_failed" = "Could not update task statuses";
+"stalk_call_tasks_open" = "Open linked tasks";
+"stalk_call_tasks_refreshing" = "Updating task statuses…";
+"stalk_call_tasks_loading" = "Loading linked tasks…";
+"stalk_call_tasks_empty" = "No linked tasks or suggestions";
+"stalk_call_linked_tasks_accessibility" = "Open linked tasks: %@";
