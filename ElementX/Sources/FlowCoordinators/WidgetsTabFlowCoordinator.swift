@@ -26,6 +26,8 @@ enum WidgetsTabFlowCoordinatorAction {
 class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
     private let userSession: UserSessionProtocol
     private let availability: ApplicationAvailabilityService
+    private var isTabActive = false
+    private weak var meetingsCoordinator: MeetingsScreenCoordinator?
     private var currentAppID: String?
     private var availabilityTask: Task<Void, Never>?
     private var flowParameters: CommonFlowParameters
@@ -89,8 +91,10 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
                 let client = userSession.clientProxy
                 let parameters = MeetingsScreenCoordinatorParameters(apiURL: sessionBaseURL, accessTokenProvider: { try client.matrixAccessToken() },
                                                                      forceTokenRefresh: { await client.forceTokenRefresh() }, currentUserId: client.userID,
-                                                                     clientProxy: client, mediaProvider: userSession.mediaProvider, initialMeetingID: id)
+                                                                     clientProxy: client, mediaProvider: userSession.mediaProvider, initialMeetingID: id, userSession: userSession)
                 let coordinator = MeetingsScreenCoordinator(parameters: parameters, navigationStackCoordinator: navigationStackCoordinator)
+                meetingsCoordinator = coordinator
+                coordinator.setActive(isTabActive)
                 coordinator.actionsPublisher.sink { [weak self] action in
                     if case .startCall(let room) = action { self?.actionsSubject.send(.startCall(roomID: room)) }
                 }.store(in: &cancellables)
@@ -127,11 +131,14 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
     }
 
     func stop() {
+        meetingsCoordinator?.stop()
         widgetsListCoordinator?.stop()
         availabilityTask?.cancel()
     }
 
     func setActive(_ active: Bool) {
+        isTabActive = active
+        meetingsCoordinator?.setActive(active)
         availabilityTask?.cancel()
         guard active else { return }
         availabilityTask = Task { [weak self] in
@@ -308,9 +315,11 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
                                                                  forceTokenRefresh: { await concreteProxy?.forceTokenRefresh() },
                                                                  currentUserId: userSession.clientProxy.userID,
                                                                  clientProxy: clientProxy,
-                                                                 mediaProvider: userSession.mediaProvider)
+                                                                 mediaProvider: userSession.mediaProvider, userSession: userSession)
             let coordinator = MeetingsScreenCoordinator(parameters: parameters,
                                                         navigationStackCoordinator: navigationStackCoordinator)
+            meetingsCoordinator = coordinator
+            coordinator.setActive(isTabActive)
             coordinator.actionsPublisher
                 .sink { [weak self] action in
                     switch action {

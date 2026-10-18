@@ -2009,3 +2009,27 @@
 "stalk_call_tasks_loading" = "Loading linked tasks…";
 "stalk_call_tasks_empty" = "No linked tasks or suggestions";
 "stalk_call_linked_tasks_accessibility" = "Open linked tasks: %@";
+
+"stalk_threads_title" = "Discussions";
+
+"stalk_threads_empty" = "No discussions yet. Use “Reply in thread” on a message to start one.";
+
+"stalk_threads_unavailable" = "Message unavailable";
+
+"stalk_calendar_show_calls" = "Show unplanned calls";
+
+"stalk_calendar_minutes" = "min";
+
+"stalk_call_assignee" = "Assignee";
+
+"stalk_call_actual_participants" = "Call participants";
+
+"stalk_call_topic_participants" = "Topic participants";
+
+"stalk_call_linked_tasks_count" = "%d linked tasks";
+
+"stalk_call_no_attendance" = "No saved participant data";
+
+"stalk_calendar_calls_unavailable" = "Call history could not be updated. Saved calls are shown.";
+
+"stalk_threads_reply_count" = "%@ replies";

@@ -30,6 +30,7 @@ enum RoomDetailsScreenViewModelAction: Equatable {
     case displayReportRoom
     case transferOwnership
     case displayWidgets
+    case displayThreadList
     case displayRoomSearch
 }
 
@@ -41,6 +42,7 @@ struct DMRecipientInfo {
 }
 
 struct RoomDetailsScreenViewState: BindableState {
+    var canShowThreads = false
     var details: RoomDetails
 
     var isEncrypted: Bool
@@ -239,6 +241,7 @@ enum RoomDetailsScreenViewAction {
     case processTapRequestsToJoin
     case processTapReport
     case processTapWidgets
+    case processTapThreads
     case processTapSearch
 }
 

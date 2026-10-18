@@ -722,6 +722,8 @@ class RoomFlowCoordinator: FlowCoordinatorProtocol {
                                                                      sendHandle: sendHandle))
                 case .presentKnockRequestsList:
                     stateMachine.tryEvent(.presentKnockRequestsListScreen)
+                case .presentThreadList:
+                    presentThreadList()
                 case .presentThread(let threadRootEventID, let focussedEventID):
                     stateMachine.tryEvent(.presentThread(threadRootEventID: threadRootEventID, focusEventID: focussedEventID))
                 case .presentRoom(let roomID, let via):
@@ -735,6 +737,17 @@ class RoomFlowCoordinator: FlowCoordinatorProtocol {
         return coordinator
     }
     
+    private func presentThreadList() {
+        guard flowParameters.appSettings.threadsEnabled, !roomProxy.infoPublisher.value.isSpace,
+              let service = roomProxy.threadListService() else { return }
+        let coordinator = RoomThreadListCoordinator(service: service) { [weak self] rootID in
+            guard let self else { return }
+            navigationStackCoordinator.setSheetCoordinator(nil)
+            stateMachine.tryEvent(.presentThread(threadRootEventID: rootID, focusEventID: nil))
+        }
+        navigationStackCoordinator.setSheetCoordinator(coordinator)
+    }
+
     private func presentThread(threadRootEventID: String, focusEventID: String?, animated: Bool) async {
         showLoadingIndicator()
         defer { hideLoadingIndicator() }
@@ -748,10 +761,16 @@ class RoomFlowCoordinator: FlowCoordinatorProtocol {
                                                                                                                                    roomProxy: roomProxy,
                                                                                                                                    timelineItemFactory: timelineItemFactory,
                                                                                                                                    mediaProvider: userSession.mediaProvider) else {
-            MXLog.error("Failed presenting media timeline")
+            MXLog.error("Failed presenting thread timeline")
+            if case .thread(let currentRoot, _) = stateMachine.state, currentRoot == threadRootEventID {
+                stateMachine.tryEvent(.dismissThread)
+                flowParameters.userIndicatorController.submitIndicator(.init(title: L10n.commonSomethingWentWrong))
+            }
             return
         }
         
+        guard case .thread(let currentRoot, _) = stateMachine.state, currentRoot == threadRootEventID else { return }
+
         let completionSuggestionService = CompletionSuggestionService(roomProxy: roomProxy,
                                                                       roomListPublisher: userSession.clientProxy.staticRoomSummaryProvider.roomListPublisher.eraseToAnyPublisher())
         let composerDraftService = ComposerDraftService(roomProxy: roomProxy,
@@ -970,6 +989,10 @@ class RoomFlowCoordinator: FlowCoordinatorProtocol {
                 stateMachine.tryEvent(.presentReportRoomScreen)
             case .transferOwnership:
                 presentTransferOwnershipScreen()
+            case .presentThreadList:
+                navigationStackCoordinator.pop()
+                stateMachine.tryEvent(.dismissRoomDetails)
+                presentThreadList()
             case .presentRoomSearch:
                 // Pop room details and activate search in the room screen
                 navigationStackCoordinator.pop()

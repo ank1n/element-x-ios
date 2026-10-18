@@ -253,6 +253,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         do {
             let recordings = try await callHistoryService.fetchRecordings(currentUserID: userSession.clientProxy.userID)
             guard !Task.isCancelled, !stopped else { return }
+            state.recordingsUnavailable = false
             snapshot.recordings = recordings
             snapshot.recordingsFetchedAt = localRevision == revision && !taskCountsInvalidated ? now() : nil
             rebuildFetchedHistory()
@@ -260,6 +261,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
             await persistHistory()
             DiagLog.write("CallHistory", "recordings updated: count=\(recordings.count), durationMs=\(Self.elapsedMilliseconds(since: started))")
         } catch {
+            if !Task.isCancelled, !stopped { state.recordingsUnavailable = true }
             if !Task.isCancelled { DiagLog.write("CallHistory", "recordings unavailable: errorCode=\((error as NSError).code); cached history retained") }
         }
     }
@@ -327,9 +329,9 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
     private func rebuildFetchedHistory() {
         serverRecordings = CallHistoryItem.mergingTaskMetadata(in: snapshot.recordings)
         for call in snapshot.roomCalls.values.flatMap({ $0 }) {
-            if !serverRecordings.contains(where: { $0.contactId == call.contactId && abs($0.timestamp.timeIntervalSince(call.timestamp)) < 300 }) {
-                serverRecordings.append(call)
-            }
+            if let index = serverRecordings.firstIndex(where: { $0.contactId == call.contactId && abs($0.timestamp.timeIntervalSince(call.timestamp)) < 300 }) {
+                serverRecordings[index].attendeeIDs = CallSummaryPeople.uniqueIDs((serverRecordings[index].attendeeIDs ?? []) + (call.attendeeIDs ?? []))
+            } else { serverRecordings.append(call) }
         }
     }
 
@@ -454,6 +456,8 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
                                    duration: local.duration,
                                    isMissed: local.isMissed,
                                    recordingURL: recordingURL,
+                                   recordingParticipants: matchedRecording?.recordingParticipants ?? local.participantUserIDs.map { RecordingParticipant(userId: $0, displayName: local.participantDisplayNames[$0] ?? $0) },
+                                   attendeeIDs: matchedRecording?.attendeeIDs,
                                    createdTaskCount: matchedRecording?.createdTaskCount,
                                    callId: matchedRecording?.callId,
                                    recordingSessionIDs: recordingIDs.isEmpty ? nil : recordingIDs)
@@ -660,7 +664,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
                                             timestamp: date,
                                             duration: duration > 5 ? duration : nil,
                                             isMissed: isMissed,
-                                            recordingURL: nil))
+                                            recordingURL: nil, attendeeIDs: allParticipants.sorted()))
             inSession = false
         }
 
@@ -1140,6 +1144,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
 protocol CallHistoryServiceProtocol: AnyObject {
     func fetchRecordings(currentUserID: String?) async throws -> [CallHistoryItem]
     func fetchTranscription(egressId: String) async throws -> TranscriptionData
+    func fetchCallAttendees(egressId: String) async throws -> [CallAttendee]
     func retryTranscription(egressId: String) async throws -> TranscriptionData
     /// Build 115 fix: download recording m4a с Authorization Bearer header.
     /// Без авторизации recording-api отдаёт 401 → AVAudioPlayer не открывает файл → 0:00/0:00.
@@ -1155,6 +1160,10 @@ protocol CallHistoryServiceProtocol: AnyObject {
     /// STALK-255 build 157: список проектов TrackIT для picker'а. Подстрочный
     /// фильтр через `q` (пусто = все доступные).
     func searchTrackItProjects(query: String) async throws -> [TrackItProject]
+}
+
+extension CallHistoryServiceProtocol {
+    func fetchCallAttendees(egressId: String) async throws -> [CallAttendee] { [] }
 }
 
 class CallHistoryService: NSObject, CallHistoryServiceProtocol, URLSessionDelegate {
@@ -1248,6 +1257,21 @@ class CallHistoryService: NSObject, CallHistoryServiceProtocol, URLSessionDelega
             $0.toCallHistoryItem(currentUserID: currentUserID, apiBaseURL: apiBaseURL)
         })
         .sorted { $0.timestamp > $1.timestamp }
+    }
+
+    private struct TracksResponse: Decodable { let tracks: [CallParticipantTrack] }
+
+    func fetchCallAttendees(egressId: String) async throws -> [CallAttendee] {
+        guard !egressId.isEmpty, egressId != ".", egressId != ".." else { throw CallHistoryError.invalidResponse }
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+        guard let encoded = egressId.addingPercentEncoding(withAllowedCharacters: allowed),
+              var parts = URLComponents(url: baseURL.appendingPathComponent("api/recording/tracks"), resolvingAgainstBaseURL: false) else {
+            throw CallHistoryError.invalidResponse
+        }
+        parts.percentEncodedPath += "/" + encoded
+        guard let url = parts.url else { throw CallHistoryError.invalidResponse }
+        let response: TracksResponse = try await performAuthenticatedRequest(url: url, method: "GET")
+        return CallAttendee.from(tracks: response.tracks)
     }
 
     func fetchTranscription(egressId: String) async throws -> TranscriptionData {

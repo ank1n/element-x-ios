@@ -144,6 +144,8 @@ class CallsTabFlowCoordinator: FlowCoordinatorProtocol {
             switch action {
             case .dismiss:
                 navigationStackCoordinator.pop()
+            case .openParticipant(let id):
+                CallParticipantPresenter.present(id, session: userSession, navigation: navigationStackCoordinator)
             case .callBack(let roomID):
                 actionsSubject.send(.startCall(roomID: roomID))
             }

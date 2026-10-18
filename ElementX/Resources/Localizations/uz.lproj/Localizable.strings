@@ -1999,3 +1999,27 @@
 "stalk_call_tasks_loading" = "Bogʻlangan vazifalar yuklanmoqda…";
 "stalk_call_tasks_empty" = "Bogʻlangan yoki tavsiya etilgan vazifalar yoʻq";
 "stalk_call_linked_tasks_accessibility" = "Bogʻlangan vazifalarni ochish: %@";
+
+"stalk_threads_title" = "Muhokamalar";
+
+"stalk_threads_empty" = "Hozircha muhokamalar yo‘q. Xabarda “Mavzuda javob berish”ni tanlang.";
+
+"stalk_threads_unavailable" = "Xabar mavjud emas";
+
+"stalk_calendar_show_calls" = "Rejalashtirilmagan qo‘ng‘iroqlarni ko‘rsatish";
+
+"stalk_calendar_minutes" = "daq";
+
+"stalk_call_assignee" = "Ijrochi";
+
+"stalk_call_actual_participants" = "Qo‘ng‘iroq ishtirokchilari";
+
+"stalk_call_topic_participants" = "Mavzu ishtirokchilari";
+
+"stalk_call_linked_tasks_count" = "Bog‘langan vazifalar: %d";
+
+"stalk_call_no_attendance" = "Ishtirokchilar haqida saqlangan ma’lumot yo‘q";
+
+"stalk_calendar_calls_unavailable" = "Qo‘ng‘iroqlar tarixini yangilab bo‘lmadi. Saqlangan qo‘ng‘iroqlar ko‘rsatilmoqda.";
+
+"stalk_threads_reply_count" = "Javoblar: %@";

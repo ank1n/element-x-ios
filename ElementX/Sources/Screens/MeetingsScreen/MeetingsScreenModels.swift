@@ -12,6 +12,8 @@ import Foundation
 
 enum MeetingsScreenViewAction {
     case selectDate(Date)
+    case selectCall(CallHistoryItem, tasks: Bool)
+    case setCalls([CallHistoryItem], unavailable: Bool, loading: Bool)
     case selectMeeting(Meeting)
     case createMeeting
     case refresh
@@ -19,6 +21,8 @@ enum MeetingsScreenViewAction {
 }
 
 enum MeetingsScreenViewModelAction {
+    case refreshCallHistory
+    case openCallDetail(CallHistoryItem, tasks: Bool)
     case openMeetingDetail(Meeting)
     case openCreateMeeting
     case dismiss
@@ -31,6 +35,9 @@ struct ResolvedParticipant: Equatable {
 }
 
 struct MeetingsScreenViewState: BindableState {
+    var calls: [CallHistoryItem] = []
+    var callsUnavailable = false
+    var isCallsLoading = false
     var meetings: [Meeting] = []
     var holidays: Set<String> = [] // "YYYY-MM-DD"
     var selectedDate: Date = .now
@@ -54,11 +61,13 @@ struct MeetingsScreenViewState: BindableState {
     var datesWithMeetings: Set<String> {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
-        return Set(meetings.map { formatter.string(from: $0.startTime) })
+        return Set(meetings.map { formatter.string(from: $0.startTime) } +
+                   (bindings.showUnplannedCalls ? calls.map { formatter.string(from: $0.timestamp) } : []))
     }
 }
 
 struct MeetingsScreenViewStateBindings {
+    var showUnplannedCalls = true
     var searchQuery = ""
 }
 

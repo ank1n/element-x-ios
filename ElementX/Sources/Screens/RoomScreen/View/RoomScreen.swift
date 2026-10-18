@@ -191,6 +191,15 @@ struct RoomScreen: View {
         if !ProcessInfo.processInfo.isiOSAppOnMac {
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 12) {
+                    if context.viewState.canShowThreads {
+                    Button {
+                        context.send(viewAction: .displayThreadList)
+                    } label: {
+                        Image(systemName: "bubble.left.and.bubble.right")
+                    }
+                    .accessibilityLabel(StalkThreadStrings.title)
+                    }
+
                     // Search button
                     Button {
                         context.send(viewAction: .toggleSearch)

@@ -35,6 +35,12 @@ class MeetingsScreenViewModel: MeetingsScreenViewModelType {
 
     override func process(viewAction: MeetingsScreenViewAction) {
         switch viewAction {
+        case .setCalls(let calls, let unavailable, let loading):
+            state.calls = calls
+            state.callsUnavailable = unavailable
+            state.isCallsLoading = loading
+        case .selectCall(let call, let tasks):
+            actionsSubject.send(.openCallDetail(call, tasks: tasks))
         case .selectDate(let date):
             state.selectedDate = date
         case .selectMeeting(let meeting):
@@ -42,6 +48,7 @@ class MeetingsScreenViewModel: MeetingsScreenViewModelType {
         case .createMeeting:
             actionsSubject.send(.openCreateMeeting)
         case .refresh:
+            actionsSubject.send(.refreshCallHistory)
             fetchAll()
         case .back:
             actionsSubject.send(.dismiss)

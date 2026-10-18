@@ -12,6 +12,7 @@ import OrderedCollections
 enum RoomScreenViewModelAction: Equatable {
     case focusEvent(eventID: String)
     case displayThread(threadRootEventID: String, focussedEventID: String)
+    case displayThreadList
     case displayPinnedEventsTimeline
     case displayRoomDetails
     case displayCall
@@ -26,6 +27,7 @@ enum RoomScreenViewModelAction: Equatable {
 
 enum RoomScreenViewAction {
     case tappedPinnedEventsBanner
+    case displayThreadList
     case viewAllPins
     case displayRoomDetails
     case displayCall
@@ -41,6 +43,7 @@ enum RoomScreenViewAction {
 }
 
 struct RoomScreenViewState: BindableState {
+    var canShowThreads = false
     var roomTitle = ""
     var roomAvatar: RoomAvatar
     /// Encrypted room → pastel blue ring around the header avatar (matches chat-list marker).

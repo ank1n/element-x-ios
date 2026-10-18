@@ -23,6 +23,7 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
     private var detailCancellables: Set<AnyCancellable> = []
     private var pollingCancellable: AnyCancellable?
     private var currentDownloadTask: Task<Void, Never>?
+    private var attendeesRequest: Task<Void, Never>?
     private var tasksRequest: Task<Void, Never>?
     private var tasksRevision = 0
     private var tasksVisible = true
@@ -47,6 +48,7 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
         self.initialTab = initialTab
 
         var initialState = CallDetailScreenViewState(call: call)
+        initialState.actualAttendees = (call.attendeeIDs ?? []).map { CallAttendee(id: $0, name: $0) }
         initialState.tasksTabRequested = initialTab == .tasks
         if let initialTab { initialState.selectedTab = initialTab }
         // Build 114: mediaProvider обязателен — LoadableAvatarImage падает с
@@ -54,6 +56,8 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
         super.init(initialViewState: initialState, mediaProvider: mediaProvider)
 
         setupAudioPlayerSubscription()
+        loadAttendees()
+
         // Status totals and the Tasks tab share this one request, independently of transcription.
         Task { await loadTasks(refresh: true) }
 
@@ -75,6 +79,41 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
         // speaker avatars). Только если у call есть matrix room ID.
         if call.contactId.hasPrefix("!"), clientProxy != nil {
             Task { await loadRoomMetadata(roomID: call.contactId) }
+        }
+    }
+
+    private func loadAttendees() {
+        guard attendeesRequest == nil else { return }
+        let ids = state.call.taskRecordingIDs
+        guard !ids.isEmpty else { return }
+        state.isAttendeesLoading = true
+        state.attendeesError = false
+        attendeesRequest = Task { [weak self] in
+            guard let self else { return }
+            var rows: [CallAttendee] = (state.call.attendeeIDs ?? []).map { CallAttendee(id: $0, name: $0) }
+            var failed = false
+            // Detail only, never a request per calendar/history row.
+            for id in ids {
+                guard !Task.isCancelled else { return }
+                do { rows += try await callHistoryService.fetchCallAttendees(egressId: id) }
+                catch { failed = true }
+            }
+            guard !Task.isCancelled else { return }
+            var seen = Set<String>()
+            state.actualAttendees = rows.filter { seen.insert($0.id).inserted }
+            state.attendeesError = failed
+            state.isAttendeesLoading = false
+            // Use exact profile IDs, including people who have since left the room.
+            if let clientProxy {
+                for id in CallSummaryPeople.uniqueIDs(rows.map(\.id)) where state.participantProfiles[id] == nil {
+                    guard !Task.isCancelled else { return }
+                    if case .success(let profile) = await clientProxy.profile(for: id) {
+                        guard !Task.isCancelled else { return }
+                        state.participantProfiles[id] = ResolvedParticipant(displayName: profile.displayName ?? id, avatarURL: profile.avatarURL)
+                    }
+                }
+            }
+            attendeesRequest = nil
         }
     }
 
@@ -109,11 +148,16 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
             .receive(on: DispatchQueue.main)
             .sink { [weak self] members in
                 guard let self else { return }
+                for member in members {
+                    self.state.participantProfiles[member.userID] = ResolvedParticipant(displayName: member.displayName ?? member.userID,
+                                                                                       avatarURL: member.avatarURL)
+                }
                 var map: [String: URL] = [:]
+                let nameCounts = Dictionary(grouping: members, by: { $0.displayName ?? "" }).mapValues(\.count)
                 for member in members {
                     guard let url = member.avatarURL,
                           let display = member.displayName,
-                          !display.isEmpty else { continue }
+                          !display.isEmpty, nameCounts[display] == 1 else { continue }
                     map[display] = url
                 }
                 if !map.isEmpty {
@@ -181,17 +225,24 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
 
     override func process(viewAction: CallDetailScreenViewAction) {
         switch viewAction {
+        case .refreshParticipants:
+            loadAttendees()
         case .appeared:
             let returning = !tasksVisible
             tasksVisible = true
+            if returning { loadAttendees() }
             if returning || !state.tasksHaveLoaded { Task { await loadTasks(refresh: true) } }
         case .disappeared:
+            attendeesRequest?.cancel()
+            attendeesRequest = nil
             tasksVisible = false
             tasksRevision += 1
             tasksRequest?.cancel()
             tasksRequest = nil
             state.isTasksLoading = false
         case .dismiss:
+            attendeesRequest?.cancel()
+            attendeesRequest = nil
             tasksVisible = false
             tasksRevision += 1
             tasksRequest?.cancel()
@@ -251,12 +302,16 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
                 }
                 DiagLog.write("CallDetail", "  openTrackItIssue → TrackIT app NOT installed, NOT opening browser (по запросу)")
             }
+        case .openParticipant(let id):
+            guard CallSummaryPeople.isUserID(id) else { return }
+            actionsSubject.send(.openParticipant(id))
         case .refreshTasks:
             Task { await loadTasks(refresh: true) }
         }
     }
 
     deinit {
+        attendeesRequest?.cancel()
         pollingCancellable?.cancel()
         currentDownloadTask?.cancel()
         tasksRequest?.cancel()

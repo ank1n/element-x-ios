@@ -47,6 +47,7 @@ enum RoomScreenCoordinatorAction {
     case presentPinnedEventsTimeline
     case presentResolveSendFailure(failure: TimelineItemSendFailure.VerifiedUser, sendHandle: SendHandleProxy)
     case presentKnockRequestsList
+    case presentThreadList
     case presentThread(threadRootEventID: String, focussedEventID: String?)
     case presentRoom(roomID: String, via: [String])
 }
@@ -177,6 +178,8 @@ final class RoomScreenCoordinator: CoordinatorProtocol {
                 switch action {
                 case .focusEvent(eventID: let eventID):
                     focusOnEvent(FocusEvent(eventID: eventID, shouldSetPin: false))
+                case .displayThreadList:
+                    actionsSubject.send(.presentThreadList)
                 case .displayPinnedEventsTimeline:
                     actionsSubject.send(.presentPinnedEventsTimeline)
                 case .displayRoomDetails:

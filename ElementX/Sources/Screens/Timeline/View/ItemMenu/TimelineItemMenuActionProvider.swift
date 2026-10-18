@@ -59,7 +59,8 @@ struct TimelineItemMenuActionProvider {
                 actions.append(.reply(isThread: false))
             }
             
-            if areThreadsEnabled, !timelineKind.isThread {
+            if areThreadsEnabled, !timelineKind.isThread, !item.properties.isThreaded,
+               !(item is UnsupportedRoomTimelineItem) {
                 actions.append(.replyInThread)
             }
         }

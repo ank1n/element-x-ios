@@ -2325,3 +2325,27 @@
 "stalk_call_tasks_loading" = "Загружаем связанные задачи…";
 "stalk_call_tasks_empty" = "Нет связанных задач или предложений";
 "stalk_call_linked_tasks_accessibility" = "Открыть связанные задачи: %@";
+
+"stalk_threads_title" = "Обсуждения";
+
+"stalk_threads_empty" = "Обсуждений пока нет. Выберите «Ответить в треде» у сообщения.";
+
+"stalk_threads_unavailable" = "Сообщение недоступно";
+
+"stalk_calendar_show_calls" = "Показывать незапланированные звонки";
+
+"stalk_calendar_minutes" = "мин";
+
+"stalk_call_assignee" = "Исполнитель";
+
+"stalk_call_actual_participants" = "Участники звонка";
+
+"stalk_call_topic_participants" = "Участники темы";
+
+"stalk_call_linked_tasks_count" = "Связанные задачи: %d";
+
+"stalk_call_no_attendance" = "Нет сохранённых данных об участниках";
+
+"stalk_calendar_calls_unavailable" = "Не удалось обновить историю звонков. Показаны сохранённые звонки.";
+
+"stalk_threads_reply_count" = "Ответов: %@";

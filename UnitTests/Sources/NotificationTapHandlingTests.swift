@@ -111,6 +111,38 @@ final class NotificationTapHandlingTests: XCTestCase {
         XCTAssertTrue(notificationManager.showLocalNotificationWithSubtitleCalled)
     }
     
+    func testInlineThreadReplyUsesThreadTimelineWithoutPostingToRoom() async {
+        let client = ClientProxyMock(.init())
+        let room = JoinedRoomProxyMock(.init(id: roomID))
+        let main = TimelineProxyMock(.init())
+        let thread = TimelineProxyMock(.init())
+        thread.sendMessageHtmlInReplyToEventIDIntentionalMentionsReturnValue = .success(())
+        room.timeline = main
+        room.threadTimelineEventIDReturnValue = .success(thread)
+        client.roomForIdentifierClosure = { _ in .joined(room) }
+        let notifications = NotificationManagerMock()
+        await AppCoordinator.sendInlineReply(roomID: roomID, replyText: "Thread response", clientProxy: client,
+                                            notificationManager: notifications, threadRootEventID: "$root")
+        XCTAssertEqual(room.threadTimelineEventIDReceivedEventID, "$root")
+        XCTAssertTrue(thread.sendMessageHtmlInReplyToEventIDIntentionalMentionsCalled)
+        XCTAssertFalse(main.sendMessageHtmlInReplyToEventIDIntentionalMentionsCalled)
+        XCTAssertFalse(notifications.showLocalNotificationWithSubtitleCalled)
+    }
+
+    func testUnavailableThreadReplyDoesNotFallBackToRoom() async {
+        let client = ClientProxyMock(.init())
+        let room = JoinedRoomProxyMock(.init(id: roomID))
+        let main = TimelineProxyMock(.init())
+        room.timeline = main
+        room.threadTimelineEventIDReturnValue = .failure(.eventNotFound)
+        client.roomForIdentifierClosure = { _ in .joined(room) }
+        let notifications = NotificationManagerMock()
+        await AppCoordinator.sendInlineReply(roomID: roomID, replyText: "Private branch response", clientProxy: client,
+                                            notificationManager: notifications, threadRootEventID: "$deleted-root")
+        XCTAssertFalse(main.sendMessageHtmlInReplyToEventIDIntentionalMentionsCalled)
+        XCTAssertTrue(notifications.showLocalNotificationWithSubtitleCalled)
+    }
+
     // MARK: - Helpers
 
     private func content(eventID: String? = nil,

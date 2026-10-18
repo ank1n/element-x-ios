@@ -127,6 +127,7 @@ class CallsListScreenTests: XCTestCase {
         release?.resume(throwing: URLError(.notConnectedToInternet))
         try await finished.fulfill()
         XCTAssertEqual(model.context.viewState.callHistory.map(\.id), [cachedCall.id])
+        XCTAssertTrue(model.context.viewState.recordingsUnavailable)
     }
 
     func testFreshCacheAvoidsRequestsOnReopeningAndManualRefreshFetchesOnce() async throws {
@@ -164,6 +165,26 @@ class CallsListScreenTests: XCTestCase {
         let finished = deferFulfillment(model.context.$viewState.map(\.isRefreshingHistory)) { !$0 && service.requests == 1 }
         model.setActive(true)
         try await finished.fulfill()
+    }
+
+    func testActualAttendanceSurvivesRecordingAndLocalHistoryMerge() async throws {
+        let (session, local, cache) = makeHistoryFixture()
+        let service = CallsHistoryTestService()
+        var recording = makeCall()
+        recording.recordingParticipants = [.init(userId: "@room-only:example.com", displayName: "Not in call")]
+        service.recordings = [recording]
+        var rtc = recording
+        rtc.attendeeIDs = ["@actual:example.com"]
+        local.startCall(roomID: recording.contactId, direction: .incoming)
+        let model = CallsListScreenViewModel(userSession: session, localCallHistoryService: local, callHistoryService: service,
+                                             cacheService: cache, applicationIsActive: { true }, roomHistoryLoader: {
+                                                 [recording.contactId: [rtc]]
+                                             })
+        defer { model.stop() }
+        try await deferFulfillment(model.context.$viewState) { state in
+            !state.isRefreshingHistory && state.callHistory.first?.attendeeIDs == ["@actual:example.com"]
+        }.fulfill()
+        XCTAssertFalse(model.context.viewState.callHistory[0].attendeeIDs!.contains("@room-only:example.com"))
     }
 
     func testRecordingResultsDoNotWaitForRoomScan() async throws {

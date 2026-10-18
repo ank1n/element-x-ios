@@ -122,7 +122,7 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
     
     private var storedAppRoute: AppRoute?
     private var storedAppRouteSourceURL: URL?
-    @Consumable private var storedInlineReply: (roomID: String, message: String)?
+    @Consumable private var storedInlineReply: (roomID: String, message: String, threadRootEventID: String?)?
     @Consumable private var storedRoomsToAwait: Set<String>?
 
     init(appDelegate: AppDelegate) {
@@ -528,11 +528,11 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
 
         if userSession == nil {
             // Store the data so it can be used after the session is established
-            storedInlineReply = (roomID, replyText)
+            storedInlineReply = (roomID, replyText, content.threadRootEventID)
             return
         }
         
-        await processInlineReply(roomID: roomID, replyText: replyText)
+        await processInlineReply(roomID: roomID, replyText: replyText, threadRootEventID: content.threadRootEventID)
     }
     
     // MARK: - Private
@@ -824,7 +824,7 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         }
         
         if let storedInlineReply {
-            await processInlineReply(roomID: storedInlineReply.roomID, replyText: storedInlineReply.message)
+            await processInlineReply(roomID: storedInlineReply.roomID, replyText: storedInlineReply.message, threadRootEventID: storedInlineReply.threadRootEventID)
         }
     }
 
@@ -1274,19 +1274,20 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         MXLog.info("SentrySDK stopped")
     }
     
-    private func processInlineReply(roomID: String, replyText: String) async {
+    private func processInlineReply(roomID: String, replyText: String, threadRootEventID: String?) async {
         guard let userSession else {
             fatalError("User session not setup")
         }
 
-        await Self.sendInlineReply(roomID: roomID, replyText: replyText, clientProxy: userSession.clientProxy, notificationManager: notificationManager)
+        await Self.sendInlineReply(roomID: roomID, replyText: replyText, clientProxy: userSession.clientProxy, notificationManager: notificationManager, threadRootEventID: threadRootEventID)
     }
 
     /// Отдельно от координатора, чтобы проверялось тестами (STMOB-307).
     static func sendInlineReply(roomID: String,
                                 replyText: String,
                                 clientProxy: ClientProxyProtocol,
-                                notificationManager: NotificationManagerProtocol) async {
+                                notificationManager: NotificationManagerProtocol,
+                                threadRootEventID: String? = nil) async {
         // STMOB-307: чат из пуша мог ещё не доехать синком (создали, пока приложение спало) —
         // дожидаемся его, как и при тапе. Раньше ответ в такой чат молча пропадал.
         clientProxy.addRoomsToAwait([roomID])
@@ -1298,7 +1299,18 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
             return
         }
 
-        switch await roomProxy.timeline.sendMessage(replyText,
+        let timeline: TimelineProxyProtocol
+        if let root = threadRootEventID {
+            guard root.hasPrefix("$"), root.count > 1,
+                  case .success(let thread) = await roomProxy.threadTimeline(eventID: root) else {
+                await notificationManager.showLocalNotification(with: "⚠️ " + L10n.commonError,
+                                                                subtitle: L10n.errorSomeMessagesHaveNotBeenSent)
+                return
+            }
+            timeline = thread
+        } else { timeline = roomProxy.timeline }
+
+        switch await timeline.sendMessage(replyText,
                                                     html: nil,
                                                     inReplyToEventID: nil,
                                                     intentionalMentions: .empty) {

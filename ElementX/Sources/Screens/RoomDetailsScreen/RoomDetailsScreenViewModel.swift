@@ -77,6 +77,8 @@ class RoomDetailsScreenViewModel: RoomDetailsScreenViewModelType, RoomDetailsScr
                                            bindings: .init()),
                    mediaProvider: userSession.mediaProvider)
         
+        state.canShowThreads = appSettings.threadsEnabled && !roomProxy.infoPublisher.value.isSpace
+
         appSettings.$knockingEnabled
             .weakAssign(to: \.state.knockingEnabled, on: self)
             .store(in: &cancellables)
@@ -174,6 +176,8 @@ class RoomDetailsScreenViewModel: RoomDetailsScreenViewModelType, RoomDetailsScr
             actionsSubject.send(.displayReportRoom)
         case .processTapWidgets:
             actionsSubject.send(.displayWidgets)
+        case .processTapThreads:
+            actionsSubject.send(.displayThreadList)
         case .processTapSearch:
             actionsSubject.send(.displayRoomSearch)
         }

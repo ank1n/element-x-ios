@@ -229,6 +229,8 @@ class JoinedRoomProxy: JoinedRoomProxyProtocol {
         }
     }
     
+    func threadListService() -> ThreadListServiceProtocol? { room.threadListService() }
+
     func threadTimeline(eventID: String) async -> Result<TimelineProxyProtocol, RoomProxyError> {
         do {
             let sdkTimeline = try await room.timelineWithConfiguration(configuration: .init(focus: .thread(rootEventId: eventID),

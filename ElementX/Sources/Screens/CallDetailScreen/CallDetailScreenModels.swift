@@ -37,6 +37,7 @@ struct TranscriptionSegment: Codable, Identifiable, Equatable {
     }
 
     let speaker: String
+    var speakerID: String? = nil
     let speakerLabel: String?
     let start: TimeInterval
     let end: TimeInterval
@@ -46,6 +47,7 @@ struct TranscriptionSegment: Codable, Identifiable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case speaker
+        case speakerID = "speaker_id"
         case speakerLabel = "speaker_label"
         case start, end, text, confidence, channel
     }
@@ -73,6 +75,7 @@ struct SuggestedTask: Codable, Identifiable, Equatable {
     let topicIndex: Int
     let taskIndex: Int
     let text: String
+    var assignee: CallSummaryAssignee? = nil
 
     private struct DynKey: CodingKey {
         var stringValue: String
@@ -100,6 +103,7 @@ struct SuggestedTask: Codable, Identifiable, Equatable {
             }
             return 0
         }
+        assignee = (try? c.decodeIfPresent(CallSummaryAssignee.self, forKey: DynKey(stringValue: "assignee")!)) ?? nil
         topicIndex = int("topicIndex", "topic_index")
         taskIndex = int("taskIndex", "task_index")
         if let key = DynKey(stringValue: "text"),
@@ -116,6 +120,7 @@ struct SuggestedTask: Codable, Identifiable, Equatable {
         case topicIndex
         case taskIndex
         case text
+        case assignee
     }
 }
 
@@ -125,6 +130,7 @@ struct SummaryTopic: Codable, Identifiable, Equatable {
     }
 
     let title: String
+    var mentions: [String]? = nil
     let discussed: String?
     let agreed: String?
     let timestamp: TimeInterval?
@@ -247,9 +253,12 @@ enum CallDetailScreenViewAction {
     case openTrackItIssue(url: String)
     /// STALK-255 build 157: refresh статусов созданных задач из TrackIT.
     case refreshTasks
+    case refreshParticipants
+    case openParticipant(String)
 }
 
 enum CallDetailScreenViewModelAction {
+    case openParticipant(String)
     case dismiss
     case callBack(roomID: String)
 }
@@ -257,6 +266,10 @@ enum CallDetailScreenViewModelAction {
 struct CallDetailScreenViewState: BindableState {
     /// Build 126: var вместо let — нужно обновить avatarURL после resolve room metadata.
     var call: CallHistoryItem
+    var participantProfiles: [String: ResolvedParticipant] = [:]
+    var actualAttendees: [CallAttendee] = []
+    var isAttendeesLoading = false
+    var attendeesError = false
     var selectedTab: CallDetailTab = .summary
     var transcriptionData: TranscriptionData?
     var isTranscriptionLoading = true

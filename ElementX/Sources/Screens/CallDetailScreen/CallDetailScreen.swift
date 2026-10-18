@@ -23,6 +23,10 @@ struct CallDetailScreen: View {
                     .padding(.top, 16)
                     .padding(.bottom, 12)
 
+                actualParticipants
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
+
                 linkedTaskSummary
                     .padding(.horizontal, 16)
 
@@ -43,6 +47,52 @@ struct CallDetailScreen: View {
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
             context.send(viewAction: .refreshTasks)
         }
+    }
+
+    private var actualParticipants: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(NSLocalizedString("stalk_call_actual_participants", comment: "Actual call attendees"))
+                .font(.caption).foregroundStyle(.secondary)
+            ForEach(context.viewState.actualAttendees) { person in
+                participantButton(person.id, fallbackName: person.name)
+            }
+            if context.viewState.isAttendeesLoading { ProgressView() }
+            if context.viewState.attendeesError {
+                Text(L10n.commonSomethingWentWrong).font(.caption).foregroundStyle(.secondary)
+                Button(L10n.actionRetry) { context.send(viewAction: .refreshParticipants) }
+            } else if !context.viewState.isAttendeesLoading && context.viewState.actualAttendees.isEmpty {
+                Text(NSLocalizedString("stalk_call_no_attendance", comment: "No saved call attendance"))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func topicAttribution(_ topic: SummaryTopic) -> some View {
+        let ids = CallSummaryPeople.uniqueIDs(topic.mentions ?? [])
+        if !ids.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(NSLocalizedString("stalk_call_topic_participants", comment: "Topic participants"))
+                    .font(.caption).foregroundStyle(.secondary)
+                ForEach(ids, id: \.self) { id in participantButton(id) }
+            }.padding(.leading, 36)
+        }
+    }
+
+    private func participantButton(_ id: String, fallbackName: String? = nil) -> some View {
+        let profile = context.viewState.participantProfiles[id]
+        let name = profile?.displayName ?? fallbackName ?? id
+        return Button { context.send(viewAction: .openParticipant(id)) } label: {
+            HStack(spacing: 8) {
+                LoadableAvatarImage(url: profile?.avatarURL, name: name, contentID: id,
+                                    avatarSize: .custom(28), mediaProvider: context.mediaProvider)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(name).font(.subheadline)
+                    Text(id).font(.caption).foregroundStyle(.secondary)
+                }
+            }.frame(minHeight: 44)
+        }.buttonStyle(.plain)
+            .disabled(!CallSummaryPeople.isUserID(id))
     }
 
     // MARK: - Header
@@ -351,6 +401,11 @@ struct CallDetailScreen: View {
 
     private func suggestedTaskCard(_ task: SuggestedTask) -> some View {
         VStack(alignment: .leading, spacing: 10) {
+            if let assignee = task.assignee, CallSummaryPeople.isUserID(assignee.matrixID) {
+                Text(NSLocalizedString("stalk_call_assignee", comment: "Assignee"))
+                    .font(.caption).foregroundStyle(.secondary)
+                participantButton(assignee.matrixID, fallbackName: assignee.displayName)
+            }
             Text(task.text)
                 .font(.subheadline)
                 .fixedSize(horizontal: false, vertical: true)
@@ -392,8 +447,8 @@ struct CallDetailScreen: View {
                             .font(.caption)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
-                            .background(stateBadgeColor(group: task.trackitStateGroup))
-                            .foregroundColor(.white)
+                            .background(stateBadgeColor(group: task.trackitStateGroup).opacity(0.18))
+                            .foregroundColor(.primary)
                             .cornerRadius(8)
                     }
                 }
@@ -405,7 +460,7 @@ struct CallDetailScreen: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(uiColor: .secondarySystemBackground))
+            .background(stateBadgeColor(group: task.trackitStateGroup).opacity(0.08))
             .cornerRadius(10)
         }
         .buttonStyle(.plain)
@@ -413,7 +468,7 @@ struct CallDetailScreen: View {
 
     private func stateBadgeColor(group: String?) -> Color {
         switch group {
-        case "started": return .blue
+        case "started": return .yellow
         case "completed": return .green
         case "cancelled": return .gray
         default: return Color(red: 0.55, green: 0.55, blue: 0.55)
@@ -463,6 +518,7 @@ struct CallDetailScreen: View {
             if let topics = context.viewState.transcriptionData?.summary?.topics, !topics.isEmpty {
                 ForEach(Array(topics.enumerated()), id: \.offset) { index, topic in
                     topicRow(index: index + 1, topic: topic)
+                    topicAttribution(topic)
                 }
             } else if let text = context.viewState.transcriptionData?.summary?.text, !text.isEmpty {
                 let points = text.split(separator: ";").map { String($0).trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
@@ -520,6 +576,7 @@ struct CallDetailScreen: View {
                 ForEach(Array(topics.enumerated()), id: \.offset) { index, topic in
                     VStack(alignment: .leading, spacing: 8) {
                         topicRow(index: index + 1, topic: topic)
+                        topicAttribution(topic)
 
                         if let discussed = topic.discussed, !discussed.isEmpty {
                             Text(discussed)
@@ -562,7 +619,7 @@ struct CallDetailScreen: View {
                         // Build 126: реальный avatar если найден в speakerAvatars,
                         // fallback — colored circle с инициалами.
                         let speakerName = segment.speakerLabel ?? segment.speaker
-                        LoadableAvatarImage(url: context.viewState.speakerAvatars[speakerName],
+                        LoadableAvatarImage(url: segment.speakerID.flatMap { context.viewState.participantProfiles[$0]?.avatarURL } ?? (segment.speakerID == nil ? context.viewState.speakerAvatars[speakerName] : nil),
                                             name: speakerName,
                                             contentID: speakerName,
                                             avatarSize: .custom(32),
@@ -570,7 +627,13 @@ struct CallDetailScreen: View {
 
                         VStack(alignment: .leading, spacing: 2) {
                             HStack {
-                                Text(segment.speakerLabel ?? segment.speaker)
+                                Button {
+                                    if let id = segment.speakerID { context.send(viewAction: .openParticipant(id)) }
+                                } label: {
+                                    Text(segment.speakerID.flatMap { context.viewState.participantProfiles[$0]?.displayName } ?? speakerName)
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(segment.speakerID.map { !CallSummaryPeople.isUserID($0) } ?? true)
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundColor(.primary)
                                     .lineLimit(1)

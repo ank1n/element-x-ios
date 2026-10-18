@@ -74,6 +74,7 @@ struct RTCDeclinedEvent {
 
 // sourcery: AutoMockable
 protocol JoinedRoomProxyProtocol: RoomProxyProtocol {
+    func threadListService() -> ThreadListServiceProtocol?
     func sendSticker(_ sticker: SharedSticker, threadRoot: String?) async throws
 
     var infoPublisher: CurrentValuePublisher<RoomInfoProxyProtocol, Never> { get }
@@ -208,6 +209,8 @@ protocol JoinedRoomProxyProtocol: RoomProxyProtocol {
 }
 
 extension JoinedRoomProxyProtocol {
+    func threadListService() -> ThreadListServiceProtocol? { nil }
+
     var details: RoomDetails {
         RoomDetails(id: id,
                     name: infoPublisher.value.displayName,

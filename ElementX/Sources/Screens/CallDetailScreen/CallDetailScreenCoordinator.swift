@@ -17,6 +17,7 @@ struct CallDetailScreenCoordinatorParameters {
 }
 
 enum CallDetailScreenCoordinatorAction {
+    case openParticipant(String)
     case dismiss
     case callBack(roomID: String)
 }
@@ -42,6 +43,8 @@ final class CallDetailScreenCoordinator: CoordinatorProtocol {
         viewModel.actionsPublisher.sink { [weak self] action in
             guard let self else { return }
             switch action {
+            case .openParticipant(let id):
+                actionsSubject.send(.openParticipant(id))
             case .dismiss:
                 actionsSubject.send(.dismiss)
             case .callBack(let roomID):

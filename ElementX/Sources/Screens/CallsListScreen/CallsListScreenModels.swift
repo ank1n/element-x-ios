@@ -81,6 +81,7 @@ struct NewCallContact: Identifiable {
 }
 
 struct CallsListScreenViewState: BindableState {
+    var recordingsUnavailable = false
     var callHistory: [CallHistoryItem] = []
     var isLoading = false
     var isRefreshingHistory = false
@@ -139,6 +140,8 @@ struct CallHistoryItem: Identifiable, Equatable, Codable {
     var participantAvatarURLs: [URL] = []
 
     /// Actual TrackIT issues across the logical call, supplied by the list API.
+    var recordingParticipants: [RecordingParticipant]? = nil
+    var attendeeIDs: [String]? = nil
     var createdTaskCount: Int?
     var callId: String?
     /// API egress IDs, including fragments without playable audio.
@@ -171,9 +174,11 @@ struct CallHistoryItem: Identifiable, Equatable, Codable {
         }
         var ids: [Key: [String]] = [:]
         var counts: [Key: Int] = [:]
+        var attendees: [Key: [String]] = [:]
         for call in calls {
             guard let callID = call.callId, !callID.isEmpty else { continue }
             let key = Key(roomID: call.contactId, callID: callID)
+            attendees[key] = CallSummaryPeople.uniqueIDs((attendees[key] ?? []) + (call.attendeeIDs ?? []))
             ids[key] = uniqueRecordingIDs((ids[key] ?? []) + call.taskRecordingIDs)
             if let count = call.createdTaskCount, count >= 0 {
                 counts[key] = max(counts[key] ?? 0, count)
@@ -183,6 +188,7 @@ struct CallHistoryItem: Identifiable, Equatable, Codable {
             guard let callID = call.callId, !callID.isEmpty else { return call }
             let key = Key(roomID: call.contactId, callID: callID)
             var result = call
+            result.attendeeIDs = attendees[key]
             result.recordingSessionIDs = ids[key]
             result.createdTaskCount = counts[key]
             return result
@@ -254,7 +260,7 @@ struct CallHistoryResponse: Codable {
 }
 
 /// Participant info from Recording API v2
-struct RecordingParticipant: Codable {
+struct RecordingParticipant: Codable, Equatable {
     let userId: String
     let displayName: String
 }
@@ -347,6 +353,7 @@ struct CallHistoryAPIItem: Codable {
                                isMissed: false,
                                recordingURL: playbackURL,
                                participantCount: max(participantCount, 2),
+                               recordingParticipants: participants,
                                createdTaskCount: createdTaskCount,
                                callId: callId,
                                recordingSessionIDs: CallHistoryItem.uniqueRecordingIDs((sessionIds ?? []) + [egressId]))

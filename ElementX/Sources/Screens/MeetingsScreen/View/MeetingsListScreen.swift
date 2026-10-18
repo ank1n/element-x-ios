@@ -70,6 +70,16 @@ struct MeetingsListScreen: View {
                     .padding(.horizontal, 20)
                     .padding(.bottom, 8)
 
+                if context.viewState.callsUnavailable {
+                    HStack {
+                        Text(NSLocalizedString("stalk_calendar_calls_unavailable", comment: "Call history unavailable"))
+                            .font(.caption).foregroundStyle(.secondary)
+                        Button(L10n.actionRetry) { context.send(viewAction: .refresh) }
+                    }.padding(.horizontal, 16)
+                } else if context.viewState.isCallsLoading {
+                    ProgressView().controlSize(.small)
+                }
+
                 // Meetings list
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -158,6 +168,13 @@ struct MeetingsListScreen: View {
 
             Spacer()
 
+            Toggle(isOn: $context.showUnplannedCalls) {
+                Image(systemName: "phone.badge.clock")
+            }
+            .toggleStyle(.button)
+            .tint(.red)
+            .accessibilityLabel(NSLocalizedString("stalk_calendar_show_calls", comment: "Show unplanned calls"))
+
             Menu {
                 ForEach(Array(filters.enumerated()), id: \.offset) { idx, filter in
                     Button(filter == "all" ? SL10n.meetingAll : filter) {
@@ -223,6 +240,8 @@ struct MeetingsListScreen: View {
                 }
             }
             .padding(.top, 8)
+        } else if !context.viewState.calls.isEmpty {
+            calendarAgenda
         } else if meetings.isEmpty {
             emptyState
                 .padding(.top, 60)
@@ -280,6 +299,62 @@ struct MeetingsListScreen: View {
                 }
             }
         }
+    }
+
+    private var calendarAgenda: some View {
+        let state = context.viewState
+        let entries = CalendarAgendaEntry.make(meetings: state.meetings, calls: state.calls,
+                                               showUnplanned: state.bindings.showUnplannedCalls)
+            .filter { Calendar.current.isDate($0.startTime, inSameDayAs: state.selectedDate) }
+            .filter { selectedFilterIndex == 0 || (selectedFilterIndex == 1 ? $0.meeting != nil : $0.meeting == nil) }
+        return VStack(spacing: 12) {
+            if entries.isEmpty { emptyState }
+            ForEach(entries) { entry in
+                VStack(alignment: .leading, spacing: 8) {
+                    if let meeting = entry.meeting {
+                        Button { context.send(viewAction: .selectMeeting(meeting)) } label: {
+                            meetingCard(meeting, isActive: meeting.startTime <= Date() && meeting.endTime > Date())
+                        }.buttonStyle(.plain)
+                    }
+                    ForEach(entry.calls) { call in
+                        calendarCallRow(call, unplanned: entry.meeting == nil)
+                    }
+                }
+            }
+        }
+    }
+
+    private func calendarCallRow(_ call: CallHistoryItem, unplanned: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button { context.send(viewAction: .selectCall(call, tasks: false)) } label: {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: call.isMissed ? "phone.down" : "phone.badge.clock")
+                        .foregroundStyle(unplanned ? .red : .secondary)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(call.contactName).font(.headline).foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        HStack {
+                            Text(call.timestamp, style: .time)
+                            if let duration = call.duration { Text(String(format: " · %d:%02d", Int(max(0, duration)) / 60, Int(max(0, duration)) % 60)) }
+                        }.font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                }
+                .frame(minHeight: 44)
+            }.buttonStyle(.plain)
+            if let count = call.createdTaskCount, count > 0 {
+                Button { context.send(viewAction: .selectCall(call, tasks: true)) } label: {
+                    Label(String(count), systemImage: "checklist")
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel(String(format: NSLocalizedString("stalk_call_linked_tasks_count", value: "%d linked tasks", comment: "Task count"), count))
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background((unplanned ? Color.red : StalkTheme.accent).opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke((unplanned ? Color.red : StalkTheme.accent).opacity(0.2)))
     }
 
     // MARK: - Meeting Card (full style)

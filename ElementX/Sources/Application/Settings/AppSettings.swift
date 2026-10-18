@@ -123,6 +123,18 @@ final class AppSettings {
         store = userDefaults
     }
     
+    /// Graduate the previously experimental feature once, before constructing the SDK client.
+    init() {
+        Self.enableNativeThreadsIfNeeded(in: Self.store)
+    }
+
+    static func enableNativeThreadsIfNeeded(in defaults: UserDefaults) {
+        let rolloutKey = "stalkNativeThreadsEnabledV1"
+        guard !defaults.bool(forKey: rolloutKey) else { return }
+        defaults.set(true, forKey: UserDefaultsKeys.threadsEnabled.rawValue)
+        defaults.set(true, forKey: rolloutKey)
+    }
+
     // MARK: - Hooks
     
     // swiftlint:disable:next function_parameter_count
@@ -517,7 +529,7 @@ final class AppSettings {
     @UserPreference(key: UserDefaultsKeys.knockingEnabled, defaultValue: false, storageType: .userDefaults(store))
     var knockingEnabled
     
-    @UserPreference(key: UserDefaultsKeys.threadsEnabled, defaultValue: false, storageType: .userDefaults(store))
+    @UserPreference(key: UserDefaultsKeys.threadsEnabled, defaultValue: true, storageType: .userDefaults(store))
     var threadsEnabled
     
     @UserPreference(key: UserDefaultsKeys.focusEventOnNotificationTap, defaultValue: false, storageType: .userDefaults(store))
