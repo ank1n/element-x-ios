@@ -2,10 +2,18 @@
 import MatrixRustSDK
 import SwiftUI
 
-internal enum StalkThreadStrings {
-    static var title: String { NSLocalizedString("stalk_threads_title", comment: "Room discussions") }
-    static var empty: String { NSLocalizedString("stalk_threads_empty", comment: "Empty discussions") }
-    static var unavailable: String { NSLocalizedString("stalk_threads_unavailable", comment: "Unavailable thread message") }
+enum StalkThreadStrings {
+    static var title: String {
+        NSLocalizedString("stalk_threads_title", comment: "Room discussions")
+    }
+
+    static var empty: String {
+        NSLocalizedString("stalk_threads_empty", comment: "Empty discussions")
+    }
+
+    static var unavailable: String {
+        NSLocalizedString("stalk_threads_unavailable", comment: "Unavailable thread message")
+    }
 }
 
 /// Keep the SDK's reactive list alive for the screen's lifetime. No plaintext REST fallback.
@@ -75,8 +83,13 @@ final class RoomThreadListModel: ObservableObject {
 
 private final class ThreadListObserver: ThreadListEntriesListener, @unchecked Sendable {
     private let update: @MainActor () -> Void
-    init(update: @escaping @MainActor () -> Void) { self.update = update }
-    func onUpdate(diff: [ThreadListUpdate]) { Task { @MainActor in update() } }
+    init(update: @escaping @MainActor () -> Void) {
+        self.update = update
+    }
+
+    func onUpdate(diff: [ThreadListUpdate]) {
+        Task { @MainActor in update() }
+    }
 }
 
 struct RoomThreadListView: View {
@@ -120,7 +133,10 @@ final class RoomThreadListCoordinator: CoordinatorProtocol {
         model = RoomThreadListModel(service: service)
         self.select = select
     }
-    func toPresentable() -> AnyView { AnyView(RoomThreadListView(model: self.model, select: self.select)) }
+
+    func toPresentable() -> AnyView {
+        AnyView(RoomThreadListView(model: model, select: select))
+    }
 }
 
 struct RoomThreadListRow: View {

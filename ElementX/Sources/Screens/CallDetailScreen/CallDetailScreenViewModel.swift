@@ -150,7 +150,7 @@ class CallDetailScreenViewModel: CallDetailScreenViewModelType, CallDetailScreen
                 guard let self else { return }
                 for member in members {
                     self.state.participantProfiles[member.userID] = ResolvedParticipant(displayName: member.displayName ?? member.userID,
-                                                                                       avatarURL: member.avatarURL)
+                                                                                        avatarURL: member.avatarURL)
                 }
                 var map: [String: URL] = [:]
                 let nameCounts = Dictionary(grouping: members, by: { $0.displayName ?? "" }).mapValues(\.count)

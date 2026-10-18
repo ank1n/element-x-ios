@@ -184,7 +184,7 @@ class CallsListScreenTests: XCTestCase {
         try await deferFulfillment(model.context.$viewState) { state in
             !state.isRefreshingHistory && state.callHistory.first?.attendeeIDs == ["@actual:example.com"]
         }.fulfill()
-        XCTAssertFalse(model.context.viewState.callHistory[0].attendeeIDs!.contains("@room-only:example.com"))
+        XCTAssertFalse(try XCTUnwrap(model.context.viewState.callHistory[0].attendeeIDs?.contains("@room-only:example.com")))
     }
 
     func testRecordingResultsDoNotWaitForRoomScan() async throws {

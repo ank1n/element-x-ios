@@ -122,7 +122,7 @@ final class NotificationTapHandlingTests: XCTestCase {
         client.roomForIdentifierClosure = { _ in .joined(room) }
         let notifications = NotificationManagerMock()
         await AppCoordinator.sendInlineReply(roomID: roomID, replyText: "Thread response", clientProxy: client,
-                                            notificationManager: notifications, threadRootEventID: "$root")
+                                             notificationManager: notifications, threadRootEventID: "$root")
         XCTAssertEqual(room.threadTimelineEventIDReceivedEventID, "$root")
         XCTAssertTrue(thread.sendMessageHtmlInReplyToEventIDIntentionalMentionsCalled)
         XCTAssertFalse(main.sendMessageHtmlInReplyToEventIDIntentionalMentionsCalled)
@@ -138,7 +138,7 @@ final class NotificationTapHandlingTests: XCTestCase {
         client.roomForIdentifierClosure = { _ in .joined(room) }
         let notifications = NotificationManagerMock()
         await AppCoordinator.sendInlineReply(roomID: roomID, replyText: "Private branch response", clientProxy: client,
-                                            notificationManager: notifications, threadRootEventID: "$deleted-root")
+                                             notificationManager: notifications, threadRootEventID: "$deleted-root")
         XCTAssertFalse(main.sendMessageHtmlInReplyToEventIDIntentionalMentionsCalled)
         XCTAssertTrue(notifications.showLocalNotificationWithSubtitleCalled)
     }

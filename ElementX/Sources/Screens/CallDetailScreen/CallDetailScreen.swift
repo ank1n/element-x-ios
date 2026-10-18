@@ -60,7 +60,7 @@ struct CallDetailScreen: View {
             if context.viewState.attendeesError {
                 Text(L10n.commonSomethingWentWrong).font(.caption).foregroundStyle(.secondary)
                 Button(L10n.actionRetry) { context.send(viewAction: .refreshParticipants) }
-            } else if !context.viewState.isAttendeesLoading && context.viewState.actualAttendees.isEmpty {
+            } else if !context.viewState.isAttendeesLoading, context.viewState.actualAttendees.isEmpty {
                 Text(NSLocalizedString("stalk_call_no_attendance", comment: "No saved call attendance"))
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -634,9 +634,9 @@ struct CallDetailScreen: View {
                                 }
                                 .buttonStyle(.plain)
                                 .disabled(segment.speakerID.map { !CallSummaryPeople.isUserID($0) } ?? true)
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundColor(.primary)
-                                    .lineLimit(1)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(.primary)
+                                .lineLimit(1)
 
                                 Spacer()
 

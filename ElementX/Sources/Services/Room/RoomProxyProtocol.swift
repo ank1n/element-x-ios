@@ -209,7 +209,9 @@ protocol JoinedRoomProxyProtocol: RoomProxyProtocol {
 }
 
 extension JoinedRoomProxyProtocol {
-    func threadListService() -> ThreadListServiceProtocol? { nil }
+    func threadListService() -> ThreadListServiceProtocol? {
+        nil
+    }
 
     var details: RoomDetails {
         RoomDetails(id: id,

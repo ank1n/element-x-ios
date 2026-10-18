@@ -192,12 +192,12 @@ struct RoomScreen: View {
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 12) {
                     if context.viewState.canShowThreads {
-                    Button {
-                        context.send(viewAction: .displayThreadList)
-                    } label: {
-                        Image(systemName: "bubble.left.and.bubble.right")
-                    }
-                    .accessibilityLabel(StalkThreadStrings.title)
+                        Button {
+                            context.send(viewAction: .displayThreadList)
+                        } label: {
+                            Image(systemName: "bubble.left.and.bubble.right")
+                        }
+                        .accessibilityLabel(StalkThreadStrings.title)
                     }
 
                     // Search button

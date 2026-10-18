@@ -2,23 +2,23 @@
 @testable import ElementX
 import Foundation
 import MatrixRustSDK
-import XCTest
 import SwiftUI
 import UIKit
+import XCTest
 
 @MainActor
 final class ThreadsCalendarParityTests: XCTestCase {
-    private let start = Date(timeIntervalSince1970: 1_000)
+    private let start = Date(timeIntervalSince1970: 1000)
 
     func testCallOnAnotherDayDoesNotAttachToRecurringRoom() throws {
         let planned = try meeting()
-        let entries = CalendarAgendaEntry.make(meetings: [planned], calls: [call(id: "later", offset: 86_400)], showUnplanned: true)
+        let entries = CalendarAgendaEntry.make(meetings: [planned], calls: [call(id: "later", offset: 86400)], showUnplanned: true)
         XCTAssertEqual(entries.count, 2)
-        XCTAssertTrue(entries.first { $0.meeting != nil }!.calls.isEmpty)
+        XCTAssertTrue(try XCTUnwrap(entries.first { $0.meeting != nil }?.calls.isEmpty))
     }
 
     func testOverlappingCallAugmentsMeetingWithoutDuplicateEvent() throws {
-        let entries = CalendarAgendaEntry.make(meetings: [try meeting()], calls: [call(id: "overlap", offset: 10)], showUnplanned: true)
+        let entries = try CalendarAgendaEntry.make(meetings: [meeting()], calls: [call(id: "overlap", offset: 10)], showUnplanned: true)
         XCTAssertEqual(entries.count, 1)
         XCTAssertEqual(entries[0].calls.map(\.id), ["overlap"])
         XCTAssertEqual(entries[0].taskCount, 3)
@@ -28,7 +28,7 @@ final class ThreadsCalendarParityTests: XCTestCase {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let data: [String: Any] = ["id": 2, "title": "No end", "matrix_room_id": "!room:example.invalid",
-                                  "start_time": ISO8601DateFormatter().string(from: start), "end_time": NSNull(), "is_indefinite": true]
+                                   "start_time": ISO8601DateFormatter().string(from: start), "end_time": NSNull(), "is_indefinite": true]
         let planned = try decoder.decode(Meeting.self, from: JSONSerialization.data(withJSONObject: data))
         let entries = CalendarAgendaEntry.make(meetings: [planned], calls: [call(id: "inside", offset: 60), call(id: "outside", offset: 3700)], showUnplanned: true)
         XCTAssertEqual(entries.count, 2)
@@ -40,8 +40,8 @@ final class ThreadsCalendarParityTests: XCTestCase {
         other = CallHistoryItem(id: other.id, contactName: "Other", contactId: "!other:example.invalid", callType: .incoming,
                                 timestamp: other.timestamp, duration: 30, isMissed: false, recordingURL: nil)
         let calls = [call(id: "planned", offset: 20), other]
-        let visible = CalendarAgendaEntry.make(meetings: [try meeting()], calls: calls, showUnplanned: true)
-        let hidden = CalendarAgendaEntry.make(meetings: [try meeting()], calls: calls, showUnplanned: false)
+        let visible = try CalendarAgendaEntry.make(meetings: [meeting()], calls: calls, showUnplanned: true)
+        let hidden = try CalendarAgendaEntry.make(meetings: [meeting()], calls: calls, showUnplanned: false)
         XCTAssertEqual(visible.count, 2)
         XCTAssertEqual(hidden.count, 1)
         XCTAssertEqual(hidden[0].calls.map(\.id), ["planned"])
@@ -70,7 +70,7 @@ final class ThreadsCalendarParityTests: XCTestCase {
         let data = try JSONDecoder().decode(TranscriptionData.self, from: Data(json.utf8))
         XCTAssertEqual(data.transcription?.segments.first?.speakerID, "@misha.g:example.invalid")
         XCTAssertEqual(data.summary?.topics?.first?.suggestedTasks?.first?.assignee?.matrixID, "@misha.g:example.invalid")
-        XCTAssertEqual(CallSummaryPeople.uniqueIDs(data.summary!.topics![0].mentions!), ["@misha.p:example.invalid", "@misha.g:example.invalid"])
+        XCTAssertEqual(try CallSummaryPeople.uniqueIDs(XCTUnwrap(data.summary?.topics?[0].mentions)), ["@misha.p:example.invalid", "@misha.g:example.invalid"])
         XCTAssertEqual(try JSONDecoder().decode(TranscriptionData.self, from: JSONEncoder().encode(data)), data)
     }
 
@@ -95,9 +95,9 @@ final class ThreadsCalendarParityTests: XCTestCase {
         XCTAssertFalse(CallSummaryPeople.isUserID("guest-1"))
     }
 
-    func testThreadsRolloutUpgradesSavedFalseOnlyOnce() {
+    func testThreadsRolloutUpgradesSavedFalseOnlyOnce() throws {
         let name = "threads-rollout-test-" + UUID().uuidString
-        let defaults = UserDefaults(suiteName: name)!
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
         defer { defaults.removePersistentDomain(forName: name) }
         defaults.set(false, forKey: "threadsEnabled")
         AppSettings.enableNativeThreadsIfNeeded(in: defaults)
@@ -140,13 +140,13 @@ final class ThreadsCalendarParityTests: XCTestCase {
 
     func testThreadMenuHonoursPermissionsAndDoesNotOfferNestedThreads() {
         var message = TextRoomTimelineItem(id: .randomEvent, timestamp: start, isOutgoing: false, isEditable: false,
-                                          canBeRepliedTo: true, sender: .init(id: "@qa:example.invalid", displayName: "QA"),
-                                          content: .init(body: "A message"))
+                                           canBeRepliedTo: true, sender: .init(id: "@qa:example.invalid", displayName: "QA"),
+                                           content: .init(body: "A message"))
         func actions(_ item: EventBasedTimelineItemProtocol, canSend: Bool = true, kind: TimelineKind = .live) -> [TimelineItemMenuAction] {
             TimelineItemMenuActionProvider(timelineItem: item, canCurrentUserSendMessage: canSend,
-                canCurrentUserRedactSelf: false, canCurrentUserRedactOthers: false, canCurrentUserPin: false,
-                pinnedEventIDs: [], isDM: false, isViewSourceEnabled: false, areThreadsEnabled: true,
-                timelineKind: kind, emojiProvider: EmojiProvider(appSettings: AppSettings()), bookmarkService: nil)
+                                           canCurrentUserRedactSelf: false, canCurrentUserRedactOthers: false, canCurrentUserPin: false,
+                                           pinnedEventIDs: [], isDM: false, isViewSourceEnabled: false, areThreadsEnabled: true,
+                                           timelineKind: kind, emojiProvider: EmojiProvider(appSettings: AppSettings()), bookmarkService: nil)
                 .makeActions()?.actions ?? []
         }
         XCTAssertTrue(actions(message).contains(.replyInThread))
@@ -155,11 +155,11 @@ final class ThreadsCalendarParityTests: XCTestCase {
         message.properties.isThreaded = true
         XCTAssertFalse(actions(message, kind: .detached).contains(.replyInThread))
         let unsupported = UnsupportedRoomTimelineItem(id: .randomEvent, body: "Unknown", eventType: "io.unsupported",
-            error: "Unsupported", timestamp: start, isOutgoing: false, isEditable: false, canBeRepliedTo: true,
-            sender: .init(id: "@qa:example.invalid"))
+                                                      error: "Unsupported", timestamp: start, isOutgoing: false, isEditable: false, canBeRepliedTo: true,
+                                                      sender: .init(id: "@qa:example.invalid"))
         XCTAssertFalse(actions(unsupported).contains(.replyInThread))
         var sticker = StickerRoomTimelineItem(id: .randomEvent, body: "Sticker", timestamp: start, isOutgoing: false,
-            isEditable: false, canBeRepliedTo: true, sender: .init(id: "@qa:example.invalid"), imageInfo: .mockImage)
+                                              isEditable: false, canBeRepliedTo: true, sender: .init(id: "@qa:example.invalid"), imageInfo: .mockImage)
         sticker.properties.isThreaded = true
         XCTAssertFalse(actions(sticker, kind: .detached).contains(.replyInThread))
     }
@@ -175,7 +175,7 @@ final class ThreadsCalendarParityTests: XCTestCase {
             var calendarState = MeetingsScreenViewState()
             calendarState.isLoading = false
             calendarState.selectedDate = start
-            calendarState.meetings = [try meeting()]
+            calendarState.meetings = try [meeting()]
             calendarState.calls = [call(id: "planned", offset: 10), call(id: "unplanned", offset: 4000)]
             let calendarStore = MeetingsScreenViewModelType(initialViewState: calendarState)
             try await attach(MeetingsListScreen(context: calendarStore.context).frame(width: 390, height: 844)
@@ -220,14 +220,16 @@ final class ThreadsCalendarParityTests: XCTestCase {
         CallHistoryItem(id: id, contactName: "Call", contactId: "!room:example.invalid", callType: .incoming,
                         timestamp: start.addingTimeInterval(offset), duration: 30, isMissed: false, recordingURL: nil, createdTaskCount: 3)
     }
+
     private func meeting() throws -> Meeting {
         let json: [String: Any] = ["id": 1, "title": "Planned", "start_time": ISO8601DateFormatter().string(from: start),
-                                  "end_time": ISO8601DateFormatter().string(from: start.addingTimeInterval(3600)),
-                                  "matrix_room_id": "!room:example.invalid", "status": "scheduled"]
+                                   "end_time": ISO8601DateFormatter().string(from: start.addingTimeInterval(3600)),
+                                   "matrix_room_id": "!room:example.invalid", "status": "scheduled"]
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return try decoder.decode(Meeting.self, from: JSONSerialization.data(withJSONObject: json))
     }
+
     private func thread(_ id: String) -> ThreadListItem {
         ThreadListItem(rootEvent: .init(eventId: id, timestamp: 1000, sender: "@qa:example.invalid", senderProfile: .unavailable,
                                         isOwn: false, content: nil), latestEvent: nil, numReplies: 1)
@@ -239,13 +241,31 @@ private final class ThreadListFake: ThreadListServiceProtocol, @unchecked Sendab
     var fail = false
     var pages = 0
     var resets = 0
-    func items() -> [ThreadListItem] { rows }
-    func paginationState() -> ThreadListPaginationState { .idle(endReached: true) }
-    func paginate() async throws { pages += 1; if fail { throw URLError(.notConnectedToInternet) } }
-    func reset() async { resets += 1 }
-    func subscribeToItemsUpdates(listener: ThreadListEntriesListener) -> TaskHandle { TestHandle(noHandle: .init()) }
-    func subscribeToPaginationStateUpdates(listener: ThreadListPaginationStateListener) -> TaskHandle { TestHandle(noHandle: .init()) }
+    func items() -> [ThreadListItem] {
+        rows
+    }
+
+    func paginationState() -> ThreadListPaginationState {
+        .idle(endReached: true)
+    }
+
+    func paginate() async throws {
+        pages += 1; if fail { throw URLError(.notConnectedToInternet) }
+    }
+
+    func reset() async {
+        resets += 1
+    }
+
+    func subscribeToItemsUpdates(listener: ThreadListEntriesListener) -> TaskHandle {
+        TestHandle(noHandle: .init())
+    }
+
+    func subscribeToPaginationStateUpdates(listener: ThreadListPaginationStateListener) -> TaskHandle {
+        TestHandle(noHandle: .init())
+    }
 }
+
 private final class TestHandle: TaskHandle, @unchecked Sendable {
     override func cancel() { }
 }

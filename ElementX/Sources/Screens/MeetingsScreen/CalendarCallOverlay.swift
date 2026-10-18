@@ -6,8 +6,13 @@ struct CalendarAgendaEntry: Identifiable {
     let id: String
     let meeting: Meeting?
     let calls: [CallHistoryItem]
-    var startTime: Date { meeting?.startTime ?? calls[0].timestamp }
-    var taskCount: Int { calls.reduce(0) { $0 + max(0, $1.createdTaskCount ?? 0) } }
+    var startTime: Date {
+        meeting?.startTime ?? calls[0].timestamp
+    }
+
+    var taskCount: Int {
+        calls.reduce(0) { $0 + max(0, $1.createdTaskCount ?? 0) }
+    }
 
     static func make(meetings: [Meeting], calls: [CallHistoryItem], showUnplanned: Bool) -> [Self] {
         var entries = meetings.filter { $0.status != .cancelled }.map { Self(id: "meeting:\($0.id)", meeting: $0, calls: []) }

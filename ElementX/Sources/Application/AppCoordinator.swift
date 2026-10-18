@@ -1311,9 +1311,9 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         } else { timeline = roomProxy.timeline }
 
         switch await timeline.sendMessage(replyText,
-                                                    html: nil,
-                                                    inReplyToEventID: nil,
-                                                    intentionalMentions: .empty) {
+                                          html: nil,
+                                          inReplyToEventID: nil,
+                                          intentionalMentions: .empty) {
         case .success:
             break
         default:

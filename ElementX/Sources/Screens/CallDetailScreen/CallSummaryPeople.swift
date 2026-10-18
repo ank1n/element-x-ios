@@ -15,6 +15,7 @@ enum CallSummaryPeople {
     static func isUserID(_ id: String) -> Bool {
         id.range(of: "^@[^\\s:]+:[^\\s]+$", options: .regularExpression) != nil
     }
+
     static func uniqueIDs(_ ids: [String]) -> [String] {
         var seen = Set<String>()
         return ids.filter { isUserID($0) && seen.insert($0).inserted }
@@ -26,8 +27,8 @@ final class CallParticipantPresenter {
     static func present(_ id: String, session: UserSessionProtocol, navigation: NavigationStackCoordinator) {
         guard CallSummaryPeople.isUserID(id) else { return }
         let profile = UserProfileScreenCoordinator(parameters: .init(userID: id, isPresentedModally: true,
-            userSession: session, userIndicatorController: ServiceLocator.shared.userIndicatorController,
-            analytics: ServiceLocator.shared.analytics, allowsConversationActions: false))
+                                                                     userSession: session, userIndicatorController: ServiceLocator.shared.userIndicatorController,
+                                                                     analytics: ServiceLocator.shared.analytics, allowsConversationActions: false))
         let stack = NavigationStackCoordinator()
         // Retain the subscription with the coordinator's presentation, rather than a global token.
         let wrapper = CallParticipantCoordinator(profile: profile, navigation: navigation)
@@ -49,9 +50,18 @@ private final class CallParticipantCoordinator: CoordinatorProtocol {
             if case .dismiss = action { navigation?.setSheetCoordinator(nil) }
         }
     }
-    func start() { profile.start() }
-    func stop() { profile.stop() }
-    func toPresentable() -> AnyView { profile.toPresentable() }
+
+    func start() {
+        profile.start()
+    }
+
+    func stop() {
+        profile.stop()
+    }
+
+    func toPresentable() -> AnyView {
+        profile.toPresentable()
+    }
 }
 
 struct CallParticipantTrack: Decodable {
@@ -59,7 +69,7 @@ struct CallParticipantTrack: Decodable {
     let participantName: String?
 }
 
-struct CallAttendee: Equatable, Identifiable, Sendable {
+struct CallAttendee: Equatable, Identifiable {
     let id: String
     let name: String
 

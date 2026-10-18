@@ -89,8 +89,8 @@ final class MeetingsScreenCoordinator: CoordinatorProtocol {
                 .removeDuplicates()
                 .sink { [weak self] snapshot in
                     self?.listViewModel.process(viewAction: .setCalls(snapshot.calls,
-                                                                     unavailable: snapshot.unavailable,
-                                                                     loading: snapshot.loading))
+                                                                      unavailable: snapshot.unavailable,
+                                                                      loading: snapshot.loading))
                 }
                 .store(in: &cancellables)
         } else { historyViewModel?.setActive(isActive) }
@@ -109,7 +109,9 @@ final class MeetingsScreenCoordinator: CoordinatorProtocol {
         historyViewModel?.setActive(active)
     }
 
-    func stop() { historyViewModel?.stop() }
+    func stop() {
+        historyViewModel?.stop()
+    }
 
     private func showCall(_ call: CallHistoryItem, tasks: Bool) {
         guard let service = callHistoryService else { return }

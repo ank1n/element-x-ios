@@ -62,7 +62,7 @@ struct MeetingsScreenViewState: BindableState {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         return Set(meetings.map { formatter.string(from: $0.startTime) } +
-                   (bindings.showUnplannedCalls ? calls.map { formatter.string(from: $0.timestamp) } : []))
+            (bindings.showUnplannedCalls ? calls.map { formatter.string(from: $0.timestamp) } : []))
     }
 }
 

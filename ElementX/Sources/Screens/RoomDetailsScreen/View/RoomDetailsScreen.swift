@@ -181,9 +181,9 @@ struct RoomDetailsScreen: View {
     private var aboutSection: some View {
         Section {
             if context.viewState.canShowThreads {
-            ListRow(label: .plain(title: StalkThreadStrings.title), kind: .navigationLink {
-                context.send(viewAction: .processTapThreads)
-            })
+                ListRow(label: .plain(title: StalkThreadStrings.title), kind: .navigationLink {
+                    context.send(viewAction: .processTapThreads)
+                })
             }
 
             ListRow(label: .default(title: L10n.screenRoomDetailsPinnedEventsRowTitle, icon: \.pin),

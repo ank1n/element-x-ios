@@ -1163,7 +1163,9 @@ protocol CallHistoryServiceProtocol: AnyObject {
 }
 
 extension CallHistoryServiceProtocol {
-    func fetchCallAttendees(egressId: String) async throws -> [CallAttendee] { [] }
+    func fetchCallAttendees(egressId: String) async throws -> [CallAttendee] {
+        []
+    }
 }
 
 class CallHistoryService: NSObject, CallHistoryServiceProtocol, URLSessionDelegate {
