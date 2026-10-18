@@ -135,7 +135,8 @@ final class RoomThreadListCoordinator: CoordinatorProtocol {
     }
 
     func toPresentable() -> AnyView {
-        AnyView(RoomThreadListView(model: model, select: select))
+        let listModel = model
+        return AnyView(RoomThreadListView(model: listModel, select: select))
     }
 }
 
