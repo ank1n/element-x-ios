@@ -2465,3 +2465,7 @@
 "stalk_calendar_calls_unavailable" = "Call history could not be updated. Saved calls are shown.";
 
 "stalk_threads_reply_count" = "%@ replies";
+
+"stalk_search_app_title" = "Search";
+
+"stalk_search_app_description" = "Messages, files, meetings and tasks";

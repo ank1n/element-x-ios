@@ -80,6 +80,23 @@ struct WidgetItem: Identifiable, Equatable, Codable {
         type == "builtin"
     }
 
+    static let searchAppID = "search"
+
+    static var search: WidgetItem {
+        WidgetItem(id: searchAppID,
+                   name: NSLocalizedString("stalk_search_app_title", comment: "Search application"),
+                   description: NSLocalizedString("stalk_search_app_description", comment: "Search application description"),
+                   icon: "magnifyingglass", url: "", type: "builtin", category: .tools)
+    }
+
+    static func includingSearch(in widgets: [WidgetItem], allowed: Bool) -> [WidgetItem] {
+        var result = widgets.filter { $0.id != searchAppID }
+        guard allowed else { return result }
+        // The native route is stable even if a stale registry/cache called this a web widget.
+        result.insert(.search, at: 0)
+        return result
+    }
+
     // MARK: - Айлок (STMOB-274)
 
     /// Идентификатор записи приложения. Должен совпасть с тем, что Molly заведёт в apps-api.

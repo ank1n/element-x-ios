@@ -2349,3 +2349,7 @@
 "stalk_calendar_calls_unavailable" = "Не удалось обновить историю звонков. Показаны сохранённые звонки.";
 
 "stalk_threads_reply_count" = "Ответов: %@";
+
+"stalk_search_app_title" = "Поиск";
+
+"stalk_search_app_description" = "Сообщения, файлы, встречи и задачи";

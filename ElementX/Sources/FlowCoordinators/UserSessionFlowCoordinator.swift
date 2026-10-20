@@ -320,6 +320,8 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
             .sink { [weak self] action in
                 guard let self else { return }
                 switch action {
+                case .searchTarget(let target, let title):
+                    handleAppRoute(.systemSearchTarget(target, title: title), animated: true)
                 case .showSettings:
                     navigationTabCoordinator.selectedTab = .profile
                 case .startCall(let roomID):

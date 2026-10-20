@@ -117,11 +117,14 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
                 return
             }
             state.errorMessage = nil
+            state.widgets = WidgetItem.includingSearch(in: state.widgets, allowed: availability.allows(WidgetItem.searchAppID))
+            state.isLoading = state.widgets.isEmpty
             // 1. Always show cache instantly (for fast UI).
             // STMOB-274: кэш рисуем СРАЗУ, не дожидаясь пробы доступности встроенных
             // приложений — иначе вкладка висела бы пустой всё время сетевого запроса.
             if let cached = await ServiceLocator.shared.cacheService?.load([WidgetItem].self, forKey: widgetsCacheKey) {
-                self.state.widgets = cached.filter { availability.allows($0.id) }
+                self.state.widgets = WidgetItem.includingSearch(in: cached.filter { availability.allows($0.id) },
+                                                                allowed: availability.allows(WidgetItem.searchAppID))
                 self.state.isLoading = false
                 MXLog.info("sTalk: Loaded \(cached.count) widgets from cache")
                 self.state.widgets = await self.mergingLocalBuiltins(into: cached)
@@ -246,7 +249,7 @@ class WidgetsListScreenViewModel: WidgetsListScreenViewModelType, WidgetsListScr
     /// Molly заведёт `ailock` в apps-api, локальная запись перестанет использоваться,
     /// и этот метод можно будет убрать целиком.
     private func mergingLocalBuiltins(into widgets: [WidgetItem]) async -> [WidgetItem] {
-        var result = widgets
+        var result = WidgetItem.includingSearch(in: widgets, allowed: availability.allows(WidgetItem.searchAppID))
         let key = availabilityKey
 
         // STMOB-275: «Диск». Подмешиваем, пока его нет в реестре apps-api. Наличие

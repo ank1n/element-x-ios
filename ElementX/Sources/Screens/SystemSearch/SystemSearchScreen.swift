@@ -17,6 +17,12 @@ struct SystemSearchScreen: View {
         rooms = { client.staticRoomSummaryProvider.roomListPublisher.value.map { ($0.id, $0.name) } }
     }
 
+    init(model: SystemSearchViewModel, open: @escaping (SystemSearchTarget, String?) -> Void) {
+        _model = StateObject(wrappedValue: model)
+        self.open = open
+        rooms = { [] }
+    }
+
     static func typeName(_ type: String) -> String {
         [
             "message": NSLocalizedString("Сообщения", comment: "System search result type"),
@@ -64,14 +70,16 @@ struct SystemSearchScreen: View {
             if let error = model.error { Text(error).foregroundStyle(.red).padding(8) }
             if let notice = model.notice { Text(notice).font(.footnote).foregroundStyle(.secondary).padding(8) }
             if !model.facets.isEmpty {
-                ScrollView(.horizontal) {
-                    HStack {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
                         Button(String(format: NSLocalizedString("stalk_search_all_count", comment: "All search result count"), Int64(model.total))) { model.browse(nil) }.buttonStyle(.bordered).tint(model.viewType == nil ? StalkTheme.accent : .secondary).disabled(model.loading)
                         ForEach(model.facets) { facet in
                             Button(String(format: NSLocalizedString("stalk_search_facet_count", comment: "Search result type and count"), Self.typeName(facet.entity_type), Int64(facet.count))) { model.browse(facet.entity_type) }
                                 .buttonStyle(.bordered).tint(model.viewType == facet.entity_type ? StalkTheme.accent : .secondary).disabled(model.loading)
                         }
-                    }.padding(.horizontal)
+                    }.fixedSize(horizontal: true, vertical: false)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
                 }
             }
             List {
@@ -95,23 +103,11 @@ struct SystemSearchScreen: View {
                     Button {
                         if let target = hit.target { open(target, hit.title ?? hit.meta?.filename) }
                     } label: {
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack {
-                                Text(Self.typeName(hit.facetKind)).font(.caption).foregroundStyle(StalkTheme.accent)
-                                Spacer()
-                                if hit.by == "sense" || hit.by == "both" { Text("По смыслу").font(.caption).foregroundStyle(.secondary) }
-                            }
-                            if !hit.badges.isEmpty {
-                                ForEach(hit.badges, id: \.self) { badge in
-                                    Text(badge).font(.caption).foregroundStyle(.secondary)
-                                }
-                            }
-                            if let title = hit.title { Text(title).font(.headline).foregroundStyle(.primary) }
-                            Text(hit.text).lineLimit(5).foregroundStyle(.secondary)
-                            if let room = hit.meta?.room { Text(room).font(.caption) }
-                            if hit.target == nil { Text("Переход к этому объекту недоступен").font(.caption).foregroundStyle(.secondary) }
-                        }
+                        SystemSearchResultRow(hit: hit)
                     }.buttonStyle(.plain).disabled(hit.target == nil)
+                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
                 }
                 if model.loading { ProgressView().frame(maxWidth: .infinity) }
                 if model.hasMore, !model.loading { Button("Показать ещё") { model.more() } }
@@ -119,8 +115,10 @@ struct SystemSearchScreen: View {
                     Text(model.conditions.canSearch ? NSLocalizedString("По этим условиям ничего не найдено. Нажмите «Найти» для нового запроса.", comment: "System search placeholder") : NSLocalizedString("Введите запрос или выберите условия поиска.", comment: "System search placeholder")).foregroundStyle(.secondary)
                 }
             }.listStyle(.plain)
+                .scrollContentBackground(.hidden)
         }
-        .navigationTitle("Поиск по системе")
+        .navigationTitle(NSLocalizedString("stalk_search_app_title", comment: "Search application"))
+        .background(Color(uiColor: .systemGroupedBackground))
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: Binding(get: { model.conditions.query }, set: { model.updateQuery($0) }), placement: .navigationBarDrawer(displayMode: .always), prompt: "Сообщения, файлы, встречи, задачи")
         .onChange(of: model.conditions.query) { peopleExpanded = false }
@@ -134,51 +132,32 @@ struct SystemSearchScreen: View {
     }
 
     private var actionBar: some View {
-        // Measure intrinsic control sizes inside the available padded width. Long labels
-        // move to another row instead of being compressed or truncated.
-        ViewThatFits(in: .horizontal) {
+        VStack(spacing: 8) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) { searchActions }
+                VStack(alignment: .leading, spacing: 8) { searchActions }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
             HStack(spacing: 8) {
-                searchActions.fixedSize(horizontal: true, vertical: true)
                 voiceAction
                 Spacer(minLength: 0)
                 secondaryActions
             }
-            VStack(alignment: .leading, spacing: 4) {
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 8) { searchActions }
-                        .fixedSize(horizontal: true, vertical: false)
-                    VStack(alignment: .leading, spacing: 4) { searchActions }
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 8) {
-                        voiceAction
-                        Spacer(minLength: 0)
-                        secondaryActions
-                    }
-                    // Keep touch targets intact even in very narrow split views or at
-                    // accessibility sizes where the symbols themselves need more width.
-                    VStack(alignment: .leading, spacing: 4) {
-                        voiceAction
-                        filterAction
-                        historyAction
-                        pinAction
-                    }
-                }
-            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal)
+        .padding(.horizontal, 16)
         .padding(.vertical, 8)
     }
 
     @ViewBuilder private var searchActions: some View {
         Button("Найти") { submitSearch() }
             .buttonStyle(.borderedProminent)
-            .fixedSize(horizontal: false, vertical: true)
+            .frame(minHeight: 44)
+            .fixedSize(horizontal: true, vertical: true)
         Button("Умный поиск") { submitSearch(smart: true) }
             .disabled(model.loading || model.conditions.query.isEmpty)
-            .fixedSize(horizontal: false, vertical: true)
+            .frame(minHeight: 44)
+            .fixedSize(horizontal: true, vertical: true)
     }
 
     private var voiceAction: some View {

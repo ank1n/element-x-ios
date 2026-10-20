@@ -20,7 +20,9 @@ struct ApplicationAvailability: Codable, Equatable {
         if let app = apps.first(where: { $0.id == id }) {
             return app.enabled && (app.clients?.contains("ios") ?? true)
         }
-        return !managed
+        // Search is a native navigation utility moved from Chats. Until the registry
+        // advertises it, keep it available; an explicit server entry still takes precedence.
+        return id == WidgetItem.searchAppID || !managed
     }
 
     static let legacy = Self(schemaVersion: 1, managed: false, revision: "legacy", apps: [])

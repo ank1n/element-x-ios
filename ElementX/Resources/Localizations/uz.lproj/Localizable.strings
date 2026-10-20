@@ -2023,3 +2023,7 @@
 "stalk_calendar_calls_unavailable" = "Qo‘ng‘iroqlar tarixini yangilab bo‘lmadi. Saqlangan qo‘ng‘iroqlar ko‘rsatilmoqda.";
 
 "stalk_threads_reply_count" = "Javoblar: %@";
+
+"stalk_search_app_title" = "Qidiruv";
+
+"stalk_search_app_description" = "Xabarlar, fayllar, uchrashuvlar va vazifalar";

@@ -10,6 +10,7 @@ import SwiftState
 import UIKit
 
 enum WidgetsTabFlowCoordinatorAction {
+    case searchTarget(SystemSearchTarget, title: String?)
     case showSettings
     case startCall(roomID: String)
     case hideTabBar(Bool)
@@ -219,6 +220,19 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
 
     private func presentBuiltinApp(_ widget: WidgetItem) {
         switch widget.id {
+        case WidgetItem.searchAppID:
+            let coordinator = MessageSearchScreenCoordinator(parameters: .init(clientProxy: userSession.clientProxy,
+                                                                               roomSummaryProvider: userSession.clientProxy.alternateRoomSummaryProvider,
+                                                                               isCallActive: { [weak self] in self?.flowParameters.ongoingCallRoomIDPublisher.value != nil }))
+            coordinator.actionsPublisher.sink { [weak self] action in
+                guard let self else { return }
+                switch action {
+                case .systemTarget(let target, let title): actionsSubject.send(.searchTarget(target, title: title))
+                case .openRoomAtEvent(let room, let event): actionsSubject.send(.openEvent(roomID: room, eventID: event))
+                case .dismiss: navigationStackCoordinator.pop()
+                }
+            }.store(in: &cancellables)
+            navigationStackCoordinator.push(coordinator)
         case WidgetItem.ailockAppID:
             // STMOB-274: чат с агентом Айлок. apiURL из apps-api намеренно не используем —
             // путь door-2 фиксирован во всём семействе sTalk, а база берётся от homeserver.
