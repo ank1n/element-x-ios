@@ -11,6 +11,8 @@ import UIKit
 class MeetingDetailViewModel: MeetingDetailViewModelType {
     private let service: MeetingsService
     private let clientProxy: ClientProxyProtocol?
+    private var venueRefreshInFlight = false
+    private var venueRevision = 0
     private let actionsSubject: PassthroughSubject<MeetingDetailViewModelAction, Never> = .init()
 
     var actionsPublisher: AnyPublisher<MeetingDetailViewModelAction, Never> {
@@ -81,17 +83,11 @@ class MeetingDetailViewModel: MeetingDetailViewModelType {
     override func process(viewAction: MeetingDetailViewAction) {
         switch viewAction {
         case .refreshVenue:
-            Task { [weak self] in
-                guard let self, state.meeting.room != nil || state.meeting.roomReleased != nil, !state.venueBusy else { return }
-                state.venueNow = Date()
-                do {
-                    let fresh = try await service.fetchMeeting(id: state.meeting.id)
-                    state.meeting = fresh
-                } catch { state.venueError = error.localizedDescription }
-            }
+            Task { [weak self] in await self?.refreshVenue() }
         case .venueAction(let action):
             Task { [weak self] in
                 guard let self, !state.venueBusy else { return }
+                venueRevision += 1
                 state.venueBusy = true; state.venueError = nil
                 defer { state.venueBusy = false }
                 do {
@@ -121,6 +117,26 @@ class MeetingDetailViewModel: MeetingDetailViewModelType {
                     self?.state.linkCopied = false
                 }
             }
+        }
+    }
+
+    /// Refresh even when there was no booking: another client may have added one.
+    /// A read started before a local mutation must not overwrite its result.
+    func refreshVenue() async {
+        guard !venueRefreshInFlight, !state.venueBusy, !state.isLoading,
+              state.meeting.creatorId == state.currentUserId || state.meeting.participants.contains(where: { $0.userId == state.currentUserId && $0.rsvp != .declined }) else { return }
+        venueRefreshInFlight = true
+        let revision = venueRevision
+        defer { venueRefreshInFlight = false }
+        state.venueNow = Date()
+        do {
+            let fresh = try await service.fetchMeeting(id: state.meeting.id)
+            guard !Task.isCancelled, revision == venueRevision else { return }
+            state.meeting = fresh
+            state.venueError = nil
+        } catch {
+            guard !Task.isCancelled, revision == venueRevision else { return }
+            state.venueError = error.localizedDescription
         }
     }
 
@@ -165,9 +181,11 @@ class MeetingDetailViewModel: MeetingDetailViewModelType {
     private func performRSVP(_ status: RSVPStatus) {
         Task { [weak self] in
             guard let self else { return }
+            venueRevision += 1
             state.isLoading = true
             do {
                 try await service.rsvp(meetingId: state.meeting.id, status: status)
+                if status == .declined { await MeetingVenueReminder.cancel(meetingID: state.meeting.id, userID: state.currentUserId) }
                 let updated = try await service.fetchMeeting(id: state.meeting.id)
                 state.meeting = updated
                 MXLog.info("sTalk: RSVP \(status) for meeting \(state.meeting.id)")
@@ -181,9 +199,11 @@ class MeetingDetailViewModel: MeetingDetailViewModelType {
     private func performDelete() {
         Task { [weak self] in
             guard let self else { return }
+            venueRevision += 1
             state.isLoading = true
             do {
                 try await service.deleteMeeting(id: state.meeting.id)
+                await MeetingVenueReminder.cancel(meetingID: state.meeting.id, userID: state.currentUserId)
                 MXLog.info("sTalk: Deleted meeting \(state.meeting.id)")
                 actionsSubject.send(.deleted)
             } catch {

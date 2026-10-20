@@ -11,6 +11,7 @@ final class StalkNativeUpdatesTests: XCTestCase {
     override func tearDown() {
         sessions.forEach { $0.invalidateAndCancel() }; sessions.removeAll()
         NativeUpdatesProtocol.handler = nil
+        NativeUpdatesProtocol.deferredHandler = nil
         super.tearDown()
     }
 
@@ -632,6 +633,76 @@ final class StalkNativeUpdatesTests: XCTestCase {
         XCTAssertNil(share["sharedWith"]); XCTAssertNil(share["permission"])
     }
 
+    func testOpenMeetingDiscoversBookingAddedByAnotherClientAndClearsError() async throws {
+        let fresh = try venueMeeting(now: Date())
+        var initial = fresh; initial.room = nil
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        let object = try JSONSerialization.jsonObject(with: encoder.encode(fresh))
+        var requests = 0
+        NativeUpdatesProtocol.handler = { _ in
+            requests += 1
+            return requests == 1 ? (503, [:]) : (200, object)
+        }
+        let service = MeetingsService(homeserver: "https://venue.example.invalid", accessTokenProvider: { "token" }, session: session())
+        let model = MeetingDetailViewModel(meeting: initial, currentUserId: fresh.creatorId, homeserverURL: "https://venue.example.invalid", service: service)
+        await model.refreshVenue()
+        XCTAssertNotNil(model.context.viewState.venueError)
+        await model.refreshVenue()
+        XCTAssertEqual(model.context.viewState.meeting.room?.id, fresh.room?.id)
+        XCTAssertNil(model.context.viewState.venueError)
+        XCTAssertEqual(requests, 2)
+    }
+
+    func testGuestDoesNotPollPrivateVenueDetails() async throws {
+        NativeUpdatesProtocol.handler = { _ in XCTFail("A guest must not poll meeting membership data"); return (403, [:]) }
+        let service = MeetingsService(homeserver: "https://venue.example.invalid", accessTokenProvider: { "token" }, session: session())
+        let model = try MeetingDetailViewModel(meeting: venueMeeting(now: Date()), currentUserId: "@guest:example.invalid", homeserverURL: "https://venue.example.invalid", service: service)
+        await model.refreshVenue()
+        XCTAssertNil(model.context.viewState.venueError)
+    }
+
+    func testOldVenueReadCannotUndoSuccessfulCheckin() async throws {
+        let meeting = try venueMeeting(now: Date())
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        let old = try JSONSerialization.jsonObject(with: encoder.encode(meeting))
+        var checked = try XCTUnwrap(meeting.room)
+        checked.checked_in_at = ISO8601DateFormatter().string(from: Date())
+        let room = try JSONSerialization.jsonObject(with: encoder.encode(checked))
+        let started = expectation(description: "Old GET held until after check-in")
+        var reply: ((Int, Any) -> Void)?
+        NativeUpdatesProtocol.deferredHandler = { request, complete in
+            guard request.httpMethod == "GET" else { return false }
+            Task { @MainActor in reply = complete; started.fulfill() }
+            return true
+        }
+        NativeUpdatesProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertTrue(request.url!.path.hasSuffix("/room/checkin"))
+            return (200, ["room": room])
+        }
+        let service = MeetingsService(homeserver: "https://venue.example.invalid", accessTokenProvider: { "token" }, session: session())
+        let model = MeetingDetailViewModel(meeting: meeting, currentUserId: meeting.creatorId, homeserverURL: "https://venue.example.invalid", service: service)
+        let refresh = Task { await model.refreshVenue() }
+        await fulfillment(of: [started], timeout: 3)
+        model.process(viewAction: .venueAction("checkin"))
+        let deadline = Date().addingTimeInterval(3)
+        while model.context.viewState.meeting.room?.checked_in_at == nil, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertNotNil(model.context.viewState.meeting.room?.checked_in_at)
+        reply?(200, old)
+        await refresh.value
+        XCTAssertNotNil(model.context.viewState.meeting.room?.checked_in_at)
+    }
+
+    func testManualRoomReleaseDoesNotClaimNoShow() {
+        for reason in ["early", "unknown"] {
+            let released = MeetingVenueReleased(id: 9, label: "Room", reason: reason, at: "2026-10-21T10:00:00Z")
+            XCTAssertEqual(released.reasonDescription, MeetingVenueStrings.text("released"))
+            XCTAssertNotEqual(released.reasonDescription, MeetingVenueStrings.text("no_show"))
+        }
+    }
+
     func testNumericBooleanIsNotAPowerLevel() {
         XCTAssertNil(StalkChannelService.integer(true))
         XCTAssertNil(StalkChannelService.integer(25.5))
@@ -641,6 +712,7 @@ final class StalkNativeUpdatesTests: XCTestCase {
 
 private final class NativeUpdatesProtocol: URLProtocol {
     static var handler: ((URLRequest) -> (Int, Any))?
+    static var deferredHandler: ((URLRequest, @escaping (Int, Any) -> Void) -> Bool)?
     override class func canInit(with request: URLRequest) -> Bool {
         true
     }
@@ -661,7 +733,12 @@ private final class NativeUpdatesProtocol: URLProtocol {
             }
             request.httpBody = body
         }
+        if Self.deferredHandler?(request, { [self] code, object in complete(code: code, object: object) }) == true { return }
         let (code, object) = Self.handler?(request) ?? (500, [:])
+        complete(code: code, object: object)
+    }
+
+    private func complete(code: Int, object: Any) {
         let response = HTTPURLResponse(url: request.url!, statusCode: code, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: (try? JSONSerialization.data(withJSONObject: object)) ?? Data())

@@ -85,6 +85,13 @@ struct MeetingDetailScreen: View {
         // STMOB-151 build 174: показываем error если joinCall не смог
         // найти/создать room. Раньше silent fail.
         .alert(item: $context.alertInfo)
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            repeat {
+                context.send(viewAction: .refreshVenue)
+                do { try await Task.sleep(for: .seconds(15)) } catch { return }
+            } while !Task.isCancelled
+        }
     }
 
     private var isVenueMember: Bool {
@@ -110,7 +117,7 @@ struct MeetingDetailScreen: View {
                         Button(MeetingVenueStrings.text(context.viewState.venueNow >= meeting.startTime ? "end_early" : "release")) { confirmRelease = true }.buttonStyle(.bordered)
                     }
                 } else if let released = meeting.roomReleased {
-                    Text(released.label + ": " + MeetingVenueStrings.text(released.reason == "series_no_show" ? "series_no_show" : "no_show"))
+                    Text(released.label + ": " + released.reasonDescription)
                 }
                 if context.viewState.venueBusy { ProgressView() }
                 if let error = context.viewState.venueError { Text(error).foregroundStyle(.red); Button(L10n.actionRetry) { context.send(viewAction: .refreshVenue) } }
@@ -119,13 +126,6 @@ struct MeetingDetailScreen: View {
             .disabled(context.viewState.venueBusy)
             .confirmationDialog(MeetingVenueStrings.text("release_confirm"), isPresented: $confirmRelease, titleVisibility: .visible) {
                 Button(MeetingVenueStrings.text("release"), role: .destructive) { context.send(viewAction: .venueAction("release")) }
-            }
-            .task(id: scenePhase) {
-                guard scenePhase == .active else { return }
-                repeat {
-                    context.send(viewAction: .refreshVenue)
-                    do { try await Task.sleep(for: .seconds(15)) } catch { return }
-                } while !Task.isCancelled
             }
         }
     }

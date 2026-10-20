@@ -104,6 +104,13 @@ struct MeetingVenueReleased: Codable, Equatable {
     let label: String
     let reason: String
     let at: String
+    var reasonDescription: String {
+        switch reason {
+        case "no_show": MeetingVenueStrings.text("no_show")
+        case "series_no_show": MeetingVenueStrings.text("series_no_show")
+        default: MeetingVenueStrings.text("released")
+        }
+    }
 }
 
 struct MeetingVenueActionState: Decodable {
