@@ -74,6 +74,8 @@ struct MeetingsScreenViewStateBindings {
 // MARK: - Detail
 
 enum MeetingDetailViewAction {
+    case refreshVenue
+    case venueAction(String)
     case rsvp(RSVPStatus)
     case joinCall
     case edit
@@ -95,6 +97,9 @@ struct MeetingDetailViewState: BindableState {
     var homeserverURL = ""
     var isLoading = false
     var linkCopied = false
+    var venueBusy = false
+    var venueError: String?
+    var venueNow = Date()
     var participantProfiles: [String: ResolvedParticipant] = [:]
     var mediaProvider: MediaProviderProtocol?
     var bindings = MeetingDetailViewStateBindings()
@@ -125,6 +130,7 @@ struct MeetingDetailViewStateBindings {
 enum MeetingEditViewAction {
     case save
     case cancel
+    case loadVenues
     case searchParticipants(String)
     case addParticipant(UserProfileProxy)
     case removeParticipant(UserProfileProxy)
@@ -142,6 +148,12 @@ struct MeetingEditViewState: BindableState {
     var errorMessage: String?
     var searchResults: [UserProfileProxy] = []
     var isSearching = false
+    var venueOffices: [MeetingVenueOffice] = []
+    var venueRooms: [MeetingVenueRoom] = []
+    var venuesAvailable = false
+    var venuesDisabled = false
+    var venuesLoading = false
+    var venueError: String?
 
     var isEditing: Bool {
         meetingId != nil
@@ -162,4 +174,10 @@ struct MeetingEditViewStateBindings {
     var allowGuests = false
     var participants: [UserProfileProxy] = []
     var participantSearchQuery = ""
+    var venueWanted = false
+    var venueID: Int?
+    var venueName = ""
+    var venueOfficeID: Int?
+    var venueQuery = ""
+    var venueRecent = true
 }

@@ -39,6 +39,9 @@ struct ThreadTimelineScreen: View {
                 } while !Task.isCancelled
             }
             .toolbarBackground(.visible, for: .navigationBar) // Fix the toolbar's background.
+            .task(id: "\(scenePhase)-\(context.viewState.isChannel)-\(timelineContext.viewState.channelAccess?.joined == true)") {
+                if scenePhase == .active, context.viewState.isChannel { await context.viewState.channelService?.watch(roomID: context.viewState.roomID) }
+            }
             .sheet(isPresented: $showChannelControls) {
                 if let service = context.viewState.channelService {
                     StalkChannelControlsView(service: service, roomID: context.viewState.roomID, rootID: context.viewState.threadRootID)

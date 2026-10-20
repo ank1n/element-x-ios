@@ -106,6 +106,8 @@ struct Meeting: Identifiable, Equatable, Codable {
     var matrixRoomId: String?
     let meetingCode: String?
     let location: String
+    var room: MeetingVenue?
+    var roomReleased: MeetingVenueReleased?
     let startTime: Date
     let endTime: Date
     let isIndefinite: Bool
@@ -133,6 +135,8 @@ struct Meeting: Identifiable, Equatable, Codable {
         matrixRoomId = try c.decodeIfPresent(String.self, forKey: .matrixRoomId)
         meetingCode = try c.decodeIfPresent(String.self, forKey: .meetingCode)
         location = try c.decodeIfPresent(String.self, forKey: .location) ?? ""
+        room = try c.decodeIfPresent(MeetingVenue.self, forKey: .room)
+        roomReleased = try c.decodeIfPresent(MeetingVenueReleased.self, forKey: .roomReleased)
         startTime = try c.decode(Date.self, forKey: .startTime)
         // STMOB-236: indefinite meetings come back with end_time = null. The model
         // keeps endTime non-optional (used in ~10 UI sites), so fall back to
@@ -154,7 +158,8 @@ struct Meeting: Identifiable, Equatable, Codable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, title, description, location, status, participants, attachments
+        case id, title, description, location, status, participants, attachments, room
+        case roomReleased = "room_released"
         case colorLabel = "color_label"
         case creatorId = "creator_id"
         case matrixRoomId = "matrix_room_id"
@@ -249,6 +254,19 @@ struct MeetingRequest: Encodable {
     var participants: [String] = []
     var accessLevel = "private"
     var meetingCode: String?
+    var roomID: Int?
+    var updatesRoom = false
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(title, forKey: .title); try c.encode(description, forKey: .description)
+        try c.encode(startTime, forKey: .startTime); try c.encode(endTime, forKey: .endTime)
+        try c.encode(isIndefinite, forKey: .isIndefinite); try c.encode(location, forKey: .location)
+        try c.encode(participants, forKey: .participants); try c.encode(accessLevel, forKey: .accessLevel)
+        try c.encodeIfPresent(meetingCode, forKey: .meetingCode)
+        if let roomID { try c.encode(roomID, forKey: .roomID) }
+        else if updatesRoom { try c.encodeNil(forKey: .roomID) }
+    }
 
     enum CodingKeys: String, CodingKey {
         case title, description, location, participants
@@ -257,6 +275,7 @@ struct MeetingRequest: Encodable {
         case isIndefinite = "is_indefinite"
         case accessLevel = "access_level"
         case meetingCode = "meeting_code"
+        case roomID = "room_id"
     }
 }
 
@@ -554,18 +573,29 @@ class MeetingsService {
     }
 
     func fetchMeeting(id: Int) async throws -> Meeting {
-        guard let url = URL(string: "\(homeserver)/api/meetings/\(id)") else { throw URLError(.badURL) }
-
-        let token = try currentAccessToken()
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 15
-
-        let (data, response) = try await session.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            throw URLError(.badServerResponse)
-        }
+        let data = try await apiRequest("GET", path: "/api/meetings/\(id)")
         return try Self.decoder.decode(Meeting.self, from: data)
+    }
+
+    func venueAction(meetingID: Int, action: String) async throws -> MeetingVenueActionState {
+        guard meetingID > 0, ["checkin", "release"].contains(action) else { throw URLError(.badURL) }
+        return try await JSONDecoder().decode(MeetingVenueActionState.self, from: apiRequest("POST", path: "/api/meetings/\(meetingID)/room/\(action)"))
+    }
+
+    func venueOffices() async throws -> [MeetingVenueOffice] {
+        struct Response: Decodable { let offices: [MeetingVenueOffice] }
+        return try await JSONDecoder().decode(Response.self, from: apiRequest("GET", path: "/api/meetings/rooms/offices")).offices
+    }
+
+    func venueRooms(start: Date, end: Date, officeID: Int?, query: String, recent: Bool) async throws -> [MeetingVenueRoom] {
+        var url = URLComponents()
+        url.path = "/api/meetings/rooms"
+        url.queryItems = [.init(name: "start", value: Self.dateFormatter.string(from: start)), .init(name: "end", value: Self.dateFormatter.string(from: end))]
+        if let officeID { url.queryItems?.append(.init(name: "office_id", value: String(officeID))) }
+        if !query.isEmpty { url.queryItems?.append(.init(name: "q", value: query)) }
+        if recent { url.queryItems?.append(.init(name: "recent", value: "1")) }
+        struct Response: Decodable { let rooms: [MeetingVenueRoom] }
+        return try await JSONDecoder().decode(Response.self, from: apiRequest("GET", path: url.string!)).rooms
     }
 
     func createMeeting(_ body: MeetingRequest) async throws -> Meeting {
@@ -677,6 +707,12 @@ class MeetingsService {
         guard (200...299).contains(statusCode) else {
             os_log(.error, log: meetingsLog, "%{public}@ %{public}@ => HTTP %d", method, path, statusCode)
             if path == "/api/meet/ensure-room", let error = MeetingLinkError.forHTTPStatus(statusCode) { throw error }
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            let code = json?["error"] as? String ?? json?["errcode"] as? String ?? ""
+            if ["room_busy", "room_forbidden", "room_needs_end", "rooms_disabled", "only_organizer", "no_room", "nothing_to_release", "checkin_closed"].contains(code) || code == "forbidden" && path.contains("/room/") {
+                let conflicts = (json?["conflicts"]).flatMap { try? JSONSerialization.data(withJSONObject: $0) }.flatMap { try? JSONDecoder().decode([MeetingVenueRoom.Busy].self, from: $0) } ?? []
+                throw MeetingVenueError(status: statusCode, code: code, conflicts: conflicts)
+            }
             throw URLError(.badServerResponse)
         }
         return data

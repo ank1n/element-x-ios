@@ -106,6 +106,10 @@ struct TimelineViewState: BindableState {
     var channelService: StalkChannelService?
     var channelAccess: StalkChannelSnapshot?
     var callSummaryService: CallTimelineSummaryService?
+    var isChannelMain: Bool {
+        channelAccess?.isChannel == true && timelineKind.threadRootEventID == nil
+    }
+
     let timelineKind: TimelineKind
     var roomID: String
     var members: [String: RoomMemberState] = [:]

@@ -15,7 +15,7 @@ struct CallTimelineSummaryView: View {
         Group {
             if let record = service.summary(for: marker) {
                 VStack(alignment: .leading, spacing: 8) {
-                    CallTimelineRecordFields(record: record, names: service.names)
+                    CallTimelineRecordFields(record: record, names: service.names, profiles: service.profiles, mediaProvider: service.userSession?.mediaProvider)
                     Button {
                         guard !loading else { return }
                         loading = true; error = nil
@@ -40,9 +40,10 @@ struct CallTimelineSummaryView: View {
             }
         }
         .onDisappear { detailTask?.cancel(); detailTask = nil }
+        .onChange(of: service.accessRevision) { detailTask?.cancel(); detail = nil; loading = false }
         .onChange(of: marker) { detailTask?.cancel(); detailTask = nil; detail = nil; loading = false }
         .sheet(item: $detail) { record in CallTimelineDetailSheet(record: record, service: service, video: marker.video) }
-        .task(id: scenePhase) {
+        .task(id: "\(scenePhase)-\(service.reconnectRevision)") {
             if scenePhase == .active { await service.observe(marker) }
         }
     }
@@ -51,34 +52,78 @@ struct CallTimelineSummaryView: View {
 struct CallTimelineRecordFields: View {
     let record: CallTimelineRecord
     let names: [String: String]
+    var profiles: [String: UserProfileProxy] = [:]
+    var mediaProvider: MediaProviderProtocol?
+    @State private var selectedPeople = ""
+    @State private var showingPeople = false
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let duration = record.duration_s, duration.isFinite, duration > 0 {
                 Label(String(format: "%d:%02d", Int(min(duration, 31_536_000)) / 60, Int(min(duration, 31_536_000)) % 60), systemImage: "clock")
             }
-            let people = record.participants ?? []
+            let people = record.uniqueParticipants
             if !people.isEmpty {
-                Label(people.prefix(12).map { names[$0] ?? $0 }.joined(separator: ", "), systemImage: "person.2")
-                    .fixedSize(horizontal: false, vertical: true)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(Array(people.prefix(12)), id: \.self) { id in
+                            Button {
+                                selectedPeople = names[id] ?? id; showingPeople = true
+                            } label: {
+                                LoadableAvatarImage(url: mediaProvider == nil ? nil : profiles[id]?.avatarURL,
+                                                    name: names[id] ?? id, contentID: id,
+                                                    avatarSize: .custom(30), mediaProvider: mediaProvider)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(names[id] ?? id)
+                        }
+                        if people.count > 12 {
+                            Button("+" + String(people.count - 12)) {
+                                selectedPeople = people.map { names[$0] ?? $0 }.joined(separator: ", "); showingPeople = true
+                            }
+                        }
+                    }.padding(.vertical, 4)
+                }
+                .accessibilityLabel(StalkCallCardStrings.people)
+                .accessibilityValue(people.map { names[$0] ?? $0 }.joined(separator: ", "))
             }
             if record.recording?.present == true { Label(StalkCallCardStrings.recording, systemImage: "record.circle") }
             if let state = record.transcription?.state, state == "ready" || state == "pending" {
                 Label(state == "ready" ? StalkCallCardStrings.ready : StalkCallCardStrings.pending, systemImage: "text.alignleft")
             }
-            if let tasks = record.tasks, let total = tasks.total, total > 0 {
+            if let tasks = record.tasks, let total = tasks.total, total >= 0 {
                 Label(String(format: StalkCallCardStrings.tasks, total), systemImage: "checklist")
                 let groups = tasks.by_group ?? [:]
                 ForEach(["backlog", "unstarted", "started", "completed", "cancelled", "unknown"], id: \.self) { group in
                     if let count = groups[group], count > 0 {
-                        Text(StalkCallCardStrings.group(group) + ": " + String(count)).foregroundStyle(.secondary)
+                        HStack(spacing: 6) {
+                            Circle().fill(StalkCallCardStrings.color(group)).overlay(Circle().stroke(Color.secondary, lineWidth: 1)).frame(width: 9, height: 9)
+                            Text(StalkCallCardStrings.group(group) + ": " + String(count)).foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
         }
+        .alert(StalkCallCardStrings.people, isPresented: $showingPeople) {
+            Button(L10n.actionClose, role: .cancel) { }
+        } message: { Text(selectedPeople) }
     }
 }
 
 enum StalkCallCardStrings {
+    static var people: String {
+        NSLocalizedString("stalk_call_card_people", comment: "Call participants")
+    }
+
+    static func color(_ group: String) -> Color {
+        switch group {
+        case "backlog", "unstarted": .white
+        case "started": .yellow
+        case "completed": .green
+        case "cancelled": .gray
+        default: .secondary
+        }
+    }
+
     static var recording: String {
         NSLocalizedString("stalk_call_card_recording", comment: "Call recording present")
     }
@@ -116,7 +161,7 @@ private struct CallTimelineDetailSheet: View {
             if CallHistoryItem.uniqueRecordingIDs(record.egress_ids ?? []).isEmpty {
                 NavigationStack {
                     ScrollView {
-                        CallTimelineRecordFields(record: record, names: service.names)
+                        CallTimelineRecordFields(record: record, names: service.names, profiles: service.profiles, mediaProvider: service.userSession?.mediaProvider)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding()
                     }

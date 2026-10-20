@@ -186,7 +186,11 @@ class TimelineTableViewController: UIViewController {
         tableView.separatorStyle = .none
         tableView.allowsSelection = false
         tableView.keyboardDismissMode = .onDrag
-        tableView.backgroundColor = .compound.bgCanvasDefault
+        tableView.backgroundColor = coordinator.context.viewState.isChannelMain ? .clear : .compound.bgCanvasDefault
+        coordinator.context.$viewState.map(\.isChannelMain).removeDuplicates()
+            .receive(on: DispatchQueue.main).sink { [weak self] channel in
+                self?.tableView.backgroundColor = channel ? .clear : .compound.bgCanvasDefault
+            }.store(in: &cancellables)
         
         // The tableview should be flipped to display the newest items at the top
         // the only exception is VoiceOver, where we want to keep the latest item at the top as Android.

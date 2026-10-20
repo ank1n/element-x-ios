@@ -14,8 +14,20 @@ protocol UserNotificationCenterProtocol: AnyObject {
     func add(_ request: UNNotificationRequest) async throws
     func requestAuthorization(options: UNAuthorizationOptions) async throws -> Bool
     func deliveredNotifications() async -> [UNNotification]
+    func pendingVenueNotificationRequests() async -> [UNNotificationRequest]
+    func removePendingVenueNotificationRequests(withIdentifiers identifiers: [String])
     func removeDeliveredNotifications(withIdentifiers identifiers: [String])
     func setNotificationCategories(_ categories: Set<UNNotificationCategory>)
     func authorizationStatus() async -> UNAuthorizationStatus
     func notificationSettings() async -> UNNotificationSettings
+}
+
+/// Existing mocks need no scheduling side effects. UNUserNotificationCenter's
+/// native methods supply the live witnesses for these requirements.
+extension UserNotificationCenterProtocol {
+    func pendingVenueNotificationRequests() async -> [UNNotificationRequest] {
+        []
+    }
+
+    func removePendingVenueNotificationRequests(withIdentifiers identifiers: [String]) { }
 }

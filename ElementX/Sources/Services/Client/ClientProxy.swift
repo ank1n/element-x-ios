@@ -15,6 +15,10 @@ import UIKit
 
 class ClientProxy: ClientProxyProtocol {
     private let client: ClientProtocol
+    var networkReachability: CurrentValuePublisher<NetworkMonitorReachability, Never> {
+        networkMonitor.reachabilityPublisher
+    }
+
     private let networkMonitor: NetworkMonitorProtocol
     private let appSettings: AppSettings
     

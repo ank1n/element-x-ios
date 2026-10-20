@@ -62,7 +62,7 @@ struct TimelineItemMenuActionProvider {
                 }
             }
             let supportedChannelRoot = item is EventBasedMessageTimelineItemProtocol || item is StickerRoomTimelineItem
-            let canOpenComments = channel?.isChannel == true ? supportedChannelRoot && item.id.eventID.map { channel!.canComment(root: $0) } == true : canCurrentUserSendMessage
+            let canOpenComments = channel?.isChannel == true ? supportedChannelRoot && channel?.joined == true && ((channel?.comments == true && channel?.archived != true) || item.properties.threadSummary != nil) : canCurrentUserSendMessage
             if areThreadsEnabled, canOpenComments, !timelineKind.isThread, !item.properties.isThreaded,
                !(item is UnsupportedRoomTimelineItem) {
                 actions.append(.replyInThread)

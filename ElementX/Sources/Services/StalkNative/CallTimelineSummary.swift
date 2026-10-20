@@ -29,6 +29,11 @@ struct CallTimelineRecord: Decodable, Equatable, Identifiable {
     let egress_ids: [String]?
     let title: String?
 
+    var uniqueParticipants: [String] {
+        var seen = Set<String>()
+        return (participants ?? []).filter { !$0.isEmpty && seen.insert($0).inserted }
+    }
+
     var ended: Bool {
         status == "ended" && ended_at?.date != nil
     }
@@ -62,21 +67,51 @@ struct StalkTimestamp: Decodable, Equatable {
 final class CallTimelineSummaryService: ObservableObject {
     @Published private(set) var records: [String: CallTimelineRecord] = [:]
     @Published private(set) var names: [String: String] = [:]
+    @Published private(set) var profiles: [String: UserProfileProxy] = [:]
     @Published private var owners: [String: CallInitiateMarker] = [:]
+    @Published private(set) var reconnectRevision = 0
+    private var networkToken: AnyCancellable?
     private var forbidden = Set<String>()
+    private var membershipAllowed = true
+    @Published private(set) var accessRevision = 0
     private let roomID: String
     let api: StalkNativeAPI
     let userSession: UserSessionProtocol?
     init(roomID: String, client: ClientProxyProtocol, session: URLSession? = nil, userSession: UserSessionProtocol? = nil) {
         self.userSession = userSession
         self.roomID = roomID; api = StalkNativeAPI(client: client, session: session)
+        if let client = client as? ClientProxy {
+            networkToken = client.networkReachability.map { $0 == .reachable }.removeDuplicates().dropFirst().filter { $0 }
+                .receive(on: DispatchQueue.main).sink { [weak self] _ in self?.reconnectRevision += 1 }
+        }
     }
 
     func detail(_ key: String) async throws -> CallTimelineRecord {
-        let data = try await api.request(["api", "recording", "calls", key])
+        guard membershipAllowed else { throw StalkNativeHTTPError(status: 403) }
+        let revision = accessRevision
+        let data: Data
+        do { data = try await api.request(["api", "recording", "calls", key]) }
+        catch let error as StalkNativeHTTPError where error.status == 401 || error.status == 403 {
+            if error.status == 403 { forbidden.formUnion(records.keys) }
+            accessRevision += 1
+            records.removeAll(); owners.removeAll(); names.removeAll(); profiles.removeAll()
+            throw error
+        }
         let record = try JSONDecoder().decode(CallTimelineRecord.self, from: data)
+        guard membershipAllowed, accessRevision == revision else { throw StalkNativeHTTPError(status: 403) }
         guard record.call_key == key, record.room_id == roomID, record.ended else { throw URLError(.cannotParseResponse) }
         return record
+    }
+
+    func setMembership(joined: Bool) {
+        guard membershipAllowed != joined else { return }
+        membershipAllowed = joined; accessRevision += 1
+        if !joined { records.removeAll(); owners.removeAll(); names.removeAll(); profiles.removeAll() }
+    }
+
+    static func failureDelay(attempt: Int, retryAfter: TimeInterval? = nil) -> TimeInterval? {
+        guard attempt <= 4, retryAfter == nil || retryAfter!.isFinite && retryAfter! <= 300 else { return nil }
+        return min(300, max(30 * pow(2, Double(max(0, attempt - 1))), retryAfter ?? 0))
     }
 
     func summary(for marker: CallInitiateMarker) -> CallTimelineRecord? {
@@ -85,19 +120,23 @@ final class CallTimelineSummaryService: ObservableObject {
     }
 
     func observe(_ marker: CallInitiateMarker) async {
-        guard !forbidden.contains(marker.eventID), Date().timeIntervalSince(marker.timestamp) < 30 * 86400,
+        guard membershipAllowed, !forbidden.contains(marker.eventID), Date().timeIntervalSince(marker.timestamp) < 30 * 86400,
               marker.timestamp.timeIntervalSinceNow < 300 else { return }
+        let revision = accessRevision
+        var failures = 0
         // A view owns the polling task. SwiftUI cancels it when hidden/backgrounded.
         while !Task.isCancelled {
-            guard Date().timeIntervalSince(marker.timestamp) < 30 * 86400 else { return }
+            guard membershipAllowed, revision == accessRevision, Date().timeIntervalSince(marker.timestamp) < 30 * 86400 else { return }
             var result = records[marker.eventID]
+            var failureWait: TimeInterval?
             do {
                 let data = try await api.request(["api", "recording", "calls"], query: [
                     .init(name: "room_id", value: roomID),
                     .init(name: "at", value: String(Int64(marker.timestamp.timeIntervalSince1970 * 1000)))
                 ])
                 let record = try JSONDecoder().decode(CallTimelineRecord.self, from: data)
-                guard record.room_id == roomID, !record.call_key.isEmpty, record.started_at.date != nil, !Task.isCancelled else { return }
+                guard membershipAllowed, revision == accessRevision, record.room_id == roomID, !record.call_key.isEmpty, record.started_at.date != nil, !Task.isCancelled else { return }
+                failures = 0
                 if records.count > 256 { records.removeAll(); owners.removeAll() }
                 records[marker.eventID] = record; result = record
                 if let owner = owners[record.call_key] {
@@ -105,15 +144,29 @@ final class CallTimelineSummaryService: ObservableObject {
                         owners[record.call_key] = marker
                     }
                 } else { owners[record.call_key] = marker }
-                for id in (record.participants ?? []).prefix(12) where names[id] == nil && CallSummaryPeople.isUserID(id) {
+                if owners[record.call_key] != marker { return }
+                for id in record.uniqueParticipants.prefix(24) where names[id] == nil && CallSummaryPeople.isUserID(id) {
                     guard !Task.isCancelled else { return }
-                    if case .success(let profile) = await api.client.profile(for: id) { names[id] = profile.displayName ?? id }
+                    if case .success(let profile) = await api.client.profile(for: id), membershipAllowed, revision == accessRevision {
+                        names[id] = profile.displayName ?? id; profiles[id] = profile
+                    }
                 }
             } catch let error as StalkNativeHTTPError where error.status == 401 || error.status == 403 {
-                forbidden.insert(marker.eventID); records[marker.eventID] = nil; return
+                if error.status == 403 { forbidden.formUnion(records.keys); forbidden.insert(marker.eventID) }
+                accessRevision += 1
+                records.removeAll(); owners.removeAll(); names.removeAll(); profiles.removeAll(); return
+            } catch let error as StalkNativeHTTPError where error.status == 404 {
+                guard result == nil else { records[marker.eventID] = nil; return }
+            } catch let error as StalkNativeHTTPError where [400, 405, 410, 501].contains(error.status) {
+                records[marker.eventID] = nil; return
             } catch is CancellationError { return }
-            catch { if Task.isCancelled { return } }
-            guard let delay = CallTimelineRecord.nextPoll(record: result, marker: marker.timestamp, now: Date()) else { return }
+            catch {
+                if Task.isCancelled { return }
+                failures += 1
+                guard let wait = Self.failureDelay(attempt: failures, retryAfter: (error as? StalkNativeHTTPError)?.retryAfter) else { return }
+                failureWait = wait
+            }
+            guard let delay = failureWait ?? CallTimelineRecord.nextPoll(record: result, marker: marker.timestamp, now: Date()) else { return }
             do { try await Task.sleep(for: .seconds(delay)) } catch { return }
         }
     }

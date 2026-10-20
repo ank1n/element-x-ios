@@ -123,6 +123,12 @@ class JoinedRoomProxy: JoinedRoomProxyProtocol {
         }
     }
 
+    func sendForwardedChannelContent(_ json: String) async throws {
+        guard await authorization(root: nil)() else { throw StalkChannelError.readOnly }
+        // Like stickers, raw message content goes through the SDK's encryption and transaction machinery.
+        try await room.sendRaw(eventType: "m.room.message", content: json)
+    }
+
     func sendSticker(_ sticker: SharedSticker, threadRoot: String?) async throws {
         guard await authorization(root: threadRoot)() else { throw StalkChannelError.readOnly }
         guard sticker.isValid else { throw RoomProxyError.invalidMedia }

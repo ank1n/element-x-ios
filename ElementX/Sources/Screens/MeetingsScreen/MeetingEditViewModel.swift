@@ -9,6 +9,7 @@ import Foundation
 
 class MeetingEditViewModel: MeetingEditViewModelType {
     private let service: MeetingsService
+    private let initialVenueID: Int?
     private let userDiscoveryService: UserDiscoveryServiceProtocol?
     private let actionsSubject: PassthroughSubject<MeetingEditViewModelAction, Never> = .init()
     /// STMOB-303: набор в поле участников идёт через гашение дребезга. Раньше каждая буква
@@ -21,10 +22,11 @@ class MeetingEditViewModel: MeetingEditViewModelType {
         actionsSubject.eraseToAnyPublisher()
     }
 
-    init(meeting: Meeting? = nil, service: MeetingsService, userDiscoveryService: UserDiscoveryServiceProtocol? = nil) {
+    init(meeting: Meeting? = nil, service: MeetingsService, userDiscoveryService: UserDiscoveryServiceProtocol? = nil, mediaProvider: MediaProviderProtocol? = nil) {
         self.service = service
+        initialVenueID = meeting?.room?.id
         self.userDiscoveryService = userDiscoveryService
-        let bindings: MeetingEditViewStateBindings
+        var bindings: MeetingEditViewStateBindings
         if let meeting {
             bindings = MeetingEditViewStateBindings(title: meeting.title,
                                                     description: meeting.description,
@@ -39,8 +41,12 @@ class MeetingEditViewModel: MeetingEditViewModelType {
         } else {
             bindings = MeetingEditViewStateBindings()
         }
+        bindings.venueID = meeting?.room?.id
+        bindings.venueName = meeting?.room?.displayName ?? ""
+        bindings.venueWanted = meeting?.room != nil
+        bindings.venueOfficeID = meeting?.room?.office_id
         let initialState = MeetingEditViewState(meetingId: meeting?.id, bindings: bindings)
-        super.init(initialViewState: initialState)
+        super.init(initialViewState: initialState, mediaProvider: mediaProvider)
 
         searchQuerySubject
             .debounceTextQueriesAndRemoveDuplicates()
@@ -52,6 +58,8 @@ class MeetingEditViewModel: MeetingEditViewModelType {
 
     override func process(viewAction: MeetingEditViewAction) {
         switch viewAction {
+        case .loadVenues:
+            Task { await loadVenues() }
         case .save:
             save()
         case .cancel:
@@ -95,6 +103,38 @@ class MeetingEditViewModel: MeetingEditViewModelType {
         }
     }
 
+    private var venueRevision = 0
+    private func loadVenues() async {
+        venueRevision += 1
+        let revision = venueRevision
+        let binding = state.bindings
+        state.venuesLoading = true; state.venueError = nil
+        defer { if revision == venueRevision { state.venuesLoading = false } }
+        do {
+            let offices = try await service.venueOffices()
+            guard revision == venueRevision else { return }
+            state.venueOffices = offices; state.venuesAvailable = !offices.isEmpty; state.venuesDisabled = false
+            guard binding.venueWanted, !binding.isIndefinite, binding.endDate > binding.startDate else { return }
+            let query = binding.venueQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+            var rooms = try await service.venueRooms(start: binding.startDate, end: binding.endDate,
+                                                     officeID: binding.venueRecent || !query.isEmpty ? nil : binding.venueOfficeID,
+                                                     query: query, recent: query.isEmpty && binding.venueRecent)
+            if rooms.isEmpty, query.isEmpty, binding.venueRecent, let office = binding.venueOfficeID ?? offices.first?.id {
+                rooms = try await service.venueRooms(start: binding.startDate, end: binding.endDate, officeID: office, query: "", recent: false)
+            }
+            guard revision == venueRevision else { return }
+            state.venueRooms = rooms.sorted { lhs, rhs in
+                let l = !lhs.can_book ? 2 : (lhs.conflicts(excluding: state.meetingId).isEmpty ? 0 : 1)
+                let r = !rhs.can_book ? 2 : (rhs.conflicts(excluding: state.meetingId).isEmpty ? 0 : 1)
+                return l == r ? lhs.name < rhs.name : l < r
+            }
+        } catch {
+            guard revision == venueRevision else { return }
+            if let venue = error as? MeetingVenueError, venue.code == "rooms_disabled" { state.venuesAvailable = false; state.venuesDisabled = true }
+            else { state.venueError = error.localizedDescription }
+        }
+    }
+
     private func save() {
         Task { [weak self] in
             guard let self else { return }
@@ -107,6 +147,10 @@ class MeetingEditViewModel: MeetingEditViewModelType {
                 endDate = Calendar.current.date(byAdding: .day, value: 1, to: endDate) ?? endDate
             }
 
+            if !state.venuesDisabled && state.bindings.venueWanted && (state.bindings.isIndefinite || state.bindings.venueID == nil) {
+                state.errorMessage = MeetingVenueStrings.text(state.bindings.isIndefinite ? "needs_end" : "choose")
+                state.isLoading = false; return
+            }
             let meetingCode: String? = nil // Only the server issues a usable link after saving.
 
             var request = MeetingRequest(title: state.bindings.title,
@@ -119,6 +163,13 @@ class MeetingEditViewModel: MeetingEditViewModelType {
                                          accessLevel: state.bindings.allowGuests ? "public" : "private",
                                          meetingCode: meetingCode)
 
+            let selectedVenueID = state.bindings.venueWanted ? state.bindings.venueID : nil
+            // Only an intentional change modifies the booking. Omission preserves
+            // the current room when editing dates or unrelated meeting fields.
+            if !state.venuesDisabled, selectedVenueID != initialVenueID {
+                request.roomID = selectedVenueID
+                request.updatesRoom = true
+            }
             do {
                 let meeting: Meeting
                 if let id = state.meetingId {
@@ -131,7 +182,8 @@ class MeetingEditViewModel: MeetingEditViewModelType {
                 actionsSubject.send(.saved(meeting))
             } catch {
                 MXLog.error("sTalk: Save meeting failed: \(error)")
-                state.errorMessage = SL10n.meetingSaveError
+                state.errorMessage = (error as? MeetingVenueError)?.localizedDescription ?? SL10n.meetingSaveError
+                if (error as? MeetingVenueError)?.code == "rooms_disabled" { state.venuesAvailable = false; state.venuesDisabled = true }
             }
             state.isLoading = false
         }

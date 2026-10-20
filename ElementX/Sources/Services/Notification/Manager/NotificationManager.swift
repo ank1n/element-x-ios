@@ -58,6 +58,7 @@ final class NotificationManager: NSObject, NotificationManagerProtocol {
     
     private var cancellables = Set<AnyCancellable>()
     private var notificationsEnabled = false
+    private var venueGeneration = 0
     
     init(notificationCenter: UserNotificationCenterProtocol,
          appSettings: AppSettings) {
@@ -90,7 +91,9 @@ final class NotificationManager: NSObject, NotificationManagerProtocol {
                                                   intentIdentifiers: [],
                                                   options: [])
 
-        notificationCenter.setNotificationCategories([messageCategory, inviteCategory, callCategory])
+        let checkin = UNNotificationAction(identifier: NotificationConstants.Action.venueCheckin, title: MeetingVenueStrings.text("checkin"), options: [.authenticationRequired])
+        let venueCategory = UNNotificationCategory(identifier: NotificationConstants.Category.venueCheckin, actions: [checkin], intentIdentifiers: [], options: [])
+        notificationCenter.setNotificationCategories([messageCategory, inviteCategory, callCategory, venueCategory])
         notificationCenter.delegate = self
         
         notificationsEnabled = appSettings.enableNotifications
@@ -163,7 +166,21 @@ final class NotificationManager: NSObject, NotificationManagerProtocol {
     }
 
     func setUserSession(_ userSession: UserSessionProtocol?) {
+        venueGeneration += 1
         self.userSession = userSession
+        let generation = venueGeneration
+        Task { [weak self] in
+            guard let self else { return }
+            let pending = await notificationCenter.pendingVenueNotificationRequests()
+            guard generation == venueGeneration else { return }
+            let currentPrefix = userSession.map { MeetingVenueReminder.userPrefix($0.clientProxy.userID) }
+            notificationCenter.removePendingVenueNotificationRequests(withIdentifiers: pending.filter {
+                request in
+                guard request.identifier.hasPrefix(MeetingVenueReminder.prefix) else { return false }
+                if let currentPrefix, appSettings.enableNotifications { return !request.identifier.hasPrefix(currentPrefix) }
+                return true
+            }.map(\.identifier))
+        }
         os_log(.info, log: pushLog, "setUserSession called, session is %{public}@", userSession == nil ? "nil" : "present")
 
         // If notification permissions were given previously then attempt re-registering
@@ -204,6 +221,25 @@ final class NotificationManager: NSObject, NotificationManagerProtocol {
 
     func registrationFailed(with error: Error) {
         MXLog.error("Device token registration failed with error: \(error)")
+    }
+
+    func scheduleVenueReminders(meetings: [Meeting], userID: String) async {
+        guard userSession?.clientProxy.userID == userID else { return }
+        let generation = venueGeneration
+        let status = await notificationCenter.authorizationStatus()
+        let permitted = appSettings.enableNotifications && (status == .authorized || status == .provisional)
+        let now = Date()
+        let requests = permitted ? MeetingVenueReminder.requests(meetings: meetings, userID: userID, now: now) : []
+        let pending = await notificationCenter.pendingVenueNotificationRequests()
+        guard generation == venueGeneration, userSession?.clientProxy.userID == userID else { return }
+        let ids = permitted ? MeetingVenueReminder.identifiersToKeep(meetings: meetings, userID: userID, now: now) : []
+        let prefix = MeetingVenueReminder.userPrefix(userID)
+        notificationCenter.removePendingVenueNotificationRequests(withIdentifiers: pending.filter { $0.identifier.hasPrefix(prefix) && !ids.contains($0.identifier) }.map(\.identifier))
+        for request in requests {
+            guard generation == venueGeneration else { break }
+            try? await notificationCenter.add(request)
+        }
+        if generation != venueGeneration { notificationCenter.removePendingVenueNotificationRequests(withIdentifiers: requests.map(\.identifier)) }
     }
 
     func showLocalNotification(with title: String, subtitle: String?) async {
@@ -399,6 +435,16 @@ final class NotificationManager: NSObject, NotificationManagerProtocol {
     private func enableNotifications(_ enable: Bool) {
         guard notificationsEnabled != enable else { return }
         notificationsEnabled = enable
+        venueGeneration += 1
+        if !enable {
+            let generation = venueGeneration
+            Task { [weak self] in
+                guard let self else { return }
+                let pending = await notificationCenter.pendingVenueNotificationRequests()
+                guard generation == venueGeneration else { return }
+                notificationCenter.removePendingVenueNotificationRequests(withIdentifiers: pending.filter { $0.identifier.hasPrefix(MeetingVenueReminder.prefix) }.map(\.identifier))
+            }
+        }
         MXLog.info("App setting 'enableNotifications' changed to '\(enable)'")
         if enable {
             requestAuthorization()
@@ -445,6 +491,9 @@ extension NotificationManager: UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 didReceive response: UNNotificationResponse) async {
         switch response.actionIdentifier {
+        case NotificationConstants.Action.venueCheckin:
+            await delegate?.handleVenueCheckin(content: response.notification.request.content)
+            notificationCenter.removeDeliveredNotifications(withIdentifiers: [response.notification.request.identifier])
         case NotificationConstants.Action.inlineReply:
             guard let response = response as? UNTextInputNotificationResponse else {
                 return
@@ -460,4 +509,12 @@ extension NotificationManager: UNUserNotificationCenterDelegate {
     }
 }
 
-extension UNUserNotificationCenter: UserNotificationCenterProtocol { }
+extension UNUserNotificationCenter: UserNotificationCenterProtocol {
+    func pendingVenueNotificationRequests() async -> [UNNotificationRequest] {
+        await pendingNotificationRequests()
+    }
+
+    func removePendingVenueNotificationRequests(withIdentifiers identifiers: [String]) {
+        removePendingNotificationRequests(withIdentifiers: identifiers)
+    }
+}

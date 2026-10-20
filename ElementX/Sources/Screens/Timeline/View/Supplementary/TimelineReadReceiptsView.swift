@@ -22,24 +22,26 @@ struct TimelineReadReceiptsView: View {
     }
 
     var body: some View {
-        HStack(spacing: 2) {
-            StackedAvatarsView(overlap: 6,
-                               lineWidth: 1,
-                               avatars: avatars, avatarSize: .user(on: .readReceipt),
-                               mediaProvider: context.mediaProvider)
-                .padding(-1)
-            if timelineItem.properties.orderedReadReceipts.count > displayNumber {
-                Text("+\(remaining)")
-                    .font(.compound.bodySM)
-                    .foregroundColor(.compound.textPrimary)
+        Group { if !context.viewState.isChannelMain {
+            HStack(spacing: 2) {
+                StackedAvatarsView(overlap: 6,
+                                   lineWidth: 1,
+                                   avatars: avatars, avatarSize: .user(on: .readReceipt),
+                                   mediaProvider: context.mediaProvider)
+                    .padding(-1)
+                if timelineItem.properties.orderedReadReceipts.count > displayNumber {
+                    Text("+\(remaining)")
+                        .font(.compound.bodySM)
+                        .foregroundColor(.compound.textPrimary)
+                }
             }
-        }
-        .onTapGesture {
-            context.send(viewAction: .displayReadReceipts(itemID: timelineItem.id))
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityLabel)
-        .accessibilityHint(L10n.a11yReadReceiptsTapToShowAll)
+            .onTapGesture {
+                context.send(viewAction: .displayReadReceipts(itemID: timelineItem.id))
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(accessibilityLabel)
+            .accessibilityHint(L10n.a11yReadReceiptsTapToShowAll)
+        } }
     }
     
     private var remaining: Int {

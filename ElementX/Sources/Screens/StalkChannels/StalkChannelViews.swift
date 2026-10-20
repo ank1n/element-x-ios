@@ -124,7 +124,7 @@ struct StalkChannelControlsView: View {
                                 Button {
                                     Task { await perform { mode = try await service.subscription(roomID: roomID, root: rootID, set: value) } }
                                 } label: { HStack { Text(StalkChannelStrings.text(value)); Spacer(); if mode == value { Image(systemName: "checkmark") } } }
-                                    .disabled(busy || mode == nil)
+                                    .disabled(busy || mode == nil || !access.joined || !access.verified)
                             }
                         }
                         if access.canModerate {
@@ -139,12 +139,13 @@ struct StalkChannelControlsView: View {
                                 }.disabled(busy || !CallSummaryPeople.isUserID(userID))
                             }
                         }
-                    } else if access.level >= 100, !access.archived {
-                        Section(StalkChannelStrings.text("comments")) {
+                    } else if access.level >= 100 {
+                        StalkChannelAdministrationSections(service: service, roomID: roomID, access: access)
+                        if !access.archived { Section(StalkChannelStrings.text("comments")) {
                             Button(StalkChannelStrings.text(access.comments ? "disable_comments" : "enable_comments")) {
                                 Task { await perform { try await service.setComments(roomID: roomID, enabled: !access.comments) } }
                             }.disabled(busy)
-                        }
+                        } }
                     }
                 }
                 if busy { ProgressView() }
@@ -153,7 +154,7 @@ struct StalkChannelControlsView: View {
             .navigationTitle(StalkChannelStrings.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.actionClose) { dismiss() } } }
-            .task(id: scenePhase) {
+            .task(id: "\(scenePhase)-\(service.subscriptionRevision)") {
                 guard scenePhase == .active else { return }
                 repeat {
                     _ = await service.refresh(roomID: roomID)

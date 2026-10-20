@@ -16,6 +16,7 @@ struct RoomHeaderView: View {
     let roomAvatar: RoomAvatar
     /// Encrypted room → pastel blue ring around the header avatar (matches the chat-list marker & Web).
     var isEncrypted = false
+    var isChannel = false
     var dmRecipientVerificationState: UserIdentityVerificationState?
     /// STMOB-103 build 122: presence DM-собеседника. Telegram-style — точка
     /// на avatar + subtitle "в сети"/"был в сети X назад" под именем.
@@ -59,12 +60,12 @@ struct RoomHeaderView: View {
                         .font(.compound.bodyLGSemibold)
                         .accessibilityIdentifier(A11yIdentifiers.roomScreen.name)
                     // Build 122: presence subtitle для DM имеет приоритет над roomSubtitle.
-                    if let presenceSubtitleText {
+                    if !isChannel, let presenceSubtitleText {
                         Text(presenceSubtitleText)
                             .lineLimit(1)
                             .font(.compound.bodyXS)
                             .foregroundStyle(presenceSubtitleColor)
-                    } else if let roomSubtitle {
+                    } else if !isChannel, let roomSubtitle {
                         Text(roomSubtitle)
                             .lineLimit(1)
                             .font(.compound.bodyXS)
@@ -72,14 +73,31 @@ struct RoomHeaderView: View {
                     }
                 }
 
-                if let dmRecipientVerificationState {
+                if !isChannel, let dmRecipientVerificationState {
                     VerificationBadge(verificationState: dmRecipientVerificationState)
                 }
             }
         }
     }
 
+    @ScaledMetric private var channelAvatarSize: CGFloat = 32
     private var avatarImage: some View {
+        Group {
+            if isChannel {
+                Group {
+                    if case let .room(_, _, url?) = roomAvatar {
+                        LoadableImage(url: url, mediaType: .avatar, size: CGSize(width: 64, height: 64), mediaProvider: mediaProvider) { $0.scaledToFill() } placeholder: { Image(systemName: "megaphone.fill") }
+                    } else { Image(systemName: "megaphone.fill").foregroundStyle(StalkTheme.accent) }
+                }
+                .frame(width: channelAvatarSize, height: channelAvatarSize)
+                .background(StalkTheme.accent.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .accessibilityIdentifier(A11yIdentifiers.roomScreen.avatar)
+            } else { normalAvatarImage }
+        }
+    }
+
+    private var normalAvatarImage: some View {
         RoomAvatarImage(avatar: roomAvatar,
                         avatarSize: .room(on: .timeline),
                         mediaProvider: mediaProvider)

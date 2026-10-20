@@ -2107,3 +2107,94 @@
 "stalk_channels_open" = "Kanalni ochish";
 
 "stalk_channels_open_call" = "Qo‘ng‘iroqni ochish";
+
+"stalk_call_card_people" = "Ishtirokchilar";
+
+"stalk_venue_room" = "Uchrashuv xonasi";
+"stalk_venue_reserve" = "Xonani band qilish";
+"stalk_venue_search" = "Xonalarni qidirish";
+"stalk_venue_recent" = "Oxirgi 5 xona";
+"stalk_venue_office" = "Ofis";
+"stalk_venue_all_offices" = "Barcha ofislar";
+"stalk_venue_busy" = "Band";
+"stalk_venue_choose" = "Xonani tanlang.";
+"stalk_venue_confirmed" = "Band qilingan";
+"stalk_venue_pending" = "Tasdiqlash kutilmoqda";
+"stalk_venue_busy_error" = "Bu vaqtda xona band. Boshqa xona yoki vaqt tanlang.";
+"stalk_venue_forbidden" = "Bu xonani faqat uning guruhi band qilishi mumkin.";
+"stalk_venue_needs_end" = "Xonani band qilish uchun tugash vaqtini belgilang.";
+"stalk_venue_disabled" = "Serverda xonalarni band qilish ochirilgan.";
+
+"stalk_channels_changed" = "Malumot boshqa oynada ozgardi. Mahalliy matn saqlandi. Qayta yuklang.";
+"stalk_channels_unsupported" = "Server bu amalni qollamaydi. Oqish mumkin.";
+"stalk_channels_encrypted_drafts" = "Shifrlangan kanalda server qoralamalari mavjud emas. Shifrlangan xabar maydonidan foydalaning.";
+"stalk_channels_invalid_publication" = "Nashr, rasm hajmi va yuborish vaqtini tekshiring.";
+"stalk_channels_uncertain" = "Yuborish tasdiqlanmadi. Takror yubormang: nusxa paydo bolishi mumkin.";
+"stalk_channels_publications" = "Qoralamalar va jadval";
+"stalk_channels_publication" = "Nashr";
+"stalk_channels_new_publication" = "Yangi nashr";
+"stalk_channels_archived_draft" = "Kanal arxivlandi. Nashr qoralama boldi; tiklash uni yubormaydi.";
+"stalk_channels_preview" = "Korib chiqish";
+"stalk_channels_formatting" = "Formatlash";
+"stalk_channels_choose_image" = "Surat tanlash";
+"stalk_channels_image_file" = "Fayllardan rasm";
+"stalk_channels_paste_image" = "Rasmni joylash";
+"stalk_channels_remove_image" = "Rasmni olib tashlash";
+"stalk_channels_schedule" = "Nashrni rejalash";
+"stalk_channels_send_at" = "Yuborish vaqti";
+"stalk_channels_publish_now" = "Hozir nashr qilish";
+"stalk_channels_unschedule" = "Jadvalni bekor qilish";
+"stalk_channels_reload_publication" = "Versiyani yuklab matnimni saqlash";
+"stalk_channels_discard" = "Saqlanmagan ozgarishlarni bekor qilasizmi?";
+"stalk_channels_background" = "Kanal foni";
+"stalk_channels_background_mxc" = "Rasm manzili (mxc://…)";
+"stalk_channels_restore" = "Kanalni tiklash";
+"stalk_channels_archive" = "Kanalni arxivlash";
+"stalk_channels_archive_explanation" = "Tarix saqlanadi. Rejalangan nashrlar qoralama boladi; tiklash ularni yubormaydi.";
+"stalk_channels_history" = "Yangi obunachilar uchun tarix";
+"stalk_channels_history_joined" = "Obuna bolgan vaqtdan";
+"stalk_channels_history_shared" = "Mavjud oldingi tarix bilan";
+"stalk_channels_history_explanation" = "Qoida yangi voqealarga tegishli. Eski xabarlar avvalgi ruxsatlarni saqlaydi. Shifrlash ozgarmaydi.";
+"stalk_channels_management" = "Masul administrator";
+"stalk_channels_find_member" = "Ism yoki ID boyicha ishtirokchini topish";
+"stalk_channels_transfer_explanation" = "Boshqaruv ushbu ishtirokchiga topshirilsinmi? Boshqa administratorlar va v12 yaratuvchisining huquqlari saqlanadi.";
+"stalk_channels_text" = "Matn";
+"stalk_channels_status_draft" = "Qoralama";
+"stalk_channels_status_scheduled" = "Rejalangan";
+"stalk_channels_status_publishing" = "Yuborilmoqda";
+"stalk_channels_status_published" = "Nashr qilindi";
+"stalk_channels_status_failed" = "Yuborilmadi";
+"stalk_channels_status_uncertain" = "Tasdiqlanmagan";
+"stalk_channels_status_deleted" = "Ochirildi";
+"stalk_channels_background_default" = "Standart";
+"stalk_channels_background_sky" = "Osmon";
+"stalk_channels_background_mint" = "Yalpiz";
+"stalk_channels_background_sand" = "Qum";
+"stalk_channels_background_dots" = "Nuqtalar";
+"stalk_channels_background_grid" = "Katak";
+
+"stalk_channels_react" = "Reaksiya";
+
+"stalk_channels_forward" = "Yuborish";
+
+"stalk_channels_copy" = "Nusxalash";
+
+"stalk_venue_floor" = "%@-qavat";
+
+"stalk_venue_capacity" = "%d orin";
+
+"stalk_venue_checkin" = "Men shu yerdaman";
+"stalk_venue_checked_in" = "Kelish belgilandi";
+"stalk_venue_checked_by_call" = "Qongiroqqa kirish orqali belgilandi";
+"stalk_venue_checkin_until" = "Shu vaqtgacha belgilang:";
+"stalk_venue_released" = "Xona boshatildi";
+"stalk_venue_no_show" = "Hech kim kelishini belgilamagani uchun xona boshatildi. Uchrashuv bekor qilinmagan.";
+"stalk_venue_release" = "Xonani boshatish";
+"stalk_venue_end_early" = "Erta tugatish";
+"stalk_venue_release_confirm" = "Xona boshqalar uchun boshatilsinmi?";
+"stalk_venue_participants_only" = "Bu amal faqat uchrashuv ishtirokchilari uchun.";
+"stalk_venue_organizer_only" = "Uchrashuv boshlanishidan oldin xonani faqat tashkilotchi boshatishi mumkin.";
+"stalk_venue_no_booking" = "Xonaning faol bandligi yoq.";
+"stalk_venue_checkin_closed" = "Kelishni uchrashuvdan 15 daqiqa oldin va tugaguncha belgilash mumkin.";
+
+"stalk_venue_photo" = "Uchrashuv xonasi surati: %@";

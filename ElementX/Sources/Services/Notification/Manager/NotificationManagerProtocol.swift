@@ -12,6 +12,7 @@ import UserNotifications
 protocol NotificationManagerDelegate: AnyObject {
     func shouldDisplayInAppNotification(content: UNNotificationContent) -> Bool
     func notificationTapped(content: UNNotificationContent) async
+    func handleVenueCheckin(content: UNNotificationContent) async
     func handleInlineReply(_ service: NotificationManagerProtocol,
                            content: UNNotificationContent,
                            replyText: String) async
@@ -30,10 +31,19 @@ protocol NotificationManagerProtocol: AnyObject {
     func registrationFailed(with error: Error)
     func showLocalNotification(with title: String, subtitle: String?) async
     func setUserSession(_ userSession: UserSessionProtocol?)
+    func scheduleVenueReminders(meetings: [Meeting], userID: String) async
     
     func requestAuthorization()
     
     func removeDeliveredMessageNotifications(for roomID: String) async
     
     func removeDeliveredNotificationsForFullyReadRooms(_ rooms: [RoomSummary]) async
+}
+
+extension NotificationManagerDelegate {
+    func handleVenueCheckin(content: UNNotificationContent) async { }
+}
+
+extension NotificationManagerProtocol {
+    func scheduleVenueReminders(meetings: [Meeting], userID: String) async { }
 }

@@ -14,6 +14,7 @@ typealias ThreadTimelineScreenViewModelType = StateStoreViewModel<ThreadTimeline
 class ThreadTimelineScreenViewModel: ThreadTimelineScreenViewModelType, ThreadTimelineScreenViewModelProtocol {
     private let roomProxy: JoinedRoomProxyProtocol
     private let userSession: UserSessionProtocol
+    private var channelAccessTask: Task<Void, Never>?
     
     private let actionsSubject: PassthroughSubject<ThreadTimelineScreenViewModelAction, Never> = .init()
     var actionsPublisher: AnyPublisher<ThreadTimelineScreenViewModelAction, Never> {
@@ -50,8 +51,25 @@ class ThreadTimelineScreenViewModel: ThreadTimelineScreenViewModelType, ThreadTi
         state.roomID = roomProxy.id
         state.threadRootID = threadRootEventID ?? ""
         if userSession.clientProxy is ClientProxy {
-            state.channelService = StalkChannelService.shared(client: userSession.clientProxy)
+            let service = StalkChannelService.shared(client: userSession.clientProxy)
+            state.channelService = service
             state.canSendMessage = false
+            let roomID = roomProxy.id
+            let rootID = state.threadRootID
+            service.$snapshots.map { $0[roomID] }.removeDuplicates { lhs, rhs in
+                lhs?.isChannel == rhs?.isChannel && lhs?.verified == rhs?.verified && lhs?.joined == rhs?.joined && lhs?.canComment(root: rootID) == rhs?.canComment(root: rootID)
+            }
+            .receive(on: DispatchQueue.main).sink { [weak self] access in
+                guard let self else { return }
+                state.isChannel = access?.isChannel == true
+                updateRoomInfo(self.roomProxy.infoPublisher.value)
+                if access?.isChannel == true {
+                    channelAccessTask?.cancel()
+                    if access?.verified == true, access?.canComment(root: state.threadRootID) == true {
+                        process(viewAction: .refreshChannelAccess)
+                    } else { state.canSendMessage = false }
+                }
+            }.store(in: &cancellables)
         }
         updateRoomInfo(roomProxy.infoPublisher.value)
         Task { await updateVerificationBadge() }
@@ -62,16 +80,20 @@ class ThreadTimelineScreenViewModel: ThreadTimelineScreenViewModelType, ThreadTi
     override func process(viewAction: ThreadTimelineScreenViewAction) {
         switch viewAction {
         case .refreshChannelAccess:
-            Task { [weak self] in
+            channelAccessTask?.cancel()
+            channelAccessTask = Task { [weak self] in
                 guard let self, let service = state.channelService else { return }
-                state.canSendMessage = await service.canSend(roomID: roomProxy.id, root: state.threadRootID,
-                                                             creators: roomProxy.infoPublisher.value.creators)
+                let allowed = await service.canSend(roomID: roomProxy.id, root: state.threadRootID,
+                                                    creators: roomProxy.infoPublisher.value.creators)
+                guard !Task.isCancelled else { return }
+                state.canSendMessage = allowed
                 state.isChannel = service.snapshots[roomProxy.id]?.isChannel == true
             }
         }
     }
     
     func stop() {
+        channelAccessTask?.cancel()
         // Work around QLPreviewController dismissal issues, see the InteractiveQuickLookModifier.
         state.bindings.mediaPreviewViewModel = nil
     }
@@ -117,6 +139,8 @@ class ThreadTimelineScreenViewModel: ThreadTimelineScreenViewModelType, ThreadTi
     }
     
     private func updateRoomInfo(_ roomInfo: RoomInfoProxyProtocol) {
+        let nativeLevel = roomInfo.powerLevels.map { $0.userPowerLevels[roomProxy.ownUserID] ?? $0.values.usersDefault }
+        state.channelService?.restrictNativeAccess(roomID: roomProxy.id, joined: roomInfo.membership == .joined, level: nativeLevel)
         state.roomTitle = roomInfo.displayName ?? roomProxy.id
         state.roomAvatar = roomInfo.avatar
         if let powerLevels = roomInfo.powerLevels {
@@ -125,5 +149,6 @@ class ThreadTimelineScreenViewModel: ThreadTimelineScreenViewModelType, ThreadTi
                 state.canSendMessage = access?.verified == true && (access?.isChannel == true ? state.canSendMessage && access!.canComment(root: state.threadRootID) : powerLevels.canOwnUser(sendMessage: .roomMessage))
             } else { state.canSendMessage = powerLevels.canOwnUser(sendMessage: .roomMessage) }
         }
+        if roomInfo.membership != .joined { state.canSendMessage = false }
     }
 }

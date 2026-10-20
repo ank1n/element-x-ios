@@ -12,6 +12,7 @@ import WysiwygComposer
 
 struct RoomScreen: View {
     @State private var showChannelControls = false
+    @State private var showChannelPublications = false
     @ObservedObject private var context: RoomScreenViewModelType.Context
     @ObservedObject private var timelineContext: TimelineViewModelType.Context
     let composerToolbar: ComposerToolbar
@@ -34,7 +35,7 @@ struct RoomScreen: View {
                 }
                 .accessibilityIdentifier(A11yIdentifiers.roomScreen.scrollToBottom)
             }
-            .background(Color.compound.bgCanvasDefault.ignoresSafeArea())
+            .background(StalkChannelBackground(access: timelineContext.viewState.channelAccess, mediaProvider: context.mediaProvider).ignoresSafeArea())
             .topBanner(pinnedItemsBanner, isVisible: context.viewState.shouldShowPinnedEventsBanner && !isVoiceOverEnabled)
             // This can overlay on top of the pinnedItemsBanner
             .topBanner(knockRequestsBanner, isVisible: context.viewState.shouldSeeKnockRequests)
@@ -101,10 +102,16 @@ struct RoomScreen: View {
                     do { try await Task.sleep(for: .seconds(20)) } catch { return }
                 } while !Task.isCancelled
             }
+            .task(id: "\(scenePhase)-\(context.viewState.isChannel)-\(timelineContext.viewState.channelAccess?.joined == true)") {
+                if scenePhase == .active, context.viewState.isChannel { await context.viewState.channelService?.watch(roomID: timelineContext.viewState.roomID) }
+            }
             .sheet(isPresented: $showChannelControls) {
                 if let service = context.viewState.channelService {
                     StalkChannelControlsView(service: service, roomID: timelineContext.viewState.roomID)
                 }
+            }
+            .sheet(isPresented: $showChannelPublications) {
+                if let service = context.viewState.channelService { StalkChannelPublicationsView(service: service, roomID: timelineContext.viewState.roomID) }
             }
             .track(screen: .Room)
             .sentryTrace("\(Self.self)")
@@ -197,6 +204,7 @@ struct RoomScreen: View {
             RoomHeaderView(roomName: context.viewState.roomTitle,
                            roomAvatar: context.viewState.roomAvatar,
                            isEncrypted: context.viewState.isEncrypted,
+                           isChannel: context.viewState.isChannel,
                            dmRecipientVerificationState: context.viewState.dmRecipientVerificationState,
                            dmRecipientPresence: context.viewState.dmRecipientPresence,
                            mediaProvider: context.mediaProvider) {
@@ -216,7 +224,11 @@ struct RoomScreen: View {
                         .accessibilityLabel(StalkThreadStrings.title)
                     }
 
-                    if context.viewState.isChannel {
+                    if context.viewState.isChannel, (timelineContext.viewState.channelAccess?.level ?? 0) >= 50 {
+                        Button { showChannelPublications = true } label: { Image(systemName: "doc.badge.clock") }
+                            .accessibilityLabel(StalkChannelStrings.text("publications"))
+                    }
+                    if context.viewState.isChannel, timelineContext.viewState.channelAccess?.canAdminister == true {
                         Button { showChannelControls = true } label: { Image(systemName: "megaphone") }
                             .accessibilityLabel(StalkChannelStrings.title)
                     }

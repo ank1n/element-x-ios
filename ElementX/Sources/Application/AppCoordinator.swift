@@ -122,6 +122,7 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
     
     private var storedAppRoute: AppRoute?
     private var storedAppRouteSourceURL: URL?
+    @Consumable private var storedVenueCheckin: (id: Int, receiver: String)?
     @Consumable private var storedInlineReply: (roomID: String, message: String, threadRootEventID: String?)?
     @Consumable private var storedRoomsToAwait: Set<String>?
 
@@ -450,6 +451,13 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
     
     func notificationTapped(content: UNNotificationContent) async {
         MXLog.info("Tapped Notification")
+        if content.categoryIdentifier == NotificationConstants.Category.venueCheckin,
+           let id = StalkChannelService.integer(content.userInfo[NotificationConstants.UserInfoKey.meetingIdentifier]), id > 0 {
+            if let receiver = content.userInfo[NotificationConstants.UserInfoKey.receiverIdentifier] as? String,
+               let userSession, receiver != userSession.clientProxy.userID { return }
+            handleAppRoute(.systemSearchTarget(.init(kind: "meeting", meeting_id: String(id)), title: content.body))
+            return
+        }
         
         guard let tap = Self.notificationTapHandling(for: content,
                                                      focusEventOnTap: appSettings.focusEventOnNotificationTap,
@@ -510,6 +518,25 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         } else {
             stored = (stored ?? []).union([roomID])
         }
+    }
+
+    func handleVenueCheckin(content: UNNotificationContent) async {
+        guard content.categoryIdentifier == NotificationConstants.Category.venueCheckin,
+              let id = StalkChannelService.integer(content.userInfo[NotificationConstants.UserInfoKey.meetingIdentifier]), id > 0,
+              let receiver = content.userInfo[NotificationConstants.UserInfoKey.receiverIdentifier] as? String else { return }
+        if UIApplication.shared.applicationState != .active { scheduleDelayedSyncStop() }
+        if userSession == nil { storedVenueCheckin = (id, receiver); return }
+        await performVenueCheckin(id: id, receiver: receiver)
+    }
+
+    private func performVenueCheckin(id: Int, receiver: String) async {
+        guard let client = userSession?.clientProxy, client.userID == receiver else { return }
+        if UIApplication.shared.applicationState != .active { scheduleDelayedSyncStop() }
+        let service = MeetingsService(homeserver: client.homeserver, accessTokenProvider: { try client.matrixAccessToken() }, forceTokenRefresh: { await client.forceTokenRefresh() })
+        do {
+            _ = try await service.venueAction(meetingID: id, action: "checkin")
+            await MeetingVenueReminder.cancel(meetingID: id, userID: receiver)
+        } catch { await notificationManager.showLocalNotification(with: MeetingVenueStrings.text("checkin"), subtitle: error.localizedDescription) }
     }
 
     func handleInlineReply(_ service: NotificationManagerProtocol, content: UNNotificationContent, replyText: String) async {
@@ -823,6 +850,7 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
             }
         }
         
+        if let storedVenueCheckin { await performVenueCheckin(id: storedVenueCheckin.id, receiver: storedVenueCheckin.receiver) }
         if let storedInlineReply {
             await processInlineReply(roomID: storedInlineReply.roomID, replyText: storedInlineReply.message, threadRootEventID: storedInlineReply.threadRootEventID)
         }

@@ -124,6 +124,12 @@ class MessageForwardingScreenViewModel: MessageForwardingScreenViewModelType, Me
             return
         }
         
+        if let json = forwardingItem.channelContentJSON, let target = targetRoomProxy as? JoinedRoomProxy {
+            do { try await target.sendForwardedChannelContent(json) }
+            catch { userIndicatorController.submitIndicator(UserIndicator(title: error.localizedDescription)); return }
+            actionsSubject.send(.sent(roomID: roomID))
+            return
+        }
         if case .failure(let error) = await targetRoomProxy.timeline.sendMessageEventContent(forwardingItem.content) {
             MXLog.error("Failed forwarding message with error: \(error)")
             userIndicatorController.submitIndicator(UserIndicator(title: L10n.errorUnknown))

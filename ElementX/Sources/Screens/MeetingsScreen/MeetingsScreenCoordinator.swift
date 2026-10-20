@@ -171,7 +171,7 @@ final class MeetingsScreenCoordinator: CoordinatorProtocol {
 
     private func showEdit(meeting: Meeting?) {
         let userDiscoveryService = UserDiscoveryService(clientProxy: parameters.clientProxy)
-        let viewModel = MeetingEditViewModel(meeting: meeting, service: service, userDiscoveryService: userDiscoveryService)
+        let viewModel = MeetingEditViewModel(meeting: meeting, service: service, userDiscoveryService: userDiscoveryService, mediaProvider: parameters.mediaProvider)
         editViewModel = viewModel
 
         viewModel.actionsPublisher

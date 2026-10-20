@@ -39,6 +39,9 @@ struct MeetingDetailScreen: View {
         return f
     }()
 
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var confirmRelease = false
+
     private var meeting: Meeting {
         context.viewState.meeting
     }
@@ -63,6 +66,8 @@ struct MeetingDetailScreen: View {
                         descriptionCard
                     }
 
+                    venueActionsCard
+
                     // Participants card
                     participantsCard
 
@@ -82,6 +87,49 @@ struct MeetingDetailScreen: View {
         .alert(item: $context.alertInfo)
     }
 
+    private var isVenueMember: Bool {
+        let user = context.viewState.currentUserId
+        return !user.isEmpty && (meeting.creatorId == user || meeting.participants.contains { $0.userId == user && $0.rsvp != .declined })
+    }
+
+    @ViewBuilder private var venueActionsCard: some View {
+        if isVenueMember, meeting.room != nil || meeting.roomReleased != nil {
+            VStack(alignment: .leading, spacing: 12) {
+                if let room = meeting.room {
+                    MeetingVenuePhoto(source: room.photo_mxc, name: room.displayName, mediaProvider: context.viewState.mediaProvider)
+                    if let checked = room.checkin?.checked_in_at ?? room.checked_in_at {
+                        Label(MeetingVenueStrings.text(room.checkin?.via == "call" ? "checked_by_call" : "checked_in") + " " + (MeetingVenueStrings.date(checked)?.formatted(date: .omitted, time: .shortened) ?? checked), systemImage: "checkmark.circle")
+                    } else if let deadline = room.checkin?.deadline ?? room.checkin_deadline {
+                        Text(MeetingVenueStrings.text("checkin_until") + " " + (MeetingVenueStrings.date(deadline)?.formatted(date: .omitted, time: .shortened) ?? deadline))
+                    }
+                    if room.ended_early_at != nil { Text(MeetingVenueStrings.text("released")) }
+                    if room.canCheckIn(now: context.viewState.venueNow, meeting: meeting) {
+                        Button(MeetingVenueStrings.text("checkin")) { context.send(viewAction: .venueAction("checkin")) }.buttonStyle(.borderedProminent)
+                    }
+                    if room.canRelease(now: context.viewState.venueNow, meeting: meeting, userID: context.viewState.currentUserId) {
+                        Button(MeetingVenueStrings.text(context.viewState.venueNow >= meeting.startTime ? "end_early" : "release")) { confirmRelease = true }.buttonStyle(.bordered)
+                    }
+                } else if let released = meeting.roomReleased {
+                    Text(released.label + ": " + MeetingVenueStrings.text("no_show"))
+                }
+                if context.viewState.venueBusy { ProgressView() }
+                if let error = context.viewState.venueError { Text(error).foregroundStyle(.red); Button(L10n.actionRetry) { context.send(viewAction: .refreshVenue) } }
+            }
+            .padding(16).frame(maxWidth: .infinity, alignment: .leading).background(cardBg, in: RoundedRectangle(cornerRadius: 16))
+            .disabled(context.viewState.venueBusy)
+            .confirmationDialog(MeetingVenueStrings.text("release_confirm"), isPresented: $confirmRelease, titleVisibility: .visible) {
+                Button(MeetingVenueStrings.text("release"), role: .destructive) { context.send(viewAction: .venueAction("release")) }
+            }
+            .task(id: scenePhase) {
+                guard scenePhase == .active else { return }
+                repeat {
+                    context.send(viewAction: .refreshVenue)
+                    do { try await Task.sleep(for: .seconds(15)) } catch { return }
+                } while !Task.isCancelled
+            }
+        }
+    }
+
     // MARK: - Header Card
 
     private var headerCard: some View {
@@ -99,6 +147,11 @@ struct MeetingDetailScreen: View {
 
                 // Status icon
                 statusCircle(meeting.status)
+            }
+
+            if isVenueMember, let venue = meeting.room {
+                Label(MeetingVenueStrings.text("room") + ": " + venue.displayName + venue.statusDescription, systemImage: "door.left.hand.open")
+                    .font(.subheadline).fixedSize(horizontal: false, vertical: true)
             }
 
             // Quick info row

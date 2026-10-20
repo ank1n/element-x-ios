@@ -50,4 +50,23 @@ class MeetingEditViewModelTests: XCTestCase {
         XCTAssertTrue(viewModel.context.viewState.searchResults.isEmpty)
         XCTAssertFalse(viewModel.context.viewState.isSearching)
     }
+
+    func testVenueEncodingPreservesUnchangedBookingAndSupportsExplicitRemoval() throws {
+        var request = MeetingRequest(title: "Meeting", startTime: Date(), endTime: Date().addingTimeInterval(3600))
+        func object() throws -> [String: Any] {
+            try XCTUnwrap(try JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any])
+        }
+        XCTAssertNil(try object()["room_id"])
+        request.roomID = 42
+        XCTAssertEqual(try object()["room_id"] as? Int, 42)
+        request.roomID = nil; request.updatesRoom = true
+        XCTAssertTrue(try object()["room_id"] is NSNull)
+    }
+
+    func testOwnBookingIsExcludedButOtherConflictsRemain() throws {
+        let data = Data(#"{"id":1,"name":"Room","can_book":true,"busy":[{"start":"a","end":"b","mine":true,"meeting_id":42},{"start":"a","end":"c","mine":false}]}"#.utf8)
+        let room = try JSONDecoder().decode(MeetingVenueRoom.self, from: data)
+        XCTAssertEqual(room.conflicts(excluding: 42).count, 1)
+        XCTAssertEqual(room.conflicts(excluding: nil).count, 2)
+    }
 }

@@ -11,6 +11,7 @@ import Foundation
 enum NotificationConstants {
     enum UserInfoKey {
         static let roomIdentifier = "room_id"
+        static let meetingIdentifier = "meeting_id"
         static let eventIdentifier = "event_id"
         static let threadRootEventIdentifier = "thread_root_event_id"
         static let unreadCount = "unread_count"
@@ -29,6 +30,7 @@ enum NotificationConstants {
 
     enum Category {
         static let message = "message"
+        static let venueCheckin = "venue-checkin"
         static let invite = "invite"
         /// Информационный баннер о звонке — без quick-reply, в отличие от message.
         static let call = "call"
@@ -36,5 +38,6 @@ enum NotificationConstants {
 
     enum Action {
         static let inlineReply = "inline-reply"
+        static let venueCheckin = "venue-checkin"
     }
 }

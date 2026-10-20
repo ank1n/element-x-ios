@@ -15,6 +15,21 @@ struct StalkChannelSnapshot: Equatable {
     var closed = Set<String>()
     var blocked = false
     var roomName = ""
+    var encrypted = false
+    var implicitCreator = false
+    var lifecycleEventID: String?
+    var powersEventID: String?
+    var history = "joined"
+    var background = "default"
+    var backgroundImage: URL?
+    var manager: String?
+    var canTransfer = false
+    var joinedPeople: [UserProfileProxy] = []
+    var capabilities: StalkChannelCapabilities?
+    var canAdminister: Bool {
+        verified && isChannel && joined && level >= 100
+    }
+
     var canPublish: Bool {
         isChannel && joined && !archived && level >= 50
     }
@@ -52,14 +67,16 @@ final class StalkChannelService: ObservableObject {
 
     @Published private(set) var snapshots: [String: StalkChannelSnapshot] = [:]
     @Published private(set) var discoveryFailed = false
+    @Published private(set) var subscriptionRevision = 0
     @Published private(set) var channelIDs = Set<String>()
     @Published private(set) var archivedIDs = Set<String>()
-    private let api: StalkNativeAPI
+    let api: StalkNativeAPI
     private let typeDefaults: UserDefaults?
     private let typeCacheKey: String
     private var roomTypes: [String: Bool] = [:]
     private var ordinaryRooms = Set<String>()
     private var sdkCreators: [String: [String]] = [:]
+    private var nativePermissions: [String: (joined: Bool, level: Int64?)] = [:]
     private var discoveryTask: Task<Void, Never>?
     private var lastDiscovery: Date?
     init(client: ClientProxyProtocol, session: URLSession? = nil, defaults: UserDefaults? = nil) {
@@ -83,7 +100,7 @@ final class StalkChannelService: ObservableObject {
     /// One bounded metadata-only sync, not N requests for every row. Does not change the SDK sync cursor.
     func discover() async {
         if let discoveryTask { await discoveryTask.value; return }
-        guard lastDiscovery == nil || Date().timeIntervalSince(lastDiscovery!) > 60 else { return }
+        guard lastDiscovery == nil || Date().timeIntervalSince(lastDiscovery!) > 20 else { return }
         let task = Task { [weak self] in
             guard let self else { return }
             do {
@@ -136,7 +153,8 @@ final class StalkChannelService: ObservableObject {
             let powers = content("m.room.power_levels")
             let users = powers["users"] as? [String: Any] ?? [:]
             var level = Self.integer(users[api.client.userID]) ?? Self.integer(powers["users_default"]) ?? 0
-            if create["room_version"] as? String == "12", (sdkCreators[roomID] ?? []).contains(api.client.userID) { level = max(100, level) }
+            let implicitCreator = create["room_version"] as? String == "12" && (sdkCreators[roomID] ?? []).contains(api.client.userID)
+            if implicitCreator { level = max(100, level) }
             let policy = content("io.stalk.channel.policy")
             var snapshot = StalkChannelSnapshot(verified: true, isChannel: true, archived: content("io.stalk.channel.lifecycle")["archived"] as? Bool == true,
                                                 joined: content("m.room.member", api.client.userID)["membership"] as? String == "join", level: level,
@@ -146,18 +164,98 @@ final class StalkChannelService: ObservableObject {
             for event in events where event["type"] as? String == "io.stalk.channel.thread" {
                 if (event["content"] as? [String: Any])?["closed"] as? Bool == true, let key = event["state_key"] as? String { snapshot.closed.insert(key) }
             }
-            if snapshot.comments {
-                let caps = try await api.object(["_synapse", "client", "stalk_channels", "capabilities"])
-                snapshot.capability = Self.integer(caps["policyVersion"]) == 3 && caps["threadedComments"] as? Bool == true && Set(caps["commentEventTypes"] as? [String] ?? []).isSuperset(of: ["m.room.message", "m.room.encrypted", "m.sticker"])
+            let caps = try? await currentCapabilities()
+            snapshot.capabilities = caps
+            snapshot.implicitCreator = implicitCreator
+            snapshot.encrypted = events.contains { $0["type"] as? String == "m.room.encryption" }
+            snapshot.lifecycleEventID = events.first { $0["type"] as? String == "io.stalk.channel.lifecycle" }?["event_id"] as? String
+            snapshot.powersEventID = events.first { $0["type"] as? String == "m.room.power_levels" }?["event_id"] as? String
+            snapshot.history = content("m.room.history_visibility")["history_visibility"] as? String ?? "joined"
+            let appearance = content("io.stalk.channel.appearance")
+            if Self.integer(appearance["schemaVersion"]) == 1 {
+                let preset = appearance["preset"] as? String ?? "default"
+                snapshot.background = ["default", "sky", "mint", "sand", "dots", "grid"].contains(preset) ? preset : "default"
+                if let image = appearance["image"] as? String, image.count < 2048,
+                   image.range(of: #"^mxc://[^/\s]+/[A-Za-z0-9_-]+$"#, options: .regularExpression) != nil { snapshot.backgroundImage = URL(string: image) }
             }
+            snapshot.joinedPeople = events.compactMap { event in
+                guard event["type"] as? String == "m.room.member", let id = event["state_key"] as? String,
+                      let member = event["content"] as? [String: Any], member["membership"] as? String == "join" else { return nil }
+                return UserProfileProxy(userID: id, displayName: member["displayname"] as? String,
+                                        avatarURL: (member["avatar_url"] as? String).flatMap(URL.init(string:)))
+            }
+            let manager = (powers["io.stalk.channel.management"] as? [String: Any])?["user_id"] as? String
+                ?? events.first { $0["type"] as? String == "m.room.create" }?["sender"] as? String ?? create["creator"] as? String
+            snapshot.manager = manager
+            let managerLevel = Self.integer(manager.flatMap { users[$0] }) ?? Self.integer(powers["users_default"]) ?? 0
+            let implicitManager = create["room_version"] as? String == "12" && (sdkCreators[roomID] ?? []).contains(manager ?? "")
+            snapshot.canTransfer = snapshot.canAdminister && (manager == api.client.userID || !snapshot.joinedPeople.contains { $0.userID == manager } || (!implicitManager && managerLevel < 100))
+            if snapshot.comments {
+                let raw = try await api.object(["_synapse", "client", "stalk_channels", "capabilities"])
+                snapshot.capability = Self.integer(raw["policyVersion"]) == 3 && raw["threadedComments"] as? Bool == true && Set(raw["commentEventTypes"] as? [String] ?? []).isSuperset(of: ["m.room.message", "m.room.encrypted", "m.sticker"])
+            }
+            if nativePermissions[roomID] == nil { nativePermissions[roomID] = (snapshot.joined, Int64(snapshot.level)) }
             snapshots[roomID] = snapshot
             if snapshot.archived { archivedIDs.insert(roomID) } else { archivedIDs.remove(roomID) }
             return snapshot
         } catch {
+            if Task.isCancelled { return nil }
             // A lost membership, network failure, or unsupported capability must not leave a stale writable composer.
             var denied = snapshots[roomID] ?? StalkChannelSnapshot(isChannel: channelIDs.contains(roomID))
             denied.verified = false; denied.joined = false; denied.capability = false; snapshots[roomID] = denied
             return nil
+        }
+    }
+
+    /// Native membership/PL sync can revoke permissions immediately. It never
+    /// grants access: promotions still require a fresh server policy/capability read.
+    func restrictNativeAccess(roomID: String, joined: Bool, level: Int64?) {
+        if let previous = nativePermissions[roomID], previous.joined == joined, previous.level == level { return }
+        nativePermissions[roomID] = (joined, level)
+        guard var state = snapshots[roomID], state.isChannel else { return }
+        let previous = state
+        if !joined { state.joined = false; state.verified = false; state.capability = false }
+        if let level, !state.implicitCreator { state.level = min(state.level, Int(clamping: level)) }
+        if state != previous { snapshots[roomID] = state }
+    }
+
+    /// Metadata-only sync for an on-screen channel. The SDK keeps its own cursor;
+    /// this read never advances it and never fetches publication bodies.
+    func watch(roomID: String) async {
+        guard snapshots[roomID]?.isChannel == true, snapshots[roomID]?.joined == true else { return }
+        let types = ["io.stalk.channel.policy", "io.stalk.channel.thread", "io.stalk.channel.commenter", "io.stalk.channel.appearance", "io.stalk.channel.lifecycle", "m.room.power_levels", "m.room.member", "m.room.history_visibility"]
+        let filter: [String: Any] = ["room": ["rooms": [roomID], "timeline": ["types": types, "limit": 100], "state": ["types": types], "ephemeral": ["types": []], "account_data": ["types": []]], "presence": ["types": []], "account_data": ["types": ["io.stalk.comments.subscription.*"]]]
+        guard let encoded = try? JSONSerialization.data(withJSONObject: filter), let json = String(data: encoded, encoding: .utf8) else { return }
+        var cursor: String?
+        var failures = 0
+        while !Task.isCancelled {
+            do {
+                var query = [URLQueryItem(name: "filter", value: json), .init(name: "timeout", value: "10000")]
+                if let cursor { query.append(.init(name: "since", value: cursor)) }
+                let result = try await api.object(["_matrix", "client", "v3", "sync"], query: query)
+                guard !Task.isCancelled, let next = result["next_batch"] as? String else { return }
+                cursor = next; failures = 0
+                let rooms = result["rooms"] as? [String: Any] ?? [:]
+                if ((rooms["leave"] as? [String: Any])?[roomID]) != nil {
+                    restrictNativeAccess(roomID: roomID, joined: false, level: nil); return
+                }
+                let room = (rooms["join"] as? [String: Any])?[roomID] as? [String: Any] ?? [:]
+                let state = (room["state"] as? [String: Any])?["events"] as? [[String: Any]] ?? []
+                let timeline = (room["timeline"] as? [String: Any])?["events"] as? [[String: Any]] ?? []
+                if !(state + timeline).isEmpty { _ = await refresh(roomID: roomID) }
+                let accountData = (result["account_data"] as? [String: Any])?["events"] as? [[String: Any]] ?? []
+                if accountData.contains(where: { ($0["content"] as? [String: Any])?["room_id"] as? String == roomID }) { subscriptionRevision += 1 }
+                // A proxy may return an empty sync immediately instead of long polling.
+                try await Task.sleep(for: .seconds(1))
+            } catch is CancellationError { return }
+            catch let error as StalkNativeHTTPError where error.status == 401 || error.status == 403 {
+                restrictNativeAccess(roomID: roomID, joined: false, level: nil); return
+            } catch {
+                if Task.isCancelled { return }
+                failures += 1
+                guard let delay = CallTimelineSummaryService.failureDelay(attempt: failures, retryAfter: (error as? StalkNativeHTTPError)?.retryAfter) else { return }
+                do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+            }
         }
     }
 

@@ -39,6 +39,8 @@ struct MeetingEditScreen: View {
                     // Date & Time card
                     dateTimeCard
 
+                    MeetingVenuePickerView(context: context)
+
                     // Access card
                     accessCard
 
@@ -79,6 +81,10 @@ struct MeetingEditScreen: View {
                 .disabled(context.title.isEmpty || context.viewState.isLoading)
             }
         }
+        .task(id: venueRequestKey) {
+            do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
+            context.send(viewAction: .loadVenues)
+        }
         .disabled(context.viewState.isLoading)
         .overlay {
             if context.viewState.isLoading {
@@ -89,6 +95,11 @@ struct MeetingEditScreen: View {
                     .tint(accentBlue)
             }
         }
+    }
+
+    private var venueRequestKey: String {
+        let b = context.viewState.bindings
+        return "\(b.startDate.timeIntervalSince1970)|\(b.endDate.timeIntervalSince1970)|\(b.isIndefinite)|\(b.venueWanted)|\(b.venueOfficeID ?? -1)|\(b.venueQuery)|\(b.venueRecent)"
     }
 
     // MARK: - Main Info Card

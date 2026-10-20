@@ -133,7 +133,9 @@ final class NotificationManagerTests: XCTestCase {
                                                   actions: [],
                                                   intentIdentifiers: [],
                                                   options: [])
-        XCTAssertEqual(notificationCenter.setNotificationCategoriesReceivedCategories, [messageCategory, inviteCategory, callCategory])
+        let checkin = UNNotificationAction(identifier: NotificationConstants.Action.venueCheckin, title: MeetingVenueStrings.text("checkin"), options: [.authenticationRequired])
+        let venueCategory = UNNotificationCategory(identifier: NotificationConstants.Category.venueCheckin, actions: [checkin], intentIdentifiers: [], options: [])
+        XCTAssertEqual(notificationCenter.setNotificationCategoriesReceivedCategories, [messageCategory, inviteCategory, callCategory, venueCategory])
     }
 
     func test_whenStart_delegateIsSet() throws {

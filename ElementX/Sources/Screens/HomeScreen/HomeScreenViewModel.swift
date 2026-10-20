@@ -453,6 +453,7 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
             guard let self else { return }
             do {
                 let meetings = try await meetingsService.fetchMeetingsList()
+                await notificationManager.scheduleVenueReminders(meetings: meetings, userID: userSession.clientProxy.userID)
                 // matrix_room_id is null for meetings whose room hasn't been created yet (lazy on
                 // first join) — skip those, there's nothing to hide.
                 let ids = Set(meetings.compactMap(\.matrixRoomId).filter { !$0.isEmpty })

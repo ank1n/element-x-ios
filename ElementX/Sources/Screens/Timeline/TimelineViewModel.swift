@@ -119,7 +119,9 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
             state.channelService = service
             service.$snapshots.receive(on: DispatchQueue.main).sink { [weak self] _ in
                 guard let self else { return }
+                let wasChannel = self.state.isChannelMain
                 self.updateRoomInfo(self.roomProxy.infoPublisher.value)
+                if self.state.isChannelMain != wasChannel { self.buildTimelineViews(timelineItems: self.timelineController.timelineItems) }
             }.store(in: &cancellables)
         }
 
@@ -303,7 +305,13 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
     
     func makeForwardingItem(for itemID: TimelineItemIdentifier) async -> MessageForwardingItem? {
         guard let content = await timelineController.messageEventContent(for: itemID) else { return nil }
-        return .init(id: itemID, roomID: roomProxy.id, content: content)
+        var item = MessageForwardingItem(id: itemID, roomID: roomProxy.id, content: content)
+        if state.channelAccess?.isChannel == true, let id = itemID.eventID {
+            let info = timelineController.debugInfo(for: itemID)
+            item.channelContentJSON = StalkChannelForwarding.content(originalJSON: info.originalJSON, latestEditJSON: info.latestEditJSON,
+                                                                     roomID: roomProxy.id, eventID: id)
+        }
+        return item
     }
     
     // MARK: - Private
@@ -435,6 +443,9 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
     }
     
     private func updateRoomInfo(_ roomInfo: RoomInfoProxyProtocol) {
+        let nativeLevel = roomInfo.powerLevels.map { $0.userPowerLevels[roomProxy.ownUserID] ?? $0.values.usersDefault }
+        channelService?.restrictNativeAccess(roomID: roomProxy.id, joined: roomInfo.membership == .joined, level: nativeLevel)
+        state.callSummaryService?.setMembership(joined: roomInfo.membership == .joined)
         // STMOB-265: гейт расшифровки голосовых — по шифрованию КОМНАТЫ, не события:
         // у только что отправленного своего сообщения шифрование ещё не применилось.
         state.isRoomEncrypted = roomInfo.isEncrypted
@@ -860,7 +871,10 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
             }
         }
 
-        let itemsGroupedByTimelineDisplayStyle = timelineItems.chunked { current, next in
+        let visibleItems = state.isChannelMain ? timelineItems.filter {
+            !($0 is StateRoomTimelineItem || $0 is RedactedRoomTimelineItem || $0 is CollapsibleTimelineItem || $0 is ReadMarkerRoomTimelineItem)
+        } : timelineItems
+        let itemsGroupedByTimelineDisplayStyle = visibleItems.chunked { current, next in
             canGroupItem(timelineItem: current, with: next)
         }
         

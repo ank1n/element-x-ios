@@ -389,6 +389,14 @@ struct MeetingsListScreen: View {
                     .lineLimit(1)
             }
 
+            if let venue = meeting.room {
+                HStack(spacing: 8) {
+                    if MeetingVenueStrings.photoURL(venue.photo_mxc) != nil, context.viewState.mediaProvider != nil {
+                        MeetingVenuePhoto(source: venue.photo_mxc, name: venue.displayName, mediaProvider: context.viewState.mediaProvider, height: 42).frame(width: 64)
+                    }
+                    Label(venue.displayName, systemImage: "door.left.hand.open").font(.caption).foregroundStyle(.secondary)
+                }
+            }
             if !meeting.location.isEmpty {
                 HStack(spacing: 4) {
                     Image(systemName: "mappin.circle.fill")

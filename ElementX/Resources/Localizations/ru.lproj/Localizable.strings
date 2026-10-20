@@ -2433,3 +2433,94 @@
 "stalk_channels_open" = "Открыть канал";
 
 "stalk_channels_open_call" = "Открыть звонок";
+
+"stalk_call_card_people" = "Участники";
+
+"stalk_venue_room" = "Переговорная";
+"stalk_venue_reserve" = "Забронировать переговорную";
+"stalk_venue_search" = "Поиск переговорных";
+"stalk_venue_recent" = "Последние 5 комнат";
+"stalk_venue_office" = "Офис";
+"stalk_venue_all_offices" = "Все офисы";
+"stalk_venue_busy" = "Занята";
+"stalk_venue_choose" = "Выберите переговорную.";
+"stalk_venue_confirmed" = "Забронирована";
+"stalk_venue_pending" = "Ждёт подтверждения";
+"stalk_venue_busy_error" = "Переговорная занята в это время. Выберите другую комнату или время.";
+"stalk_venue_forbidden" = "Бронировать эту переговорную может только её группа.";
+"stalk_venue_needs_end" = "Для бронирования переговорной укажите время окончания встречи.";
+"stalk_venue_disabled" = "Бронирование переговорных выключено на сервере.";
+
+"stalk_channels_changed" = "Данные изменились в другом окне. Локальный текст сохранён. Перечитайте запись перед сохранением.";
+"stalk_channels_unsupported" = "Сервер не поддерживает это действие. Чтение доступно.";
+"stalk_channels_encrypted_drafts" = "Серверные черновики недоступны в зашифрованном канале. Используйте обычное поле сообщения с шифрованием.";
+"stalk_channels_invalid_publication" = "Проверьте публикацию, размер изображения и время отправки.";
+"stalk_channels_uncertain" = "Отправку не удалось подтвердить. Не отправляйте повторно: возможен дубликат.";
+"stalk_channels_publications" = "Черновики и расписание";
+"stalk_channels_publication" = "Публикация";
+"stalk_channels_new_publication" = "Новая публикация";
+"stalk_channels_archived_draft" = "Канал был архивирован. Публикация сохранена в черновики; восстановление канала её не отправит.";
+"stalk_channels_preview" = "Предпросмотр";
+"stalk_channels_formatting" = "Форматирование";
+"stalk_channels_choose_image" = "Выбрать фото";
+"stalk_channels_image_file" = "Изображение из Файлов";
+"stalk_channels_paste_image" = "Вставить изображение";
+"stalk_channels_remove_image" = "Убрать изображение";
+"stalk_channels_schedule" = "Запланировать публикацию";
+"stalk_channels_send_at" = "Время отправки";
+"stalk_channels_publish_now" = "Опубликовать сейчас";
+"stalk_channels_unschedule" = "Отменить расписание";
+"stalk_channels_reload_publication" = "Перечитать версию, сохранить мой текст";
+"stalk_channels_discard" = "Отменить несохранённые изменения?";
+"stalk_channels_background" = "Фон канала";
+"stalk_channels_background_mxc" = "Адрес изображения (mxc://…)";
+"stalk_channels_restore" = "Восстановить канал";
+"stalk_channels_archive" = "Архивировать канал";
+"stalk_channels_archive_explanation" = "История останется доступна. Отложенные публикации станут черновиками; восстановление не отправит их автоматически.";
+"stalk_channels_history" = "История для новых подписчиков";
+"stalk_channels_history_joined" = "С момента подписки";
+"stalk_channels_history_shared" = "С доступной прошлой историей";
+"stalk_channels_history_explanation" = "Правило действует на новые события. Старые сообщения сохраняют прежний доступ. Шифрование не меняется.";
+"stalk_channels_management" = "Ответственный администратор";
+"stalk_channels_find_member" = "Найти участника по имени или ID";
+"stalk_channels_transfer_explanation" = "Передать управление этому участнику? Права остальных администраторов сохранятся, включая неотзывные права создателя v12.";
+"stalk_channels_text" = "Текст";
+"stalk_channels_status_draft" = "Черновик";
+"stalk_channels_status_scheduled" = "Запланирована";
+"stalk_channels_status_publishing" = "Отправляется";
+"stalk_channels_status_published" = "Опубликована";
+"stalk_channels_status_failed" = "Ошибка отправки";
+"stalk_channels_status_uncertain" = "Не подтверждена";
+"stalk_channels_status_deleted" = "Удалена";
+"stalk_channels_background_default" = "Стандартный";
+"stalk_channels_background_sky" = "Небесный";
+"stalk_channels_background_mint" = "Мятный";
+"stalk_channels_background_sand" = "Тёплый";
+"stalk_channels_background_dots" = "Точки";
+"stalk_channels_background_grid" = "Клетка";
+
+"stalk_channels_react" = "Реакция";
+
+"stalk_channels_forward" = "Переслать";
+
+"stalk_channels_copy" = "Копировать";
+
+"stalk_venue_floor" = "Этаж %@";
+
+"stalk_venue_capacity" = "%d мест";
+
+"stalk_venue_checkin" = "Я на месте";
+"stalk_venue_checked_in" = "Приход отмечен";
+"stalk_venue_checked_by_call" = "Приход отмечен по входу в звонок";
+"stalk_venue_checkin_until" = "Отметьтесь до";
+"stalk_venue_released" = "Переговорная освобождена";
+"stalk_venue_no_show" = "Бронь снята из-за неявки. Сама встреча не отменена.";
+"stalk_venue_release" = "Освободить комнату";
+"stalk_venue_end_early" = "Закончить раньше";
+"stalk_venue_release_confirm" = "Освободить переговорную для других?";
+"stalk_venue_participants_only" = "Это действие доступно только участникам встречи.";
+"stalk_venue_organizer_only" = "До начала встречи освободить комнату может только организатор.";
+"stalk_venue_no_booking" = "Активной брони переговорной нет.";
+"stalk_venue_checkin_closed" = "Отметиться можно за 15 минут до начала и до конца встречи.";
+
+"stalk_venue_photo" = "Фото переговорной: %@";

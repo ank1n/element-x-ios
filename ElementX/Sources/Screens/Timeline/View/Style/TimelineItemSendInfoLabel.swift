@@ -40,7 +40,7 @@ extension View {
                                                               adjustedDeliveryStatus: adjustedDeliveryStatus,
                                                               enableKeyShareOnInvite: context.viewState.enableKeyShareOnInvite,
                                                               ownUserID: context.viewState.ownUserID,
-                                                              isReadByOthers: isMessageReadByOthers(timelineItem: timelineItem, context: context)),
+                                                              isReadByOthers: !context.viewState.isChannelMain && isMessageReadByOthers(timelineItem: timelineItem, context: context)),
                                               context: context))
     }
 }

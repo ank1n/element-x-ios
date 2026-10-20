@@ -14,6 +14,7 @@ import SwiftUI
 struct HomeScreen: View {
     @ObservedObject var context: HomeScreenViewModel.Context
     
+    @Environment(\.scenePhase) private var scenePhase
     @State private var showChannels = false
     @State private var scrollViewAdapter = ScrollViewAdapter()
     
@@ -35,7 +36,13 @@ struct HomeScreen: View {
                     StalkChannelDirectoryView(service: service) { id in context.send(viewAction: .selectRoom(roomIdentifier: id)) }
                 }
             }
-            .task { await context.viewState.channelService?.discover() }
+            .task(id: scenePhase) {
+                guard scenePhase == .active else { return }
+                repeat {
+                    await context.viewState.channelService?.discover()
+                    do { try await Task.sleep(for: .seconds(20)) } catch { return }
+                } while !Task.isCancelled
+            }
             .track(screen: .Home)
             .sentryTrace("\(Self.self)")
     }

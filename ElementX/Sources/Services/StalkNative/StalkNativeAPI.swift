@@ -1,7 +1,11 @@
 // Copyright 2026 ООО «Имплика». SPDX-License-Identifier: AGPL-3.0-only
 import Foundation
 
-struct StalkNativeHTTPError: Error { let status: Int }
+struct StalkNativeHTTPError: LocalizedError {
+    let status: Int
+    var code: String?
+    var retryAfter: TimeInterval?
+}
 
 /// Requests stay on this account's origin. Never follow an authenticated redirect.
 @MainActor
@@ -23,7 +27,7 @@ final class StalkNativeAPI {
 
     deinit { if ownsSession { session.invalidateAndCancel() } }
 
-    func request(_ path: [String], query: [URLQueryItem] = [], method: String = "GET", body: Data? = nil) async throws -> Data {
+    func request(_ path: [String], query: [URLQueryItem] = [], method: String = "GET", body: Data? = nil, contentType: String = "application/json") async throws -> Data {
         guard var url = URLComponents(string: client.homeserver), ["https", "http"].contains(url.scheme),
               url.host != nil, url.user == nil, url.password == nil else { throw URLError(.badURL) }
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
@@ -37,12 +41,17 @@ final class StalkNativeAPI {
             request.httpMethod = method
             request.httpBody = body
             try request.setValue("Bearer " + (client.matrixAccessToken()), forHTTPHeaderField: "Authorization")
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(contentType, forHTTPHeaderField: "Content-Type")
             let (data, response) = try await session.data(for: request)
             try Task.checkCancellation()
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             if status == 401, attempt == 0 { await client.forceTokenRefresh(); continue }
-            guard (200..<300).contains(status) else { throw StalkNativeHTTPError(status: status) }
+            guard (200..<300).contains(status) else {
+                let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+                let retry = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init)
+                    ?? (json?["retry_after_ms"] as? Double).map { $0 / 1000 }
+                throw StalkNativeHTTPError(status: status, code: json?["errcode"] as? String, retryAfter: retry)
+            }
             return data
         }
         throw StalkNativeHTTPError(status: 401)

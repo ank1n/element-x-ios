@@ -22,6 +22,9 @@ struct RoomEventStringBuilder {
     }
     
     func buildAttributedString(for content: TimelineItemContent, sender: TimelineItemSender, isOutgoing: Bool) -> AttributedString? {
+        // The SDK latest-event projection omits custom JSON fields. This retired
+        // service account only published call summaries; never expose its stale cards.
+        guard !sender.id.hasPrefix("@meet-stalk:") else { return nil }
         let displayName = if shouldDisambiguateDisplayNames {
             sender.disambiguatedDisplayName ?? sender.id
         } else {

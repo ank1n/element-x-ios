@@ -85,8 +85,8 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
             let service = StalkChannelService.shared(client: userSession.clientProxy)
             state.channelService = service
             state.canSendMessage = false
-            service.$snapshots.receive(on: DispatchQueue.main).sink { [weak self] snapshots in
-                guard let self, let access = snapshots[self.roomProxy.id] else { return }
+            service.$snapshots.receive(on: DispatchQueue.main).sink { [weak self, weak service] _ in
+                guard let self, let access = service?.snapshots[self.roomProxy.id] else { return }
                 self.state.isChannel = access.isChannel
                 self.state.canSendMessage = access.verified && (access.isChannel ? access.canPublish : (self.roomProxy.infoPublisher.value.powerLevels?.canOwnUser(sendMessage: .roomMessage) ?? false))
             }.store(in: &cancellables)
@@ -468,6 +468,8 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
     }
     
     private func updateRoomInfo(_ roomInfo: RoomInfoProxyProtocol) {
+        let nativeLevel = roomInfo.powerLevels.map { $0.userPowerLevels[roomProxy.ownUserID] ?? $0.values.usersDefault }
+        state.channelService?.restrictNativeAccess(roomID: roomProxy.id, joined: roomInfo.membership == .joined, level: nativeLevel)
         state.roomTitle = roomInfo.displayName ?? roomProxy.id
         state.roomAvatar = roomInfo.avatar
         state.isEncrypted = roomInfo.isEncrypted
@@ -490,9 +492,7 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
         if let powerLevels = roomInfo.powerLevels {
             if let service = state.channelService {
                 if let access = service.snapshots[roomProxy.id], access.verified {
-                    let nativeLevel = powerLevels.userPowerLevels[roomProxy.ownUserID] ?? powerLevels.values.usersDefault
-                    let creator = roomInfo.creators.contains(roomProxy.ownUserID) && access.level >= 100
-                    state.canSendMessage = roomInfo.membership == .joined && (access.isChannel ? access.canPublish && (nativeLevel >= 50 || creator) : powerLevels.canOwnUser(sendMessage: .roomMessage))
+                    state.canSendMessage = roomInfo.membership == .joined && (access.isChannel ? access.canPublish : powerLevels.canOwnUser(sendMessage: .roomMessage))
                 } else { state.canSendMessage = false }
             } else { state.canSendMessage = powerLevels.canOwnUser(sendMessage: .roomMessage) }
             state.canJoinCall = powerLevels.canOwnUserJoinCall()

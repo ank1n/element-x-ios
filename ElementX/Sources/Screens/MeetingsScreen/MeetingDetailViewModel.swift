@@ -80,6 +80,28 @@ class MeetingDetailViewModel: MeetingDetailViewModelType {
 
     override func process(viewAction: MeetingDetailViewAction) {
         switch viewAction {
+        case .refreshVenue:
+            Task { [weak self] in
+                guard let self, state.meeting.room != nil || state.meeting.roomReleased != nil, !state.venueBusy else { return }
+                state.venueNow = Date()
+                do {
+                    let fresh = try await service.fetchMeeting(id: state.meeting.id)
+                    state.meeting = fresh
+                } catch { state.venueError = error.localizedDescription }
+            }
+        case .venueAction(let action):
+            Task { [weak self] in
+                guard let self, !state.venueBusy else { return }
+                state.venueBusy = true; state.venueError = nil
+                defer { state.venueBusy = false }
+                do {
+                    let result = try await service.venueAction(meetingID: state.meeting.id, action: action)
+                    state.meeting.room = result.room; state.meeting.roomReleased = result.room_released
+                    state.venueNow = Date()
+                    await MeetingVenueReminder.cancel(meetingID: state.meeting.id, userID: state.currentUserId)
+                } catch { state.venueError = error.localizedDescription }
+            }
+
         case .rsvp(let status):
             performRSVP(status)
         case .joinCall:

@@ -45,6 +45,7 @@ struct MessageForwardingItem: Hashable {
     /// The source item's room ID.
     let roomID: String
     /// The item's content to be forwarded.
+    var channelContentJSON: String?
     let content: RoomMessageEventContentWithoutRelation
     
     static func == (lhs: MessageForwardingItem, rhs: MessageForwardingItem) -> Bool {
