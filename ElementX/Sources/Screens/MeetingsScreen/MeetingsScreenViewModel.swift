@@ -29,6 +29,7 @@ class MeetingsScreenViewModel: MeetingsScreenViewModelType {
         self.clientProxy = clientProxy
         var initialState = MeetingsScreenViewState()
         initialState.mediaProvider = mediaProvider
+        initialState.venueService = service
         super.init(initialViewState: initialState)
         fetchAll()
     }

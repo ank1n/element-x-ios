@@ -110,7 +110,7 @@ struct MeetingDetailScreen: View {
                         Button(MeetingVenueStrings.text(context.viewState.venueNow >= meeting.startTime ? "end_early" : "release")) { confirmRelease = true }.buttonStyle(.bordered)
                     }
                 } else if let released = meeting.roomReleased {
-                    Text(released.label + ": " + MeetingVenueStrings.text("no_show"))
+                    Text(released.label + ": " + MeetingVenueStrings.text(released.reason == "series_no_show" ? "series_no_show" : "no_show"))
                 }
                 if context.viewState.venueBusy { ProgressView() }
                 if let error = context.viewState.venueError { Text(error).foregroundStyle(.red); Button(L10n.actionRetry) { context.send(viewAction: .refreshVenue) } }

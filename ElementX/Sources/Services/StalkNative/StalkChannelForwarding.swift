@@ -13,6 +13,12 @@ enum StalkChannelForwarding {
               let type = source["msgtype"] as? String, ["m.text", "m.image", "m.file", "m.video", "m.audio", "m.notice", "m.emote"].contains(type) else { return nil }
         let allowed: Set = ["msgtype", "body", "format", "formatted_body", "filename", "url", "file", "info", "org.matrix.msc1767.audio", "org.matrix.msc3245.voice"]
         var content = source.filter { allowed.contains($0.key) }
+        // Keep the existing Disk card, without forwarding the original recipients
+        // or claiming that their access rights were granted to a new recipient.
+        if let share = source["io.stalk.file_share"] as? [String: Any], let id = share["blobId"] as? String, !id.isEmpty {
+            let fields: Set = ["blobId", "name", "size", "mimetype", "disk"]
+            content["io.stalk.file_share"] = share.filter { fields.contains($0.key) }
+        }
         content[key] = ["room_id": roomID, "event_id": eventID]
         guard let bytes = try? JSONSerialization.data(withJSONObject: content) else { return nil }
         return String(data: bytes, encoding: .utf8)

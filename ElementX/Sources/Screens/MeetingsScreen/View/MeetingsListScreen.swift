@@ -9,6 +9,9 @@ import UIKit
 
 struct MeetingsListScreen: View {
     @ObservedObject var context: MeetingsScreenViewModelType.Context
+    @State private var showFreeNow = false
+    @State private var freeNowAvailable = false
+    @State private var pendingMeeting: Meeting?
 
     // Colors matching reference design
     private let accentBlue = StalkTheme.accent
@@ -106,10 +109,30 @@ struct MeetingsListScreen: View {
             }
         }
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: context.viewState.isLoading) {
+            guard !context.viewState.isLoading, let service = context.viewState.venueService else { return }
+            do { let offices = try await service.venueOffices(); freeNowAvailable = !offices.isEmpty }
+            catch { if !Task.isCancelled { freeNowAvailable = false } }
+        }
+        .sheet(isPresented: $showFreeNow, onDismiss: {
+            if let meeting = pendingMeeting { pendingMeeting = nil; context.send(viewAction: .selectMeeting(meeting)) }
+        }) {
+            if let service = context.viewState.venueService {
+                MeetingFreeNowView(service: service, mediaProvider: context.viewState.mediaProvider,
+                                   changed: { context.send(viewAction: .refresh) },
+                                   open: { meeting in pendingMeeting = meeting; showFreeNow = false })
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Text(SL10n.meetingCalendar)
                     .font(.system(size: 20, weight: .bold))
+            }
+            if freeNowAvailable {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button { showFreeNow = true } label: { Label(MeetingVenueStrings.text("free_now"), systemImage: "door.left.hand.open") }
+                        .labelStyle(.iconOnly).accessibilityLabel(MeetingVenueStrings.text("free_now"))
+                }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {

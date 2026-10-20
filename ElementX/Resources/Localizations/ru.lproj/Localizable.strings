@@ -2524,3 +2524,16 @@
 "stalk_venue_checkin_closed" = "Отметиться можно за 15 минут до начала и до конца встречи.";
 
 "stalk_venue_photo" = "Фото переговорной: %@";
+
+"stalk_venue_free_now" = "Свободно сейчас";
+"stalk_venue_duration" = "Длительность";
+"stalk_venue_minutes" = "%d мин";
+"stalk_venue_reserved_now" = "Переговорная забронирована";
+"stalk_venue_open_meeting" = "Открыть встречу";
+"stalk_venue_none_free" = "На это время свободных комнат нет.";
+"stalk_venue_free_until" = "Свободна до";
+"stalk_venue_take_room" = "Занять";
+"stalk_venue_quick_title" = "Встреча в %@";
+"stalk_venue_created_checkin_pending" = "Бронь создана. Отметку прихода пока не удалось подтвердить; проверьте её в карточке встречи.";
+
+"stalk_venue_series_no_show" = "После повторных неявок комната снята со следующих встреч серии. Сами встречи не отменены.";

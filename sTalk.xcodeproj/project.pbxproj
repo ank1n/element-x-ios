@@ -61,6 +61,7 @@
 		05218658323E831CA3246542 /* LocationAnnotation.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFCB5A0270F3A2C104C3A28A /* LocationAnnotation.swift */; };
 		052445AD71F0DDB947117B01 /* AppLockServiceProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7176A4E2AE0E4367D71E7992 /* AppLockServiceProtocol.swift */; };
 		054FD2C0AE01C480ADA37C35 /* VoiceMessageRecordingButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2485153157590929FEFB19A /* VoiceMessageRecordingButton.swift */; };
+		0573E55F95E3AEC1103E94FB /* MeetingFreeNowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8358D325C12B2D1D9A102975 /* MeetingFreeNowView.swift */; };
 		057B9ED6A31FB9BA998DEA56 /* StartChatScreenModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32679BDFD01022C89C7CBDBD /* StartChatScreenModels.swift */; };
 		05B48951D6F83285590726D1 /* AppMediatorProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89EF7216EED7D1051D2F71A8 /* AppMediatorProtocol.swift */; };
 		05DCA03945CC04A96EF201F9 /* TemplateScreenModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 522FCF87698F38BB5CB6AF54 /* TemplateScreenModels.swift */; };
@@ -2558,6 +2559,7 @@
 		82AE9468630F606ECE4AE54D /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		831478D2C224E0C72C080C05 /* CharacterSet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CharacterSet.swift; sourceTree = "<group>"; };
 		8319D708DF1437C5F4679E7E /* Encodable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Encodable.swift; sourceTree = "<group>"; };
+		8358D325C12B2D1D9A102975 /* MeetingFreeNowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingFreeNowView.swift; sourceTree = "<group>"; };
 		835E726B83A2CE27481E8E2F /* FileRoomTimelineItemContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileRoomTimelineItemContent.swift; sourceTree = "<group>"; };
 		837A39DCAB3611BA2A464E1C /* TabContacts.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = TabContacts.json; sourceTree = "<group>"; };
 		8392EC34511916DAAA4B82D3 /* NotificationSettingsScreenViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationSettingsScreenViewModel.swift; sourceTree = "<group>"; };
@@ -4657,6 +4659,7 @@
 				CC13004D5C34C4DD6D990716 /* CalendarGridView.swift */,
 				11D099DA5F794C2A3E13E720 /* MeetingDetailScreen.swift */,
 				133D603D67E9ACD2598D1CBD /* MeetingEditScreen.swift */,
+				8358D325C12B2D1D9A102975 /* MeetingFreeNowView.swift */,
 				0DE29677183BC918D3BAC7B2 /* MeetingsListScreen.swift */,
 				66E896CB8A34B7E6BF1721DA /* MeetingVenuePhoto.swift */,
 				67888FC1C5977AFCA9787612 /* MeetingVenuePickerView.swift */,
@@ -9136,6 +9139,7 @@
 				EB036F2CB9553CBB0143498E /* MeetingDetailViewModel.swift in Sources */,
 				AEB55E18D307A840DF19052E /* MeetingEditScreen.swift in Sources */,
 				A671BA67BA0ABC2F691DFDCE /* MeetingEditViewModel.swift in Sources */,
+				0573E55F95E3AEC1103E94FB /* MeetingFreeNowView.swift in Sources */,
 				158E2760BEA54C3ACDB0377B /* MeetingVenue.swift in Sources */,
 				0D2EF66C4C82A1C99AEA4EDD /* MeetingVenuePhoto.swift in Sources */,
 				3AC9FF9AE75C0FD701D34567 /* MeetingVenuePickerView.swift in Sources */,

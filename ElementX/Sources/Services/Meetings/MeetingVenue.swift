@@ -139,3 +139,19 @@ enum MeetingVenueStrings {
         NSLocalizedString("stalk_venue_" + key, comment: "Meeting room")
     }
 }
+
+struct MeetingFreeNow: Decodable {
+    struct Room: Decodable, Identifiable {
+        let id: Int
+        let name: String
+        let office_name: String?
+        let floor: String?
+        let capacity: Int?
+        let photo_mxc: String?
+        let free_until: String?
+    }
+
+    let start: String
+    let end: String
+    let rooms: [Room]
+}

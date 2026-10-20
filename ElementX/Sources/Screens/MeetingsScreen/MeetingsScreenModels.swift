@@ -46,6 +46,7 @@ struct MeetingsScreenViewState: BindableState {
     /// userId → resolved display name + avatar URL
     var participantProfiles: [String: ResolvedParticipant] = [:]
     /// Media provider for loading avatar images
+    var venueService: MeetingsService?
     var mediaProvider: MediaProviderProtocol?
     var bindings = MeetingsScreenViewStateBindings()
 

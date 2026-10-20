@@ -577,6 +577,14 @@ class MeetingsService {
         return try Self.decoder.decode(Meeting.self, from: data)
     }
 
+    func freeNow(duration: Int, officeID: Int? = nil) async throws -> MeetingFreeNow {
+        guard [15, 30, 60].contains(duration) else { throw URLError(.badURL) }
+        var query = URLComponents(); query.path = "/api/meetings/rooms/free-now"
+        query.queryItems = [.init(name: "duration", value: String(duration))]
+        if let officeID { query.queryItems?.append(.init(name: "office_id", value: String(officeID))) }
+        return try await JSONDecoder().decode(MeetingFreeNow.self, from: apiRequest("GET", path: query.string!))
+    }
+
     func venueAction(meetingID: Int, action: String) async throws -> MeetingVenueActionState {
         guard meetingID > 0, ["checkin", "release"].contains(action) else { throw URLError(.badURL) }
         return try await JSONDecoder().decode(MeetingVenueActionState.self, from: apiRequest("POST", path: "/api/meetings/\(meetingID)/room/\(action)"))

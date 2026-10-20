@@ -605,6 +605,33 @@ final class StalkNativeUpdatesTests: XCTestCase {
         XCTAssertEqual(requests, 1)
     }
 
+    func testFreeNowDurationAndOfficeStayOnOwnServer() async throws {
+        var count = 0
+        NativeUpdatesProtocol.handler = { request in
+            count += 1
+            XCTAssertEqual(request.url!.host, "venue.example.invalid")
+            XCTAssertEqual(request.httpMethod, "GET")
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
+            XCTAssertEqual(query?.first { $0.name == "duration" }?.value, "30")
+            XCTAssertEqual(query?.first { $0.name == "office_id" }?.value, "7")
+            return (200, ["start": "2026-10-21T10:00:00Z", "end": "2026-10-21T10:30:00Z", "rooms": []])
+        }
+        let service = MeetingsService(homeserver: "https://venue.example.invalid", accessTokenProvider: { "token" }, session: session())
+        let data = try await service.freeNow(duration: 30, officeID: 7)
+        XCTAssertTrue(data.rooms.isEmpty)
+        do { _ = try await service.freeNow(duration: 31); XCTFail() } catch { }
+        XCTAssertEqual(count, 1)
+    }
+
+    func testChannelForwardKeepsDiskCardWithoutRecipientList() throws {
+        let raw = #"{"content":{"msgtype":"m.notice","body":"Shared file","io.stalk.file_share":{"blobId":"blob","name":"Report.docx","size":10,"mimetype":"application/octet-stream","disk":true,"permission":"full","sharedWith":[{"user":"@private:example.invalid"}]}}}"#
+        let json = try XCTUnwrap(StalkChannelForwarding.content(originalJSON: raw, latestEditJSON: nil, roomID: "!source:example.invalid", eventID: "$post"))
+        let content = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+        let share = try XCTUnwrap(content["io.stalk.file_share"] as? [String: Any])
+        XCTAssertEqual(share["name"] as? String, "Report.docx")
+        XCTAssertNil(share["sharedWith"]); XCTAssertNil(share["permission"])
+    }
+
     func testNumericBooleanIsNotAPowerLevel() {
         XCTAssertNil(StalkChannelService.integer(true))
         XCTAssertNil(StalkChannelService.integer(25.5))

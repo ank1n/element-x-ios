@@ -2208,3 +2208,16 @@
 "stalk_venue_checkin_closed" = "Check-in opens 15 minutes before the meeting and closes when it ends.";
 
 "stalk_venue_photo" = "Meeting room photo: %@";
+
+"stalk_venue_free_now" = "Free now";
+"stalk_venue_duration" = "Duration";
+"stalk_venue_minutes" = "%d min";
+"stalk_venue_reserved_now" = "Room reserved";
+"stalk_venue_open_meeting" = "Open meeting";
+"stalk_venue_none_free" = "No rooms are free for this duration.";
+"stalk_venue_free_until" = "Free until";
+"stalk_venue_take_room" = "Reserve";
+"stalk_venue_quick_title" = "Meeting in %@";
+"stalk_venue_created_checkin_pending" = "The booking was created. Check-in could not be confirmed; open the meeting to verify it.";
+
+"stalk_venue_series_no_show" = "The room was released from future meetings in this series after repeated no-shows. The meetings are not cancelled.";

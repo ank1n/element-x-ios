@@ -2198,3 +2198,16 @@
 "stalk_venue_checkin_closed" = "Kelishni uchrashuvdan 15 daqiqa oldin va tugaguncha belgilash mumkin.";
 
 "stalk_venue_photo" = "Uchrashuv xonasi surati: %@";
+
+"stalk_venue_free_now" = "Hozir bosh";
+"stalk_venue_duration" = "Davomiylik";
+"stalk_venue_minutes" = "%d daqiqa";
+"stalk_venue_reserved_now" = "Xona band qilindi";
+"stalk_venue_open_meeting" = "Uchrashuvni ochish";
+"stalk_venue_none_free" = "Bu vaqt uchun bosh xona yoq.";
+"stalk_venue_free_until" = "Shu vaqtgacha bosh:";
+"stalk_venue_take_room" = "Band qilish";
+"stalk_venue_quick_title" = "%@ xonasidagi uchrashuv";
+"stalk_venue_created_checkin_pending" = "Xona band qilindi. Kelish tasdiqlanmadi; uchrashuv kartasidan tekshiring.";
+
+"stalk_venue_series_no_show" = "Takroriy kelmaslikdan keyin xona seriyaning kelgusi uchrashuvlaridan olib tashlandi. Uchrashuvlar bekor qilinmagan.";
