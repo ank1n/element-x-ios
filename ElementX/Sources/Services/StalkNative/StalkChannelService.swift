@@ -1,0 +1,300 @@
+// Copyright 2026 ООО «Имплика». SPDX-License-Identifier: AGPL-3.0-only
+import Combine
+import CoreFoundation
+import CryptoKit
+import Foundation
+
+struct StalkChannelSnapshot: Equatable {
+    var verified = false
+    var isChannel = false
+    var archived = false
+    var joined = false
+    var level = 0
+    var comments = false
+    var capability = false
+    var closed = Set<String>()
+    var blocked = false
+    var roomName = ""
+    var canPublish: Bool {
+        isChannel && joined && !archived && level >= 50
+    }
+
+    var canModerate: Bool {
+        joined && (level == 25 || level >= 100)
+    }
+
+    func canComment(root: String) -> Bool {
+        isChannel && joined && !archived && comments && capability && !blocked && !closed.contains(root)
+    }
+}
+
+enum StalkChannelError: LocalizedError {
+    case readOnly
+    var errorDescription: String? {
+        NSLocalizedString("stalk_channel_read_only", comment: "Channel sending denied")
+    }
+}
+
+@MainActor
+final class StalkChannelService: ObservableObject {
+    private final class WeakStore { weak var value: StalkChannelService?; init(_ value: StalkChannelService) {
+        self.value = value
+    } }
+    private static var stores: [ObjectIdentifier: WeakStore] = [:]
+    static func shared(client: ClientProxyProtocol) -> StalkChannelService {
+        let key = ObjectIdentifier(client)
+        if let value = stores[key]?.value { return value }
+        stores = stores.filter { $0.value.value != nil }
+        let service = StalkChannelService(client: client)
+        stores[key] = WeakStore(service)
+        return service
+    }
+
+    @Published private(set) var snapshots: [String: StalkChannelSnapshot] = [:]
+    @Published private(set) var discoveryFailed = false
+    @Published private(set) var channelIDs = Set<String>()
+    @Published private(set) var archivedIDs = Set<String>()
+    private let api: StalkNativeAPI
+    private let typeDefaults: UserDefaults?
+    private let typeCacheKey: String
+    private var roomTypes: [String: Bool] = [:]
+    private var ordinaryRooms = Set<String>()
+    private var sdkCreators: [String: [String]] = [:]
+    private var discoveryTask: Task<Void, Never>?
+    private var lastDiscovery: Date?
+    init(client: ClientProxyProtocol, session: URLSession? = nil, defaults: UserDefaults? = nil) {
+        api = StalkNativeAPI(client: client, session: session)
+        typeDefaults = defaults ?? (client is ClientProxy ? .standard : nil)
+        typeCacheKey = "stalk.room.types.v1." + SHA256.hash(data: Data((client.homeserver + "\n" + client.userID).utf8)).map { String(format: "%02x", $0) }.joined()
+        if let data = typeDefaults?.data(forKey: typeCacheKey), let saved = try? JSONDecoder().decode([String: Bool].self, from: data), saved.count <= 2000 {
+            roomTypes = saved
+            channelIDs = Set(saved.filter(\.value).keys)
+            ordinaryRooms = Set(saved.filter { !$0.value }.keys)
+        }
+    }
+
+    private func rememberType(roomID: String, channel: Bool) {
+        // Only m.room.create is cached: it is immutable. Membership and rights never are.
+        if roomTypes.count >= 2000, roomTypes[roomID] == nil { return }
+        roomTypes[roomID] = channel
+        if let data = try? JSONEncoder().encode(roomTypes) { typeDefaults?.set(data, forKey: typeCacheKey) }
+    }
+
+    /// One bounded metadata-only sync, not N requests for every row. Does not change the SDK sync cursor.
+    func discover() async {
+        if let discoveryTask { await discoveryTask.value; return }
+        guard lastDiscovery == nil || Date().timeIntervalSince(lastDiscovery!) > 60 else { return }
+        let task = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let filter: [String: Any] = ["room": ["timeline": ["limit": 0], "state": ["types": ["m.room.create", "io.stalk.channel.lifecycle"]], "ephemeral": ["types": []], "account_data": ["types": []]], "presence": ["types": []], "account_data": ["types": []]]
+                let encoded = try String(data: JSONSerialization.data(withJSONObject: filter), encoding: .utf8)!
+                let result = try await api.object(["_matrix", "client", "v3", "sync"], query: [.init(name: "timeout", value: "0"), .init(name: "filter", value: encoded)])
+                guard !Task.isCancelled else { return }
+                let rooms = (result["rooms"] as? [String: Any])?["join"] as? [String: Any] ?? [:]
+                var channels = Set<String>(); var archives = Set<String>()
+                for (id, value) in rooms {
+                    let state = ((value as? [String: Any])?["state"] as? [String: Any])?["events"] as? [[String: Any]] ?? []
+                    if let event = state.first(where: { $0["type"] as? String == "m.room.create" }), let creation = event["content"] as? [String: Any] {
+                        let isChannel = creation["type"] as? String == "io.stalk.channel"
+                        rememberType(roomID: id, channel: isChannel)
+                        if !isChannel { ordinaryRooms.insert(id) }
+                    }
+                    if state.contains(where: { $0["type"] as? String == "m.room.create" && ($0["content"] as? [String: Any])?["type"] as? String == "io.stalk.channel" }) {
+                        channels.insert(id)
+                        if state.contains(where: { $0["type"] as? String == "io.stalk.channel.lifecycle" && ($0["content"] as? [String: Any])?["archived"] as? Bool == true }) { archives.insert(id) }
+                    }
+                }
+                channelIDs = channels; archivedIDs = archives; lastDiscovery = Date(); discoveryFailed = false
+            } catch { discoveryFailed = true }
+        }
+        discoveryTask = task; await task.value; discoveryTask = nil
+    }
+
+    func refresh(roomID: String, creators: [String] = []) async -> StalkChannelSnapshot? {
+        do {
+            if !creators.isEmpty { sdkCreators[roomID] = creators }
+            // Type is immutable. Avoid polling full state for ordinary rooms.
+            if ordinaryRooms.contains(roomID) {
+                let state = StalkChannelSnapshot(verified: true)
+                snapshots[roomID] = state
+                return state
+            }
+            let create = try await api.object(["_matrix", "client", "v3", "rooms", roomID, "state", "m.room.create", ""])
+            guard create["type"] != nil || create["creator"] is String || create["room_version"] is String else { throw URLError(.cannotParseResponse) }
+            guard create["type"] as? String == "io.stalk.channel" else {
+                rememberType(roomID: roomID, channel: false)
+                ordinaryRooms.insert(roomID); snapshots[roomID] = StalkChannelSnapshot(verified: true); return snapshots[roomID]
+            }
+            rememberType(roomID: roomID, channel: true)
+            channelIDs.insert(roomID)
+            let data = try await api.request(["_matrix", "client", "v3", "rooms", roomID, "state"])
+            let events = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] ?? []
+            func content(_ type: String, _ key: String = "") -> [String: Any] {
+                events.first { $0["type"] as? String == type && $0["state_key"] as? String == key }?["content"] as? [String: Any] ?? [:]
+            }
+            let powers = content("m.room.power_levels")
+            let users = powers["users"] as? [String: Any] ?? [:]
+            var level = Self.integer(users[api.client.userID]) ?? Self.integer(powers["users_default"]) ?? 0
+            if create["room_version"] as? String == "12", (sdkCreators[roomID] ?? []).contains(api.client.userID) { level = max(100, level) }
+            let policy = content("io.stalk.channel.policy")
+            var snapshot = StalkChannelSnapshot(verified: true, isChannel: true, archived: content("io.stalk.channel.lifecycle")["archived"] as? Bool == true,
+                                                joined: content("m.room.member", api.client.userID)["membership"] as? String == "join", level: level,
+                                                comments: Self.integer(policy["schemaVersion"]) == 3 && policy["mode"] as? String == "announcements" && policy["comments"] as? String == "threads",
+                                                blocked: content("io.stalk.channel.commenter", "user/" + api.client.userID)["blocked"] as? Bool == true,
+                                                roomName: content("m.room.name")["name"] as? String ?? roomID)
+            for event in events where event["type"] as? String == "io.stalk.channel.thread" {
+                if (event["content"] as? [String: Any])?["closed"] as? Bool == true, let key = event["state_key"] as? String { snapshot.closed.insert(key) }
+            }
+            if snapshot.comments {
+                let caps = try await api.object(["_synapse", "client", "stalk_channels", "capabilities"])
+                snapshot.capability = Self.integer(caps["policyVersion"]) == 3 && caps["threadedComments"] as? Bool == true && Set(caps["commentEventTypes"] as? [String] ?? []).isSuperset(of: ["m.room.message", "m.room.encrypted", "m.sticker"])
+            }
+            snapshots[roomID] = snapshot
+            if snapshot.archived { archivedIDs.insert(roomID) } else { archivedIDs.remove(roomID) }
+            return snapshot
+        } catch {
+            // A lost membership, network failure, or unsupported capability must not leave a stale writable composer.
+            var denied = snapshots[roomID] ?? StalkChannelSnapshot(isChannel: channelIDs.contains(roomID))
+            denied.verified = false; denied.joined = false; denied.capability = false; snapshots[roomID] = denied
+            return nil
+        }
+    }
+
+    func canSend(roomID: String, root: String?, creators: [String] = []) async -> Bool {
+        guard let state = await refresh(roomID: roomID, creators: creators) else { return false }
+        guard state.isChannel else { return true }
+        guard let root else { return state.canPublish }
+        guard state.canComment(root: root) else { return false }
+        // Do not infer validity from a local reply or plaintext fallback. Check the root itself.
+        do {
+            let event = try await api.object(["_matrix", "client", "v3", "rooms", roomID, "event", root])
+            guard event["event_id"] as? String == root, event["state_key"] == nil,
+                  ["m.room.message", "m.room.encrypted", "m.sticker"].contains(event["type"] as? String ?? ""),
+                  ((event["unsigned"] as? [String: Any])?["redacted_because"]) == nil,
+                  let content = event["content"] as? [String: Any], !content.isEmpty else { return false }
+            let relation = content["m.relates_to"] as? [String: Any]
+            return relation?["rel_type"] as? String != "m.thread" && relation?["rel_type"] as? String != "m.replace"
+        } catch { return false }
+    }
+
+    func subscription(roomID: String, root: String? = nil, set mode: String? = nil) async throws -> String {
+        guard let value = root, !value.isEmpty, mode == nil || ["following", "mentions", "muted"].contains(mode!) else { throw URLError(.badURL) }
+
+        var body: [String: Any] = ["room_id": roomID]
+        if let root { body["root_id"] = root }
+        if let mode { body["mode"] = mode }
+        let query = [URLQueryItem(name: "room_id", value: roomID)] + (root.map { [URLQueryItem(name: "root_id", value: $0)] } ?? [])
+        let result = try await api.object(["_synapse", "client", "stalk_channels", "subscription"], query: mode == nil ? query : [], method: mode == nil ? "GET" : "PUT", body: mode == nil ? nil : body)
+        return result["mode"] as? String ?? "mentions"
+    }
+
+    func moderate(roomID: String, root: String, closed: Bool) async throws {
+        guard let state = await refresh(roomID: roomID), state.isChannel, state.canModerate else { throw StalkChannelError.readOnly }
+        _ = try await api.object(["_matrix", "client", "v3", "rooms", roomID, "state", "io.stalk.channel.thread", root], method: "PUT", body: ["closed": closed])
+        _ = await refresh(roomID: roomID)
+    }
+
+    static func integer(_ value: Any?) -> Int? {
+        guard let n = value as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID() else { return nil }
+        let d = n.doubleValue
+        return d.isFinite && d.rounded() == d && abs(d) < Double(Int.max) ? Int(d) : nil
+    }
+}
+
+struct StalkChannelDirectoryEntry: Identifiable, Equatable {
+    let id: String
+    let name: String
+    let topic: String
+    var requiresApproval = false
+    var joined = false
+}
+
+extension StalkChannelService {
+    var joinedChannels: [StalkChannelDirectoryEntry] {
+        api.client.staticRoomSummaryProvider.roomListPublisher.value.filter { channelIDs.contains($0.id) }
+            .map { .init(id: $0.id, name: $0.name, topic: archivedIDs.contains($0.id) ? StalkChannelStrings.archived : "", joined: true) }
+    }
+
+    func directory(since: String? = nil) async throws -> (entries: [StalkChannelDirectoryEntry], next: String?) {
+        var body: [String: Any] = ["limit": 50, "filter": ["room_types": ["io.stalk.channel"]]]
+        if let since { body["since"] = since }
+        let response = try await api.object(["_matrix", "client", "v3", "publicRooms"], method: "POST", body: body)
+        let entries = (response["chunk"] as? [[String: Any]] ?? []).compactMap { row -> StalkChannelDirectoryEntry? in
+            guard row["room_type"] as? String == "io.stalk.channel", row["join_rule"] as? String == "public",
+                  let id = row["room_id"] as? String, id.hasPrefix("!"), !archivedIDs.contains(id) else { return nil }
+            return .init(id: id, name: row["name"] as? String ?? id, topic: row["topic"] as? String ?? "")
+        }
+        return (entries, response["next_batch"] as? String)
+    }
+
+    func lookup(_ input: String) async throws -> StalkChannelDirectoryEntry {
+        var address = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let url = URL(string: address), !address.hasPrefix("!"), !address.hasPrefix("#") {
+            let route = AppRouteURLParser(appSettings: ServiceLocator.shared.settings).route(from: url)
+            switch route {
+            case .room(let id, _): address = id
+            case .roomAlias(let alias): address = alias
+            case .event(_, let id, _): address = id
+            case .eventOnRoomAlias(_, let alias): address = alias
+            default: throw URLError(.badURL)
+            }
+        }
+        if address.hasPrefix("#") {
+            guard case .success(let resolved) = await api.client.resolveRoomAlias(address) else { throw URLError(.badURL) }
+            address = resolved.roomId
+        }
+        guard address.hasPrefix("!"), case .success(let preview) = await api.client.roomPreviewForIdentifier(address, via: []),
+              preview.info.isChannel else { throw URLError(.resourceUnavailable) }
+        let approval: Bool
+        switch preview.info.joinRule {
+        case .knock, .knockRestricted: approval = true
+        default: approval = false
+        }
+        return .init(id: address, name: preview.info.displayName ?? address, topic: preview.info.topic ?? "",
+                     requiresApproval: approval, joined: channelIDs.contains(address))
+    }
+
+    func setComments(roomID: String, enabled: Bool) async throws {
+        guard let state = await refresh(roomID: roomID), state.isChannel, state.joined, state.level >= 100, !state.archived else { throw StalkChannelError.readOnly }
+        let caps = try await api.object(["_synapse", "client", "stalk_channels", "capabilities"])
+        guard Self.integer(caps["policyVersion"]) == 3, caps["threadedComments"] as? Bool == true,
+              Set(caps["commentEventTypes"] as? [String] ?? []).isSuperset(of: ["m.room.message", "m.room.encrypted", "m.sticker"]) else { throw StalkChannelError.readOnly }
+        let prefix = ["_matrix", "client", "v3", "rooms", roomID, "state"]
+        let create = try await api.object(prefix + ["m.room.create", ""])
+        let history = try await api.object(prefix + ["m.room.history_visibility", ""])
+        if enabled {
+            guard create["m.federate"] as? Bool == false else { throw StalkChannelError.readOnly }
+            let mode = history["history_visibility"] as? String
+            guard mode == "joined" || mode == "shared" else { throw StalkChannelError.readOnly }
+            if mode == "shared" {
+                guard ((caps["historyVisibility"] as? [String: Any])?["modes"] as? [String] ?? []).contains("shared") else { throw StalkChannelError.readOnly }
+                do {
+                    _ = try await api.object(prefix + ["m.room.encryption", ""])
+                    throw StalkChannelError.readOnly
+                } catch let error as StalkNativeHTTPError where error.status == 404 { }
+            }
+        }
+        var policy = try await api.object(prefix + ["io.stalk.channel.policy", ""])
+        var powers = try await api.object(prefix + ["m.room.power_levels", ""])
+        policy["schemaVersion"] = 3; policy["mode"] = "announcements"; policy["comments"] = enabled ? "threads" : "disabled"
+        var events = powers["events"] as? [String: Any] ?? [:]
+        for type in ["m.room.message", "m.room.encrypted", "m.sticker", "m.reaction", "m.room.redaction"] {
+            events[type] = enabled ? 0 : 50
+        }
+        events["io.stalk.channel.thread"] = enabled ? 25 : 100
+        events["io.stalk.channel.commenter"] = enabled ? 25 : 100
+        powers["events"] = events; powers["redact"] = enabled ? 25 : 100
+        if !enabled { _ = try await api.object(prefix + ["io.stalk.channel.policy", ""], method: "PUT", body: policy) }
+        _ = try await api.object(prefix + ["m.room.power_levels", ""], method: "PUT", body: powers)
+        if enabled { _ = try await api.object(prefix + ["io.stalk.channel.policy", ""], method: "PUT", body: policy) }
+        _ = await refresh(roomID: roomID)
+    }
+
+    func blockCommenter(roomID: String, userID: String, blocked: Bool) async throws {
+        guard CallSummaryPeople.isUserID(userID), let state = await refresh(roomID: roomID), state.isChannel,
+              state.canModerate else { throw StalkChannelError.readOnly }
+        _ = try await api.object(["_matrix", "client", "v3", "rooms", roomID, "state", "io.stalk.channel.commenter", "user/" + userID], method: "PUT", body: ["blocked": blocked])
+        _ = await refresh(roomID: roomID)
+    }
+}

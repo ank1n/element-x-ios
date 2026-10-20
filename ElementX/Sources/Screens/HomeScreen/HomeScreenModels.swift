@@ -127,6 +127,7 @@ struct HomeScreenViewState: BindableState {
     var messageSearchResults: [MessageSearchResult] = []
     var isMessageSearchLoading = false
 
+    var channelService: StalkChannelService?
     var archiveRoomCount = 0
     var archivePreviewText = ""
 
@@ -230,6 +231,7 @@ struct HomeScreenRoom: Identifiable, Equatable {
     /// End-to-end encrypted room → shows the blue avatar ring in the list (matches Web). Default
     /// keeps the mock initialiser valid.
     var isEncrypted = false
+    var isChannel = false
 
     let timestamp: String?
     

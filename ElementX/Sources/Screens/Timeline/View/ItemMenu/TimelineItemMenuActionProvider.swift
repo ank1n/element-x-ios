@@ -22,6 +22,7 @@ struct TimelineItemMenuActionProvider {
     let timelineKind: TimelineKind
     let emojiProvider: EmojiProviderProtocol
     var bookmarkService: BookmarkServiceProtocol? = ServiceLocator.shared.bookmarkService
+    var channel: StalkChannelSnapshot?
     
     // swiftlint:disable:next cyclomatic_complexity
     func makeActions() -> TimelineItemMenuActions? {
@@ -50,16 +51,19 @@ struct TimelineItemMenuActionProvider {
             actions.append(.endPoll(pollStartID: eventID))
         }
 
-        if item.canBeRepliedTo, canCurrentUserSendMessage {
-            if let messageItem = item as? EventBasedMessageTimelineItemProtocol {
-                // If threads are enabled we will have the dedicated `replyInThread` action
-                // so there is no need to make the normal reply use the thread.
-                actions.append(.reply(isThread: areThreadsEnabled ? false : messageItem.properties.isThreaded))
-            } else {
-                actions.append(.reply(isThread: false))
+        if item.canBeRepliedTo {
+            if canCurrentUserSendMessage, channel?.isChannel != true || timelineKind.isThread {
+                if let messageItem = item as? EventBasedMessageTimelineItemProtocol {
+                    // If threads are enabled we will have the dedicated `replyInThread` action
+                    // so there is no need to make the normal reply use the thread.
+                    actions.append(.reply(isThread: areThreadsEnabled ? false : messageItem.properties.isThreaded))
+                } else {
+                    actions.append(.reply(isThread: false))
+                }
             }
-            
-            if areThreadsEnabled, !timelineKind.isThread, !item.properties.isThreaded,
+            let supportedChannelRoot = item is EventBasedMessageTimelineItemProtocol || item is StickerRoomTimelineItem
+            let canOpenComments = channel?.isChannel == true ? supportedChannelRoot && item.id.eventID.map { channel!.canComment(root: $0) } == true : canCurrentUserSendMessage
+            if areThreadsEnabled, canOpenComments, !timelineKind.isThread, !item.properties.isThreaded,
                !(item is UnsupportedRoomTimelineItem) {
                 actions.append(.replyInThread)
             }
@@ -83,7 +87,7 @@ struct TimelineItemMenuActionProvider {
             }
         }
         
-        if canCurrentUserPin, let eventID = item.id.eventID {
+        if canCurrentUserPin, channel?.archived != true, let eventID = item.id.eventID {
             actions.append(pinnedEventIDs.contains(eventID) ? .unpin : .pin)
         }
 
@@ -143,7 +147,7 @@ struct TimelineItemMenuActionProvider {
             secondaryActions = secondaryActions.filter(\.canAppearInRedacted)
         }
         
-        let isReactable = timelineKind == .live || timelineKind == .detached || timelineKind.isThread ? item.isReactable : false
+        let isReactable = channel?.archived == true || channel?.blocked == true || (channel?.isChannel == true && channel?.joined != true) ? false : (timelineKind == .live || timelineKind == .detached || timelineKind.isThread ? item.isReactable : false)
 
         return .init(isReactable: isReactable, actions: actions, secondaryActions: secondaryActions, emojiProvider: emojiProvider)
     }
@@ -158,6 +162,9 @@ struct TimelineItemMenuActionProvider {
     }
     
     private func canRedactItem(_ item: EventBasedTimelineItemProtocol) -> Bool {
-        item.isOutgoing ? canCurrentUserRedactSelf : canCurrentUserRedactOthers && !isDM
+        if let channel, channel.isChannel, !item.isOutgoing {
+            return channel.joined && (channel.level >= 100 || (channel.canModerate && item.properties.isThreaded))
+        }
+        return item.isOutgoing ? canCurrentUserRedactSelf : canCurrentUserRedactOthers && !isDM
     }
 }

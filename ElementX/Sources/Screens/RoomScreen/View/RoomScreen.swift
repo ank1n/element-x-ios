@@ -11,9 +11,11 @@ import SwiftUI
 import WysiwygComposer
 
 struct RoomScreen: View {
+    @State private var showChannelControls = false
     @ObservedObject private var context: RoomScreenViewModelType.Context
     @ObservedObject private var timelineContext: TimelineViewModelType.Context
     let composerToolbar: ComposerToolbar
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityVoiceOverEnabled) private var isVoiceOverEnabled
 
     init(context: RoomScreenViewModelType.Context,
@@ -92,6 +94,18 @@ struct RoomScreen: View {
             .toolbarBackground(.visible, for: .navigationBar) // Fix the toolbar's background.
             .overlay { loadingIndicator }
             .timelineMediaPreview(viewModel: $context.mediaPreviewViewModel)
+            .task(id: scenePhase) {
+                guard scenePhase == .active else { return }
+                repeat {
+                    context.send(viewAction: .refreshChannelAccess)
+                    do { try await Task.sleep(for: .seconds(20)) } catch { return }
+                } while !Task.isCancelled
+            }
+            .sheet(isPresented: $showChannelControls) {
+                if let service = context.viewState.channelService {
+                    StalkChannelControlsView(service: service, roomID: timelineContext.viewState.roomID)
+                }
+            }
             .track(screen: .Room)
             .sentryTrace("\(Self.self)")
     }
@@ -135,10 +149,12 @@ struct RoomScreen: View {
             // We are not sure why but when wrapped in the room screen the composer toolbar breaks the accessibility tests
             composerToolbar
         } else {
-            ComposerDisabledView()
+            if context.viewState.isChannel {
+                Text(StalkChannelError.readOnly.localizedDescription).font(.footnote).foregroundStyle(.secondary).padding(12)
+            } else { ComposerDisabledView() }
         }
     }
-    
+
     private var tombstonedDialogue: some View {
         VStack(spacing: 16) {
             Text(L10n.screenRoomTimelineTombstonedRoomMessage)
@@ -200,6 +216,10 @@ struct RoomScreen: View {
                         .accessibilityLabel(StalkThreadStrings.title)
                     }
 
+                    if context.viewState.isChannel {
+                        Button { showChannelControls = true } label: { Image(systemName: "megaphone") }
+                            .accessibilityLabel(StalkChannelStrings.title)
+                    }
                     // Search button
                     Button {
                         context.send(viewAction: .toggleSearch)

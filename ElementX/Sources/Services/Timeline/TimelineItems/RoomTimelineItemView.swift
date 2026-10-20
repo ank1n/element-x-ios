@@ -29,7 +29,14 @@ struct RoomTimelineItemView: View {
     @ViewBuilder private var timelineView: some View {
         switch viewState.type {
         case .text(let item):
-            TextRoomTimelineView(timelineItem: item, linkMetadata: linkMetadataForItem(item))
+            VStack(alignment: .leading, spacing: 8) {
+                TextRoomTimelineView(timelineItem: item, linkMetadata: linkMetadataForItem(item))
+                if let service = context?.viewState.channelService {
+                    ForEach(StalkChannelLinkCard.candidates(in: item.body), id: \.self) { url in
+                        StalkChannelLinkCard(url: url, service: service)
+                    }
+                }
+            }
         case .separator(let item):
             SeparatorRoomTimelineView(timelineItem: item)
         case .image(let item):
@@ -59,7 +66,12 @@ struct RoomTimelineItemView: View {
         case .timelineStart(let item):
             TimelineStartRoomTimelineView(timelineItem: item)
         case .state(let item):
-            StateRoomTimelineView(timelineItem: item)
+            VStack(spacing: 0) {
+                StateRoomTimelineView(timelineItem: item)
+                if let marker = item.callInitiate, let service = context?.viewState.callSummaryService {
+                    CallTimelineSummaryView(marker: marker, service: service)
+                }
+            }
         case .group(let item):
             CollapsibleRoomTimelineView(timelineItem: item)
         case .location(let item):

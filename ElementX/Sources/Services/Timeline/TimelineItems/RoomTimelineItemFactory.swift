@@ -27,6 +27,10 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
     
     func buildTimelineItem(for eventItemProxy: EventTimelineItemProxy, isDM: Bool) -> RoomTimelineItemProtocol? {
         let isOutgoing = eventItemProxy.isOwn
+        if eventItemProxy.sender.id.hasPrefix("@meet-stalk:"),
+           let raw = eventItemProxy.debugInfo.originalJSON?.data(using: .utf8),
+           let json = try? JSONSerialization.jsonObject(with: raw) as? [String: Any],
+           (json["content"] as? [String: Any])?["io.stalk.call_summary"] != nil { return nil }
         
         switch eventItemProxy.content {
         case .msgLike(let messageLikeContent):
@@ -43,8 +47,17 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
                 return buildEncryptedTimelineItem(eventItemProxy, messageLikeContent, encryptedMessage, isOutgoing)
             case .liveLocation:
                 return nil // SDK 26.06.03 exposes live-location shares; sTalk has no live-location UI.
-            case .other:
-                return nil // We shouldn't receive these without asking for custom event types.
+            case .other(let type):
+                guard type == .other("io.stalk.call.initiate"), let eventID = eventItemProxy.id.eventID else { return nil }
+                let data = eventItemProxy.debugInfo.originalJSON?.data(using: .utf8)
+                let json = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+                let content = json?["content"] as? [String: Any] ?? [:]
+                let video = content["call_type"] as? String != "voice"
+                return StateRoomTimelineItem(id: eventItemProxy.id,
+                                             body: String(format: NSLocalizedString(video ? "stalk_call_card_started_video" : "stalk_call_card_started_voice", comment: "Call started"), eventItemProxy.sender.displayName ?? eventItemProxy.sender.id),
+                                             timestamp: eventItemProxy.timestamp, isOutgoing: isOutgoing, isEditable: false,
+                                             canBeRepliedTo: false, sender: eventItemProxy.sender,
+                                             callInitiate: CallInitiateMarker(eventID: eventID, timestamp: Date(timeIntervalSince1970: Double(eventItemProxy.item.timestamp) / 1000), video: video))
             }
         case .failedToParseMessageLike(let eventType, let error):
             return buildUnsupportedTimelineItem(eventItemProxy, eventType, error, isOutgoing)

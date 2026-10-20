@@ -103,6 +103,9 @@ enum TimelineComposerAction {
 }
 
 struct TimelineViewState: BindableState {
+    var channelService: StalkChannelService?
+    var channelAccess: StalkChannelSnapshot?
+    var callSummaryService: CallTimelineSummaryService?
     let timelineKind: TimelineKind
     var roomID: String
     var members: [String: RoomMemberState] = [:]

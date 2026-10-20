@@ -42,7 +42,7 @@ struct TimelineView: View {
                                                              isViewSourceEnabled: timelineContext.viewState.isViewSourceEnabled,
                                                              areThreadsEnabled: timelineContext.viewState.areThreadsEnabled,
                                                              timelineKind: timelineContext.viewState.timelineKind,
-                                                             emojiProvider: timelineContext.viewState.emojiProvider)
+                                                             emojiProvider: timelineContext.viewState.emojiProvider, channel: timelineContext.viewState.channelAccess)
                     .makeActions()
                 if let actions {
                     TimelineItemMenu(item: info.item, actions: actions)

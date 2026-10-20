@@ -61,21 +61,30 @@ struct HomeScreenRoomCell: View {
     @ViewBuilder @MainActor
     private var avatar: some View {
         if dynamicTypeSize < .accessibility3 {
-            RoomAvatarImage(avatar: room.avatar,
-                            avatarSize: .room(on: .chats),
-                            mediaProvider: mediaProvider)
-                .dynamicTypeSize(dynamicTypeSize < .accessibility1 ? dynamicTypeSize : .accessibility1)
-                .accessibilityHidden(true)
-                // Encrypted room → blue avatar ring (matches Web's encrypted-room marking).
-                .overlay {
-                    if room.isEncrypted {
-                        // Pastel blue ring for encrypted rooms (matches Web's soft encrypted marker).
-                        Circle().strokeBorder(Color(red: 0.55, green: 0.72, blue: 0.96), lineWidth: 2)
-                    }
+            Group {
+                if room.isChannel {
+                    Image(systemName: "megaphone.fill")
+                        .font(.title2).foregroundStyle(StalkTheme.accent)
+                        .frame(width: 48, height: 48)
+                        .background(StalkTheme.accent.opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
+                } else {
+                    RoomAvatarImage(avatar: room.avatar,
+                                    avatarSize: .room(on: .chats),
+                                    mediaProvider: mediaProvider)
+                        .dynamicTypeSize(dynamicTypeSize < .accessibility1 ? dynamicTypeSize : .accessibility1)
+                        .accessibilityHidden(true)
                 }
-                .overlay(alignment: .bottomTrailing) {
-                    presenceDot
+            }
+            // Encrypted room → blue avatar ring (matches Web's encrypted-room marking).
+            .overlay {
+                if room.isEncrypted {
+                    // Pastel blue ring for encrypted rooms (matches Web's soft encrypted marker).
+                    Circle().strokeBorder(Color(red: 0.55, green: 0.72, blue: 0.96), lineWidth: 2)
                 }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                presenceDot
+            }
         }
     }
 

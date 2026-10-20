@@ -2469,3 +2469,83 @@
 "stalk_search_app_title" = "Search";
 
 "stalk_search_app_description" = "Messages, files, meetings and tasks";
+
+"stalk_call_card_recording" = "Recording available";
+
+"stalk_call_card_transcript_ready" = "Transcript ready";
+
+"stalk_call_card_transcript_pending" = "Transcript pending";
+
+"stalk_call_card_tasks" = "Tasks: %d";
+
+"stalk_call_card_started_video" = "%@ started a video call";
+
+"stalk_call_card_started_voice" = "%@ started a call";
+
+"stalk_call_card_group_backlog" = "Backlog";
+
+"stalk_call_card_group_unstarted" = "To do";
+
+"stalk_call_card_group_started" = "In progress";
+
+"stalk_call_card_group_completed" = "Completed";
+
+"stalk_call_card_group_cancelled" = "Cancelled";
+
+"stalk_call_card_group_unknown" = "Unknown status";
+
+"stalk_channels_title" = "Channels";
+
+"stalk_channels_archived" = "Archived channels";
+
+"stalk_channels_admin" = "Administrator";
+
+"stalk_channels_editor" = "Editor";
+
+"stalk_channels_moderator" = "Discussion moderator";
+
+"stalk_channels_reader" = "Reader";
+
+"stalk_channels_address" = "Channel link, ID or alias";
+
+"stalk_channels_find" = "Find channel";
+
+"stalk_channels_subscriptions" = "Your channels";
+
+"stalk_channels_catalog" = "Public channels";
+
+"stalk_channels_request" = "Request subscription";
+
+"stalk_channels_subscribe" = "Subscribe";
+
+"stalk_channels_notifications" = "Discussion notifications";
+
+"stalk_channels_following" = "All replies";
+
+"stalk_channels_mentions" = "Mentions only";
+
+"stalk_channels_muted" = "No notifications";
+
+"stalk_channels_moderation" = "Moderation";
+
+"stalk_channels_reopen" = "Reopen discussion";
+
+"stalk_channels_close" = "Close discussion";
+
+"stalk_channels_block" = "Restrict comments";
+
+"stalk_channels_unblock" = "Allow comments";
+
+"stalk_channels_comments" = "Comments";
+
+"stalk_channels_disable_comments" = "Disable comments";
+
+"stalk_channels_enable_comments" = "Enable comments";
+
+"stalk_channel_read_only" = "Publishing or commenting is unavailable. Check your channel permissions.";
+
+"stalk_channels_empty" = "No channels yet";
+
+"stalk_channels_open" = "Open channel";
+
+"stalk_channels_open_call" = "Open call";

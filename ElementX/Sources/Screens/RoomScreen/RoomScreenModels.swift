@@ -27,6 +27,7 @@ enum RoomScreenViewModelAction: Equatable {
 
 enum RoomScreenViewAction {
     case tappedPinnedEventsBanner
+    case refreshChannelAccess
     case displayThreadList
     case viewAllPins
     case displayRoomDetails
@@ -43,6 +44,8 @@ enum RoomScreenViewAction {
 }
 
 struct RoomScreenViewState: BindableState {
+    var channelService: StalkChannelService?
+    var isChannel = false
     var canShowThreads = false
     var roomTitle = ""
     var roomAvatar: RoomAvatar

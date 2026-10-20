@@ -18,5 +18,6 @@ struct StateRoomTimelineItem: EventBasedTimelineItemProtocol, Equatable {
     
     let sender: TimelineItemSender
     
+    var callInitiate: CallInitiateMarker?
     var properties = RoomTimelineItemProperties()
 }

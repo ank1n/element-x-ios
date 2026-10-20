@@ -2353,3 +2353,83 @@
 "stalk_search_app_title" = "Поиск";
 
 "stalk_search_app_description" = "Сообщения, файлы, встречи и задачи";
+
+"stalk_call_card_recording" = "Запись: была";
+
+"stalk_call_card_transcript_ready" = "Транскрипция: готова";
+
+"stalk_call_card_transcript_pending" = "Транскрипция: готовится";
+
+"stalk_call_card_tasks" = "Задачи: %d";
+
+"stalk_call_card_started_video" = "%@ начал(а) видеозвонок";
+
+"stalk_call_card_started_voice" = "%@ начал(а) звонок";
+
+"stalk_call_card_group_backlog" = "Бэклог";
+
+"stalk_call_card_group_unstarted" = "К выполнению";
+
+"stalk_call_card_group_started" = "В работе";
+
+"stalk_call_card_group_completed" = "Готово";
+
+"stalk_call_card_group_cancelled" = "Отменено";
+
+"stalk_call_card_group_unknown" = "Статус неизвестен";
+
+"stalk_channels_title" = "Каналы";
+
+"stalk_channels_archived" = "Архив каналов";
+
+"stalk_channels_admin" = "Администратор";
+
+"stalk_channels_editor" = "Редактор";
+
+"stalk_channels_moderator" = "Модератор обсуждений";
+
+"stalk_channels_reader" = "Читатель";
+
+"stalk_channels_address" = "Ссылка, ID или адрес канала";
+
+"stalk_channels_find" = "Найти канал";
+
+"stalk_channels_subscriptions" = "Ваши каналы";
+
+"stalk_channels_catalog" = "Открытые каналы";
+
+"stalk_channels_request" = "Запросить подписку";
+
+"stalk_channels_subscribe" = "Подписаться";
+
+"stalk_channels_notifications" = "Уведомления обсуждения";
+
+"stalk_channels_following" = "Все ответы";
+
+"stalk_channels_mentions" = "Только упоминания";
+
+"stalk_channels_muted" = "Без уведомлений";
+
+"stalk_channels_moderation" = "Модерация";
+
+"stalk_channels_reopen" = "Открыть обсуждение";
+
+"stalk_channels_close" = "Закрыть обсуждение";
+
+"stalk_channels_block" = "Ограничить комментарии";
+
+"stalk_channels_unblock" = "Разрешить комментарии";
+
+"stalk_channels_comments" = "Комментарии";
+
+"stalk_channels_disable_comments" = "Отключить комментарии";
+
+"stalk_channels_enable_comments" = "Включить комментарии";
+
+"stalk_channel_read_only" = "Публикация или комментарии недоступны. Проверьте права в канале.";
+
+"stalk_channels_empty" = "Каналов пока нет";
+
+"stalk_channels_open" = "Открыть канал";
+
+"stalk_channels_open_call" = "Открыть звонок";

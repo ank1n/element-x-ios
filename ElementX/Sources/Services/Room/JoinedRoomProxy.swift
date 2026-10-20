@@ -15,6 +15,8 @@ class JoinedRoomProxy: JoinedRoomProxyProtocol {
     private let roomListService: RoomListServiceProtocol
     private let room: RoomProtocol
     private let appSettings: AppSettings
+    private weak var channelClient: ClientProxyProtocol?
+    private let requiresChannelAuthorization: Bool
     
     // periphery:ignore - required for instance retention in the rust codebase
     private var roomInfoObservationToken: TaskHandle?
@@ -76,20 +78,27 @@ class JoinedRoomProxy: JoinedRoomProxyProtocol {
     
     init(roomListService: RoomListServiceProtocol,
          room: RoomProtocol,
-         appSettings: AppSettings) async throws {
+         appSettings: AppSettings, clientProxy: ClientProxyProtocol? = nil) async throws {
         self.roomListService = roomListService
         self.room = room
         self.appSettings = appSettings
+        channelClient = clientProxy
+        requiresChannelAuthorization = clientProxy != nil
         
         infoSubject = try await .init(RoomInfoProxy(roomInfo: room.roomInfo()))
         
+        let requiresAuthorization = clientProxy != nil
+        let creators = infoSubject.value.creators
         timeline = try await TimelineProxy(timeline: room.timelineWithConfiguration(configuration: .init(focus: .live(hideThreadedEvents: appSettings.threadsEnabled),
                                                                                                          filter: .eventFilter(filter: excludedEventsFilter),
                                                                                                          internalIdPrefix: nil,
                                                                                                          dateDividerMode: .daily,
                                                                                                          trackReadReceipts: .messageLikeEvents,
                                                                                                          reportUtds: true)),
-                                           kind: .live)
+                                           kind: .live, authorizeSend: { [weak clientProxy] in
+                                               guard let clientProxy else { return !requiresAuthorization }
+                                               return await StalkChannelService.shared(client: clientProxy).canSend(roomID: room.id(), root: nil, creators: creators)
+                                           })
         
         Task {
             await updateMembers()
@@ -104,7 +113,18 @@ class JoinedRoomProxy: JoinedRoomProxyProtocol {
         }
     }
     
+    private func authorization(root: String?) -> (() async -> Bool) {
+        let id = id
+        let creators = infoPublisher.value.creators
+        let required = requiresChannelAuthorization
+        return { [weak channelClient] in
+            guard let channelClient else { return !required }
+            return await StalkChannelService.shared(client: channelClient).canSend(roomID: id, root: root, creators: creators)
+        }
+    }
+
     func sendSticker(_ sticker: SharedSticker, threadRoot: String?) async throws {
+        guard await authorization(root: threadRoot)() else { throw StalkChannelError.readOnly }
         guard sticker.isValid else { throw RoomProxyError.invalidMedia }
         // SDK handles encryption, transaction IDs and local echo.
         try await room.sendRaw(eventType: "m.sticker", content: sticker.content(threadRoot: threadRoot))
@@ -210,7 +230,7 @@ class JoinedRoomProxy: JoinedRoomProxyProtocol {
                                                                                             trackReadReceipts: .disabled,
                                                                                             reportUtds: true))
             
-            return .success(TimelineProxy(timeline: sdkTimeline, kind: .detached))
+            return .success(TimelineProxy(timeline: sdkTimeline, kind: .detached, authorizeSend: authorization(root: nil)))
         } catch let error as FocusEventError {
             switch error {
             case .InvalidEventId(_, let error):
@@ -242,7 +262,7 @@ class JoinedRoomProxy: JoinedRoomProxyProtocol {
                                                                                             trackReadReceipts: .messageLikeEvents,
                                                                                             reportUtds: true))
             
-            let timeline = TimelineProxy(timeline: sdkTimeline, kind: .thread(rootEventID: eventID))
+            let timeline = TimelineProxy(timeline: sdkTimeline, kind: .thread(rootEventID: eventID), authorizeSend: authorization(root: eventID))
             await timeline.subscribeForUpdates()
             
             return .success(timeline)
@@ -289,7 +309,7 @@ class JoinedRoomProxy: JoinedRoomProxyProtocol {
                                                                                             trackReadReceipts: .disabled,
                                                                                             reportUtds: true))
             
-            let timeline = TimelineProxy(timeline: sdkTimeline, kind: .media(presentation))
+            let timeline = TimelineProxy(timeline: sdkTimeline, kind: .media(presentation), authorizeSend: authorization(root: nil))
             await timeline.subscribeForUpdates()
             
             return .success(timeline)
@@ -320,7 +340,7 @@ class JoinedRoomProxy: JoinedRoomProxyProtocol {
                                                                                                     trackReadReceipts: .disabled,
                                                                                                     reportUtds: true))
                     
-                    let timeline = TimelineProxy(timeline: sdkTimeline, kind: .pinned)
+                    let timeline = TimelineProxy(timeline: sdkTimeline, kind: .pinned, authorizeSend: authorization(root: nil))
                     
                     await timeline.subscribeForUpdates()
                     innerPinnedEventsTimeline = timeline

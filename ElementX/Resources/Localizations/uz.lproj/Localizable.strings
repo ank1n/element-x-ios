@@ -2027,3 +2027,83 @@
 "stalk_search_app_title" = "Qidiruv";
 
 "stalk_search_app_description" = "Xabarlar, fayllar, uchrashuvlar va vazifalar";
+
+"stalk_call_card_recording" = "Yozuv mavjud";
+
+"stalk_call_card_transcript_ready" = "Transkripsiya tayyor";
+
+"stalk_call_card_transcript_pending" = "Transkripsiya tayyorlanmoqda";
+
+"stalk_call_card_tasks" = "Vazifalar: %d";
+
+"stalk_call_card_started_video" = "%@ videoqo‘ng‘iroq boshladi";
+
+"stalk_call_card_started_voice" = "%@ qo‘ng‘iroq boshladi";
+
+"stalk_call_card_group_backlog" = "Rejalar";
+
+"stalk_call_card_group_unstarted" = "Bajarish kerak";
+
+"stalk_call_card_group_started" = "Bajarilmoqda";
+
+"stalk_call_card_group_completed" = "Bajarilgan";
+
+"stalk_call_card_group_cancelled" = "Bekor qilingan";
+
+"stalk_call_card_group_unknown" = "Holat noma’lum";
+
+"stalk_channels_title" = "Kanallar";
+
+"stalk_channels_archived" = "Arxivlangan kanallar";
+
+"stalk_channels_admin" = "Administrator";
+
+"stalk_channels_editor" = "Muharrir";
+
+"stalk_channels_moderator" = "Muhokama moderatori";
+
+"stalk_channels_reader" = "O‘quvchi";
+
+"stalk_channels_address" = "Kanal havolasi, ID yoki manzili";
+
+"stalk_channels_find" = "Kanalni topish";
+
+"stalk_channels_subscriptions" = "Kanallaringiz";
+
+"stalk_channels_catalog" = "Ochiq kanallar";
+
+"stalk_channels_request" = "Obunani so‘rash";
+
+"stalk_channels_subscribe" = "Obuna bo‘lish";
+
+"stalk_channels_notifications" = "Muhokama bildirishnomalari";
+
+"stalk_channels_following" = "Barcha javoblar";
+
+"stalk_channels_mentions" = "Faqat eslatmalar";
+
+"stalk_channels_muted" = "Bildirishnomalarsiz";
+
+"stalk_channels_moderation" = "Moderatsiya";
+
+"stalk_channels_reopen" = "Muhokamani ochish";
+
+"stalk_channels_close" = "Muhokamani yopish";
+
+"stalk_channels_block" = "Izohlarni cheklash";
+
+"stalk_channels_unblock" = "Izohlarga ruxsat berish";
+
+"stalk_channels_comments" = "Izohlar";
+
+"stalk_channels_disable_comments" = "Izohlarni o‘chirish";
+
+"stalk_channels_enable_comments" = "Izohlarni yoqish";
+
+"stalk_channel_read_only" = "Nashr yoki izohlar mavjud emas. Kanaldagi huquqlaringizni tekshiring.";
+
+"stalk_channels_empty" = "Hozircha kanallar yo‘q";
+
+"stalk_channels_open" = "Kanalni ochish";
+
+"stalk_channels_open_call" = "Qo‘ng‘iroqni ochish";

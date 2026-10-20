@@ -11,6 +11,7 @@ import Foundation
 import MatrixRustSDK
 
 final class TimelineProxy: TimelineProxyProtocol {
+    private let authorizeSend: (() async -> Bool)?
     private let timeline: Timeline
     
     private var backPaginationStatusObservationToken: TaskHandle?
@@ -34,7 +35,8 @@ final class TimelineProxy: TimelineProxyProtocol {
         backPaginationStatusObservationToken?.cancel()
     }
     
-    init(timeline: Timeline, kind: TimelineKind) {
+    init(timeline: Timeline, kind: TimelineKind, authorizeSend: (() async -> Bool)? = nil) {
+        self.authorizeSend = authorizeSend
         self.timeline = timeline
         self.kind = kind
     }
@@ -209,6 +211,7 @@ final class TimelineProxy: TimelineProxyProtocol {
     }
     
     func edit(_ eventOrTransactionID: TimelineItemIdentifier.EventOrTransactionID, newContent: EditedContent) async -> Result<Void, TimelineProxyError> {
+        guard await authorizeSend?() != false else { return .failure(.sdkError(StalkChannelError.readOnly)) }
         do {
             try await timeline.edit(eventOrTransactionId: eventOrTransactionID.rustValue, newContent: newContent)
             
@@ -269,6 +272,7 @@ final class TimelineProxy: TimelineProxyProtocol {
                    audioInfo: AudioInfo,
                    caption: String?,
                    requestHandle: @MainActor (SendAttachmentJoinHandleProtocol) -> Void) async -> Result<Void, TimelineProxyError> {
+        guard await authorizeSend?() != false else { return .failure(.sdkError(StalkChannelError.readOnly)) }
         MXLog.info("Sending audio")
         
         do {
@@ -295,6 +299,7 @@ final class TimelineProxy: TimelineProxyProtocol {
                   fileInfo: FileInfo,
                   caption: String?,
                   requestHandle: @MainActor (SendAttachmentJoinHandleProtocol) -> Void) async -> Result<Void, TimelineProxyError> {
+        guard await authorizeSend?() != false else { return .failure(.sdkError(StalkChannelError.readOnly)) }
         MXLog.info("Sending file")
         
         do {
@@ -322,6 +327,7 @@ final class TimelineProxy: TimelineProxyProtocol {
                    imageInfo: ImageInfo,
                    caption: String?,
                    requestHandle: @MainActor (SendAttachmentJoinHandleProtocol) -> Void) async -> Result<Void, TimelineProxyError> {
+        guard await authorizeSend?() != false else { return .failure(.sdkError(StalkChannelError.readOnly)) }
         MXLog.info("Sending image")
         
         do {
@@ -350,6 +356,7 @@ final class TimelineProxy: TimelineProxyProtocol {
                       description: String?,
                       zoomLevel: UInt8?,
                       assetType: AssetType?) async -> Result<Void, TimelineProxyError> {
+        guard await authorizeSend?() != false else { return .failure(.sdkError(StalkChannelError.readOnly)) }
         MXLog.info("Sending location")
         
         do {
@@ -374,6 +381,7 @@ final class TimelineProxy: TimelineProxyProtocol {
                    videoInfo: VideoInfo,
                    caption: String?,
                    requestHandle: @MainActor (SendAttachmentJoinHandleProtocol) -> Void) async -> Result<Void, TimelineProxyError> {
+        guard await authorizeSend?() != false else { return .failure(.sdkError(StalkChannelError.readOnly)) }
         MXLog.info("Sending video")
         
         do {
@@ -401,6 +409,7 @@ final class TimelineProxy: TimelineProxyProtocol {
                           audioInfo: AudioInfo,
                           waveform: [Float],
                           requestHandle: @MainActor (SendAttachmentJoinHandleProtocol) -> Void) async -> Result<Void, TimelineProxyError> {
+        guard await authorizeSend?() != false else { return .failure(.sdkError(StalkChannelError.readOnly)) }
         MXLog.info("Sending voice message")
         
         do {
@@ -431,6 +440,7 @@ final class TimelineProxy: TimelineProxyProtocol {
                      html: String?,
                      inReplyToEventID: String? = nil,
                      intentionalMentions: IntentionalMentions) async -> Result<Void, TimelineProxyError> {
+        guard await authorizeSend?() != false else { return .failure(.sdkError(StalkChannelError.readOnly)) }
         if let inReplyToEventID {
             MXLog.info("Sending reply to eventID: \(inReplyToEventID)")
         } else {
@@ -463,6 +473,7 @@ final class TimelineProxy: TimelineProxyProtocol {
     }
     
     func sendMessageEventContent(_ messageContent: RoomMessageEventContentWithoutRelation) async -> Result<Void, TimelineProxyError> {
+        guard await authorizeSend?() != false else { return .failure(.sdkError(StalkChannelError.readOnly)) }
         MXLog.info("Sending message content")
         
         do {
@@ -519,6 +530,7 @@ final class TimelineProxy: TimelineProxyProtocol {
 
     func createPoll(question: String, answers: [String],
                     pollKind: Poll.Kind) async -> Result<Void, TimelineProxyError> {
+        guard await authorizeSend?() != false else { return .failure(.sdkError(StalkChannelError.readOnly)) }
         MXLog.info("Creating poll")
         
         do {
@@ -537,6 +549,7 @@ final class TimelineProxy: TimelineProxyProtocol {
                   question: String,
                   answers: [String],
                   pollKind: Poll.Kind) async -> Result<Void, TimelineProxyError> {
+        guard await authorizeSend?() != false else { return .failure(.sdkError(StalkChannelError.readOnly)) }
         MXLog.info("Editing poll with eventID: \(eventID)")
         
         do {

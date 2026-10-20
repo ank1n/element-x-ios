@@ -71,7 +71,13 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
         super.init(initialViewState: .init(userID: userSession.clientProxy.userID,
                                            bindings: .init(filtersState: .init(appSettings: appSettings))),
                    mediaProvider: userSession.mediaProvider)
-        
+        if userSession.clientProxy is ClientProxy {
+            let service = StalkChannelService.shared(client: userSession.clientProxy)
+            state.channelService = service
+            service.$channelIDs.combineLatest(service.$archivedIDs).receive(on: DispatchQueue.main)
+                .sink { [weak self] _, _ in self?.updateRooms() }.store(in: &cancellables)
+        }
+
         userSession.clientProxy.userAvatarURLPublisher
             .receive(on: DispatchQueue.main)
             .weakAssign(to: \.state.userAvatarURL, on: self)
@@ -529,9 +535,14 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
                     continue
                 }
             }
-            let room = HomeScreenRoom(summary: summary,
+            let isChannel = state.channelService?.channelIDs.contains(summary.id) == true
+            if state.bindings.filtersState.isFilterActive(.channels), !isChannel { continue }
+            if state.bindings.filtersState.isFilterActive(.rooms), isChannel { continue }
+            if state.channelService?.archivedIDs.contains(summary.id) == true { continue }
+            var room = HomeScreenRoom(summary: summary,
                                       hideUnreadMessagesBadge: appSettings.hideUnreadMessagesBadge,
                                       seenInvites: seenInvites)
+            room.isChannel = isChannel
             rooms.append(room)
         }
         

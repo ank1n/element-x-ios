@@ -14,6 +14,7 @@ import SwiftUI
 struct HomeScreen: View {
     @ObservedObject var context: HomeScreenViewModel.Context
     
+    @State private var showChannels = false
     @State private var scrollViewAdapter = ScrollViewAdapter()
     
     var body: some View {
@@ -29,6 +30,12 @@ struct HomeScreen: View {
             .toolbar { toolbar }
             .disableAutocorrection(true)
             .background(Color.compound.bgCanvasDefault.ignoresSafeArea())
+            .sheet(isPresented: $showChannels) {
+                if let service = context.viewState.channelService {
+                    StalkChannelDirectoryView(service: service) { id in context.send(viewAction: .selectRoom(roomIdentifier: id)) }
+                }
+            }
+            .task { await context.viewState.channelService?.discover() }
             .track(screen: .Home)
             .sentryTrace("\(Self.self)")
     }
@@ -39,6 +46,12 @@ struct HomeScreen: View {
     private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
             refreshButton
+        }
+        ToolbarItem(placement: .primaryAction) {
+            if context.viewState.channelService != nil {
+                Button { showChannels = true } label: { Image(systemName: "megaphone") }
+                    .accessibilityLabel(StalkChannelStrings.title)
+            }
         }
         ToolbarItem(placement: .primaryAction) {
             if #available(iOS 26, *) {

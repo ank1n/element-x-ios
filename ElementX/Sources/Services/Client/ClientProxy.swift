@@ -1414,15 +1414,15 @@ class ClientProxy: ClientProxyProtocol {
             case .invited:
                 return try await .invited(InvitedRoomProxy(room: room))
             case .knocked:
-                guard appSettings.knockingEnabled else {
-                    return nil
+                if !appSettings.knockingEnabled {
+                    let preview = try await client.getRoomPreviewFromRoomId(roomId: room.id(), viaServers: [])
+                    guard preview.info().roomType == .custom(value: "io.stalk.channel") else { return nil }
                 }
-                
                 return try await .knocked(KnockedRoomProxy(room: room))
             case .joined:
                 let roomProxy = try await JoinedRoomProxy(roomListService: roomListService,
                                                           room: room,
-                                                          appSettings: appSettings)
+                                                          appSettings: appSettings, clientProxy: self)
                 
                 return .joined(roomProxy)
             case .left:

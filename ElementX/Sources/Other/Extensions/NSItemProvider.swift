@@ -75,6 +75,31 @@ extension NSItemProvider {
     }
     
     private func generateURLForGenericData(_ contentType: PreferredContentType, withinAppGroupContainer: Bool) async -> URL? {
+        // The provider owns this URL only for the duration of its completion handler.
+        // Copy inside that handler; awaiting the URL first can lose Mail/Word's file.
+        if let file = await withCheckedContinuation({ (continuation: CheckedContinuation<URL?, Never>) in
+            _ = loadFileRepresentation(forTypeIdentifier: contentType.type.identifier) { url, _ in
+                continuation.resume(returning: url.flatMap {
+                    try? SharedFileImport.copy($0, suggestedName: self.suggestedName,
+                                               fileExtension: contentType.fileExtension,
+                                               withinAppGroupContainer: withinAppGroupContainer)
+                })
+            }
+        }) { return file }
+
+        // Some sources only implement loadItem, with either the content type or file-url.
+        var itemTypes = [contentType.type.identifier]
+        if hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) { itemTypes.append(UTType.fileURL.identifier) }
+        for identifier in itemTypes {
+            if let file = await withCheckedContinuation({ (continuation: CheckedContinuation<URL?, Never>) in
+                _ = loadItem(forTypeIdentifier: identifier, options: nil) { item, _ in
+                    guard let url = item as? URL else { continuation.resume(returning: nil); return }
+                    continuation.resume(returning: try? SharedFileImport.copy(url, suggestedName: self.suggestedName,
+                                                                              fileExtension: contentType.fileExtension, withinAppGroupContainer: withinAppGroupContainer))
+                }
+            }) { return file }
+        }
+
         let providerDescription = description
         let shareData: Data? = await withCheckedContinuation { continuation in
             _ = loadDataRepresentation(for: contentType.type) { data, error in
@@ -99,25 +124,16 @@ extension NSItemProvider {
             return nil
         }
         
-        let filename = if let suggestedName = suggestedName as NSString?,
-                          suggestedName.hasPathExtension {
-            suggestedName as String
-        } else if let suggestedName {
-            "\(suggestedName).\(contentType.fileExtension)"
-        } else {
-            "\(UUID().uuidString).\(contentType.fileExtension)"
-        }
-        
         do {
-            return try FileManager.default.writeDataToTemporaryDirectory(data: shareData,
-                                                                         fileName: filename,
-                                                                         withinAppGroupContainer: withinAppGroupContainer)
+            return try SharedFileImport.write(shareData, suggestedName: suggestedName,
+                                              fileExtension: contentType.fileExtension,
+                                              withinAppGroupContainer: withinAppGroupContainer)
         } catch {
-            MXLog.error("Failed storing NSItemProvider data \(self) with error: \(error)")
+            MXLog.error("Failed storing shared file: \(error)")
             return nil
         }
     }
-    
+
     var isSupportedForPasteOrDrop: Bool {
         preferredContentType != nil
     }
@@ -199,5 +215,51 @@ extension NSItemProvider {
 private extension NSString {
     var hasPathExtension: Bool {
         !pathExtension.isEmpty
+    }
+}
+
+/// Preserve a document's filename while isolating same-named attachments in separate directories.
+enum SharedFileImport {
+    static func filename(original: String?, suggested: String?, fileExtension: String) -> String {
+        func clean(_ value: String?) -> String? {
+            guard let value else { return nil }
+            let name = (value as NSString).lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty, name != ".", name != "..", !name.contains("\0"), !name.contains("/"),
+                  name.rangeOfCharacter(from: .controlCharacters) == nil else { return nil }
+            return name
+        }
+        let source = clean(original)
+        let suggestion = clean(suggested)
+        let systemName = source.map { UUID(uuidString: ($0 as NSString).deletingPathExtension) != nil || ($0 as NSString).deletingPathExtension.range(of: "^[A-Fa-f0-9]{32}$", options: .regularExpression) != nil } ?? false
+        let name = source.flatMap { systemName && suggestion != nil ? nil : $0 } ?? suggestion ?? UUID().uuidString
+        return (name as NSString).pathExtension.isEmpty ? name + "." + fileExtension : name
+    }
+
+    private static func destination(name: String, withinAppGroupContainer: Bool) throws -> URL {
+        let base: URL = withinAppGroupContainer ? .appGroupTemporaryDirectory : .temporaryDirectory
+        let directory = base.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory.appendingPathComponent(name, isDirectory: false)
+    }
+
+    static func copy(_ source: URL, suggestedName: String?, fileExtension: String,
+                     withinAppGroupContainer: Bool) throws -> URL {
+        guard source.isFileURL else { throw CocoaError(.fileReadUnsupportedScheme) }
+        let scoped = source.startAccessingSecurityScopedResource()
+        defer { if scoped { source.stopAccessingSecurityScopedResource() } }
+        let values = try source.resourceValues(forKeys: [.isRegularFileKey])
+        guard values.isRegularFile == true else { throw CocoaError(.fileReadUnknown) }
+        let target = try destination(name: filename(original: source.lastPathComponent, suggested: suggestedName,
+                                                    fileExtension: fileExtension), withinAppGroupContainer: withinAppGroupContainer)
+        do { try FileManager.default.copyItem(at: source, to: target); return target }
+        catch { try? FileManager.default.removeItem(at: target.deletingLastPathComponent()); throw error }
+    }
+
+    static func write(_ data: Data, suggestedName: String?, fileExtension: String,
+                      withinAppGroupContainer: Bool) throws -> URL {
+        let target = try destination(name: filename(original: nil, suggested: suggestedName, fileExtension: fileExtension),
+                                     withinAppGroupContainer: withinAppGroupContainer)
+        do { try data.write(to: target, options: .atomic); return target }
+        catch { try? FileManager.default.removeItem(at: target.deletingLastPathComponent()); throw error }
     }
 }

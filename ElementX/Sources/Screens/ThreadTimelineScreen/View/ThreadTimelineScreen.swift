@@ -10,8 +10,10 @@ import Compound
 import SwiftUI
 
 struct ThreadTimelineScreen: View {
+    @State private var showChannelControls = false
     @ObservedObject private var context: ThreadTimelineScreenViewModelType.Context
     @ObservedObject private var timelineContext: TimelineViewModelType.Context
+    @Environment(\.scenePhase) private var scenePhase
     private let composerToolbar: ComposerToolbar
     
     init(context: ThreadTimelineScreenViewModelType.Context,
@@ -29,7 +31,19 @@ struct ThreadTimelineScreen: View {
             .navigationTitle(L10n.commonThread)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbar }
+            .task(id: scenePhase) {
+                guard scenePhase == .active else { return }
+                repeat {
+                    context.send(viewAction: .refreshChannelAccess)
+                    do { try await Task.sleep(for: .seconds(20)) } catch { return }
+                } while !Task.isCancelled
+            }
             .toolbarBackground(.visible, for: .navigationBar) // Fix the toolbar's background.
+            .sheet(isPresented: $showChannelControls) {
+                if let service = context.viewState.channelService {
+                    StalkChannelControlsView(service: service, roomID: context.viewState.roomID, rootID: context.viewState.threadRootID)
+                }
+            }
             .timelineMediaPreview(viewModel: $context.mediaPreviewViewModel)
             .overlay(alignment: .bottomTrailing) {
                 TimelineScrollToBottomButton(isVisible: isAtBottomAndLive) {
@@ -60,6 +74,12 @@ struct ThreadTimelineScreen: View {
     private var toolbar: some ToolbarContent {
         // .principal + .primaryAction works better than .navigation leading + trailing
         // as the latter disables interaction in the action button for rooms with long names
+        ToolbarItem(placement: .primaryAction) {
+            if context.viewState.isChannel {
+                Button { showChannelControls = true } label: { Image(systemName: "bell.badge") }
+                    .accessibilityLabel(StalkChannelStrings.text("notifications"))
+            }
+        }
         ToolbarItem(placement: .principal) {
             RoomHeaderView(roomName: L10n.commonThread,
                            roomSubtitle: context.viewState.roomTitle,

@@ -180,6 +180,10 @@ struct RoomPreviewInfoProxy: BaseRoomInfoProxyProtocol {
         roomPreviewInfo.isDirect ?? false
     }
 
+    var isChannel: Bool {
+        roomPreviewInfo.roomType == .custom(value: "io.stalk.channel")
+    }
+
     var isSpace: Bool {
         roomPreviewInfo.roomType == .space
     }

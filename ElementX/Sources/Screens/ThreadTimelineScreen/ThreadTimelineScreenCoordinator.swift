@@ -57,7 +57,7 @@ final class ThreadTimelineScreenCoordinator: CoordinatorProtocol {
     init(parameters: ThreadTimelineScreenCoordinatorParameters) {
         self.parameters = parameters
         
-        viewModel = ThreadTimelineScreenViewModel(roomProxy: parameters.roomProxy, userSession: parameters.userSession)
+        viewModel = ThreadTimelineScreenViewModel(roomProxy: parameters.roomProxy, userSession: parameters.userSession, threadRootEventID: parameters.timelineController.timelineKind.threadRootEventID)
         
         timelineViewModel = TimelineViewModel(roomProxy: parameters.roomProxy,
                                               focussedEventID: parameters.focussedEventID,
@@ -85,7 +85,10 @@ final class ThreadTimelineScreenCoordinator: CoordinatorProtocol {
                                                      mentionDisplayHelper: ComposerMentionDisplayHelper(timelineContext: timelineViewModel.context),
                                                      appSettings: parameters.appSettings,
                                                      analyticsService: parameters.analytics,
-                                                     composerDraftService: parameters.composerDraftService)
+                                                     composerDraftService: parameters.composerDraftService,
+                                                     stickerService: SharedStickerService(client: parameters.userSession.clientProxy) { sticker in
+                                                         try await parameters.roomProxy.sendSticker(sticker, threadRoot: parameters.timelineController.timelineKind.threadRootEventID)
+                                                     })
     }
     
     func start() {

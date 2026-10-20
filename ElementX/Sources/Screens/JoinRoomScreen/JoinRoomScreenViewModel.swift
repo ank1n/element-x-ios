@@ -359,7 +359,7 @@ class JoinRoomScreenViewModel: JoinRoomScreenViewModelType, JoinRoomScreenViewMo
                 case .private, .invite:
                     state.mode = .inviteRequired
                 case .knock, .knockRestricted:
-                    state.mode = appSettings.knockingEnabled ? .knockable : .joinable
+                    state.mode = appSettings.knockingEnabled || roomPreview.info.isChannel ? .knockable : .joinable
                 case .restricted(let rules):
                     state.mode = clientProxy.canJoinRoom(with: rules) ? .joinable : .restricted
                 default:

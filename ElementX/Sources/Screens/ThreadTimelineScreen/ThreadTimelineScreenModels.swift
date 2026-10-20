@@ -15,6 +15,10 @@ enum ThreadTimelineScreenViewModelAction {
 struct ThreadTimelineScreenViewState: BindableState {
     var roomTitle: String
     var roomAvatar: RoomAvatar
+    var channelService: StalkChannelService?
+    var roomID = ""
+    var threadRootID = ""
+    var isChannel = false
     var canSendMessage = true
     var dmRecipientVerificationState: UserIdentityVerificationState?
     
@@ -26,4 +30,4 @@ struct ThreadTimelineScreenViewStateBindings {
     var mediaPreviewViewModel: TimelineMediaPreviewViewModel?
 }
 
-enum ThreadTimelineScreenViewAction { }
+enum ThreadTimelineScreenViewAction { case refreshChannelAccess }

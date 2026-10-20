@@ -40,6 +40,14 @@ class RoomMembersListScreenViewModel: RoomMembersListScreenViewModelType, RoomMe
                                            bindings: .init(mode: initialMode)),
                    mediaProvider: userSession.mediaProvider)
         
+        if userSession.clientProxy is ClientProxy {
+            let service = StalkChannelService.shared(client: userSession.clientProxy)
+            state.isChannel = service.channelIDs.contains(roomProxy.id)
+            service.$channelIDs.receive(on: DispatchQueue.main).sink { [weak self] ids in
+                guard let self else { return }
+                self.state.isChannel = ids.contains(self.roomProxy.id)
+            }.store(in: &cancellables)
+        }
         setupMembers()
     }
     

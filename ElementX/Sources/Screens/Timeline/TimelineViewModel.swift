@@ -22,6 +22,7 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
         static let toastErrorID = "RoomScreenToastError"
     }
 
+    private var channelService: StalkChannelService?
     private let roomProxy: JoinedRoomProxyProtocol
     private let timelineController: TimelineControllerProtocol
     private let userSession: UserSessionProtocol
@@ -111,7 +112,17 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
                                                        enableKeyShareOnInvite: appSettings.enableKeyShareOnInvite,
                                                        bindings: .init(reactionsCollapsed: [:])),
                    mediaProvider: userSession.mediaProvider)
-        
+        state.callSummaryService = CallTimelineSummaryService(roomID: roomProxy.id, client: userSession.clientProxy, userSession: userSession)
+        if userSession.clientProxy is ClientProxy {
+            let service = StalkChannelService.shared(client: userSession.clientProxy)
+            channelService = service
+            state.channelService = service
+            service.$snapshots.receive(on: DispatchQueue.main).sink { [weak self] _ in
+                guard let self else { return }
+                self.updateRoomInfo(self.roomProxy.infoPublisher.value)
+            }.store(in: &cancellables)
+        }
+
         if focussedEventID != nil {
             // The timeline controller will start loading a detached timeline.
             showFocusLoadingIndicator()
@@ -430,7 +441,14 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
         state.pinnedEventIDs = roomInfo.pinnedEventIDs
         
         if let powerLevels = roomInfo.powerLevels {
-            state.canCurrentUserSendMessage = powerLevels.canOwnUser(sendMessage: .roomMessage)
+            state.channelAccess = channelService?.snapshots[roomProxy.id]
+            if let channelService {
+                let access = channelService.snapshots[roomProxy.id]
+                if let root = timelineController.timelineKind.threadRootEventID {
+                    state.canCurrentUserSendMessage = access?.verified == true && (access?.isChannel == true ? access!.canComment(root: root) : powerLevels.canOwnUser(sendMessage: .roomMessage))
+                } else { state.canCurrentUserSendMessage = access?.verified == true && (access?.isChannel == true ? access!.canPublish : powerLevels.canOwnUser(sendMessage: .roomMessage)) }
+            } else { state.canCurrentUserSendMessage = powerLevels.canOwnUser(sendMessage: .roomMessage) }
+            if channelService != nil, roomInfo.membership != .joined { state.canCurrentUserSendMessage = false }
             state.canCurrentUserRedactOthers = powerLevels.canOwnUserRedactOther()
             state.canCurrentUserRedactSelf = powerLevels.canOwnUserRedactOwn()
             state.canCurrentUserPin = powerLevels.canOwnUserPinOrUnpin()
@@ -753,8 +771,14 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
             fatalError("This message should never be empty")
         }
 
+        if let service = channelService,
+           await !(service.canSend(roomID: roomProxy.id, root: timelineController.timelineKind.threadRootEventID,
+                                   creators: roomProxy.infoPublisher.value.creators)) {
+            userIndicatorController.submitIndicator(.init(title: StalkChannelError.readOnly.localizedDescription))
+            return
+        }
         actionsSubject.send(.composer(action: .clear))
-        
+
         switch mode {
         case .reply(let eventID, _, _):
             await timelineController.sendMessage(message,

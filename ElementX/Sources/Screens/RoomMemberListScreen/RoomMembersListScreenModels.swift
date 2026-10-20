@@ -36,6 +36,7 @@ struct RoomMemberListScreenEntry: Equatable {
 }
 
 struct RoomMembersListScreenViewState: BindableState {
+    var isChannel = false
     private var joinedMembers: [RoomMemberListScreenEntry]
     private var invitedMembers: [RoomMemberListScreenEntry]
     private var bannedMembers: [RoomMemberListScreenEntry]

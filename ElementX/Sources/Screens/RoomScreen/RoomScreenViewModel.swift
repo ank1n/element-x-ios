@@ -81,12 +81,29 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
         updateRoomInfo(roomProxy.infoPublisher.value)
         setupSubscriptions(ongoingCallRoomIDPublisher: ongoingCallRoomIDPublisher)
         setupSearchSubscription()
+        if userSession.clientProxy is ClientProxy {
+            let service = StalkChannelService.shared(client: userSession.clientProxy)
+            state.channelService = service
+            state.canSendMessage = false
+            service.$snapshots.receive(on: DispatchQueue.main).sink { [weak self] snapshots in
+                guard let self, let access = snapshots[self.roomProxy.id] else { return }
+                self.state.isChannel = access.isChannel
+                self.state.canSendMessage = access.verified && (access.isChannel ? access.canPublish : (self.roomProxy.infoPublisher.value.powerLevels?.canOwnUser(sendMessage: .roomMessage) ?? false))
+            }.store(in: &cancellables)
+        }
 
         Task {
             await updateVerificationBadge()
         }
         // STMOB-84 build 141: lazy pin internal users в этой комнате.
         pinDomainTrustMembersLazy()
+    }
+
+    private func refreshChannelAccess() async {
+        guard let service = state.channelService else { return }
+        let access = await service.refresh(roomID: roomProxy.id, creators: roomProxy.infoPublisher.value.creators)
+        state.isChannel = access?.isChannel ?? service.channelIDs.contains(roomProxy.id)
+        state.canSendMessage = access.map { $0.isChannel ? $0.canPublish : (roomProxy.infoPublisher.value.powerLevels?.canOwnUser(sendMessage: .roomMessage) ?? false) } ?? false
     }
 
     override func process(viewAction: RoomScreenViewAction) {
@@ -128,6 +145,8 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
             guard let successorID = roomProxy.infoPublisher.value.successor?.roomId else { return }
             let serverNames = roomProxy.knownServerNames(maxCount: 50) // Limit to the same number used by ClientProxy.resolveRoomAlias(_:)
             actionsSubject.send(.displayRoom(roomID: successorID, via: Array(serverNames)))
+        case .refreshChannelAccess:
+            Task { await refreshChannelAccess() }
         case .displayThreadList:
             actionsSubject.send(.displayThreadList)
         case .toggleSearch:
@@ -469,7 +488,13 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
         }
 
         if let powerLevels = roomInfo.powerLevels {
-            state.canSendMessage = powerLevels.canOwnUser(sendMessage: .roomMessage)
+            if let service = state.channelService {
+                if let access = service.snapshots[roomProxy.id], access.verified {
+                    let nativeLevel = powerLevels.userPowerLevels[roomProxy.ownUserID] ?? powerLevels.values.usersDefault
+                    let creator = roomInfo.creators.contains(roomProxy.ownUserID) && access.level >= 100
+                    state.canSendMessage = roomInfo.membership == .joined && (access.isChannel ? access.canPublish && (nativeLevel >= 50 || creator) : powerLevels.canOwnUser(sendMessage: .roomMessage))
+                } else { state.canSendMessage = false }
+            } else { state.canSendMessage = powerLevels.canOwnUser(sendMessage: .roomMessage) }
             state.canJoinCall = powerLevels.canOwnUserJoinCall()
             state.canAcceptKnocks = powerLevels.canOwnUserInvite()
             state.canDeclineKnocks = powerLevels.canOwnUserKick()

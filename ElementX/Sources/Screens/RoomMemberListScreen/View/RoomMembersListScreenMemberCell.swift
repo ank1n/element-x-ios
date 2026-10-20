@@ -65,7 +65,13 @@ struct RoomMembersListScreenMemberCell: View {
     }
     
     var role: String? {
-        switch listEntry.member.role {
+        if context.viewState.isChannel {
+            switch listEntry.member.powerLevel {
+            case .infinite: return StalkChannelStrings.role(100)
+            case .value(let level): return StalkChannelStrings.role(level)
+            }
+        }
+        return switch listEntry.member.role {
         case .creator, .owner:
             L10n.screenRoomMemberListRoleOwner
         case .administrator:

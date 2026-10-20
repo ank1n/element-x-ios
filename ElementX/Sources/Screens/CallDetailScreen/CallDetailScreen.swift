@@ -9,6 +9,7 @@ import SwiftUI
 
 struct CallDetailScreen: View {
     @ObservedObject var context: CallDetailScreenViewModelType.Context
+    var showsCallBack = true
     @AppStorage("stalk_design_theme") private var designTheme = "cosmos"
 
     private var isCosmos: Bool {
@@ -140,16 +141,18 @@ struct CallDetailScreen: View {
             Spacer()
 
             // Call back button
-            Button {
-                context.send(viewAction: .callBack)
-            } label: {
-                ZStack {
-                    Circle()
-                        .fill(Color.accentColor.opacity(0.12))
-                        .frame(width: 40, height: 40)
-                    Image(systemName: context.viewState.call.callType == .video ? "video.fill" : "phone.fill")
-                        .font(.system(size: 16))
-                        .foregroundColor(.accentColor)
+            if showsCallBack {
+                Button {
+                    context.send(viewAction: .callBack)
+                } label: {
+                    ZStack {
+                        Circle()
+                            .fill(Color.accentColor.opacity(0.12))
+                            .frame(width: 40, height: 40)
+                        Image(systemName: context.viewState.call.callType == .video ? "video.fill" : "phone.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(.accentColor)
+                    }
                 }
             }
         }
