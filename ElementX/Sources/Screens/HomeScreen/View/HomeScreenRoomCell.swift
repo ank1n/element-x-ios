@@ -113,9 +113,7 @@ struct HomeScreenRoomCell: View {
     private var content: some View {
         VStack(alignment: .leading, spacing: 2) {
             header
-            if let meetingSummaryService, let id = room.roomID {
-                StalkMeetingRoomSummaryView(service: meetingSummaryService, roomID: id, mediaProvider: mediaProvider).id(id)
-            } else { footer }
+            footer
         }
         // Hide the normal content for Skeletons and overlay centre aligned placeholders.
         .opacity(redactionReasons.contains(.placeholder) ? 0 : 1)
@@ -155,22 +153,26 @@ struct HomeScreenRoomCell: View {
                     .environment(\.redactionReasons, []) // Always maintain consistent height
                 
                 HStack(alignment: .top, spacing: 4.0) {
-                    switch room.lastMessageState {
-                    case .sending:
-                        CompoundIcon(\.time, size: .small, relativeTo: .compound.bodyMD)
-                            .foregroundStyle(.compound.iconTertiary)
-                            .offset(y: -1)
-                            .accessibilityLabel(L10n.commonSending)
-                    case .failed:
-                        CompoundIcon(\.errorSolid, size: .small, relativeTo: .compound.bodyMD)
-                            .foregroundStyle(.compound.iconCriticalPrimary)
-                            .offset(y: -1)
-                            .accessibilityHidden(true) // The last message contains the error.
-                    case .none:
-                        EmptyView()
-                    }
+                    if let meetingSummaryService, let id = room.roomID {
+                        StalkMeetingRoomSummaryView(service: meetingSummaryService, roomID: id, mediaProvider: mediaProvider).id(id)
+                    } else {
+                        switch room.lastMessageState {
+                        case .sending:
+                            CompoundIcon(\.time, size: .small, relativeTo: .compound.bodyMD)
+                                .foregroundStyle(.compound.iconTertiary)
+                                .offset(y: -1)
+                                .accessibilityLabel(L10n.commonSending)
+                        case .failed:
+                            CompoundIcon(\.errorSolid, size: .small, relativeTo: .compound.bodyMD)
+                                .foregroundStyle(.compound.iconCriticalPrimary)
+                                .offset(y: -1)
+                                .accessibilityHidden(true) // The last message contains the error.
+                        case .none:
+                            EmptyView()
+                        }
                     
-                    lastMessage
+                        lastMessage
+                    }
                 }
             }
             

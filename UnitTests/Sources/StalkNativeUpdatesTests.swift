@@ -1022,6 +1022,20 @@ final class StalkNativeUpdatesTests: XCTestCase {
         XCTAssertTrue(nepal.formattedTimestamp(1_800_000_000_000, locale: Locale(identifier: "en_GB")).contains("13:45"))
     }
 
+    func testRenderedMeetingCellPreservesFavouriteAndUnreadIndicators() async throws {
+        NativeUpdatesProtocol.handler = { request in
+            XCTAssertTrue(request.url!.path.hasSuffix("/messages"))
+            return (403, [:])
+        }
+        let service = StalkMeetingRoomSummaryService(client: client(), session: session())
+        let room = HomeScreenRoom(id: "!meeting", roomID: "!meeting", type: .room,
+                                  badges: .init(isDotShown: true, isMentionShown: true, isMuteShown: false, isCallShown: true, unreadCount: 8),
+                                  name: "Meeting with notifications", isDirect: false, isHighlighted: true, isFavourite: true,
+                                  timestamp: "Now", lastMessage: AttributedString("Previous chat text"), lastMessageState: nil,
+                                  avatar: .room(id: "!meeting", name: "Meeting", avatarURL: nil), canonicalAlias: nil, isTombstoned: false, dmUserIDStored: nil)
+        try await capture(HomeScreenRoomCell(room: room, isSelected: false, mediaProvider: nil, action: { _ in }, presence: nil, meetingSummaryService: service).environment(\.dynamicTypeSize, .large), name: "Meeting favourite unread", height: 220, width: 390)
+    }
+
     func testNumericBooleanIsNotAPowerLevel() {
         XCTAssertNil(StalkChannelService.integer(true))
         XCTAssertNil(StalkChannelService.integer(25.5))
