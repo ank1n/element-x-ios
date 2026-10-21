@@ -28,6 +28,19 @@ final class RoomListFiltersStateTests: XCTestCase {
         AppSettings.resetAllSettings()
     }
     
+    @MainActor func testMeetingSummariesOnlyAppearInDedicatedNonSearchingFilter() {
+        var view = HomeScreenViewState(userID: "@me:example.invalid", bindings: .init(filtersState: state))
+        XCTAssertFalse(view.showsMeetingSessionSummaries)
+        view.bindings.filtersState.activateFilter(.meetings)
+        XCTAssertTrue(view.showsMeetingSessionSummaries)
+        view.bindings.isSearchFieldFocused = true
+        XCTAssertFalse(view.showsMeetingSessionSummaries)
+        view.bindings.isSearchFieldFocused = false
+        XCTAssertTrue(view.showsMeetingSessionSummaries)
+        view.bindings.filtersState.deactivateFilter(.meetings)
+        XCTAssertFalse(view.showsMeetingSessionSummaries)
+    }
+
     func testInitialState() {
         XCTAssertFalse(state.isFiltering)
         XCTAssertEqual(state.activeFilters, [])

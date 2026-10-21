@@ -103,6 +103,11 @@ enum HomeScreenSecurityBannerMode: Equatable {
 }
 
 struct HomeScreenViewState: BindableState {
+    /// Room search ignores the filter, so its rows must keep ordinary message previews.
+    var showsMeetingSessionSummaries: Bool {
+        bindings.filtersState.isFilterActive(.meetings) && !bindings.isSearchFieldFocused
+    }
+
     let userID: String
     var userDisplayName: String?
     var userAvatarURL: URL?
