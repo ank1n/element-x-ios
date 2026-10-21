@@ -54,6 +54,7 @@ enum TimelineViewAction {
     case itemDisappeared(itemID: TimelineItemIdentifier)
     
     case mediaTapped(itemID: TimelineItemIdentifier)
+    case downloadFile(itemID: TimelineItemIdentifier)
     /// STMOB-275: тап по карточке «поделился файлом» — содержимое лежит не в
     /// Matrix-медиа, а в блоб-хранилище Диска, поэтому путь свой.
     case stalkFileShareTapped(itemID: TimelineItemIdentifier)
@@ -173,6 +174,8 @@ struct TimelineViewState: BindableState {
 }
 
 struct TimelineViewStateBindings {
+    var mediaExportFile: TimelineMediaPreviewFileExportPicker.File?
+
     var isScrolledToBottom = true
     
     /// The state of wether reactions listed on the timeline are expanded/collapsed.

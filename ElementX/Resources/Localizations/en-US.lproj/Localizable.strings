@@ -2227,3 +2227,209 @@
 "stalk_venue_rejected" = "Booking declined by the room manager. The meeting has no room; you can choose another one.";
 
 "stalk_venue_pending_hint" = "Waiting for the room manager’s approval. This time is held for you.";
+
+"stalk_update_open" = "Open";
+
+"stalk_update_insights" = "Statistics and audit";
+
+"stalk_update_statistics" = "Statistics";
+
+"stalk_update_audit" = "Audit";
+
+"stalk_update_period" = "Period";
+
+"stalk_update_days" = "days";
+
+"stalk_update_category" = "Category";
+
+"stalk_update_all" = "All actions";
+
+"stalk_update_publications" = "Publications";
+
+"stalk_update_discussion" = "Discussions";
+
+"stalk_update_members" = "Members";
+
+"stalk_update_settings" = "Settings";
+
+"stalk_update_moderation" = "Moderation";
+
+"stalk_update_coverage" = "Collection started";
+
+"stalk_update_processed" = "Processed through";
+
+"stalk_update_subscribers" = "Current subscribers";
+
+"stalk_update_active" = "Active people in period";
+
+"stalk_update_posts" = "Posts";
+
+"stalk_update_comments" = "Comments";
+
+"stalk_update_reactions" = "Reactions";
+
+"stalk_update_joined" = "New subscriptions";
+
+"stalk_update_left" = "Unsubscriptions and removals";
+
+"stalk_update_unclassified" = "Unclassified";
+
+"stalk_update_daily" = "Daily activity";
+
+"stalk_update_before_coverage" = "Collection was not enabled yet";
+
+"stalk_update_no_events" = "No actions for this period";
+
+"stalk_update_load_more" = "Load more";
+
+"stalk_update_load_error" = "Could not load the next page";
+
+"stalk_update_login_required" = "Your session ended. Sign in again.";
+
+"stalk_update_admin_required" = "Available to current channel administrators";
+
+"stalk_update_event_unknown" = "Channel action";
+
+"stalk_update_mode_unknown" = "Access rules updated";
+
+"stalk_update_event_post" = "Post published";
+
+"stalk_update_event_comment" = "Comment added";
+
+"stalk_update_event_reaction" = "Reaction added";
+
+"stalk_update_event_edit" = "Message edited";
+
+"stalk_update_event_delete" = "Message deleted";
+
+"stalk_update_event_join" = "Subscribed";
+
+"stalk_update_event_invite" = "Invited";
+
+"stalk_update_event_request" = "Subscription requested";
+
+"stalk_update_event_leave" = "Unsubscribed";
+
+"stalk_update_event_remove_member" = "Member removed";
+
+"stalk_update_event_ban" = "Member banned";
+
+"stalk_update_event_roles" = "Roles changed";
+
+"stalk_update_event_management" = "Management transferred";
+
+"stalk_update_event_archive" = "Channel archived";
+
+"stalk_update_event_restore" = "Channel restored";
+
+"stalk_update_event_close_discussion" = "Discussion closed";
+
+"stalk_update_event_open_discussion" = "Discussion opened";
+
+"stalk_update_event_block_comments" = "Comments blocked";
+
+"stalk_update_event_allow_comments" = "Comments allowed";
+
+"stalk_update_event_history" = "History access changed";
+
+"stalk_update_event_access" = "Subscription access changed";
+
+"stalk_update_event_create" = "Channel created";
+
+"stalk_update_event_name" = "Name changed";
+
+"stalk_update_event_description" = "Description changed";
+
+"stalk_update_event_avatar" = "Icon changed";
+
+"stalk_update_event_background" = "Background changed";
+
+"stalk_update_event_pins" = "Pins changed";
+
+"stalk_update_event_encryption" = "Encryption enabled";
+
+"stalk_update_event_comments_policy" = "Comment settings changed";
+
+"stalk_update_event_replacement" = "Channel replaced";
+
+"stalk_update_event_unclassified_message" = "Action type unavailable";
+
+"stalk_update_mode_public" = "Open access";
+
+"stalk_update_mode_knock" = "Subscription by request";
+
+"stalk_update_mode_joined" = "Since joining";
+
+"stalk_update_mode_shared" = "Available past history";
+
+"stalk_update_mode_disabled" = "Comments disabled";
+
+"stalk_update_mode_threads" = "Threaded comments";
+
+"stalk_update_create_channel" = "Create channel";
+
+"stalk_update_create" = "Create";
+
+"stalk_update_channel_name" = "Channel name";
+
+"stalk_update_channel_topic" = "Description";
+
+"stalk_update_channel_icon" = "Icon";
+
+"stalk_update_channel_color" = "Color";
+
+"stalk_update_channel_photo" = "Choose image";
+
+"stalk_update_remove_photo" = "Remove image";
+
+"stalk_update_channel_access" = "Subscription";
+
+"stalk_update_channel_open" = "Open channel";
+
+"stalk_update_channel_approval" = "By request";
+
+"stalk_update_channel_local_access" = "Registered users of this server only. Editors publish; subscribers read.";
+
+"stalk_update_channel_photo_error" = "Choose an image up to 5 MB";
+
+"stalk_update_channel_create_uncertain" = "Could not confirm creation. Check the channel catalogue before trying again.";
+
+"stalk_update_recording" = "Recording";
+
+"stalk_update_people_unavailable" = "Attendees unavailable";
+
+"stalk_update_people_not_saved" = "Attendees were not saved";
+
+"stalk_update_history_unavailable" = "Meeting history unavailable";
+
+"stalk_update_start_not_saved" = "Meeting start was not saved";
+
+"stalk_update_loading_meeting" = "Loading meeting…";
+
+"stalk_update_history_partial" = "History is incomplete";
+
+"stalk_update_channel_invalid_input" = "Enter a name up to 255 characters, a description up to 5000 characters, and an image up to 5 MB.";
+
+"stalk_update_channel_create_forbidden" = "The server did not allow channel creation. Check your account permissions.";
+
+"stalk_update_channel_create_failed" = "Could not create the channel. Try again later.";
+
+"stalk_update_color_0" = "Indigo";
+
+"stalk_update_color_1" = "Blue";
+
+"stalk_update_color_2" = "Green";
+
+"stalk_update_color_3" = "Orange";
+
+"stalk_update_color_4" = "Pink";
+
+"stalk_update_icon_megaphone" = "Megaphone";
+
+"stalk_update_icon_newspaper" = "News";
+
+"stalk_update_icon_briefcase" = "Briefcase";
+
+"stalk_update_icon_lightbulb" = "Idea";
+
+"stalk_update_icon_star" = "Star";

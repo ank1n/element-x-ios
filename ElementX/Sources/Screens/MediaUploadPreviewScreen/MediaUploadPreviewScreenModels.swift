@@ -18,6 +18,7 @@ struct MediaUploadPreviewScreenViewState: BindableState {
     let shouldShowCaptionWarning: Bool
     let isRoomEncrypted: Bool
     var shouldDisableInteraction = false
+    var suggestions: [SuggestionItem] = []
     
     var bindings = MediaUploadPreviewScreenBindings()
 }
@@ -38,5 +39,7 @@ enum MediaUploadPreviewAlertType: Hashable {
 
 enum MediaUploadPreviewScreenViewAction {
     case send
+    case captionChanged
+    case selectedSuggestion(SuggestionItem)
     case cancel
 }

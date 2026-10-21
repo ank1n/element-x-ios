@@ -2217,3 +2217,209 @@
 "stalk_venue_rejected" = "Xona mas’uli band qilishni rad etdi. Uchrashuv uchun boshqa xona tanlashingiz mumkin.";
 
 "stalk_venue_pending_hint" = "Xona mas’ulining tasdig‘i kutilmoqda. Bu vaqt siz uchun band qilingan.";
+
+"stalk_update_open" = "Ochish";
+
+"stalk_update_insights" = "Statistika va jurnal";
+
+"stalk_update_statistics" = "Statistika";
+
+"stalk_update_audit" = "Jurnal";
+
+"stalk_update_period" = "Davr";
+
+"stalk_update_days" = "kun";
+
+"stalk_update_category" = "Toifa";
+
+"stalk_update_all" = "Barcha amallar";
+
+"stalk_update_publications" = "Nashrlar";
+
+"stalk_update_discussion" = "Muhokamalar";
+
+"stalk_update_members" = "Ishtirokchilar";
+
+"stalk_update_settings" = "Sozlamalar";
+
+"stalk_update_moderation" = "Moderatsiya";
+
+"stalk_update_coverage" = "Yig‘ish boshlangan";
+
+"stalk_update_processed" = "Qayta ishlangan vaqt";
+
+"stalk_update_subscribers" = "Hozirgi obunachilar";
+
+"stalk_update_active" = "Davrdagi faol ishtirokchilar";
+
+"stalk_update_posts" = "Nashrlar";
+
+"stalk_update_comments" = "Izohlar";
+
+"stalk_update_reactions" = "Reaksiyalar";
+
+"stalk_update_joined" = "Yangi obunalar";
+
+"stalk_update_left" = "Chiqishlar va o‘chirishlar";
+
+"stalk_update_unclassified" = "Tasniflanmagan";
+
+"stalk_update_daily" = "Kunlik faollik";
+
+"stalk_update_before_coverage" = "Yig‘ish hali yoqilmagan";
+
+"stalk_update_no_events" = "Bu davrda amallar yo‘q";
+
+"stalk_update_load_more" = "Yana yuklash";
+
+"stalk_update_load_error" = "Keyingi sahifani yuklab bo‘lmadi";
+
+"stalk_update_login_required" = "Seans tugadi. Qayta kiring.";
+
+"stalk_update_admin_required" = "Faqat amaldagi kanal administratorlari uchun";
+
+"stalk_update_event_unknown" = "Kanaldagi amal";
+
+"stalk_update_mode_unknown" = "Kirish qoidalari yangilandi";
+
+"stalk_update_event_post" = "Nashr e’lon qilindi";
+
+"stalk_update_event_comment" = "Izoh qo‘shildi";
+
+"stalk_update_event_reaction" = "Reaksiya qo‘shildi";
+
+"stalk_update_event_edit" = "Xabar o‘zgartirildi";
+
+"stalk_update_event_delete" = "Xabar o‘chirildi";
+
+"stalk_update_event_join" = "Kanalga obuna bo‘lindi";
+
+"stalk_update_event_invite" = "Taklif yuborildi";
+
+"stalk_update_event_request" = "Obuna so‘rovi";
+
+"stalk_update_event_leave" = "Obuna bekor qilindi";
+
+"stalk_update_event_remove_member" = "Ishtirokchi chiqarildi";
+
+"stalk_update_event_ban" = "Ishtirokchi bloklandi";
+
+"stalk_update_event_roles" = "Rollar o‘zgartirildi";
+
+"stalk_update_event_management" = "Boshqaruv topshirildi";
+
+"stalk_update_event_archive" = "Kanal arxivlandi";
+
+"stalk_update_event_restore" = "Kanal tiklandi";
+
+"stalk_update_event_close_discussion" = "Muhokama yopildi";
+
+"stalk_update_event_open_discussion" = "Muhokama ochildi";
+
+"stalk_update_event_block_comments" = "Izohlar bloklandi";
+
+"stalk_update_event_allow_comments" = "Izohlarga ruxsat berildi";
+
+"stalk_update_event_history" = "Tarixga kirish o‘zgartirildi";
+
+"stalk_update_event_access" = "Obuna tartibi o‘zgartirildi";
+
+"stalk_update_event_create" = "Kanal yaratildi";
+
+"stalk_update_event_name" = "Nom o‘zgartirildi";
+
+"stalk_update_event_description" = "Tavsif o‘zgartirildi";
+
+"stalk_update_event_avatar" = "Belgi o‘zgartirildi";
+
+"stalk_update_event_background" = "Fon o‘zgartirildi";
+
+"stalk_update_event_pins" = "Mahkamlangan xabarlar o‘zgartirildi";
+
+"stalk_update_event_encryption" = "Shifrlash yoqildi";
+
+"stalk_update_event_comments_policy" = "Izoh sozlamalari o‘zgartirildi";
+
+"stalk_update_event_replacement" = "Kanalning yangi versiyasi yaratildi";
+
+"stalk_update_event_unclassified_message" = "Amal turi mavjud emas";
+
+"stalk_update_mode_public" = "Ochiq kirish";
+
+"stalk_update_mode_knock" = "So‘rov orqali obuna";
+
+"stalk_update_mode_joined" = "Obuna bo‘lgandan boshlab";
+
+"stalk_update_mode_shared" = "Avvalgi tarix mavjud";
+
+"stalk_update_mode_disabled" = "Izohlar o‘chirilgan";
+
+"stalk_update_mode_threads" = "Muhokamadagi izohlar";
+
+"stalk_update_create_channel" = "Kanal yaratish";
+
+"stalk_update_create" = "Yaratish";
+
+"stalk_update_channel_name" = "Kanal nomi";
+
+"stalk_update_channel_topic" = "Tavsif";
+
+"stalk_update_channel_icon" = "Belgi";
+
+"stalk_update_channel_color" = "Rang";
+
+"stalk_update_channel_photo" = "Rasm tanlash";
+
+"stalk_update_remove_photo" = "Rasmni olib tashlash";
+
+"stalk_update_channel_access" = "Obuna";
+
+"stalk_update_channel_open" = "Ochiq kanal";
+
+"stalk_update_channel_approval" = "So‘rov orqali";
+
+"stalk_update_channel_local_access" = "Faqat shu serverda ro‘yxatdan o‘tganlar. Muharrirlar nashr qiladi, obunachilar o‘qiydi.";
+
+"stalk_update_channel_photo_error" = "5 MB gacha rasm tanlang";
+
+"stalk_update_channel_create_uncertain" = "Yaratish tasdiqlanmadi. Qayta urinishdan oldin kanallar ro‘yxatini tekshiring.";
+
+"stalk_update_recording" = "Yozuv";
+
+"stalk_update_people_unavailable" = "Ishtirokchilar mavjud emas";
+
+"stalk_update_people_not_saved" = "Ishtirokchilar saqlanmagan";
+
+"stalk_update_history_unavailable" = "Uchrashuv tarixi mavjud emas";
+
+"stalk_update_start_not_saved" = "Uchrashuv boshlanishi saqlanmagan";
+
+"stalk_update_loading_meeting" = "Uchrashuv yuklanmoqda…";
+
+"stalk_update_history_partial" = "Tarix ma’lumotlari to‘liq emas";
+
+"stalk_update_channel_invalid_input" = "Nom 255, tavsif 5000 belgidan, rasm esa 5 MB dan oshmasin.";
+
+"stalk_update_channel_create_forbidden" = "Server kanal yaratishga ruxsat bermadi. Hisob huquqlarini tekshiring.";
+
+"stalk_update_channel_create_failed" = "Kanal yaratilmadi. Keyinroq urinib ko‘ring.";
+
+"stalk_update_color_0" = "Indigo";
+
+"stalk_update_color_1" = "Ko‘k";
+
+"stalk_update_color_2" = "Yashil";
+
+"stalk_update_color_3" = "To‘qsariq";
+
+"stalk_update_color_4" = "Pushti";
+
+"stalk_update_icon_megaphone" = "Karnay";
+
+"stalk_update_icon_newspaper" = "Yangiliklar";
+
+"stalk_update_icon_briefcase" = "Portfel";
+
+"stalk_update_icon_lightbulb" = "G‘oya";
+
+"stalk_update_icon_star" = "Yulduz";

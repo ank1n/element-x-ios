@@ -11,6 +11,7 @@ import SwiftUI
 struct TimelineMediaPreviewFileExportPicker: UIViewControllerRepresentable {
     struct File: Identifiable {
         let url: URL
+        var handle: MediaFileHandleProxy?
         var id: String {
             url.absoluteString
         }

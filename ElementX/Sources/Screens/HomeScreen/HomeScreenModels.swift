@@ -128,6 +128,7 @@ struct HomeScreenViewState: BindableState {
     var isMessageSearchLoading = false
 
     var channelService: StalkChannelService?
+    var meetingSummaryService: StalkMeetingRoomSummaryService?
     var archiveRoomCount = 0
     var archivePreviewText = ""
 

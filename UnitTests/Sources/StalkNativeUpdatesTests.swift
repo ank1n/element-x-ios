@@ -1,5 +1,7 @@
 // Copyright 2026 ООО «Имплика». SPDX-License-Identifier: AGPL-3.0-only
 @testable import ElementX
+import MatrixRustSDK
+import MatrixRustSDKMocks
 import SwiftUI
 import UIKit
 import UserNotifications
@@ -267,13 +269,13 @@ final class StalkNativeUpdatesTests: XCTestCase {
         }
     }
 
-    private func capture<V: View>(_ view: V, name: String, height: CGFloat) async throws {
+    private func capture<V: View>(_ view: V, name: String, height: CGFloat, width: CGFloat? = nil) async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
         let old = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
         let host = UIHostingController(rootView: view.background(Color(uiColor: .systemBackground)).environment(\.scenePhase, .active))
         window.rootViewController = host
-        window.frame = CGRect(x: 0, y: 0, width: name.hasPrefix("Call") ? 320 : 390, height: height)
+        window.frame = CGRect(x: 0, y: 0, width: width ?? (name.hasPrefix("Call") ? 320 : 390), height: height)
         window.makeKeyAndVisible()
         defer { window.isHidden = true; window.rootViewController = nil; old?.makeKey() }
         host.view.frame = window.bounds; host.view.layoutIfNeeded()
@@ -760,6 +762,264 @@ final class StalkNativeUpdatesTests: XCTestCase {
                 try await capture(MeetingDetailScreen(context: model.context).environment(\.dynamicTypeSize, size), name: "Venue \(pending ? "pending" : "rejected") \(size)", height: 844)
             }
         }
+    }
+
+    func testAttachmentCaptionPreservesOnlyExplicitMentionIntentAndEscapesNames() throws {
+        let text = NSMutableAttributedString(string: "Hello ")
+        text.append(NSAttributedString(string: "\u{fffc}", attributes: [.MatrixUserID: "@alice:example.invalid", .MatrixUserDisplayName: "Alice <&> \"A\""]))
+        text.append(NSAttributedString(string: " @bob:example.invalid <script>"))
+        let caption = try XCTUnwrap(MediaUploadCaption(attributed: text, allowRoomMention: false))
+        XCTAssertEqual(caption.mentions.userIDs, ["@alice:example.invalid"])
+        XCTAssertFalse(caption.mentions.atRoom)
+        XCTAssertTrue(caption.text.contains("Alice <&>"))
+        XCTAssertTrue(caption.html?.contains("https://matrix.to/") == true)
+        XCTAssertTrue(caption.html?.contains("Alice &lt;&amp;&gt;") == true)
+        XCTAssertFalse(caption.html?.contains("<script>") == true)
+    }
+
+    func testRoomCaptionMentionRequiresPermissionAndEmptyCaptionIsOmitted() throws {
+        let text = NSAttributedString(string: "\u{fffc}", attributes: [.MatrixAllUsersMention: true])
+        XCTAssertFalse(try XCTUnwrap(MediaUploadCaption(attributed: text, allowRoomMention: false)).mentions.atRoom)
+        XCTAssertTrue(try XCTUnwrap(MediaUploadCaption(attributed: text, allowRoomMention: true)).mentions.atRoom)
+        XCTAssertNil(MediaUploadCaption(attributed: NSAttributedString(string: "  \n"), allowRoomMention: true))
+        XCTAssertTrue(try XCTUnwrap(MediaUploadCaption(attributed: NSAttributedString(string: "@room"), allowRoomMention: true)).mentions.userIDs.isEmpty)
+        XCTAssertFalse(try XCTUnwrap(MediaUploadCaption(attributed: NSAttributedString(string: "@room"), allowRoomMention: true)).mentions.atRoom)
+    }
+
+    func testOrdinaryFileCardRendersWithCaptionAndAccessibleSeparateActions() async throws {
+        let file = FileRoomTimelineView_Previews.makeItem(filename: "Quarterly financial report with a very long original name.docx", fileSize: 200_000, caption: "See the document")
+        let timeline = TimelineViewModel.mock
+        for size in [DynamicTypeSize.large, .xxxLarge] {
+            try await capture(FileRoomTimelineView(timelineItem: file).environmentObject(timeline.context).environment(\.dynamicTypeSize, size).padding(), name: "File card \(size)", height: 650, width: 320)
+        }
+    }
+
+    private var insightCaps: [String: Any] {
+        var value = administrationCaps
+        value["insights"] = ["schemaVersion": 1, "statistics": true, "audit": true, "adminOnly": true]
+        return value
+    }
+
+    private func insightResult(items: [[String: Any]] = [], next: String? = nil) -> [String: Any] {
+        ["schemaVersion": 1, "subscribers": 10, "time_zone": "UTC", "days": 7, "generated_at": 1_800_000_000_000,
+         "coverage": ["since": 1_800_000_000_000, "processed_at": 1_800_000_000_000],
+         "totals": ["posts": 7, "comments": 3, "reactions": 2, "active": 2, "joined": 1, "left": 0, "unclassified": 0],
+         "daily": [["day": "2000-01-01", "posts": 0, "comments": 0, "reactions": 0]], "items": items, "next": next as Any? ?? NSNull()]
+    }
+
+    func testInsightsUseServerUniqueTotalsAndClearImmediatelyOnNativeDemotion() async throws {
+        let caps = insightCaps; let state = events(level: 100); let response = insightResult()
+        var reads = 0
+        NativeUpdatesProtocol.handler = { request in
+            let path = request.url!.path
+            if path.hasSuffix("/insights") {
+                reads += 1
+                let q = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
+                XCTAssertEqual(q?.first { $0.name == "time_zone" }?.value, TimeZone.current.identifier)
+                return (200, response)
+            }
+            if path.contains("/state/m.room.create") { return (200, ["type": "io.stalk.channel"]) }
+            if path.hasSuffix("/state") { return (200, state) }
+            return (200, caps)
+        }
+        let service = StalkChannelService(client: client(), session: session())
+        service.restrictNativeAccess(roomID: "!room", joined: true, level: 100)
+        _ = await service.refresh(roomID: "!room")
+        let model = StalkChannelInsightsModel(service: service, roomID: "!room")
+        await model.load(mode: "statistics", days: 7, category: "")
+        XCTAssertEqual(model.result?.totals?.active, 2)
+        XCTAssertFalse(try XCTUnwrap(model.result).hasCoverage(day: "2000-01-01"))
+        service.restrictNativeAccess(roomID: "!room", joined: true, level: 0)
+        XCTAssertNil(model.result); XCTAssertTrue(model.items.isEmpty)
+        XCTAssertEqual(reads, 1)
+    }
+
+    func testForbiddenInsightsAreClearedAndDoNotRetryOnForegroundLoad() async {
+        let caps = insightCaps; let state = events(level: 100); var reads = 0
+        NativeUpdatesProtocol.handler = { request in
+            let path = request.url!.path
+            if path.hasSuffix("/insights") { reads += 1; return (403, [:]) }
+            if path.contains("/state/m.room.create") { return (200, ["type": "io.stalk.channel"]) }
+            if path.hasSuffix("/state") { return (200, state) }
+            return (200, caps)
+        }
+        let service = StalkChannelService(client: client(), session: session()); _ = await service.refresh(roomID: "!room")
+        let model = StalkChannelInsightsModel(service: service, roomID: "!room")
+        await model.load(mode: "audit", days: 7, category: "")
+        await model.load(mode: "audit", days: 7, category: "")
+        XCTAssertEqual(reads, 1); XCTAssertTrue(model.forbidden); XCTAssertNil(model.result)
+    }
+
+    func testAuditPaginationUsesOpaqueCursorAndDeduplicatesEvents() async {
+        let caps = insightCaps; let state = events(level: 100)
+        let event: [String: Any] = ["event_id": "$event", "position": 1, "timestamp": 1_800_000_000_000, "actor": "@admin:example.invalid", "action": "archive", "group": "settings", "details": [:]]
+        let first = insightResult(items: [event], next: "opaque+/cursor")
+        let second = insightResult(items: [event]); var reads = 0
+        NativeUpdatesProtocol.handler = { request in
+            let path = request.url!.path
+            if path.hasSuffix("/insights") {
+                reads += 1
+                if reads == 2 { XCTAssertEqual(URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "before" }?.value, "opaque+/cursor") }
+                return (200, reads == 1 ? first : second)
+            }
+            if path.contains("/state/m.room.create") { return (200, ["type": "io.stalk.channel"]) }
+            if path.hasSuffix("/state") { return (200, state) }
+            return (200, caps)
+        }
+        let service = StalkChannelService(client: client(), session: session()); _ = await service.refresh(roomID: "!room")
+        let model = StalkChannelInsightsModel(service: service, roomID: "!room")
+        await model.load(mode: "audit", days: 7, category: "settings")
+        await model.load(mode: "audit", days: 7, category: "settings", more: true)
+        XCTAssertEqual(model.items.count, 1); XCTAssertNil(model.result?.next); XCTAssertEqual(reads, 2)
+    }
+
+    func testCreateChannelPolicyIsLocalOnlyAndReadersCannotPublish() async throws {
+        var posts = 0
+        NativeUpdatesProtocol.handler = { request in
+            if request.url!.path.hasSuffix("/versions") { return (200, ["unstable_features": ["io.element.e2ee_forced.private": true]]) }
+            if request.url!.path.hasSuffix("/client") { return (200, ["io.element.e2ee": ["force_disable": true]]) }
+            XCTAssertTrue(request.url!.path.hasSuffix("/createRoom")); posts += 1
+            let body = try! JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any]
+            let create = body["creation_content"] as! [String: Any]
+            XCTAssertEqual(create["type"] as? String, "io.stalk.channel"); XCTAssertEqual(create["m.federate"] as? Bool, false)
+            let powers = body["power_level_content_override"] as! [String: Any]
+            XCTAssertEqual(powers["events_default"] as? Int, 50); XCTAssertEqual(powers["users_default"] as? Int, 0)
+            XCTAssertNil(powers["users"])
+            let state = body["initial_state"] as! [[String: Any]]
+            XCTAssertTrue(state.contains { $0["type"] as? String == "m.room.encryption" })
+            let rule = state.first { $0["type"] as? String == "m.room.join_rules" }?["content"] as? [String: Any]
+            XCTAssertEqual(rule?["join_rule"] as? String, posts == 1 ? "public" : "knock")
+            XCTAssertEqual(body["visibility"] as? String, posts == 1 ? "public" : "private")
+            return (200, ["room_id": "!opaque"])
+        }
+        let service = StalkChannelService(client: client(), session: session())
+        let created = try await service.createChannel(name: " News ", topic: "", approval: false)
+        XCTAssertEqual(created, "!opaque")
+        _ = try await service.createChannel(name: "News", topic: "", approval: true)
+        XCTAssertEqual(posts, 2)
+    }
+
+    func testInvalidChannelDoesNotWriteAndEncryptionPolicyHonoursForcedSetting() async {
+        NativeUpdatesProtocol.handler = { _ in XCTFail("Invalid channel must not make requests"); return (500, [:]) }
+        let service = StalkChannelService(client: client(), session: session())
+        do { _ = try await service.createChannel(name: "  ", topic: "", approval: false); XCTFail() } catch { }
+        XCTAssertTrue(StalkChannelService.channelEncryption(versions: [:], wellKnown: [:]))
+        XCTAssertFalse(StalkChannelService.channelEncryption(versions: [:], wellKnown: ["io.element.e2ee": ["default": false]]))
+    }
+
+    func testMeetingFilterUsesActualLatestCallAndCachesOnlyThisRoom() async throws {
+        let now = Date().timeIntervalSince1970
+        var reads = 0
+        NativeUpdatesProtocol.handler = { request in
+            reads += 1
+            let path = request.url!.path
+            if path.hasSuffix("/messages") { return (200, ["chunk": [["type": "io.stalk.call.initiate", "origin_server_ts": (now - 100) * 1000, "event_id": "$call"]]]) }
+            if path.hasSuffix("/calls") { return (200, ["call_key": "call", "room_id": "!meeting", "status": "ended", "started_at": (now - 100) * 1000, "ended_at": (now - 50) * 1000, "participants": ["@attended:example.invalid"], "duration_s": 50]) }
+            XCTAssertTrue(path.hasSuffix("/list"))
+            XCTAssertEqual(URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "matrixRoomId" }?.value, "!meeting")
+            return (200, ["recordings": [["matrixRoomId": "!other", "startedAt": now * 1000, "egressId": "private"]]])
+        }
+        let service = StalkMeetingRoomSummaryService(client: client(), session: session())
+        let summary = try await service.latest(roomID: "!meeting")
+        XCTAssertEqual(summary?.duration, 50); XCTAssertEqual(summary?.people.map(\.id), ["@attended:example.invalid"])
+        _ = try await service.latest(roomID: "!meeting")
+        XCTAssertEqual(reads, 3)
+    }
+
+    func testUnrecordedNewMeetingDoesNotShowPreviousRecordingAttendees() async throws {
+        let now = Date().timeIntervalSince1970
+        NativeUpdatesProtocol.handler = { request in
+            if request.url!.path.hasSuffix("/messages") { return (200, ["chunk": [["type": "io.stalk.call.initiate", "origin_server_ts": (now - 50) * 1000]]]) }
+            if request.url!.path.hasSuffix("/calls") { return (404, [:]) }
+            XCTAssertTrue(request.url!.path.hasSuffix("/list"))
+            return (200, ["recordings": [["matrixRoomId": "!meeting", "startedAt": (now - 1000) * 1000, "endedAt": (now - 900) * 1000, "egressId": "old"]]])
+        }
+        let service = StalkMeetingRoomSummaryService(client: client(), session: session())
+        let summary = try await service.latest(roomID: "!meeting")
+        XCTAssertTrue(summary?.people.isEmpty == true); XCTAssertNil(summary?.duration); XCTAssertEqual(summary?.recordingOnly, false)
+        XCTAssertEqual(try XCTUnwrap(summary).started.timeIntervalSince1970, now - 50, accuracy: 1)
+    }
+
+    func testRenderedChannelCreationForm() async throws {
+        let service = StalkChannelService(client: client(), session: session())
+        try await capture(StalkChannelCreationView(service: service, created: { _ in }).environment(\.dynamicTypeSize, .xxxLarge), name: "Create channel xxxLarge", height: 844, width: 320)
+    }
+
+    func testSDKUploadCarriesCaptionMentionsInThreadAndHonoursSendRevocation() async throws {
+        let sdk = TimelineSDKMock()
+        let handle = SendAttachmentJoinHandleSDKMock()
+        let text = NSAttributedString(string: "Alice", attributes: [.MatrixUserID: "@alice:example.invalid", .MatrixUserDisplayName: "Alice"])
+        let caption = try XCTUnwrap(MediaUploadCaption(attributed: text, allowRoomMention: false))
+        sdk.sendFileParamsFileInfoClosure = { parameters, _ in
+            XCTAssertEqual(parameters.mentions?.userIds, ["@alice:example.invalid"])
+            XCTAssertEqual(parameters.mentions?.room, false)
+            XCTAssertTrue(parameters.formattedCaption?.body.contains("matrix.to") == true)
+            XCTAssertNil(parameters.inReplyTo, "The SDK timeline focus supplies the thread relation")
+            return handle
+        }
+        let info = FileInfo(mimetype: "application/pdf", size: 100, thumbnailInfo: nil, thumbnailSource: nil)
+        let media = MediaInfo.file(fileURL: URL(fileURLWithPath: "/private/tmp/report.pdf"), fileInfo: info)
+        let proxy = TimelineProxy(timeline: sdk, kind: .thread(rootEventID: "$root"), authorizeSend: { true })
+        let result = await proxy.sendAttachment(media, caption: caption, requestHandle: { _ in })
+        guard case .success = result else { return XCTFail("Rich SDK upload failed") }
+        XCTAssertEqual(sdk.sendFileParamsFileInfoCallsCount, 1)
+        XCTAssertEqual(handle.joinCallsCount, 1)
+        let revoked = TimelineProxy(timeline: sdk, kind: .thread(rootEventID: "$root"), authorizeSend: { false })
+        let denied = await revoked.sendAttachment(media, caption: caption, requestHandle: { _ in XCTFail() })
+        guard case .failure = denied else { return XCTFail("Revoked sender was allowed") }
+        XCTAssertEqual(sdk.sendFileParamsFileInfoCallsCount, 1)
+    }
+
+    func testUnsupportedInsightsCapabilityNeverRequestsPrivateData() async {
+        let caps = administrationCaps; let state = events(level: 100)
+        NativeUpdatesProtocol.handler = { request in
+            XCTAssertFalse(request.url!.path.hasSuffix("/insights"))
+            if request.url!.path.contains("/state/m.room.create") { return (200, ["type": "io.stalk.channel"]) }
+            if request.url!.path.hasSuffix("/state") { return (200, state) }
+            return (200, caps)
+        }
+        let service = StalkChannelService(client: client(), session: session())
+        do { _ = try await service.insights(roomID: "!room", mode: "statistics", days: 7); XCTFail() } catch { }
+    }
+
+    func testMeetingHistoryForbiddenDoesNotFallBackToOtherRoomOrTracks() async {
+        var reads = 0
+        NativeUpdatesProtocol.handler = { request in reads += 1; XCTAssertTrue(request.url!.path.hasSuffix("/messages")); return (403, [:]) }
+        let service = StalkMeetingRoomSummaryService(client: client(), session: session())
+        do { _ = try await service.latest(roomID: "!private"); XCTFail() } catch { }
+        XCTAssertEqual(reads, 1)
+    }
+
+    func testRenderedInsightsAndMeetingListAtNarrowWidth() async throws {
+        let caps = insightCaps; let state = events(level: 100)
+        let event: [String: Any] = ["event_id": "$event", "position": 1, "timestamp": 1_800_000_000_000, "actor": "@admin:example.invalid", "action": "archive", "group": "settings", "details": [:]]
+        let response = insightResult(items: [event])
+        let now = Date().timeIntervalSince1970
+        NativeUpdatesProtocol.handler = { request in
+            let path = request.url!.path
+            if path.hasSuffix("/insights") { return (200, response) }
+            if path.hasSuffix("/messages") { return (200, ["chunk": [["type": "io.stalk.call.initiate", "origin_server_ts": (now - 100) * 1000]]]) }
+            if path.hasSuffix("/calls") { return (200, ["call_key": "call", "room_id": "!meeting", "status": "ended", "started_at": (now - 100) * 1000, "ended_at": (now - 50) * 1000, "participants": ["@attended:example.invalid"], "duration_s": 50]) }
+            if path.hasSuffix("/list") { return (200, ["recordings": []]) }
+            if path.contains("/state/m.room.create") { return (200, ["type": "io.stalk.channel"]) }
+            if path.hasSuffix("/state") { return (200, state) }
+            return (200, caps)
+        }
+        let service = StalkChannelService(client: client(), session: session()); _ = await service.refresh(roomID: "!room")
+        for mode in ["statistics", "audit"] {
+            try await capture(StalkChannelInsightsView(service: service, roomID: "!room", initialMode: mode).environment(\.dynamicTypeSize, .xxxLarge), name: "Channel \(mode) xxxLarge", height: 844, width: 320)
+        }
+        let meeting = StalkMeetingRoomSummaryService(client: client(), session: session())
+        try await capture(StalkMeetingRoomSummaryView(service: meeting, roomID: "!meeting").padding().environment(\.dynamicTypeSize, .xxxLarge), name: "Meeting list xxxLarge", height: 300, width: 320)
+    }
+
+    func testInsightTimestampsFollowDeclaredZoneIncludingFractionalOffset() throws {
+        var json = insightResult()
+        let utc = try JSONDecoder().decode(StalkChannelInsights.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertTrue(utc.formattedTimestamp(1_800_000_000_000, locale: Locale(identifier: "en_GB")).contains("08:00"))
+        json["time_zone"] = "Asia/Kathmandu"
+        let nepal = try JSONDecoder().decode(StalkChannelInsights.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertTrue(nepal.formattedTimestamp(1_800_000_000_000, locale: Locale(identifier: "en_GB")).contains("13:45"))
     }
 
     func testNumericBooleanIsNotAPowerLevel() {

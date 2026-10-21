@@ -45,10 +45,13 @@ struct MediaUploadPreviewScreen: View {
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                composer
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 16)
-                    .background() // Don't use compound so we match the QLPreviewController.
+                VStack(spacing: 0) {
+                    CompletionSuggestionView(mediaProvider: context.mediaProvider, items: context.viewState.suggestions) { context.send(viewAction: .selectedSuggestion($0)) }
+                    composer
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 16)
+                .background() // Don't use compound so we match the QLPreviewController.
             }
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
@@ -59,6 +62,8 @@ struct MediaUploadPreviewScreen: View {
             .preferredColorScheme(colorSchemeOverride)
             .onAppear(perform: focusComposerIfHardwareKeyboardConnected)
             .alert(item: $context.alertInfo)
+            .onChange(of: context.caption) { context.send(viewAction: .captionChanged) }
+            .onChange(of: context.selectedRange) { context.send(viewAction: .captionChanged) }
     }
     
     @ViewBuilder

@@ -83,6 +83,8 @@ protocol TimelineProxyProtocol {
     
     // MARK: - Sending
     
+    func sendAttachment(_ media: MediaInfo, caption: MediaUploadCaption?, requestHandle: @MainActor (SendAttachmentJoinHandleProtocol) -> Void) async -> Result<Void, TimelineProxyError>
+
     func sendAudio(url: URL,
                    audioInfo: AudioInfo,
                    caption: String?,

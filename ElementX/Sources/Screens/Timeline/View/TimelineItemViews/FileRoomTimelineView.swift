@@ -15,13 +15,16 @@ struct FileRoomTimelineView: View {
     
     var body: some View {
         TimelineStyler(timelineItem: timelineItem) {
-            MediaFileRoomTimelineContent(filename: timelineItem.content.filename,
-                                         fileSize: timelineItem.content.fileSize,
-                                         caption: timelineItem.content.caption,
-                                         formattedCaption: timelineItem.content.formattedCaption,
-                                         additionalWhitespaces: timelineItem.additionalWhitespaces(),
-                                         shouldBoost: timelineItem.shouldBoost) {
-                context?.send(viewAction: .mediaTapped(itemID: timelineItem.id))
+            VStack(alignment: .leading, spacing: 8) {
+                StalkFileShareView(fileShare: .init(blobID: "", name: timelineItem.content.filename, size: Int64(timelineItem.content.fileSize ?? 0), mimetype: timelineItem.content.contentType?.preferredMIMEType ?? "", isDiskDocument: false, permission: .read, sharedWith: []),
+                                   showsPermission: false, actionTitle: NSLocalizedString("stalk_update_open", value: "Open", comment: "Open a file"),
+                                   onDownload: { context?.send(viewAction: .downloadFile(itemID: timelineItem.id)) },
+                                   onTap: { context?.send(viewAction: .mediaTapped(itemID: timelineItem.id)) })
+                if let formatted = timelineItem.content.formattedCaption {
+                    FormattedBodyText(attributedString: formatted, additionalWhitespacesCount: timelineItem.additionalWhitespaces(), boostFontSize: timelineItem.shouldBoost)
+                } else if let caption = timelineItem.content.caption {
+                    FormattedBodyText(text: caption, additionalWhitespacesCount: timelineItem.additionalWhitespaces(), boostFontSize: timelineItem.shouldBoost)
+                }
             }
             .accessibilityLabel(L10n.commonFile)
         }

@@ -100,6 +100,8 @@ protocol TimelineControllerProtocol {
                      inReplyToEventID: String?,
                      intentionalMentions: IntentionalMentions) async
     
+    func sendAttachment(_ media: MediaInfo, caption: MediaUploadCaption?, requestHandle: @MainActor (SendAttachmentJoinHandleProtocol) -> Void) async -> Result<Void, TimelineControllerError>
+
     func sendAudio(url: URL,
                    audioInfo: AudioInfo,
                    caption: String?,

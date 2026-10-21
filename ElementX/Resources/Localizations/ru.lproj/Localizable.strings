@@ -2543,3 +2543,209 @@
 "stalk_venue_rejected" = "Бронь отклонена ответственным. Встреча осталась без переговорной — можно выбрать другую.";
 
 "stalk_venue_pending_hint" = "Ждёт подтверждения ответственного за переговорную. Время уже зарезервировано за вами.";
+
+"stalk_update_open" = "Открыть";
+
+"stalk_update_insights" = "Статистика и журнал";
+
+"stalk_update_statistics" = "Статистика";
+
+"stalk_update_audit" = "Журнал";
+
+"stalk_update_period" = "Период";
+
+"stalk_update_days" = "дней";
+
+"stalk_update_category" = "Категория";
+
+"stalk_update_all" = "Все действия";
+
+"stalk_update_publications" = "Публикации";
+
+"stalk_update_discussion" = "Обсуждения";
+
+"stalk_update_members" = "Участники";
+
+"stalk_update_settings" = "Настройки";
+
+"stalk_update_moderation" = "Модерация";
+
+"stalk_update_coverage" = "Сбор данных с";
+
+"stalk_update_processed" = "Обработано по";
+
+"stalk_update_subscribers" = "Подписчики сейчас";
+
+"stalk_update_active" = "Активные участники за период";
+
+"stalk_update_posts" = "Публикации";
+
+"stalk_update_comments" = "Комментарии";
+
+"stalk_update_reactions" = "Реакции";
+
+"stalk_update_joined" = "Новые подписки";
+
+"stalk_update_left" = "Отписки и удаления";
+
+"stalk_update_unclassified" = "Без классификации";
+
+"stalk_update_daily" = "Активность по дням";
+
+"stalk_update_before_coverage" = "Сбор ещё не был включён";
+
+"stalk_update_no_events" = "Нет действий за выбранный период";
+
+"stalk_update_load_more" = "Загрузить ещё";
+
+"stalk_update_load_error" = "Не удалось загрузить следующую страницу";
+
+"stalk_update_login_required" = "Сессия завершена. Войдите заново.";
+
+"stalk_update_admin_required" = "Раздел доступен действующим администраторам канала";
+
+"stalk_update_event_unknown" = "Действие в канале";
+
+"stalk_update_mode_unknown" = "Правила доступа обновлены";
+
+"stalk_update_event_post" = "Опубликован пост";
+
+"stalk_update_event_comment" = "Добавлен комментарий";
+
+"stalk_update_event_reaction" = "Добавлена реакция";
+
+"stalk_update_event_edit" = "Изменено сообщение";
+
+"stalk_update_event_delete" = "Удалено сообщение";
+
+"stalk_update_event_join" = "Подписка на канал";
+
+"stalk_update_event_invite" = "Приглашение";
+
+"stalk_update_event_request" = "Заявка на подписку";
+
+"stalk_update_event_leave" = "Отписка";
+
+"stalk_update_event_remove_member" = "Удалён участник";
+
+"stalk_update_event_ban" = "Участник заблокирован";
+
+"stalk_update_event_roles" = "Изменены роли";
+
+"stalk_update_event_management" = "Передано управление";
+
+"stalk_update_event_archive" = "Канал в архиве";
+
+"stalk_update_event_restore" = "Канал восстановлен";
+
+"stalk_update_event_close_discussion" = "Обсуждение закрыто";
+
+"stalk_update_event_open_discussion" = "Обсуждение открыто";
+
+"stalk_update_event_block_comments" = "Комментарии запрещены";
+
+"stalk_update_event_allow_comments" = "Комментарии разрешены";
+
+"stalk_update_event_history" = "Изменён доступ к истории";
+
+"stalk_update_event_access" = "Изменён способ подписки";
+
+"stalk_update_event_create" = "Канал создан";
+
+"stalk_update_event_name" = "Изменено название";
+
+"stalk_update_event_description" = "Изменено описание";
+
+"stalk_update_event_avatar" = "Изменена иконка";
+
+"stalk_update_event_background" = "Изменён фон";
+
+"stalk_update_event_pins" = "Изменены закрепления";
+
+"stalk_update_event_encryption" = "Включено шифрование";
+
+"stalk_update_event_comments_policy" = "Изменены настройки комментариев";
+
+"stalk_update_event_replacement" = "Создана новая версия канала";
+
+"stalk_update_event_unclassified_message" = "Тип действия недоступен";
+
+"stalk_update_mode_public" = "Открытый доступ";
+
+"stalk_update_mode_knock" = "Подписка по заявке";
+
+"stalk_update_mode_joined" = "С момента подписки";
+
+"stalk_update_mode_shared" = "С доступной прошлой историей";
+
+"stalk_update_mode_disabled" = "Комментарии отключены";
+
+"stalk_update_mode_threads" = "Комментарии в обсуждениях";
+
+"stalk_update_create_channel" = "Создать канал";
+
+"stalk_update_create" = "Создать";
+
+"stalk_update_channel_name" = "Название канала";
+
+"stalk_update_channel_topic" = "Описание";
+
+"stalk_update_channel_icon" = "Значок";
+
+"stalk_update_channel_color" = "Цвет";
+
+"stalk_update_channel_photo" = "Загрузить изображение";
+
+"stalk_update_remove_photo" = "Убрать изображение";
+
+"stalk_update_channel_access" = "Подписка";
+
+"stalk_update_channel_open" = "Открытый канал";
+
+"stalk_update_channel_approval" = "По заявке";
+
+"stalk_update_channel_local_access" = "Только зарегистрированные пользователи этого сервера. Публикуют редакторы, читают подписчики.";
+
+"stalk_update_channel_photo_error" = "Выберите изображение размером до 5 МБ";
+
+"stalk_update_channel_create_uncertain" = "Не удалось подтвердить создание. Проверьте каталог каналов перед повторной попыткой.";
+
+"stalk_update_recording" = "Запись";
+
+"stalk_update_people_unavailable" = "Участники недоступны";
+
+"stalk_update_people_not_saved" = "Участники не сохранены";
+
+"stalk_update_history_unavailable" = "История встречи недоступна";
+
+"stalk_update_start_not_saved" = "Нет данных о начале встречи";
+
+"stalk_update_loading_meeting" = "Загрузка встречи…";
+
+"stalk_update_history_partial" = "Данные истории неполные";
+
+"stalk_update_channel_invalid_input" = "Укажите название до 255 символов, описание до 5000 символов и изображение до 5 МБ.";
+
+"stalk_update_channel_create_forbidden" = "Сервер не разрешил создать канал. Проверьте права учётной записи.";
+
+"stalk_update_channel_create_failed" = "Не удалось создать канал. Попробуйте позже.";
+
+"stalk_update_color_0" = "Фиолетовый";
+
+"stalk_update_color_1" = "Синий";
+
+"stalk_update_color_2" = "Зелёный";
+
+"stalk_update_color_3" = "Оранжевый";
+
+"stalk_update_color_4" = "Розовый";
+
+"stalk_update_icon_megaphone" = "Рупор";
+
+"stalk_update_icon_newspaper" = "Новости";
+
+"stalk_update_icon_briefcase" = "Портфель";
+
+"stalk_update_icon_lightbulb" = "Идея";
+
+"stalk_update_icon_star" = "Звезда";

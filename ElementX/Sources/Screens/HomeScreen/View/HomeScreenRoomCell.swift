@@ -22,6 +22,7 @@ struct HomeScreenRoomCell: View {
     /// STMOB-103 build 120: presence собеседника DM-комнаты для рендера индикатора.
     /// nil для group chats — индикатор не показывается.
     var presence: UserPresence?
+    var meetingSummaryService: StalkMeetingRoomSummaryService?
 
     private var isCosmos: Bool {
         designTheme == "cosmos"
@@ -112,7 +113,9 @@ struct HomeScreenRoomCell: View {
     private var content: some View {
         VStack(alignment: .leading, spacing: 2) {
             header
-            footer
+            if let meetingSummaryService, let id = room.roomID {
+                StalkMeetingRoomSummaryView(service: meetingSummaryService, roomID: id, mediaProvider: mediaProvider).id(id)
+            } else { footer }
         }
         // Hide the normal content for Skeletons and overlay centre aligned placeholders.
         .opacity(redactionReasons.contains(.placeholder) ? 0 : 1)

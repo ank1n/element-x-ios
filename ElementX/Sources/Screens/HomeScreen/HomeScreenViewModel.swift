@@ -74,6 +74,7 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
         if userSession.clientProxy is ClientProxy {
             let service = StalkChannelService.shared(client: userSession.clientProxy)
             state.channelService = service
+            state.meetingSummaryService = StalkMeetingRoomSummaryService(client: userSession.clientProxy)
             service.$channelIDs.combineLatest(service.$archivedIDs).receive(on: DispatchQueue.main)
                 .sink { [weak self] _, _ in self?.updateRooms() }.store(in: &cancellables)
         }

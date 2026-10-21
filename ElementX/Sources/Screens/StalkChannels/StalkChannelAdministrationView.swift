@@ -14,6 +14,9 @@ struct StalkChannelAdministrationSections: View {
     var body: some View {
         Group {
             if access.canAdminister {
+                if access.capabilities?.insights?.available == true {
+                    NavigationLink(StalkUpdateStrings.text("insights")) { StalkChannelInsightsView(service: service, roomID: roomID) }
+                }
                 Section(StalkChannelStrings.text("background")) {
                     Picker(StalkChannelStrings.text("background"), selection: Binding(get: { access.background }, set: { preset in Task { await perform { try await service.setAppearance(roomID: roomID, preset: preset) } } })) {
                         ForEach(["default", "sky", "mint", "sand", "dots", "grid"], id: \.self) { Text(StalkChannelStrings.text("background_" + $0)).tag($0) }

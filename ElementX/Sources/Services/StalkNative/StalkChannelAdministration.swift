@@ -2,6 +2,14 @@
 import Foundation
 
 struct StalkChannelCapabilities: Decodable, Equatable {
+    struct Insights: Decodable, Equatable {
+        var schemaVersion: Int?; var statistics: Bool?; var audit: Bool?; var adminOnly: Bool?
+        var available: Bool {
+            schemaVersion == 1 && statistics == true && audit == true && adminOnly == true
+        }
+    }
+
+    var insights: Insights?
     struct Publications: Decodable, Equatable { var drafts: Bool?; var preview: Bool?; var scheduling: Bool?; var formattedBody: Bool?; var encryptedRooms: Bool? }
     struct Lifecycle: Decodable, Equatable { var schemaVersion: Int?; var archive: Bool?; var management: Bool? }
     struct History: Decodable, Equatable { var modes: [String]? }

@@ -18,9 +18,39 @@ struct StalkFileShareView: View {
     let fileShare: StalkFileShare
     var showsPermission = true
     var isExternalLink = false
+    var actionTitle: String?
+    var onDownload: (() -> Void)?
     let onTap: () -> Void
 
     var body: some View {
+        if let onDownload {
+            VStack(alignment: .leading, spacing: 10) {
+                Button(action: onTap) {
+                    HStack(alignment: .top, spacing: 10) {
+                        FileBadge(fileShare: fileShare)
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(fileShare.name).font(.body.weight(.semibold)).foregroundStyle(Color.stalkFileShareTitle)
+                                .lineLimit(3).truncationMode(.middle).multilineTextAlignment(.leading)
+                            metaRow
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }.buttonStyle(.plain)
+                HStack {
+                    Button(actionTitle ?? NSLocalizedString("stalk_update_open", value: "Open", comment: "Open a file"), action: onTap)
+                        .buttonStyle(.plain).foregroundStyle(.white)
+                        .padding(.vertical, 7).padding(.horizontal, 12)
+                        .background(LinearGradient(colors: [.stalkFileShareButtonStart, .stalkFileShareButtonEnd], startPoint: .leading, endPoint: .trailing), in: RoundedRectangle(cornerRadius: 10))
+                    Spacer()
+                    Button(action: onDownload) { Image(systemName: "arrow.down.to.line").accessibilityLabel(L10n.actionSave) }
+                }.font(.subheadline.weight(.semibold))
+            }
+            .padding(12).padding(.bottom, 10)
+            .background(Color.stalkFileShareBackground, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.stalkFileShareBorder, lineWidth: 1))
+        } else { existingCard }
+    }
+
+    private var existingCard: some View {
         Button(action: onTap) {
             HStack(spacing: 10) {
                 FileBadge(fileShare: fileShare)

@@ -21,6 +21,8 @@ class MediaUploadPreviewScreenViewModel: MediaUploadPreviewScreenViewModelType, 
     
     private var processingTask: Task<Result<[MediaInfo], MediaUploadingPreprocessorError>, Never>
     private var requestHandle: SendAttachmentJoinHandleProtocol?
+    private let roomProxy: JoinedRoomProxyProtocol?
+    private var suggestionService: CompletionSuggestionService?
     private let clientProxy: ClientProxyProtocol
     
     private var actionsSubject: PassthroughSubject<MediaUploadPreviewScreenViewModelAction, Never> = .init()
@@ -36,7 +38,9 @@ class MediaUploadPreviewScreenViewModel: MediaUploadPreviewScreenViewModelType, 
          mediaUploadingPreprocessor: MediaUploadingPreprocessor,
          timelineController: TimelineControllerProtocol,
          clientProxy: ClientProxyProtocol,
-         userIndicatorController: UserIndicatorControllerProtocol) {
+         userIndicatorController: UserIndicatorControllerProtocol,
+         roomProxy: JoinedRoomProxyProtocol? = nil) {
+        self.roomProxy = roomProxy
         self.mediaURLs = mediaURLs
         self.mediaUploadingPreprocessor = mediaUploadingPreprocessor
         self.timelineController = timelineController
@@ -50,14 +54,27 @@ class MediaUploadPreviewScreenViewModel: MediaUploadPreviewScreenViewModelType, 
                                                                        title: title,
                                                                        shouldShowCaptionWarning: shouldShowCaptionWarning,
                                                                        isRoomEncrypted: isRoomEncrypted))
+        if let roomProxy {
+            let service = CompletionSuggestionService(roomProxy: roomProxy, roomListPublisher: Just([RoomSummary]()).eraseToAnyPublisher())
+            suggestionService = service
+            service.suggestionsPublisher.receive(on: DispatchQueue.main).sink { [weak self] items in
+                self?.state.suggestions = items.filter { if case .room = $0.suggestionType { return false }; return true }
+            }.store(in: &cancellables)
+            Task { _ = await roomProxy.members() }
+        }
     }
     
     override func process(viewAction: MediaUploadPreviewScreenViewAction) {
         // Get the current caption before all the processing starts.
-        var caption = state.bindings.caption.nonBlankString
         
         switch viewAction {
+        case .captionChanged:
+            suggestionService?.processTextMessage(state.bindings.caption.string, selectedRange: state.bindings.selectedRange)
+        case .selectedSuggestion(let suggestion):
+            selectSuggestion(suggestion)
         case .send:
+            var caption = MediaUploadCaption(attributed: state.bindings.caption, allowRoomMention: roomProxy?.infoPublisher.value.powerLevels?.canOwnUserTriggerRoomNotification() == true)
+            guard !state.shouldDisableInteraction else { return }
             startLoading()
             
             Task {
@@ -106,37 +123,36 @@ class MediaUploadPreviewScreenViewModel: MediaUploadPreviewScreenViewModelType, 
         }
     }
     
-    private func sendAttachment(mediaInfo: MediaInfo, caption: String?) async -> Result<Void, TimelineControllerError> {
-        let requestHandle: ((SendAttachmentJoinHandleProtocol) -> Void) = { [weak self] handle in
-            self?.requestHandle = handle
+    private func sendAttachment(mediaInfo: MediaInfo, caption: MediaUploadCaption?) async -> Result<Void, TimelineControllerError> {
+        let current = caption.map { value -> MediaUploadCaption in
+            var value = value
+            if roomProxy?.infoPublisher.value.powerLevels?.canOwnUserTriggerRoomNotification() != true {
+                value.mentions = .init(userIDs: value.mentions.userIDs, atRoom: false)
+            }
+            return value
         }
-        
-        switch mediaInfo {
-        case let .image(imageURL, thumbnailURL, imageInfo):
-            return await timelineController.sendImage(url: imageURL,
-                                                      thumbnailURL: thumbnailURL,
-                                                      imageInfo: imageInfo,
-                                                      caption: caption,
-                                                      requestHandle: requestHandle)
-        case let .video(videoURL, thumbnailURL, videoInfo):
-            return await timelineController.sendVideo(url: videoURL,
-                                                      thumbnailURL: thumbnailURL,
-                                                      videoInfo: videoInfo,
-                                                      caption: caption,
-                                                      requestHandle: requestHandle)
-        case let .audio(audioURL, audioInfo):
-            return await timelineController.sendAudio(url: audioURL,
-                                                      audioInfo: audioInfo,
-                                                      caption: caption,
-                                                      requestHandle: requestHandle)
-        case let .file(fileURL, fileInfo):
-            return await timelineController.sendFile(url: fileURL,
-                                                     fileInfo: fileInfo,
-                                                     caption: caption,
-                                                     requestHandle: requestHandle)
-        }
+        return await timelineController.sendAttachment(mediaInfo, caption: current) { [weak self] in self?.requestHandle = $0 }
     }
-    
+
+    private func selectSuggestion(_ suggestion: SuggestionItem) {
+        let text = NSMutableAttributedString(attributedString: state.bindings.caption)
+        guard suggestion.range.location >= 0, NSMaxRange(suggestion.range) <= text.length else { return }
+        let builder = MentionBuilder()
+        switch suggestion.suggestionType {
+        case .user(let user):
+            guard let url = try? URL(string: matrixToUserPermalink(userId: user.id)) else { return }
+            builder.handleUserMention(for: text, in: suggestion.range, url: url, userID: user.id, userDisplayName: user.displayName)
+        case .allUsers:
+            guard roomProxy?.infoPublisher.value.powerLevels?.canOwnUserTriggerRoomNotification() == true else { return }
+            builder.handleAllUsersMention(for: text, in: suggestion.range)
+        case .room: return
+        }
+        state.bindings.caption = text
+        state.bindings.selectedRange = NSRange(location: min(suggestion.range.location + 1, text.length), length: 0)
+        suggestionService?.setSuggestionTrigger(nil)
+        state.suggestions = []
+    }
+
     private static let loadingIndicatorIdentifier = "\(MediaUploadPreviewScreenViewModel.self)-Loading"
     
     private func startLoading() {

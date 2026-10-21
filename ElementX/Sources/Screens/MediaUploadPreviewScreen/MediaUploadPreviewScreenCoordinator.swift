@@ -18,6 +18,7 @@ struct MediaUploadPreviewScreenCoordinatorParameters {
     let timelineController: TimelineControllerProtocol
     let clientProxy: ClientProxyProtocol
     let userIndicatorController: UserIndicatorControllerProtocol
+    var roomProxy: JoinedRoomProxyProtocol?
 }
 
 enum MediaUploadPreviewScreenCoordinatorAction {
@@ -41,7 +42,8 @@ final class MediaUploadPreviewScreenCoordinator: CoordinatorProtocol {
                                                       mediaUploadingPreprocessor: parameters.mediaUploadingPreprocessor,
                                                       timelineController: parameters.timelineController,
                                                       clientProxy: parameters.clientProxy,
-                                                      userIndicatorController: parameters.userIndicatorController)
+                                                      userIndicatorController: parameters.userIndicatorController,
+                                                      roomProxy: parameters.roomProxy)
     }
     
     func start() {

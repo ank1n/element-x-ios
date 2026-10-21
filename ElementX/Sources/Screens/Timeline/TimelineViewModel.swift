@@ -176,6 +176,8 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
             Task { await timelineController.processItemAppearance(id) }
         case .itemDisappeared(let id):
             Task { await timelineController.processItemDisappearance(id) }
+        case .downloadFile(let id):
+            Task { await downloadFile(id) }
         case .mediaTapped(let id):
             Task { await handleMediaTapped(with: id) }
         case .stalkDiskLinkTapped(let url):
@@ -711,6 +713,19 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
         guard let target = url.url else { return }
         actionsSubject.send(.composer(action: .removeFocus))
         appMediator.open(target)
+    }
+
+    private func downloadFile(_ id: TimelineItemIdentifier) async {
+        guard !state.showLoading, let item = timelineController.timelineItems.firstUsingStableID(id) as? FileRoomTimelineItem,
+              let source = item.content.source else { return }
+        state.showLoading = true
+        defer { state.showLoading = false }
+        switch await userSession.mediaProvider.loadFileFromSource(source, filename: item.content.filename) {
+        case .success(let handle):
+            guard let url = handle.url else { displayErrorToast(L10n.commonFailed); return }
+            state.bindings.mediaExportFile = .init(url: url, handle: handle)
+        case .failure: displayErrorToast(L10n.commonFailed)
+        }
     }
 
     private func handleMediaTapped(with itemID: TimelineItemIdentifier) async {

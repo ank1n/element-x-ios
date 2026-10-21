@@ -33,6 +33,7 @@ struct StalkChannelDirectoryView: View {
     @State private var error: String?
     @State private var lookup: StalkChannelDirectoryEntry?
     @State private var showArchives = false
+    @State private var creating = false
 
     var body: some View {
         NavigationStack {
@@ -61,7 +62,13 @@ struct StalkChannelDirectoryView: View {
             }
             .navigationTitle(StalkChannelStrings.title)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.actionClose) { dismiss() } } }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button(L10n.actionClose) { dismiss() } }
+                ToolbarItem(placement: .primaryAction) { Button { creating = true } label: { Image(systemName: "plus").accessibilityLabel(StalkUpdateStrings.text("create_channel")) } }
+            }
+            .sheet(isPresented: $creating) {
+                StalkChannelCreationView(service: service) { id in creating = false; dismiss(); open(id) }
+            }
             .task { await service.discover(); await load(reset: true) }
         }
     }

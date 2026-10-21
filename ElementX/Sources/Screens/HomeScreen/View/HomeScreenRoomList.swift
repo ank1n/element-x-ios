@@ -227,7 +227,7 @@ struct HomeScreenRoomList: View {
                     SwipeActionView(leadingActions: leadingSwipeActions(for: room),
                                     trailingActions: trailingSwipeActions(for: room),
                                     cornerRadius: isCosmos ? 14 : 0) {
-                        HomeScreenRoomCell(room: room, isSelected: isSelected, mediaProvider: context.mediaProvider, action: context.send, presence: room.dmUserID.flatMap { context.viewState.dmPresence[$0] })
+                        HomeScreenRoomCell(room: room, isSelected: isSelected, mediaProvider: context.mediaProvider, action: context.send, presence: room.dmUserID.flatMap { context.viewState.dmPresence[$0] }, meetingSummaryService: context.viewState.bindings.filtersState.isFilterActive(.meetings) ? context.viewState.meetingSummaryService : nil)
                     }
                     .contextMenu {
                         roomContextMenu(for: room)

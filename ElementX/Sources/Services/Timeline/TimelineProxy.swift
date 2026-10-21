@@ -268,6 +268,28 @@ final class TimelineProxy: TimelineProxyProtocol {
     
     // MARK: - Sending
     
+    func sendAttachment(_ media: MediaInfo, caption: MediaUploadCaption?, requestHandle: @MainActor (SendAttachmentJoinHandleProtocol) -> Void) async -> Result<Void, TimelineProxyError> {
+        guard await authorizeSend?() != false else { return .failure(.sdkError(StalkChannelError.readOnly)) }
+        do {
+            let handle: SendAttachmentJoinHandle
+            let formatted = caption?.html.map { FormattedBody(format: .html, body: $0) }
+            let mentions = caption?.mentions.toRustMentions()
+            switch media {
+            case let .file(url, info):
+                handle = try timeline.sendFile(params: .init(source: .file(filename: url.path(percentEncoded: false)), caption: caption?.text, formattedCaption: formatted, mentions: mentions, inReplyTo: nil), fileInfo: info)
+            case let .image(url, thumbnail, info):
+                handle = try timeline.sendImage(params: .init(source: .file(filename: url.path(percentEncoded: false)), caption: caption?.text, formattedCaption: formatted, mentions: mentions, inReplyTo: nil), thumbnailSource: .file(filename: thumbnail.path(percentEncoded: false)), imageInfo: info)
+            case let .video(url, thumbnail, info):
+                handle = try timeline.sendVideo(params: .init(source: .file(filename: url.path(percentEncoded: false)), caption: caption?.text, formattedCaption: formatted, mentions: mentions, inReplyTo: nil), thumbnailSource: .file(filename: thumbnail.path(percentEncoded: false)), videoInfo: info)
+            case let .audio(url, info):
+                handle = try timeline.sendAudio(params: .init(source: .file(filename: url.path(percentEncoded: false)), caption: caption?.text, formattedCaption: formatted, mentions: mentions, inReplyTo: nil), audioInfo: info)
+            }
+            await requestHandle(handle)
+            try await handle.join()
+            return .success(())
+        } catch { return .failure(.sdkError(error)) }
+    }
+
     func sendAudio(url: URL,
                    audioInfo: AudioInfo,
                    caption: String?,

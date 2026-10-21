@@ -49,6 +49,7 @@ struct TimelineView: View {
                         .environmentObject(timelineContext)
                 }
             }
+            .sheet(item: $timelineContext.mediaExportFile) { TimelineMediaPreviewFileExportPicker(file: $0) }
             .sheet(item: $timelineContext.reactionSummaryInfo) {
                 ReactionsSummaryView(reactions: $0.reactions,
                                      members: timelineContext.viewState.members,
