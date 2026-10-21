@@ -2211,3 +2211,9 @@
 "stalk_venue_created_checkin_pending" = "Xona band qilindi. Kelish tasdiqlanmadi; uchrashuv kartasidan tekshiring.";
 
 "stalk_venue_series_no_show" = "Takroriy kelmaslikdan keyin xona seriyaning kelgusi uchrashuvlaridan olib tashlandi. Uchrashuvlar bekor qilinmagan.";
+
+"stalk_venue_policy_error" = "Band qilish xona qoidalariga mos kelmaydi. Uchrashuv vaqti va davomiyligini tekshiring.";
+
+"stalk_venue_rejected" = "Xona mas’uli band qilishni rad etdi. Uchrashuv uchun boshqa xona tanlashingiz mumkin.";
+
+"stalk_venue_pending_hint" = "Xona mas’ulining tasdig‘i kutilmoqda. Bu vaqt siz uchun band qilingan.";

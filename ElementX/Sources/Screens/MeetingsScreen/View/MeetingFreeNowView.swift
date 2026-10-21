@@ -29,7 +29,7 @@ struct MeetingFreeNowView: View {
                 }
                 if let booked {
                     Section {
-                        Label(MeetingVenueStrings.text(booked.room?.checkin?.checked_in_at != nil || booked.room?.checked_in_at != nil ? "checked_in" : "reserved_now"), systemImage: "checkmark.circle")
+                        Label(MeetingVenueStrings.text(booked.room?.status == "pending" ? "pending_hint" : booked.room?.checkin?.checked_in_at != nil || booked.room?.checked_in_at != nil ? "checked_in" : "reserved_now"), systemImage: booked.room?.status == "pending" ? "clock" : "checkmark.circle")
                         Button(MeetingVenueStrings.text("open_meeting")) { open(booked) }
                     }
                 }
@@ -81,10 +81,12 @@ struct MeetingFreeNowView: View {
             let meeting = try await service.createMeeting(request)
             booked = meeting // Persist the successful creation before attempting check-in.
             changed()
-            do {
-                let result = try await service.venueAction(meetingID: meeting.id, action: "checkin")
-                booked?.room = result.room; booked?.roomReleased = result.room_released
-            } catch { self.error = MeetingVenueStrings.text("created_checkin_pending") + " " + error.localizedDescription }
+            if meeting.room?.status == "confirmed" {
+                do {
+                    let result = try await service.venueAction(meetingID: meeting.id, action: "checkin")
+                    booked?.room = result.room; booked?.roomReleased = result.room_released
+                } catch { self.error = MeetingVenueStrings.text("created_checkin_pending") + " " + error.localizedDescription }
+            }
         } catch { self.error = error.localizedDescription }
         booking = false
         // Read-only refresh after either success or a 409/network error; never resend POST.

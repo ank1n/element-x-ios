@@ -2221,3 +2221,9 @@
 "stalk_venue_created_checkin_pending" = "The booking was created. Check-in could not be confirmed; open the meeting to verify it.";
 
 "stalk_venue_series_no_show" = "The room was released from future meetings in this series after repeated no-shows. The meetings are not cancelled.";
+
+"stalk_venue_policy_error" = "The booking does not meet this room’s rules. Review the meeting time and duration.";
+
+"stalk_venue_rejected" = "Booking declined by the room manager. The meeting has no room; you can choose another one.";
+
+"stalk_venue_pending_hint" = "Waiting for the room manager’s approval. This time is held for you.";

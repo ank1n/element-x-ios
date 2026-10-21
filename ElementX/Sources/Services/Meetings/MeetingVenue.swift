@@ -33,7 +33,7 @@ struct MeetingVenue: Codable, Equatable, Identifiable {
     }
 
     func canRelease(now: Date, meeting: Meeting, userID: String) -> Bool {
-        guard ended_early_at == nil, meeting.status != .cancelled else { return false }
+        guard status == "confirmed", ended_early_at == nil, meeting.status != .cancelled else { return false }
         let start = MeetingVenueStrings.date(start) ?? meeting.startTime
         let end = MeetingVenueStrings.date(end) ?? meeting.endTime
         return now < end && (meeting.creatorId == userID || now >= start.addingTimeInterval(60))
@@ -81,9 +81,13 @@ struct MeetingVenueError: LocalizedError {
     let status: Int
     let code: String
     var conflicts: [MeetingVenueRoom.Busy] = []
+    var serverMessage: String?
     var errorDescription: String? {
         let key: String
         switch code {
+        case "room_policy":
+            let message = serverMessage?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return message.flatMap { $0.isEmpty ? nil : $0 } ?? MeetingVenueStrings.text("policy_error")
         case "room_busy": key = "busy_error"
         case "room_forbidden": key = "forbidden"
         case "room_needs_end": key = "needs_end"
@@ -106,6 +110,7 @@ struct MeetingVenueReleased: Codable, Equatable {
     let at: String
     var reasonDescription: String {
         switch reason {
+        case "rejected": MeetingVenueStrings.text("rejected")
         case "no_show": MeetingVenueStrings.text("no_show")
         case "series_no_show": MeetingVenueStrings.text("series_no_show")
         default: MeetingVenueStrings.text("released")

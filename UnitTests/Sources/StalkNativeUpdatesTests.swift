@@ -703,6 +703,65 @@ final class StalkNativeUpdatesTests: XCTestCase {
         }
     }
 
+    func testRoomPolicyMessageSurvivesCreateAndUpdateAndIsNotAGenericSaveError() async throws {
+        let message = "В этой переговорной встреча — не дольше 120 мин."
+        var methods: [String] = []
+        NativeUpdatesProtocol.handler = { request in
+            methods.append(request.httpMethod ?? "")
+            return (400, ["error": "room_policy", "message": message])
+        }
+        let service = MeetingsService(homeserver: "https://venue.example.invalid", accessTokenProvider: { "token" }, session: session())
+        let request = MeetingRequest(title: "Keep local title", startTime: Date(), endTime: Date().addingTimeInterval(10800), roomID: 9)
+        for update in [false, true] {
+            do {
+                if update { _ = try await service.updateMeeting(id: 42, request) }
+                else { _ = try await service.createMeeting(request) }
+                XCTFail("Room rules must reject this request")
+            } catch let error as MeetingVenueError {
+                XCTAssertEqual(error.status, 400)
+                XCTAssertEqual(error.code, "room_policy")
+                XCTAssertEqual(error.localizedDescription, message)
+            }
+        }
+        XCTAssertEqual(methods, ["POST", "PUT"])
+        XCTAssertEqual(MeetingVenueError(status: 400, code: "room_policy", serverMessage: "  ").localizedDescription, MeetingVenueStrings.text("policy_error"))
+    }
+
+    func testPendingRoomHoldsTimeButDoesNotOfferCheckinReleaseOrReminder() throws {
+        let now = Date()
+        var meeting = try venueMeeting(now: now)
+        meeting.room?.status = "pending"
+        let room = try XCTUnwrap(meeting.room)
+        XCTAssertTrue(room.statusDescription.contains(MeetingVenueStrings.text("pending")))
+        XCTAssertFalse(room.canCheckIn(now: now.addingTimeInterval(1200), meeting: meeting))
+        XCTAssertFalse(room.canRelease(now: now, meeting: meeting, userID: meeting.creatorId))
+        XCTAssertTrue(MeetingVenueReminder.requests(meetings: [meeting], userID: meeting.creatorId, now: now).isEmpty)
+    }
+
+    func testRejectedRoomAndSeriesNoShowHaveDistinctReasons() throws {
+        let rejected = try JSONDecoder().decode(MeetingVenueReleased.self, from: Data(#"{"id":9,"label":"Room","reason":"rejected","at":"2026-10-21T10:00:00Z"}"#.utf8))
+        XCTAssertEqual(rejected.reasonDescription, MeetingVenueStrings.text("rejected"))
+        XCTAssertNotEqual(rejected.reasonDescription, MeetingVenueStrings.text("released"))
+        let series = MeetingVenueReleased(id: 9, label: "Room", reason: "series_no_show", at: rejected.at)
+        XCTAssertEqual(series.reasonDescription, MeetingVenueStrings.text("series_no_show"))
+    }
+
+    func testRenderedPendingAndRejectedBooking() async throws {
+        for pending in [true, false] {
+            var meeting = try venueMeeting(now: Date())
+            if pending { meeting.room?.status = "pending" }
+            else { meeting.room = nil; meeting.roomReleased = .init(id: 9, label: "Room", reason: "rejected", at: "2026-10-21T10:00:00Z") }
+            let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+            let object = try JSONSerialization.jsonObject(with: encoder.encode(meeting))
+            NativeUpdatesProtocol.handler = { _ in (200, object) }
+            let service = MeetingsService(homeserver: "https://venue.example.invalid", accessTokenProvider: { "token" }, session: session())
+            let model = MeetingDetailViewModel(meeting: meeting, currentUserId: meeting.creatorId, homeserverURL: "https://venue.example.invalid", service: service)
+            for size in [DynamicTypeSize.large, .xxxLarge] {
+                try await capture(MeetingDetailScreen(context: model.context).environment(\.dynamicTypeSize, size), name: "Venue \(pending ? "pending" : "rejected") \(size)", height: 844)
+            }
+        }
+    }
+
     func testNumericBooleanIsNotAPowerLevel() {
         XCTAssertNil(StalkChannelService.integer(true))
         XCTAssertNil(StalkChannelService.integer(25.5))

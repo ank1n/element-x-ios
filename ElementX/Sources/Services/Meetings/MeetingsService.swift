@@ -717,9 +717,9 @@ class MeetingsService {
             if path == "/api/meet/ensure-room", let error = MeetingLinkError.forHTTPStatus(statusCode) { throw error }
             let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
             let code = json?["error"] as? String ?? json?["errcode"] as? String ?? ""
-            if ["room_busy", "room_forbidden", "room_needs_end", "rooms_disabled", "only_organizer", "no_room", "nothing_to_release", "checkin_closed"].contains(code) || code == "forbidden" && path.contains("/room/") {
+            if ["room_policy", "room_busy", "room_forbidden", "room_needs_end", "rooms_disabled", "only_organizer", "no_room", "nothing_to_release", "checkin_closed"].contains(code) || code == "forbidden" && path.contains("/room/") {
                 let conflicts = (json?["conflicts"]).flatMap { try? JSONSerialization.data(withJSONObject: $0) }.flatMap { try? JSONDecoder().decode([MeetingVenueRoom.Busy].self, from: $0) } ?? []
-                throw MeetingVenueError(status: statusCode, code: code, conflicts: conflicts)
+                throw MeetingVenueError(status: statusCode, code: code, conflicts: conflicts, serverMessage: json?["message"] as? String)
             }
             throw URLError(.badServerResponse)
         }

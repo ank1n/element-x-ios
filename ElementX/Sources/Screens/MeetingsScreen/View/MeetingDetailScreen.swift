@@ -104,7 +104,9 @@ struct MeetingDetailScreen: View {
             VStack(alignment: .leading, spacing: 12) {
                 if let room = meeting.room {
                     MeetingVenuePhoto(source: room.photo_mxc, name: room.displayName, mediaProvider: context.viewState.mediaProvider)
-                    if let checked = room.checkin?.checked_in_at ?? room.checked_in_at {
+                    if room.status == "pending" {
+                        Label(MeetingVenueStrings.text("pending_hint"), systemImage: "clock")
+                    } else if let checked = room.checkin?.checked_in_at ?? room.checked_in_at {
                         Label(MeetingVenueStrings.text(room.checkin?.via == "call" ? "checked_by_call" : "checked_in") + " " + (MeetingVenueStrings.date(checked)?.formatted(date: .omitted, time: .shortened) ?? checked), systemImage: "checkmark.circle")
                     } else if let deadline = room.checkin?.deadline ?? room.checkin_deadline {
                         Text(MeetingVenueStrings.text("checkin_until") + " " + (MeetingVenueStrings.date(deadline)?.formatted(date: .omitted, time: .shortened) ?? deadline))
