@@ -2275,6 +2275,10 @@ final class NativeCallSession: ObservableObject {
         Task {
             for pub in participant.trackPublications.values {
                 if let remotePub = pub as? RemoteTrackPublication, !remotePub.isSubscribed {
+                    if CallCameraReception.isCamera(kind: remotePub.kind, source: remotePub.source) {
+                        liveKitRoomManager.cameraReception.reconcile()
+                        continue
+                    }
                     try? await remotePub.set(subscribed: true)
                     MXLog.info("sTalk NativeCall: Subscribed \(String(describing: remotePub.kind)) from \(participant.identity?.stringValue ?? "?")")
                 }

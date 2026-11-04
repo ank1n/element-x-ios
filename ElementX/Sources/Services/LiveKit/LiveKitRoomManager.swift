@@ -35,6 +35,28 @@ enum CallBackgroundMode: String, CaseIterable {
 /// Provides published state for SwiftUI views to render native video tracks.
 @MainActor
 final class LiveKitRoomManager: ObservableObject {
+    /// STALK-1132: camera subscriptions are local to this receiver and this call.
+    lazy var cameraReception = CallCameraReception { [weak self] in
+        guard let self, self.room.connectionState == .connected else { return [] }
+        return self.room.remoteParticipants.values.flatMap { participant in
+            participant.trackPublications.values.compactMap { publication -> CallIncomingPublication? in
+                guard let publication = publication as? RemoteTrackPublication else { return nil }
+                return .init(id: AnyHashable(ObjectIdentifier(publication)),
+                             isCameraVideo: CallCameraReception.isCamera(kind: publication.kind, source: publication.source)) { [weak publication] enabled, retry in
+                    guard let publication else { return }
+                    // LiveKit caches the preference before sending. After a failed send,
+                    // change it first so the retry cannot be swallowed by that cache.
+                    if retry { try? await publication.set(subscribed: !enabled) }
+                    try await publication.set(subscribed: enabled)
+                }
+            }
+        }
+    }
+
+    func remoteCameraVideoTrack(for participant: RemoteParticipant) -> VideoTrack? {
+        cameraReception.isEnabled ? participant.firstCameraVideoTrack : nil
+    }
+
     // MARK: - Published State
 
     @Published private(set) var connectionState: ConnectionState = .disconnected
@@ -164,6 +186,7 @@ final class LiveKitRoomManager: ObservableObject {
         room = Room()
         room.add(delegate: self)
         registerLifecycleObservers()
+        cameraReception.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
     }
 
     private static let logBridgeInstalled: Bool = {
@@ -560,6 +583,7 @@ final class LiveKitRoomManager: ObservableObject {
         }
         #endif
         await room.disconnect()
+        cameraReception.reset()
         MXLog.info("sTalk LiveKit: Disconnected")
         os_log(.info, log: livekitLog, "Disconnected (user-initiated)")
         updateState()
@@ -1549,6 +1573,7 @@ extension LiveKitRoomManager: RoomDelegate {
             case .connected:
                 self.reconnectAttempt = 0
                 self.updateState()
+                self.cameraReception.reconcile(resetApplied: true)
             case .disconnected:
                 // Unexpected drop: try to reconnect silently a few times before giving up.
                 if oldConnectionState == .connected || oldConnectionState == .reconnecting,
@@ -1602,6 +1627,7 @@ extension LiveKitRoomManager: RoomDelegate {
         let sid = participant.sid?.stringValue ?? "nil"
         Task { @MainActor in
             self.updateState()
+            self.cameraReception.reconcile()
             MXLog.info("sTalk LiveKit: Participant joined: \(identity), sid=\(sid), totalRemote=\(self.remoteParticipants.count)")
             // STMOB-152 build 176: DiagLog для realtime correlation с Molly
             // server-side observation. Видим момент guest JOIN на iOS — после
@@ -1616,9 +1642,21 @@ extension LiveKitRoomManager: RoomDelegate {
         let sid = participant.sid?.stringValue ?? "nil"
         Task { @MainActor in
             self.updateState()
+            self.cameraReception.reconcile()
             MXLog.info("sTalk LiveKit: Participant left: \(identity), sid=\(sid), remainingRemote=\(self.remoteParticipants.count)")
             DiagLog.write("Call", "participant LEAVE identity=\(identity) sid=\(sid) remainingRemote=\(self.remoteParticipants.count)")
         }
+    }
+
+    nonisolated func room(_ room: Room, participant: RemoteParticipant, didPublishTrack publication: RemoteTrackPublication) {
+        Task { @MainActor in
+            self.updateState()
+            self.cameraReception.reconcile(resetApplied: true)
+        }
+    }
+
+    nonisolated func room(_ room: Room, participant: RemoteParticipant, didUnpublishTrack publication: RemoteTrackPublication) {
+        Task { @MainActor in self.updateState(); self.cameraReception.reconcile() }
     }
 
     nonisolated func room(_ room: Room, participant: RemoteParticipant, didSubscribeTrack publication: RemoteTrackPublication) {
@@ -1629,12 +1667,14 @@ extension LiveKitRoomManager: RoomDelegate {
         let identity = participant.identity?.stringValue ?? "?"
         Task { @MainActor in
             self.updateState()
+            self.cameraReception.reconcile()
             MXLog.info("sTalk LiveKit: Subscribed to track: \(pubKind) from \(identity)")
             // STMOB-114: видим в nse-events.log реально ли пришёл screen share track.
             DiagLog.write("Call", "track subscribed kind=\(pubKind) name=\(pubName) source=\(pubSource) isScreenShare=\(isScreenShare) muted=\(publication.isMuted) from=\(identity)")
             // Разбор «не вижу чужое видео» упирался в то, что подписка есть, а
             // дошли ли кадры — неизвестно. Зонд отвечает на это одной строкой.
-            if let videoTrack = publication.track as? VideoTrack {
+            if let videoTrack = publication.track as? VideoTrack,
+               self.cameraReception.isEnabled || !CallCameraReception.isCamera(kind: publication.kind, source: publication.source) {
                 let probe = FirstFrameProbe(label: "\(identity) \(pubSource)") { label, frame in
                     DiagLog.write("Call", "видео от \(label): ПЕРВЫЙ кадр \(frame.dimensions.width)x\(frame.dimensions.height)")
                 } onResolutionChange: { label, oldWidth, oldHeight, newWidth, newHeight in
@@ -1652,6 +1692,7 @@ extension LiveKitRoomManager: RoomDelegate {
         let identity = participant.identity?.stringValue ?? "?"
         Task { @MainActor in
             self.updateState()
+            self.cameraReception.reconcile(resetApplied: self.cameraReception.isEnabled)
             DiagLog.write("Call", "track unsubscribed name=\(pubName) isScreenShare=\(isScreenShare) from=\(identity)")
         }
     }
