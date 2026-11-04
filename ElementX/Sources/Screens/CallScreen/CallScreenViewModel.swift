@@ -1809,6 +1809,7 @@ final class RingbackTonePlayer {
     }
 
     private func startEngine() {
+        guard !SimulatorQASettings.isSilent else { return }
         let engine = AVAudioEngine()
         let sampleRate = Self.toneSampleRate
         guard let toneFormat = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1) else { return }

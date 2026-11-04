@@ -15,6 +15,27 @@ import os.log
 /// File: <AppGroup>/Library/Caches/nse-events.log, ring buffer ~500 KB.
 /// User шарит через Settings → Share NSE diagnostic log.
 /// Размещён в InfoPlistReader.swift потому что этот файл уже включён во все targets.
+enum SimulatorQASettings {
+    static var isSilent: Bool {
+        #if targetEnvironment(simulator)
+        let environment = ProcessInfo.processInfo.environment
+        return environment["STALK_QA_SILENT"] == "1" || environment["STALK_QA_SYNTHETIC_MEDIA"] == "1" ||
+            UserDefaults(suiteName: InfoPlistReader.main.appGroupIdentifier)?.bool(forKey: "stalk.qa.silentSimulator") == true
+        #else
+        return false
+        #endif
+    }
+
+    static func configure() {
+        #if targetEnvironment(simulator)
+        if isSilent {
+            // NSE has its own process environment; persist only in this simulator's app group.
+            UserDefaults(suiteName: InfoPlistReader.main.appGroupIdentifier)?.set(true, forKey: "stalk.qa.silentSimulator")
+        }
+        #endif
+    }
+}
+
 enum DiagLog {
     private static let queue = DispatchQueue(label: "ru.implica.stalk.diag", qos: .utility)
     private static let maxBytes = 500_000

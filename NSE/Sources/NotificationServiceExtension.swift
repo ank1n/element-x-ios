@@ -84,6 +84,16 @@ class NotificationServiceExtension: UNNotificationServiceExtension {
     }
     
     override func didReceive(_ request: UNNotificationRequest, withContentHandler contentHandler: @escaping (UNNotificationContent) -> Void) {
+        if SimulatorQASettings.isSilent {
+            guard let quiet = request.content.mutableCopy() as? UNMutableNotificationContent else {
+                contentHandler(NotificationHandler.makePassiveContent())
+                return
+            }
+            quiet.sound = nil
+            quiet.interruptionLevel = .passive
+            contentHandler(quiet)
+            return
+        }
         let requestID = request.identifier
         registerPending(requestID,
                         contentHandler: contentHandler,

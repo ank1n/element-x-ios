@@ -553,6 +553,11 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     }
     
     func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping () -> Void) {
+        if SimulatorQASettings.isSilent {
+            DiagLog.write("SimulatorQA", "incoming CallKit notification suppressed; manual QA join only")
+            completion()
+            return
+        }
         // iOS REQUIRES reportNewIncomingCall for every VoIP push, otherwise the app is killed.
         // If payload is missing required fields, report a fake call and immediately cancel it.
         os_log(.info, log: pushLog, "VoIP push received! payload keys: %{public}@", "\(payload.dictionaryPayload.keys)")
@@ -935,6 +940,7 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     /// в Недавние» у отдельного звонка нет, он задаётся только на уровне
     /// провайдера — отсюда второй, «тихий».
     private func reportAndCancelFakeCall(completion: @escaping () -> Void) {
+        if SimulatorQASettings.isSilent { completion(); return }
         let fakeCallID = UUID()
         let update = CXCallUpdate()
         update.hasVideo = false
