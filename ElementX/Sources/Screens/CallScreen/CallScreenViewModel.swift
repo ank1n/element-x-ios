@@ -583,6 +583,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             state.layoutOverride = mode
         case .unpinParticipant:
             state.pinnedParticipantSID = nil
+        case .setReceiveCameraVideo(let enabled):
+            liveKitRoomManager.cameraReception.setEnabled(enabled)
         case .toggleHideOwnVideo:
             guard state.allowsLayoutChoice else { return }
             state.videoVisibility.hideOwnVideo.toggle()
