@@ -1299,11 +1299,42 @@ final class LiveKitRoomManager: ObservableObject {
     private var simulatorQAAudioWanted = false
     private var simulatorQAAudioTimer: Timer?
     private var simulatorQASample: Int64 = 0
+    private var simulatorQASelfTest = false
+    private let simulatorQASource = SimulatorQAToneSource()
+
+    static func runSimulatorAudioSelfTest() async {
+        guard simulatorSyntheticMediaEnabled,
+              ProcessInfo.processInfo.environment["STALK_QA_AUDIO_SELF_TEST"] == "1" else { return }
+        let manager = LiveKitRoomManager()
+        let meter = SimulatorQAAudioMeter()
+        let track = LocalAudioTrack.createTrack(options: .noProcessing)
+        track.add(audioRenderer: meter)
+        defer {
+            manager.stopSimulatorQAAudio()
+            try? AudioManager.shared.stopLocalRecording()
+            track.remove(audioRenderer: meter)
+        }
+        do {
+            try manager.prepareSimulatorQAAudio()
+            try AudioManager.shared.startLocalRecording()
+            manager.simulatorQASelfTest = true
+            manager.simulatorQAAudioWanted = true
+            manager.startSimulatorQAAudio()
+            try await Task.sleep(for: .seconds(8))
+            let measured = meter.snapshot()
+            let generated = manager.simulatorQASource.snapshot()
+            DiagLog.write("SimulatorQA", "self-test engineFlag=\(AudioManager.shared.isEngineRunning) sourceSamples=\(generated.0) sourceEnergy=\(generated.1) trackRendererSamples=\(measured.0) trackRendererEnergy=\(measured.1)")
+        } catch {
+            DiagLog.write("SimulatorQA", "self-test failed: \(error.localizedDescription)")
+        }
+    }
 
     private func prepareSimulatorQAAudio() throws {
         guard Self.simulatorSyntheticMediaEnabled else { return }
         // No fallback to a device: failure aborts connection/publication.
+        AudioManager.shared.set(engineObservers: [simulatorQASource])
         try AudioManager.shared.setManualRenderingMode(true)
+        try AudioManager.shared.setEngineAvailability(.default)
         guard AudioManager.shared.isManualRenderingMode else {
             throw NSError(domain: "sTalk.SimulatorQA", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "No-device audio mode unavailable"])
@@ -1314,27 +1345,12 @@ final class LiveKitRoomManager: ObservableObject {
     private func startSimulatorQAAudio() {
         guard Self.simulatorSyntheticMediaEnabled, simulatorQAAudioWanted,
               simulatorQAAudioTimer == nil else { return }
-        let timer = Timer(timeInterval: 0.02, repeats: true) { [weak self] _ in
-            guard let self, self.simulatorQAAudioWanted,
-                  self.room.connectionState == .connected,
-                  self.room.localParticipant.audioTracks.contains(where: { $0.source == .microphone }),
-                  AudioManager.shared.isManualRenderingMode,
-                  AudioManager.shared.isEngineRunning,
-                  let format = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 1),
-                  let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 960),
-                  let samples = buffer.floatChannelData?[0] else { return }
-            buffer.frameLength = 960
-            for index in 0..<960 {
-                let position = Int(self.simulatorQASample % 144000)
-                let ramp = min(1.0, min(Double(position) / 240, Double(96000 - position) / 240))
-                samples[index] = position < 96000
-                    ? Float(sin(2 * Double.pi * 440 * Double(self.simulatorQASample) / 48000) * 0.15 * max(0, ramp)) : 0
-                self.simulatorQASample += 1
-            }
-            AudioManager.shared.mixer.capture(appAudio: buffer)
-            if self.simulatorQASample % 240000 == 0 {
-                DiagLog.write("SimulatorQA", "audio buffers submitted samples=\(self.simulatorQASample); receiver verification required")
-            }
+        simulatorQASource.setEnabled(true)
+        let timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            let measured = self.simulatorQASource.snapshot()
+            self.simulatorQASample = Int64(measured.0)
+            DiagLog.write("SimulatorQA", "source rendered=\(measured.0) energy=\(measured.1) manual=\(AudioManager.shared.isManualRenderingMode) engine=\(AudioManager.shared.isEngineRunning)")
         }
         simulatorQAAudioTimer = timer
         RunLoop.main.add(timer, forMode: .common)
@@ -1342,8 +1358,10 @@ final class LiveKitRoomManager: ObservableObject {
     }
 
     private func stopSimulatorQAAudio() {
+        simulatorQASource.setEnabled(false)
         simulatorQAAudioTimer?.invalidate()
         simulatorQAAudioTimer = nil
+        simulatorQASample = Int64(simulatorQASource.snapshot().0)
         DiagLog.write("SimulatorQA", "tone stopped samples=\(simulatorQASample)")
     }
 
@@ -1411,7 +1429,14 @@ final class LiveKitRoomManager: ObservableObject {
         if Self.simulatorSyntheticMediaEnabled {
             try prepareSimulatorQAAudio()
             let track = LocalAudioTrack.createTrack(name: "qa-synthetic-audio", options: .noProcessing)
-            _ = try await room.localParticipant.publish(audioTrack: track)
+            do {
+                _ = try await room.localParticipant.publish(audioTrack: track)
+                try AudioManager.shared.startLocalRecording()
+                DiagLog.write("SimulatorQA", "explicit no-device recording start: engine=\(AudioManager.shared.isEngineRunning)")
+            } catch {
+                DiagLog.write("SimulatorQA", "audio publication failed: \(error.localizedDescription)")
+                throw error
+            }
             return
         }
         let audioTrack = LocalAudioTrack.createTrack(name: "microphone")
@@ -2924,3 +2949,98 @@ final class StalkBackgroundBlurProcessor: NSObject, LiveKit.VideoProcessor {
         }
     }
 }
+
+#if targetEnvironment(simulator)
+/// Scalar-only QA meter. Never records or retains audio buffers.
+private final class SimulatorQAAudioMeter: AudioRenderer, @unchecked Sendable {
+    private let lock = NSLock()
+    private var samples: UInt64 = 0
+    private var energy: Double = 0
+    func render(pcmBuffer: AVAudioPCMBuffer) {
+        var sum = 0.0
+        let count = Int(pcmBuffer.frameLength)
+        if let channel = pcmBuffer.floatChannelData?[0] {
+            for index in 0..<count { sum += Double(channel[index] * channel[index]) }
+        } else if let channel = pcmBuffer.int16ChannelData?[0] {
+            for index in 0..<count { let value = Double(channel[index]) / 32768; sum += value * value }
+        }
+        lock.lock()
+        samples += UInt64(count)
+        energy += sum
+        lock.unlock()
+    }
+    func snapshot() -> (UInt64, Double) {
+        lock.lock(); defer { lock.unlock() }
+        return (samples, energy)
+    }
+}
+#endif
+
+#if targetEnvironment(simulator)
+/// AVAudioSourceNode feeds WebRTC's input directly; no hardware input node is connected.
+private final class SimulatorQAToneSource: AudioEngineObserver, @unchecked Sendable {
+    var next: (any AudioEngineObserver)?
+    private final class State: @unchecked Sendable {
+        let lock = NSLock()
+        var enabled = false
+        var samples: UInt64 = 0
+        var energy: Double = 0
+    }
+    private let state = State()
+    private let format = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 1)!
+    private lazy var node: AVAudioSourceNode = {
+        let state = self.state
+        return AVAudioSourceNode(format: format) { _, _, count, list in
+            state.lock.lock()
+            let enabled = state.enabled
+            var sample = state.samples
+            state.lock.unlock()
+            var energy = 0.0
+            let buffers = UnsafeMutableAudioBufferListPointer(list)
+            for index in 0..<Int(count) {
+                let position = Int(sample % 144000)
+                let ramp = min(1.0, min(Double(position) / 240, Double(96000 - position) / 240))
+                let value: Float = enabled && position < 96000
+                    ? Float(sin(2 * Double.pi * 440 * Double(sample) / 48000) * 0.15 * max(0, ramp)) : 0
+                for buffer in buffers {
+                    if let output = buffer.mData?.assumingMemoryBound(to: Float.self) { output[index] = value }
+                }
+                if enabled { sample += 1; energy += Double(value * value) }
+            }
+            state.lock.lock()
+            state.samples = sample
+            state.energy += energy
+            state.lock.unlock()
+            return noErr
+        }
+    }()
+    func setEnabled(_ value: Bool) { state.lock.lock(); state.enabled = value; state.lock.unlock() }
+    func snapshot() -> (UInt64, Double) {
+        state.lock.lock(); defer { state.lock.unlock() }
+        return (state.samples, state.energy)
+    }
+    func engineDidCreate(_ engine: AVAudioEngine) -> Int {
+        DiagLog.write("SimulatorQA", "source engine created")
+        engine.attach(node)
+        return 0
+    }
+    func engineWillConnectInput(_ engine: AVAudioEngine, src: AVAudioNode?, dst: AVAudioNode,
+                                format: AVAudioFormat, context: [AnyHashable: Any]) -> Int {
+        guard src == nil else {
+            DiagLog.write("SimulatorQA", "refused hardware source in no-device test")
+            return -1
+        }
+        engine.connect(node, to: dst, format: self.format)
+        DiagLog.write("SimulatorQA", "source connected directly to input mixer")
+        return 0
+    }
+    func engineWillStart(_ engine: AVAudioEngine, isPlayoutEnabled: Bool, isRecordingEnabled: Bool) -> Int {
+        DiagLog.write("SimulatorQA", "source engine starting manual=\(engine.isInManualRenderingMode) recording=\(isRecordingEnabled)")
+        return 0
+    }
+    func engineWillRelease(_ engine: AVAudioEngine) -> Int {
+        engine.detach(node)
+        return 0
+    }
+}
+#endif

@@ -253,6 +253,11 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
             MXLog.error("Received a start request when already started")
             return
         }
+        #if targetEnvironment(simulator)
+        if ProcessInfo.processInfo.environment["STALK_QA_AUDIO_SELF_TEST"] == "1" {
+            Task { await LiveKitRoomManager.runSimulatorAudioSelfTest() }
+        }
+        #endif
         
         guard userSessionStore.hasSessions else {
             stateMachine.processEvent(.startWithAuthentication)
