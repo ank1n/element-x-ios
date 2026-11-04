@@ -503,6 +503,9 @@ final class LiveKitRoomManager: ObservableObject {
     ///   - token: The extracted access_token JWT
     ///   - speakerByDefault: If true, start with speaker; if false, earpiece (1:1 calls)
     func connect(wsURL: String, token: String, speakerByDefault: Bool = false) async throws {
+        #if targetEnvironment(simulator)
+        try prepareSimulatorQAAudio()
+        #endif
         let baseURL = extractBaseURL(from: wsURL)
         MXLog.info("sTalk LiveKit: Connecting to \(baseURL)")
 
@@ -531,6 +534,9 @@ final class LiveKitRoomManager: ObservableObject {
 
     /// Connect with E2EE enabled (per-participant keys, manual subscribe)
     func connectWithE2EE(wsURL: String, token: String, keyProvider: BaseKeyProvider, speakerByDefault: Bool = false) async throws {
+        #if targetEnvironment(simulator)
+        try prepareSimulatorQAAudio()
+        #endif
         let baseURL = extractBaseURL(from: wsURL)
         MXLog.info("sTalk LiveKit: Connecting with E2EE to \(baseURL)")
 
@@ -566,6 +572,13 @@ final class LiveKitRoomManager: ObservableObject {
     }
 
     func disconnect() async {
+        #if targetEnvironment(simulator)
+        simulatorQAAudioWanted = false
+        stopSimulatorQAAudio()
+        simulatorVideoTimer?.invalidate()
+        simulatorVideoTimer = nil
+        simulatorBufferCapturer = nil
+        #endif
         locallyMutedIdentities = []; previousRemoteVolumes = [:]; orderedHandSIDs = []; raisedHandsSIDs = []
         reconnectURL = nil
         reconnectToken = nil
@@ -773,6 +786,10 @@ final class LiveKitRoomManager: ObservableObject {
 
     func setMicrophone(enabled: Bool) async throws {
         #if targetEnvironment(simulator)
+        if Self.simulatorSyntheticMediaEnabled {
+            simulatorQAAudioWanted = enabled
+            if !enabled { stopSimulatorQAAudio() }
+        }
         // На симуляторе track.mute()/unmute() кидает Audio Engine Error -4010
         // (WebRTC audio engine на симе не поддерживает re-activation).
         // Вместо mute делаем полный unpublish, при enable — fresh publish.
@@ -781,6 +798,7 @@ final class LiveKitRoomManager: ObservableObject {
             if existing == nil {
                 try await publishSimulatorAudioTrack()
             }
+            if Self.simulatorSyntheticMediaEnabled { startSimulatorQAAudio() }
         } else if let publication = existing as? LocalTrackPublication {
             try await room.localParticipant.unpublish(publication: publication)
         }
@@ -1277,6 +1295,58 @@ final class LiveKitRoomManager: ObservableObject {
     // MARK: - Simulator Fake Tracks
 
     #if targetEnvironment(simulator)
+    static let simulatorSyntheticMediaEnabled = ProcessInfo.processInfo.environment["STALK_QA_SYNTHETIC_MEDIA"] == "1"
+    private var simulatorQAAudioWanted = false
+    private var simulatorQAAudioTimer: Timer?
+    private var simulatorQASample: Int64 = 0
+
+    private func prepareSimulatorQAAudio() throws {
+        guard Self.simulatorSyntheticMediaEnabled else { return }
+        // No fallback to a device: failure aborts connection/publication.
+        try AudioManager.shared.setManualRenderingMode(true)
+        guard AudioManager.shared.isManualRenderingMode else {
+            throw NSError(domain: "sTalk.SimulatorQA", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "No-device audio mode unavailable"])
+        }
+        DiagLog.write("SimulatorQA", "no-device audio enabled; Mac mic excluded")
+    }
+
+    private func startSimulatorQAAudio() {
+        guard Self.simulatorSyntheticMediaEnabled, simulatorQAAudioWanted,
+              simulatorQAAudioTimer == nil else { return }
+        let timer = Timer(timeInterval: 0.02, repeats: true) { [weak self] _ in
+            guard let self, self.simulatorQAAudioWanted,
+                  self.room.connectionState == .connected,
+                  self.room.localParticipant.audioTracks.contains(where: { $0.source == .microphone }),
+                  AudioManager.shared.isManualRenderingMode,
+                  AudioManager.shared.isEngineRunning,
+                  let format = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 1),
+                  let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 960),
+                  let samples = buffer.floatChannelData?[0] else { return }
+            buffer.frameLength = 960
+            for index in 0..<960 {
+                let position = Int(self.simulatorQASample % 144000)
+                let ramp = min(1.0, min(Double(position) / 240, Double(96000 - position) / 240))
+                samples[index] = position < 96000
+                    ? Float(sin(2 * Double.pi * 440 * Double(self.simulatorQASample) / 48000) * 0.15 * max(0, ramp)) : 0
+                self.simulatorQASample += 1
+            }
+            AudioManager.shared.mixer.capture(appAudio: buffer)
+            if self.simulatorQASample % 240000 == 0 {
+                DiagLog.write("SimulatorQA", "audio buffers submitted samples=\(self.simulatorQASample); receiver verification required")
+            }
+        }
+        simulatorQAAudioTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+        DiagLog.write("SimulatorQA", "tone started: 440Hz 48kHz mono, 2s on / 1s silence")
+    }
+
+    private func stopSimulatorQAAudio() {
+        simulatorQAAudioTimer?.invalidate()
+        simulatorQAAudioTimer = nil
+        DiagLog.write("SimulatorQA", "tone stopped samples=\(simulatorQASample)")
+    }
+
     private var simulatorVideoTimer: Timer?
     private var simulatorBufferCapturer: BufferCapturer?
 
@@ -1338,6 +1408,12 @@ final class LiveKitRoomManager: ObservableObject {
 
     /// Publish a real microphone audio track on simulator (Mac mic via WebRTC)
     private func publishSimulatorAudioTrack() async throws {
+        if Self.simulatorSyntheticMediaEnabled {
+            try prepareSimulatorQAAudio()
+            let track = LocalAudioTrack.createTrack(name: "qa-synthetic-audio", options: .noProcessing)
+            _ = try await room.localParticipant.publish(audioTrack: track)
+            return
+        }
         let audioTrack = LocalAudioTrack.createTrack(name: "microphone")
         _ = try await room.localParticipant.publish(audioTrack: audioTrack)
         MXLog.info("sTalk LiveKit: Published simulator audio track (Mac microphone)")
@@ -1370,6 +1446,9 @@ final class LiveKitRoomManager: ObservableObject {
     /// - Parameter speakerByDefault: If true, route audio to speaker initially (for group calls).
     ///   If false, route to earpiece (for 1:1 calls, like Telegram).
     func configureAudioSession(speakerByDefault: Bool = false) {
+        #if targetEnvironment(simulator)
+        if Self.simulatorSyntheticMediaEnabled { return }
+        #endif
         speakerRoutePreferred = speakerByDefault
         #if !targetEnvironment(simulator)
         if Self.kCallKitFullLifecycle {
@@ -1571,10 +1650,16 @@ extension LiveKitRoomManager: RoomDelegate {
 
             switch connectionState {
             case .connected:
+                #if targetEnvironment(simulator)
+                self.startSimulatorQAAudio()
+                #endif
                 self.reconnectAttempt = 0
                 self.updateState()
                 self.cameraReception.reconcile(resetApplied: true)
             case .disconnected:
+                #if targetEnvironment(simulator)
+                self.stopSimulatorQAAudio()
+                #endif
                 // Unexpected drop: try to reconnect silently a few times before giving up.
                 if oldConnectionState == .connected || oldConnectionState == .reconnecting,
                    self.reconnectURL != nil, self.reconnectToken != nil {
@@ -1583,6 +1668,9 @@ extension LiveKitRoomManager: RoomDelegate {
                     self.attemptAutoReconnect()
                 }
             default:
+                #if targetEnvironment(simulator)
+                self.stopSimulatorQAAudio()
+                #endif
                 break
             }
         }

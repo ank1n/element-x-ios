@@ -1129,8 +1129,9 @@ final class NativeCallSession: ObservableObject {
 
     #if targetEnvironment(simulator)
     /// DEBUG: симулирует смену сети (wifi → cellular) без Mac WiFi toggle.
-    /// Вызывается автоматически через 20s после connect в simulator-сборке.
+    /// Только явный QA-флаг или вызов команды, без автоматического сбоя по умолчанию.
     func debugSimulateNetworkChange() async {
+        DiagLog.write("SimulatorQA", "explicit network-change trigger at \(Date().timeIntervalSince1970)")
         os_log(.info, log: callLog, "DEBUG: simulating network change wifi → cellular (for Quick reconnect test)")
         let previous = lastNetworkInterface
         lastNetworkInterface = "cellular"
@@ -2247,9 +2248,12 @@ final class NativeCallSession: ObservableObject {
             #if targetEnvironment(simulator)
             // DEBUG: через 20s после connect триггерим fake network switch
             // чтобы тестировать Quick reconnect на симуляторе без Mac WiFi toggle.
-            Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 20_000_000_000)
-                await self?.debugSimulateNetworkChange()
+            if ProcessInfo.processInfo.environment["STALK_QA_NETWORK_CHANGE_AFTER_20S"] == "1" {
+                Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: 20_000_000_000)
+                    guard !Task.isCancelled, self?.sessionState == .connected else { return }
+                    await self?.debugSimulateNetworkChange()
+                }
             }
             #endif
 
