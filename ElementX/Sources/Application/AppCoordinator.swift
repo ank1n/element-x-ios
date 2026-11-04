@@ -359,7 +359,8 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
                 do {
                     try handleAppRoute(.share(payload.withDefaultTemporaryDirectory()))
                 } catch {
-                    MXLog.error("Failed moving payload out of the app group container: \(error)")
+                    MXLog.error("Failed importing payload out of the app group container: \(error)")
+                    ServiceLocator.shared.userIndicatorController.submitIndicator(.init(title: NSLocalizedString("stalk_share_import_failed", comment: "Share import error")))
                 }
             default:
                 break
@@ -702,7 +703,7 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
     
     /// Manually cleans up any files in the app group's `tmp` directory.
     ///
-    /// **Note:** If there is a single file we consider it to be an active share payload and ignore it.
+    /// Fresh app-group files may belong to a pending share and must survive startup.
     private func clearTemporaryDirectories() {
         // First get rid of everything in the App's temporary directory
         do {
@@ -719,23 +720,11 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
             MXLog.warning("Failed to enumerate temporary directory: \(error)")
         }
         
-        // Manual clean to handle the potential case where the app crashes before moving a shared file.
+        // Keep fresh pending shares, including several attachments on a cold launch.
         do {
-            let fileURLs = try FileManager.default.contentsOfDirectory(at: URL.appGroupTemporaryDirectory, includingPropertiesForKeys: nil, options: [])
-            
-            guard fileURLs.count > 1 else {
-                return // If there is only a single item in here, there's likely a pending share payload that is yet to be processed.
-            }
-            
-            for url in fileURLs {
-                do {
-                    try FileManager.default.removeItem(at: url)
-                } catch {
-                    MXLog.warning("Failed to remove file from app group temporary directory: \(error)")
-                }
-            }
+            try ShareExtensionConstants.removeExpiredFiles()
         } catch {
-            MXLog.warning("Failed to enumerate app group temporary directory: \(error)")
+            MXLog.warning("Failed cleaning expired app group files: \(error)")
         }
     }
     
