@@ -1309,8 +1309,15 @@ final class LiveKitRoomManager: ObservableObject {
     static func runSimulatorLiveKitProbe(clientProxy: ClientProxyProtocol) async {
         guard simulatorSyntheticMediaEnabled, SimulatorQASettings.isSilent,
               ProcessInfo.processInfo.environment["STALK_QA_LIVEKIT_PROBE"] == "1" else { return }
-        let roomName = "stalk1270-qa-probe-\(Int(Date().timeIntervalSince1970))"
-        guard let credentials = await simulatorQAProbeCredentials(clientProxy: clientProxy, roomName: roomName) else {
+        let environment = ProcessInfo.processInfo.environment
+        let roomName = environment["STALK_QA_LIVEKIT_ROOM"] ?? "stalk1270-qa-probe-\(Int(Date().timeIntervalSince1970))"
+        let publishSeconds = max(5, Int(environment["STALK_QA_LIVEKIT_SECONDS"] ?? "") ?? 20)
+        // Готовые URL и JWT (например, dev LiveKit с ключом стенда) важнее выпуска через /sfu/get своего сервера.
+        let given: (url: String, jwt: String)? = environment["STALK_QA_LIVEKIT_URL"].flatMap { url in
+            environment["STALK_QA_LIVEKIT_JWT"].map { (url, $0) }
+        }
+        let issued = given == nil ? await simulatorQAProbeCredentials(clientProxy: clientProxy, roomName: roomName) : nil
+        guard let credentials = given ?? issued else {
             DiagLog.write("SimulatorQA", "probe: no LiveKit credentials")
             return
         }
@@ -1334,7 +1341,7 @@ final class LiveKitRoomManager: ObservableObject {
             try await Task.sleep(for: .seconds(3))
             report("before-publish")
             try await manager.setMicrophone(enabled: true)
-            for second in stride(from: 5, through: 20, by: 5) {
+            for second in stride(from: 5, through: publishSeconds, by: 5) {
                 try await Task.sleep(for: .seconds(5))
                 report("after-publish-\(second)s")
             }
