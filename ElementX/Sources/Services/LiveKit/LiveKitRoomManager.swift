@@ -1308,12 +1308,15 @@ final class LiveKitRoomManager: ObservableObject {
               ProcessInfo.processInfo.environment["STALK_QA_AUDIO_SELF_TEST"] == "1" else { return }
         let manager = LiveKitRoomManager()
         let meter = SimulatorQAAudioMeter()
+        let processing = SimulatorQAProcessingCounter()
         let track = LocalAudioTrack.createTrack(options: .noProcessing)
         track.add(audioRenderer: meter)
+        AudioManager.shared.capturePostProcessingDelegate = processing
         defer {
             manager.stopSimulatorQAAudio()
             try? AudioManager.shared.stopLocalRecording()
             track.remove(audioRenderer: meter)
+            AudioManager.shared.capturePostProcessingDelegate = nil
         }
         do {
             try manager.prepareSimulatorQAAudio()
@@ -1321,9 +1324,28 @@ final class LiveKitRoomManager: ObservableObject {
             manager.simulatorQASelfTest = true
             manager.simulatorQAAudioWanted = true
             manager.startSimulatorQAAudio()
+            // Вариант SDK из Docs/audio.md: буферы через mixer.capture(appAudio:) вместо узла-источника.
+            if ProcessInfo.processInfo.environment["STALK_QA_AUDIO_PATH"] == "mixer" {
+                AudioManager.shared.set(engineObservers: [AudioManager.shared.mixer])
+                let format = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 1)!
+                var sample = 0
+                for _ in 0..<400 {
+                    let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 960)!
+                    buffer.frameLength = 960
+                    for index in 0..<960 {
+                        buffer.floatChannelData![0][index] = Float(sin(2 * Double.pi * 440 * Double(sample) / 48000) * 0.15)
+                        sample += 1
+                    }
+                    AudioManager.shared.mixer.capture(appAudio: buffer)
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                DiagLog.write("SimulatorQA", "self-test mixer path submitted=\(sample)")
+            }
             try await Task.sleep(for: .seconds(8))
             let measured = meter.snapshot()
             let generated = manager.simulatorQASource.snapshot()
+            let audio = AudioManager.shared
+            DiagLog.write("SimulatorQA", "self-test adm micMuted=\(audio.isMicrophoneMuted) vp=\(audio.isVoiceProcessingEnabled) vpBypass=\(audio.isVoiceProcessingBypassed) availability=\(audio.engineAvailability) apm=\(processing.snapshot())")
             DiagLog.write("SimulatorQA", "self-test engineFlag=\(AudioManager.shared.isEngineRunning) sourceSamples=\(generated.0) sourceEnergy=\(generated.1) trackRendererSamples=\(measured.0) trackRendererEnergy=\(measured.1)")
         } catch {
             DiagLog.write("SimulatorQA", "self-test failed: \(error.localizedDescription)")
@@ -1333,9 +1355,9 @@ final class LiveKitRoomManager: ObservableObject {
     private func prepareSimulatorQAAudio() throws {
         guard Self.simulatorSyntheticMediaEnabled else { return }
         // No fallback to a device: failure aborts connection/publication.
-        AudioManager.shared.set(engineObservers: [simulatorQASource])
+        // Порядок как в тесте SDK testManualRenderingModeSineGenerator: сначала режим, потом наблюдатели.
         try AudioManager.shared.setManualRenderingMode(true)
-        try AudioManager.shared.setEngineAvailability(.default)
+        AudioManager.shared.set(engineObservers: [simulatorQASource])
         guard AudioManager.shared.isManualRenderingMode else {
             throw NSError(domain: "sTalk.SimulatorQA", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "No-device audio mode unavailable"])
@@ -2964,6 +2986,36 @@ final class StalkBackgroundBlurProcessor: NSObject, LiveKit.VideoProcessor {
 }
 
 #if targetEnvironment(simulator)
+/// Считает вызовы обработки захвата в APM: отличает «APM не вызывается» от «буфер не конвертируется в PCM».
+private final class SimulatorQAProcessingCounter: NSObject, AudioCustomProcessingDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private var initialized = ""
+    private var calls = 0
+    private var frames = 0
+    private var energy: Double = 0
+
+    func audioProcessingInitialize(sampleRate sampleRateHz: Int, channels: Int) {
+        lock.lock(); initialized = "\(sampleRateHz)/\(channels)"; lock.unlock()
+    }
+
+    func audioProcessingProcess(audioBuffer: LKAudioBuffer) {
+        var sum = 0.0
+        let channel = audioBuffer.rawBuffer(forChannel: 0)
+        for index in 0..<audioBuffer.frames {
+            let value = Double(channel[index]) / 32768
+            sum += value * value
+        }
+        lock.lock(); calls += 1; frames += audioBuffer.frames; energy += sum; lock.unlock()
+    }
+
+    func audioProcessingRelease() { }
+
+    func snapshot() -> String {
+        lock.lock(); defer { lock.unlock() }
+        return "init=\(initialized) calls=\(calls) frames=\(frames) energy=\(energy)"
+    }
+}
+
 /// Scalar-only QA meter. Never records or retains audio buffers.
 private final class SimulatorQAAudioMeter: AudioRenderer, @unchecked Sendable {
     private let lock = NSLock()
@@ -3163,8 +3215,10 @@ private final class SimulatorQAToneSource: AudioEngineObserver, @unchecked Senda
             DiagLog.write("SimulatorQA", "refused hardware source in no-device test")
             return -1
         }
-        engine.connect(node, to: dst, format: self.format)
-        DiagLog.write("SimulatorQA", "source connected directly to input mixer")
+        // Как MixerEngineObserver в SDK: в ручном режиме захват WebRTC снимается с mainMixerNode, а не с dst.
+        let target: AVAudioNode = engine.isInManualRenderingMode ? engine.mainMixerNode : dst
+        engine.connect(node, to: target, format: self.format)
+        DiagLog.write("SimulatorQA", "source connected manual=\(engine.isInManualRenderingMode) dst=\(type(of: dst)) dstIsMain=\(dst === engine.mainMixerNode) target=\(type(of: target)) fmt=\(format.sampleRate)/\(format.channelCount)")
         return 0
     }
 
