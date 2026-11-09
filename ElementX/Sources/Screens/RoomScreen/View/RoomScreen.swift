@@ -156,9 +156,9 @@ struct RoomScreen: View {
             // We are not sure why but when wrapped in the room screen the composer toolbar breaks the accessibility tests
             composerToolbar
         } else {
-            if context.viewState.isChannel {
-                Text(StalkChannelError.readOnly.localizedDescription).font(.footnote).foregroundStyle(.secondary).padding(12)
-            } else { ComposerDisabledView() }
+            if !context.viewState.isChannel {
+                ComposerDisabledView()
+            }
         }
     }
 
@@ -214,36 +214,44 @@ struct RoomScreen: View {
         
         if !ProcessInfo.processInfo.isiOSAppOnMac {
             ToolbarItem(placement: .primaryAction) {
-                HStack(spacing: 12) {
-                    if context.viewState.canShowThreads {
-                        Button {
-                            context.send(viewAction: .displayThreadList)
-                        } label: {
-                            Image(systemName: "bubble.left.and.bubble.right")
+                if context.viewState.showsOngoingCallJoinButton {
+                    // A prominent button in a mixed toolbar HStack tints the whole
+                    // iOS 26 glass group. Keep this action alone in its toolbar item.
+                    callButton.disabled(!context.viewState.canJoinCall)
+                } else {
+                    HStack(spacing: 12) {
+                        if context.viewState.canShowThreads {
+                            Button {
+                                context.send(viewAction: .displayThreadList)
+                            } label: {
+                                Image(systemName: "bubble.left.and.bubble.right")
+                            }
+                            .accessibilityLabel(StalkThreadStrings.title)
+                            .accessibilityIdentifier("roomHeaderThreads")
                         }
-                        .accessibilityLabel(StalkThreadStrings.title)
-                    }
 
-                    if context.viewState.isChannel, (timelineContext.viewState.channelAccess?.level ?? 0) >= 50 {
-                        Button { showChannelPublications = true } label: { Image(systemName: "doc.badge.clock") }
-                            .accessibilityLabel(StalkChannelStrings.text("publications"))
-                    }
-                    if context.viewState.isChannel, timelineContext.viewState.channelAccess?.canAdminister == true {
-                        Button { showChannelControls = true } label: { Image(systemName: "megaphone") }
-                            .accessibilityLabel(StalkChannelStrings.title)
-                    }
-                    // Search button
-                    Button {
-                        context.send(viewAction: .toggleSearch)
-                    } label: {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 16))
-                    }
+                        if context.viewState.isChannel, (timelineContext.viewState.channelAccess?.level ?? 0) >= 50 {
+                            Button { showChannelPublications = true } label: { Image(systemName: "doc.badge.clock") }
+                                .accessibilityLabel(StalkChannelStrings.text("publications"))
+                        }
+                        if context.viewState.isChannel, timelineContext.viewState.channelAccess?.canAdminister == true {
+                            Button { showChannelControls = true } label: { Image(systemName: "megaphone") }
+                                .accessibilityLabel(StalkChannelStrings.title)
+                        }
+                        // Search button
+                        Button {
+                            context.send(viewAction: .toggleSearch)
+                        } label: {
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 16))
+                        }
+                        .accessibilityIdentifier("roomHeaderSearch")
 
-                    // Call button
-                    if context.viewState.shouldShowCallButton {
-                        callButton
-                            .disabled(!context.viewState.canJoinCall)
+                        // Call button
+                        if context.viewState.shouldShowCallButton {
+                            callButton
+                                .disabled(!context.viewState.canJoinCall)
+                        }
                     }
                 }
             }

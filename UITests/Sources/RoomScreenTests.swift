@@ -10,6 +10,61 @@ import XCTest
 
 @MainActor
 class RoomScreenUITests: XCTestCase {
+    func testOngoingCallHeaderHasOnlyJoinAction() {
+        let app = Application.launchForInteraction(.roomOngoingCallHeader, language: "ru")
+        XCTAssertTrue(app.buttons[A11yIdentifiers.roomScreen.joinCall].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons["roomHeaderSearch"].exists)
+        XCTAssertFalse(app.buttons["roomHeaderThreads"].exists)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Ongoing call header without search and threads"; attachment.lifetime = .keepAlways; add(attachment)
+    }
+
+    func testIncomingCameraVideoCanBeDisabledAndRestored() {
+        let app = Application.launchForInteraction(.callVideoReceptionControls, language: "ru")
+        let toggle = app.switches["callReceiveVideoToggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 15))
+        let nativeSwitch = toggle.switches.firstMatch
+        (nativeSwitch.exists ? nativeSwitch : toggle).tap()
+        let restore = app.buttons["callRestoreVideoReception"]
+        XCTAssertTrue(restore.waitForExistence(timeout: 5))
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Incoming cameras disabled with restore action"; attachment.lifetime = .keepAlways; add(attachment)
+        restore.tap(.center)
+        XCTAssertFalse(restore.exists)
+        XCTAssertEqual(toggle.value as? String, "1")
+    }
+
+    func testShortLeftSwipeStartsReply() async throws {
+        let app = Application.launchForInteraction(.roomSmallTimeline, disableTimelineAccessibility: false)
+        let message = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "Hey there")).firstMatch
+        guard message.waitForExistence(timeout: 15) else {
+            XCTFail("The fixture message must be accessible before testing the swipe")
+            return
+        }
+        let reply = app.staticTexts
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "In reply to Alice")).firstMatch
+        XCTAssertFalse(reply.exists)
+        let wrongDirection = message.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5))
+        wrongDirection.press(forDuration: 0.05, thenDragTo: wrongDirection.withOffset(CGVector(dx: 90, dy: 0)),
+                             withVelocity: .slow, thenHoldForDuration: 0)
+        XCTAssertFalse(reply.exists, "A rightward swipe must not reply")
+        let start = message.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
+        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: -90, dy: 0)),
+                    withVelocity: .slow, thenHoldForDuration: 0)
+        guard reply.waitForExistence(timeout: 10) else {
+            XCTFail("A short left swipe should open the quoted reply in the composer")
+            return
+        }
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "Reply must focus the composer without tapping an icon")
+        app.typeText("Swipe reply")
+        XCTAssertTrue(app.textViews.matching(NSPredicate(format: "value CONTAINS %@", "Swipe reply")).firstMatch.waitForExistence(timeout: 5),
+                      "Typing immediately after the swipe must enter the reply composer")
+        try await Task.sleep(for: .milliseconds(500))
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Reply and keyboard after 90pt left swipe"; attachment.lifetime = .keepAlways; add(attachment)
+    }
+
     func testPlainNoAvatar() async throws {
         let app = Application.launch(.roomPlainNoAvatar)
 

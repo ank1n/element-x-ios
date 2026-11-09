@@ -19,6 +19,14 @@ class ClientProxy: ClientProxyProtocol {
         networkMonitor.reachabilityPublisher
     }
 
+    private let syncStatusSubject = CurrentValueSubject<ClientSyncStatus, Never>(.stopped)
+    var syncStatusPublisher: CurrentValuePublisher<ClientSyncStatus, Never> {
+        syncStatusSubject.asCurrentValuePublisher()
+    }
+
+    private let observedSyncState = CurrentValueSubject<SyncServiceState, Never>(.idle)
+    private var automaticSyncRecovery: ClientSyncRecovery?
+
     private let networkMonitor: NetworkMonitorProtocol
     private let appSettings: AppSettings
     
@@ -246,6 +254,8 @@ class ClientProxy: ClientProxyProtocol {
                 
         delegateHandle = try client.setDelegate(delegate: ClientDelegateWrapper { [weak self] isSoftLogout in
             self?.hasEncounteredAuthError = true
+            self?.refreshSyncPresentation()
+            self?.updateAutomaticSyncRecovery()
             self?.actionsSubject.send(.receivedAuthError(isSoftLogout: isSoftLogout))
         })
         
@@ -255,8 +265,11 @@ class ClientProxy: ClientProxyProtocol {
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] reachability in
-                if reachability == .reachable {
-                    self?.startSync()
+                guard let self else { return }
+                self.refreshSyncPresentation()
+                self.updateAutomaticSyncRecovery()
+                if reachability == .reachable, self.isSyncIntended {
+                    self.startSync()
                 }
             }
             .store(in: &cancellables)
@@ -358,10 +371,36 @@ class ClientProxy: ClientProxyProtocol {
             DiagLog.write("ClientProxy", "forceTokenRefresh skipped (background)")
             return
         }
-        // displayName() makes a real server request (/profile/{userId}/displayname)
-        // which triggers SDK's internal OIDC token refresh if expired.
-        // After this call, client.session().accessToken returns the fresh token.
-        _ = try? await client.displayName()
+        await refreshAccessTokenViaSDK()
+    }
+
+    /// STMOB-325: вариант для идущего звонка. Звонок живёт и в фоне, и без обновления
+    /// токена сервер через 30 с снимает участие. Фоновая задача держит приложение,
+    /// пока токены пишутся в sqlite, поэтому причина 0xDEAD10CC здесь не срабатывает.
+    func forceTokenRefreshDuringCall() async {
+        let backgroundTaskID = await MainActor.run {
+            nonisolated(unsafe) var taskID: UIBackgroundTaskIdentifier = .invalid
+            taskID = UIApplication.shared.beginBackgroundTask(withName: "sTalk.Call.TokenRefresh") {
+                UIApplication.shared.endBackgroundTask(taskID)
+            }
+            return taskID
+        }
+        await refreshAccessTokenViaSDK()
+        await MainActor.run { UIApplication.shared.endBackgroundTask(backgroundTaskID) }
+    }
+
+    /// Нужен запрос, на который сервер отвечает 401 при протухшем токене: только тогда
+    /// SDK обновляет токен сам. Профиль для этого не годится: /profile/{userId}/displayname
+    /// не проверяет токен и отдаёт 200 с любым значением. Account data проверяет.
+    private func refreshAccessTokenViaSDK() async {
+        let oldToken = try? client.session().accessToken
+        do {
+            _ = try await client.fetchMediaPreviewConfig()
+            let isChanged = (try? client.session().accessToken) != oldToken
+            DiagLog.write("ClientProxy", "forceTokenRefresh ok changed=\(isChanged)")
+        } catch {
+            DiagLog.write("ClientProxy", "forceTokenRefresh FAILED: \(error)")
+        }
     }
 
     var canDeactivateAccount: Bool {
@@ -458,6 +497,8 @@ class ClientProxy: ClientProxyProtocol {
         // Намерение ставим ДО проверки сети: сеть может быть недоступна сейчас, но
         // синхронизация нам нужна, и наблюдатель поднимет её, когда сеть вернётся.
         isSyncIntended = true
+        refreshSyncPresentation()
+        updateAutomaticSyncRecovery()
 
         guard networkMonitor.reachabilityPublisher.value == .reachable else {
             MXLog.warning("Ignoring request, network unreachable.")
@@ -502,61 +543,40 @@ class ClientProxy: ClientProxyProtocol {
     /// Быстрое сворачивание/разворачивание не даёт resume() влезть посреди pause().
     private var serviceTransitionTask: Task<Void, Never>?
     
-    /// A stored task for restarting the sync after a failure. This is stored so that we can cancel
-    /// it when `stopSync` is called (e.g. when signing out) to prevent an otherwise infinite
-    /// loop that was triggered by trying to sync a signed out session.
-    @CancellableTask private var restartTask: Task<Void, Never>?
-    
-    /// Служба синхронизации встала, хотя мы её не останавливали — поднять.
-    ///
-    /// Наблюдалось вживую: после серии обрывов длинного опроса sliding sync
-    /// (`peer closed connection without sending TLS close_notify`) служба проходит
-    /// `offline → idle → running` несколько раз и в итоге садится в `idle`
-    /// насовсем. Снаружи это вечные скелетоны вместо списка чатов и плашка
-    /// «Не в сети», лечится только перезапуском приложения.
-    ///
-    /// Наблюдатель сети здесь не помогает: сеть не пропадала, перехода
-    /// «недоступна → доступна» не наступает, и `startSync` никто не зовёт.
-    private func recoverSyncIfNeeded(state: SyncServiceState) {
-        // Мы сами остановили службу — уход в фон, выход из аккаунта. Поднимать
-        // нельзя: получим борьбу с собственным остановом.
-        guard isSyncIntended else { return }
-
-        // Если служба падает сразу после подъёма, частые попытки только жгут
-        // батарею и раздувают лог. Даём ей передышку.
-        if let last = lastSyncRecoveryDate, Date().timeIntervalSince(last) < 5 {
-            return
-        }
-        lastSyncRecoveryDate = Date()
-
-        MXLog.warning("Sync service stopped by itself (\(state)) — restarting")
-        DiagLog.write("ClientProxy", "служба синхронизации встала сама (\(state)) → поднимаю")
-        restartSync()
-    }
-
-    /// Нужна ли нам синхронизация прямо сейчас. Отличает наш собственный останов
-    /// от аварийной остановки службы — без этого признака их не различить.
+    /// A service can remain idle after a transport error without a network-path change.
+    /// Retry while sync is intended; never restart a paused or signed-out session.
     private var isSyncIntended = false
 
-    /// Когда в последний раз поднимали упавшую службу.
-    private var lastSyncRecoveryDate: Date?
+    private func refreshSyncPresentation() {
+        let status: ClientSyncStatus
+        if hasEncounteredAuthError { status = .authenticationRequired }
+        else if !isSyncIntended { status = .stopped }
+        else if networkMonitor.reachabilityPublisher.value == .unreachable { status = .waitingForNetwork }
+        else if observedSyncState.value != .running { status = .connecting }
+        else if case .loading = loadingStateSubject.value { status = .updating }
+        else { status = .synced }
+        if syncStatusSubject.value != status { syncStatusSubject.send(status) }
+    }
 
-    func restartSync() {
-        guard restartTask == nil else { return }
-        
-        restartTask = Task { [weak self] in
-            do {
-                // Until the SDK can tell us the failure, we add a small
-                // delay to avoid generating multi-gigabyte log files.
-                try await Task.sleep(for: .milliseconds(250))
-                self?.startSync()
-            } catch {
-                MXLog.error("Restart cancelled.")
-            }
-            self?.restartTask = nil
+    private func updateAutomaticSyncRecovery() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            if self.automaticSyncRecovery == nil { self.automaticSyncRecovery = ClientSyncRecovery() }
+            self.automaticSyncRecovery?.start(shouldRetry: { [weak self] in
+                guard let self else { return false }
+                return self.isSyncIntended && !self.hasEncounteredAuthError &&
+                    self.networkMonitor.reachabilityPublisher.value == .reachable && self.observedSyncState.value != .running
+            }, retry: { [weak self] in
+                // Resume/start/stop/pause remain on the existing serialized SDK chain.
+                await self?.serviceTransitionTask?.value
+                guard !Task.isCancelled, let self, self.isSyncIntended, !self.hasEncounteredAuthError,
+                      self.networkMonitor.reachabilityPublisher.value == .reachable,
+                      self.observedSyncState.value != .running else { return }
+                self.startSync()
+            })
         }
     }
-    
+
     func stopSync() {
         stopSync(completion: nil)
     }
@@ -579,12 +599,9 @@ class ClientProxy: ClientProxyProtocol {
         // Снимаем намерение ПЕРВЫМ делом: дальше служба сообщит `idle`, и без этого
         // сторож принял бы наш собственный останов за аварию и тут же поднял её.
         isSyncIntended = false
+        refreshSyncPresentation()
+        updateAutomaticSyncRecovery()
 
-        if restartTask != nil {
-            MXLog.warning("Removing the sync service restart task.")
-            restartTask = nil
-        }
-        
         // Capture the sync service strongly as this method is called on deinit and so the
         // existence of self when the Task executes is questionable and would sometimes crash.
         // Note: This isn't strictly necessary now given the unwrap above, but leaving the code as
@@ -1338,18 +1355,18 @@ class ClientProxy: ClientProxyProtocol {
             
             MXLog.info("Received sync service update: \(state)")
             
+            observedSyncState.send(state)
+            refreshSyncPresentation()
+            updateAutomaticSyncRecovery()
             switch state {
             case .running:
                 homeserverReachabilitySubject.send(.reachable)
             case .terminated, .idle:
                 homeserverReachabilitySubject.send(.reachable)
-                // Служба может встать сама — тогда её надо поднимать, иначе список
-                // чатов остаётся на скелетонах до перезапуска приложения.
-                recoverSyncIfNeeded(state: state)
             case .offline:
                 homeserverReachabilitySubject.send(.unreachable)
             case .error:
-                restartSync()
+                homeserverReachabilitySubject.send(.unreachable)
             }
         })
     }
@@ -1402,8 +1419,10 @@ class ClientProxy: ClientProxyProtocol {
             switch state {
             case .show:
                 loadingStateSubject.send(.loading)
+                refreshSyncPresentation()
             case .hide:
                 loadingStateSubject.send(.notLoading)
+                refreshSyncPresentation()
             }
         })
     }

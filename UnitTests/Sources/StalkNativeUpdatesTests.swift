@@ -240,6 +240,48 @@ final class StalkNativeUpdatesTests: XCTestCase {
         XCTAssertTrue(menu()?.reactions.isEmpty == true)
     }
 
+    func testChatAndChannelMenusExcludeTranslationAndReportsButKeepChatBookmarks() throws {
+        let suite = "menu-policy-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let bookmarks = BookmarkService(userDefaults: defaults)
+        let item = TextRoomTimelineItem(id: .randomEvent, timestamp: Date(), isOutgoing: false, isEditable: false,
+                                        canBeRepliedTo: true, sender: .init(id: "@author:example.invalid"), content: .init(body: "Post"))
+        func menu(_ channel: StalkChannelSnapshot?, post: TextRoomTimelineItem? = nil, dm: Bool = false) throws -> TimelineItemMenuActions {
+            try XCTUnwrap(TimelineItemMenuActionProvider(timelineItem: post ?? item, canCurrentUserSendMessage: channel == nil,
+                                                         canCurrentUserRedactSelf: false, canCurrentUserRedactOthers: false, canCurrentUserPin: false,
+                                                         pinnedEventIDs: [], isDM: dm, isViewSourceEnabled: false, areThreadsEnabled: true,
+                                                         timelineKind: .live, emojiProvider: EmojiProvider(appSettings: AppSettings()), bookmarkService: bookmarks,
+                                                         channel: channel).makeActions())
+        }
+        let chat = try menu(nil)
+        XCTAssertTrue(chat.actions.contains(.reply(isThread: false)))
+        XCTAssertTrue(chat.actions.contains(.replyInThread))
+        XCTAssertTrue(chat.actions.contains(.bookmark))
+        XCTAssertFalse(chat.actions.contains(.translate))
+        XCTAssertFalse(chat.secondaryActions.contains(.report))
+        let channel = try menu(.init(verified: true, isChannel: true, joined: true, comments: true, capability: true))
+        XCTAssertTrue(channel.actions.contains(.replyInThread))
+        XCTAssertFalse(channel.actions.contains(.reply(isThread: false)))
+        XCTAssertFalse(channel.actions.contains(.bookmark))
+        XCTAssertFalse(channel.actions.contains(.removeBookmark))
+        XCTAssertFalse(channel.actions.contains(.translate))
+        XCTAssertFalse(channel.secondaryActions.contains(.report))
+        let noMainReply = TextRoomTimelineItem(id: .randomEvent, timestamp: Date(), isOutgoing: false, isEditable: false,
+                                               canBeRepliedTo: false, sender: item.sender, content: .init(body: "Channel post"))
+        let discussionOnly = try menu(.init(verified: true, isChannel: true, joined: true, comments: true, capability: true), post: noMainReply)
+        XCTAssertTrue(discussionOnly.actions.contains(.replyInThread))
+        XCTAssertFalse(discussionOnly.actions.contains(.reply(isThread: false)))
+        let direct = try menu(nil, dm: true)
+        XCTAssertTrue(direct.actions.contains(.reply(isThread: false)))
+        XCTAssertFalse(direct.actions.contains(.replyInThread))
+        var oldThreadReply = item
+        oldThreadReply.properties.isThreaded = true
+        let legacyDirect = try menu(nil, post: oldThreadReply, dm: true)
+        XCTAssertTrue(legacyDirect.actions.contains(.reply(isThread: false)))
+        XCTAssertFalse(legacyDirect.actions.contains(.reply(isThread: true)))
+    }
+
     func testRenderedNativeCardAndChannelControls() async throws {
         let state = events(level: 100)
         let end = Date().addingTimeInterval(-12000).timeIntervalSince1970
@@ -907,6 +949,57 @@ final class StalkNativeUpdatesTests: XCTestCase {
         XCTAssertFalse(StalkChannelService.channelEncryption(versions: [:], wellKnown: ["io.element.e2ee": ["default": false]]))
     }
 
+    func testEncryptedMeetingWaitsForFocusedTimelineBeforeReadingProvider() async throws {
+        let client = client()
+        let room = JoinedRoomProxyMock(.init(id: "!meeting"))
+        let timeline = TimelineProxyMock()
+        let provider = SubscriptionCheckingTimelineProvider()
+        timeline.subscribeForUpdatesClosure = {
+            try? await Task.sleep(for: .milliseconds(15))
+            provider.ready = true
+            timeline.timelineItemProvider = provider
+        }
+        room.timelineFocusedOnEventEventIDNumberOfEventsReturnValue = .success(timeline)
+        client.roomForIdentifierClosure = { _ in .joined(room) }
+        NativeUpdatesProtocol.handler = { request in
+            if request.url!.path.hasSuffix("/messages") {
+                return (200, ["chunk": [["type": "m.room.encrypted", "event_id": "$encrypted"]]])
+            }
+            XCTAssertTrue(request.url!.path.hasSuffix("/list"))
+            return (200, ["recordings": []])
+        }
+        let service = StalkMeetingRoomSummaryService(client: client, session: session())
+        let result = try await service.latest(roomID: "!meeting")
+        XCTAssertNil(result)
+        XCTAssertEqual(timeline.subscribeForUpdatesCallsCount, 1)
+        XCTAssertEqual(provider.reads, 1)
+    }
+
+    func testCancelledEncryptedMeetingDoesNotReadProviderAfterSubscription() async throws {
+        let client = client()
+        let room = JoinedRoomProxyMock(.init(id: "!meeting"))
+        let timeline = TimelineProxyMock()
+        let provider = SubscriptionCheckingTimelineProvider()
+        timeline.subscribeForUpdatesClosure = {
+            provider.ready = true
+            timeline.timelineItemProvider = provider
+            withUnsafeCurrentTask { $0?.cancel() }
+        }
+        room.timelineFocusedOnEventEventIDNumberOfEventsReturnValue = .success(timeline)
+        client.roomForIdentifierClosure = { _ in .joined(room) }
+        NativeUpdatesProtocol.handler = { request in
+            XCTAssertTrue(request.url!.path.hasSuffix("/messages"), "A cancelled row must not continue reading recordings")
+            return (200, ["chunk": [["type": "m.room.encrypted", "event_id": "$encrypted"]]])
+        }
+        let service = StalkMeetingRoomSummaryService(client: client, session: session())
+        let task = Task { try await service.latest(roomID: "!meeting") }
+        do { _ = try await task.value; XCTFail("Expected cancellation") }
+        catch is CancellationError { }
+        catch { XCTFail("Unexpected error: \(error)") }
+        XCTAssertEqual(timeline.subscribeForUpdatesCallsCount, 1)
+        XCTAssertEqual(provider.reads, 0)
+    }
+
     func testMeetingFilterUsesActualLatestCallAndCachesOnlyThisRoom() async throws {
         let now = Date().timeIntervalSince1970
         var reads = 0
@@ -1036,10 +1129,130 @@ final class StalkNativeUpdatesTests: XCTestCase {
         try await capture(HomeScreenRoomCell(room: room, isSelected: false, mediaProvider: nil, action: { _ in }, presence: nil, meetingSummaryService: service).environment(\.dynamicTypeSize, .large), name: "Meeting favourite unread", height: 220, width: 390)
     }
 
+    func testChannelHidesCallsRegardlessOfRoleAndOngoingCall() {
+        var state = RoomScreenViewState(roomAvatar: .room(id: "!channel", name: "Channel", avatarURL: nil), hasOngoingCall: false, hasSuccessor: false)
+        XCTAssertTrue(state.shouldShowCallButton)
+        state.isChannel = true
+        XCTAssertFalse(state.shouldShowCallButton)
+        state.canJoinCall = true
+        state.hasOngoingCall = true
+        XCTAssertFalse(state.shouldShowCallButton)
+        state.isChannel = false
+        XCTAssertTrue(state.shouldShowCallButton)
+        state.isParticipatingInOngoingCall = true
+        XCTAssertFalse(state.shouldShowCallButton)
+    }
+
+    func testRenderedUnifiedCreationMenu() async throws {
+        let model = StartChatScreen_Previews.viewModel
+        model.state.channelService = StalkChannelService(client: client(), session: session())
+        try await capture(NavigationStack { StartChatScreen(context: model.context) }, name: "Unified create chat group channel", height: 844, width: 390)
+    }
+
+    func testInvitationInsertionKeepsTopVisible() async throws {
+        let defaults = UserDefaults.standard
+        let previous = defaults.object(forKey: "stalk_design_theme")
+        defer { defaults.set(previous, forKey: "stalk_design_theme") }
+        for theme in ["cosmos", "classic"] {
+            defaults.set(theme, forKey: "stalk_design_theme")
+            for offset: CGFloat in [0, 40, 300] {
+                try await checkInvitationInsertion(theme: theme, initialOffset: offset)
+            }
+        }
+    }
+
+    func testInvitationAppearingWhileInChannelIsWholeOnReturn() async throws {
+        let defaults = UserDefaults.standard
+        let previous = defaults.object(forKey: "stalk_design_theme")
+        defer { defaults.set(previous, forKey: "stalk_design_theme") }
+        for theme in ["cosmos", "classic"] {
+            defaults.set(theme, forKey: "stalk_design_theme")
+            for offset: CGFloat in [40, 300] {
+                try await checkInvitationInsertion(theme: theme, initialOffset: offset, returnFromChannel: true)
+            }
+        }
+    }
+
+    private func checkInvitationInsertion(theme: String, initialOffset: CGFloat, returnFromChannel: Bool = false) async throws {
+        let model = HomeScreen_Previews.viewModel(.rooms)
+        try await Task.sleep(for: .milliseconds(300))
+        model.state.rooms = (0..<30).map { HomeScreenRoom(summary: .mock(id: "!room\($0)", name: "Room \($0)"), hideUnreadMessagesBadge: false) }
+        let adapter = ScrollViewAdapter()
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let navigation = InvitationNavigationState()
+        let host = UIHostingController(rootView: InvitationNavigationView(context: model.context, adapter: adapter, navigation: navigation))
+        window.rootViewController = host
+        window.frame = CGRect(x: 0, y: 0, width: 393, height: 852)
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true; window.rootViewController = nil; previous?.makeKey() }
+        host.view.frame = window.bounds; host.view.layoutIfNeeded()
+        try await Task.sleep(for: .milliseconds(400))
+        let scroll = try XCTUnwrap(adapter.scrollView)
+        scroll.setContentOffset(CGPoint(x: 0, y: initialOffset - scroll.adjustedContentInset.top), animated: false)
+        let member = RoomMemberProxyMock()
+        member.displayName = "Inviter"; member.userID = "@inviter:example.invalid"
+        let invite = HomeScreenRoom(id: "!invite", roomID: "!invite", type: .invite(inviterDetails: .init(member: member)),
+                                    badges: .init(isDotShown: false, isMentionShown: false, isMuteShown: false, isCallShown: false, unreadCount: 0),
+                                    name: "Invitation to sTalk", isDirect: false, isHighlighted: false, isFavourite: false,
+                                    timestamp: nil, lastMessage: nil, lastMessageState: nil,
+                                    avatar: .room(id: "!invite", name: "sTalk", avatarURL: nil), canonicalAlias: nil, isTombstoned: false, dmUserIDStored: nil)
+        let rooms = model.state.rooms
+        if returnFromChannel {
+            navigation.path = ["channel"]
+            try await Task.sleep(for: .milliseconds(400))
+        }
+        model.state.rooms = [invite] + rooms
+        try await Task.sleep(for: .milliseconds(500))
+        if returnFromChannel {
+            navigation.path = []
+            try await Task.sleep(for: .milliseconds(500))
+        }
+        if initialOffset < 100 {
+            XCTAssertEqual(scroll.contentOffset.y + scroll.adjustedContentInset.top, 0, accuracy: 1, "Near the top an incoming invitation must be visible in full (\(theme), offset \(initialOffset))")
+        } else {
+            XCTAssertGreaterThan(scroll.contentOffset.y + scroll.adjustedContentInset.top, 100, "Do not pull the user out of a distant part of the list")
+        }
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
+        let attachment = XCTAttachment(image: image); attachment.name = "Invitation inserted " + theme + " offset " + String(Int(initialOffset)) + (returnFromChannel ? " after return" : ""); attachment.lifetime = .keepAlways; add(attachment)
+        // A subsequent message/unread update must not repeatedly snap an existing invitation.
+        scroll.setContentOffset(CGPoint(x: 0, y: 40 - scroll.adjustedContentInset.top), animated: false)
+        model.state.rooms = [invite] + rooms + [HomeScreenRoom(summary: .mock(id: "!extra", name: "New message"), hideUnreadMessagesBadge: false)]
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(scroll.contentOffset.y + scroll.adjustedContentInset.top, 40, accuracy: 1)
+        if initialOffset < 100 {
+            scroll.setContentOffset(CGPoint(x: 0, y: -scroll.adjustedContentInset.top), animated: false)
+        }
+        model.state.rooms = rooms
+        try await Task.sleep(for: .milliseconds(300))
+        if initialOffset < 100 {
+            XCTAssertEqual(scroll.contentOffset.y + scroll.adjustedContentInset.top, 0, accuracy: 1)
+        }
+    }
+
     func testNumericBooleanIsNotAPowerLevel() {
         XCTAssertNil(StalkChannelService.integer(true))
         XCTAssertNil(StalkChannelService.integer(25.5))
         XCTAssertEqual(StalkChannelService.integer(25), 25)
+    }
+}
+
+@MainActor private final class InvitationNavigationState: ObservableObject {
+    @Published var path: [String] = []
+}
+
+private struct InvitationNavigationView: View {
+    let context: HomeScreenViewModel.Context
+    let adapter: ScrollViewAdapter
+    @ObservedObject var navigation: InvitationNavigationState
+    var body: some View {
+        NavigationStack(path: $navigation.path) {
+            HomeScreenContent(context: context, scrollViewAdapter: adapter)
+                .navigationTitle("Chats")
+                .navigationBarTitleDisplayMode(.inline)
+                .navigationDestination(for: String.self) { _ in Text("Channel") }
+        }
     }
 }
 
@@ -1079,4 +1292,17 @@ private final class NativeUpdatesProtocol: URLProtocol {
     }
 
     override func stopLoading() { }
+}
+
+private final class SubscriptionCheckingTimelineProvider: TimelineItemProviderMock, @unchecked Sendable {
+    var ready = false
+    var reads = 0
+    override var itemProxies: [TimelineItemProxy] {
+        get {
+            XCTAssertTrue(ready, "Item provider read before awaited subscription finished")
+            reads += 1
+            return []
+        }
+        set { }
+    }
 }

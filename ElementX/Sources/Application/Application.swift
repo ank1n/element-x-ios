@@ -16,6 +16,7 @@ struct Application: App {
     private var appCoordinator: AppCoordinatorProtocol!
 
     init() {
+        SimulatorQASettings.configure()
         if ProcessInfo.isRunningUITests {
             appCoordinator = UITestsAppCoordinator(appDelegate: appDelegate)
         } else if ProcessInfo.isRunningUnitTests {

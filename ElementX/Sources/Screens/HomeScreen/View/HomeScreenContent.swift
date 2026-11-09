@@ -13,6 +13,10 @@ import SwiftUI
 struct HomeScreenContent: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var isArchiveRevealed = false
+    @State private var firstRoomHeight: CGFloat = 0
+    @State private var pendingInvitationToReveal: String?
+    @State private var isRoomListVisible = false
+    @State private var departedNearFirstRoom = false
     /// Guards the manual contentOffset compensation while hiding the archive row, so the
     /// adjustment fires exactly once instead of fighting the active scroll gesture (which made
     /// the list jitter and only hide after several tries on device).
@@ -159,6 +163,7 @@ struct HomeScreenContent: View {
             .introspect(.scrollView, on: .supportedVersions) { scrollView in
                 guard scrollView != scrollViewAdapter.scrollView else { return }
                 scrollViewAdapter.scrollView = scrollView
+                revealPendingInvitation()
             }
             .onReceive(scrollViewAdapter.didScroll) { _ in
                 updateVisibleRange()
@@ -174,30 +179,21 @@ struct HomeScreenContent: View {
             .onChange(of: context.isSearchFieldFocused) {
                 UserDefaults.standard.set(context.isSearchFieldFocused, forKey: "stalk_search_active")
             }
-            .onChange(of: context.viewState.visibleRooms) {
+            .onAppear {
+                isRoomListVisible = true
+                revealPendingInvitation()
+            }
+            .onDisappear {
+                departedNearFirstRoom = isNearFirstRoom
+                isRoomListVisible = false
+            }
+            .onPreferenceChange(HomeScreenFirstRoomHeightKey.self) {
+                firstRoomHeight = $0
+                revealPendingInvitation()
+            }
+            .onChange(of: context.viewState.visibleRooms) { oldRooms, newRooms in
                 updateVisibleRange()
-
-                // We have been seeing a lot of issues around the room list not updating properly after
-                // rooms shifting around:
-                // * Tapping on the room list doesn't always take you to the right room  - https://github.com/element-hq/element-x-ios/issues/2386
-                // * Big blank gaps in the room list - https://github.com/element-hq/element-x-ios/issues/3026
-                //
-                // We initially thought it's caused by the filters header or the geometry reader but
-                // the problem is still reproducible without those.
-                //
-                // As a last attempt we will manually force it to update by shifting the
-                // inner scroll view by a point every time the room list is updated
-                // Disabled: 1pt scroll hack causes visible jitter with cosmos card styling
-                // DispatchQueue.main.async {
-                //     guard !scrollViewAdapter.isScrolling.value, let scrollView = scrollViewAdapter.scrollView else {
-                //         return
-                //     }
-                //     let oldOffset = scrollView.contentOffset
-                //     var newOffset = scrollView.contentOffset
-                //     newOffset.y += 1
-                //     scrollView.setContentOffset(newOffset, animated: false)
-                //     scrollView.setContentOffset(oldOffset, animated: false)
-                // }
+                revealNewInvitation(oldRooms: oldRooms, newRooms: newRooms)
             }
             .background {
                 Button("") {
@@ -395,6 +391,48 @@ struct HomeScreenContent: View {
                     .padding(.vertical, 10)
                 }
             }
+        }
+    }
+
+    /// A new invitation replaces the short first chat row. Reusing a small old offset
+    /// cuts off its title and avatar. Reveal it only while the first row is still visible;
+    /// updates must not pull someone away from another part of the list or interrupt a drag.
+    private func revealNewInvitation(oldRooms: [HomeScreenRoom], newRooms: [HomeScreenRoom]) {
+        guard let first = newRooms.first, case .invite = first.type else {
+            pendingInvitationToReveal = nil
+            return
+        }
+        if !oldRooms.contains(where: { room in
+            guard room.id == first.id else { return false }
+            if case .invite = room.type { return true }
+            return false
+        }) {
+            pendingInvitationToReveal = (isRoomListVisible ? isNearFirstRoom : departedNearFirstRoom) ? first.id : nil
+        }
+        revealPendingInvitation()
+    }
+
+    private var isNearFirstRoom: Bool {
+        guard let scrollView = scrollViewAdapter.scrollView,
+              !scrollView.isTracking, !scrollView.isDragging, !scrollView.isDecelerating else { return false }
+        let offset = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
+        return offset >= 0 && offset < firstRoomHeight
+    }
+
+    private func revealPendingInvitation() {
+        guard let roomID = pendingInvitationToReveal,
+              isRoomListVisible,
+              let scrollView = scrollViewAdapter.scrollView else { return }
+        DispatchQueue.main.async {
+            // Wait for the row insertion/layout. LazyVStack can compensate the offset
+            // by the new row's height, so eligibility is captured BEFORE that change.
+            guard isRoomListVisible, scrollView === scrollViewAdapter.scrollView,
+                  pendingInvitationToReveal == roomID else { return }
+            pendingInvitationToReveal = nil
+            guard context.viewState.visibleRooms.first?.id == roomID,
+                  !context.isSearchFieldFocused, !isArchiveRevealed, !isAdjustingArchiveOffset,
+                  !scrollView.isTracking, !scrollView.isDragging, !scrollView.isDecelerating else { return }
+            scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: -scrollView.adjustedContentInset.top), animated: false)
         }
     }
 

@@ -234,7 +234,7 @@ class RoomFlowCoordinator: FlowCoordinatorProtocol {
                 defer { hideLoadingIndicator() }
                 switch await roomProxy.loadOrFetchEventDetails(for: eventID) {
                 case .success(let event):
-                    if flowParameters.appSettings.threadsEnabled, let threadRootEventID = event.threadRootEventId() {
+                    if flowParameters.appSettings.threadsEnabled, !roomProxy.isDirectOneToOneRoom, let threadRootEventID = event.threadRootEventId() {
                         if case .thread(threadRootEventID: threadRootEventID, _) = stateMachine.state, let threadCoordinator = childThreadScreenCoordinators.last {
                             threadCoordinator.focusOnEvent(eventID: eventID)
                         } else {
@@ -312,7 +312,7 @@ class RoomFlowCoordinator: FlowCoordinatorProtocol {
                 // Otherwise check if the focussed event exists to handle a possible error or theaded event.
                 switch await roomProxy.loadOrFetchEventDetails(for: focusEvent.eventID) {
                 case .success(let event):
-                    if flowParameters.appSettings.threadsEnabled, let threadRootEventID = event.threadRootEventId() {
+                    if flowParameters.appSettings.threadsEnabled, !roomProxy.isDirectOneToOneRoom, let threadRootEventID = event.threadRootEventId() {
                         stateMachine.tryEvent(.presentRoom(presentationAction: .thread(rootEventID: threadRootEventID,
                                                                                        focusEvent: .init(eventID: focusEvent.eventID,
                                                                                                          shouldSetPin: focusEvent.shouldSetPin))),
@@ -569,6 +569,10 @@ class RoomFlowCoordinator: FlowCoordinatorProtocol {
     private func presentRoom(fromState: State,
                              presentationAction: PresentationAction?,
                              animated: Bool) async {
+        var presentationAction = presentationAction
+        if roomProxy.isDirectOneToOneRoom, case let .thread(rootEventID, focusEvent) = presentationAction {
+            presentationAction = .eventFocus(focusEvent ?? .init(eventID: rootEventID, shouldSetPin: false))
+        }
         // If any sheets are presented dismiss them, rely on their dismissal callbacks to transition the state machine
         // through the correct states before presenting the room
         navigationStackCoordinator.setSheetCoordinator(nil)
@@ -738,7 +742,7 @@ class RoomFlowCoordinator: FlowCoordinatorProtocol {
     }
     
     private func presentThreadList() {
-        guard flowParameters.appSettings.threadsEnabled, !roomProxy.infoPublisher.value.isSpace,
+        guard flowParameters.appSettings.threadsEnabled, !roomProxy.isDirectOneToOneRoom, !roomProxy.infoPublisher.value.isSpace,
               let service = roomProxy.threadListService() else { return }
         let coordinator = RoomThreadListCoordinator(service: service) { [weak self] rootID in
             guard let self else { return }
@@ -749,6 +753,11 @@ class RoomFlowCoordinator: FlowCoordinatorProtocol {
     }
 
     private func presentThread(threadRootEventID: String, focusEventID: String?, animated: Bool) async {
+        guard !roomProxy.isDirectOneToOneRoom else {
+            stateMachine.tryEvent(.presentRoom(presentationAction: .eventFocus(.init(eventID: focusEventID ?? threadRootEventID, shouldSetPin: false))),
+                                  userInfo: EventUserInfo(animated: animated))
+            return
+        }
         showLoadingIndicator()
         defer { hideLoadingIndicator() }
         

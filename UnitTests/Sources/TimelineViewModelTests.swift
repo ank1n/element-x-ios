@@ -13,6 +13,29 @@ import XCTest
 
 @MainActor
 class TimelineViewModelTests: XCTestCase {
+    func testDirectRoomDisallowsThreadOpeningAndIgnoresGlobalToggle() async throws {
+        let settings = try XCTUnwrap(ServiceLocator.shared.settings)
+        let previous = settings.threadsEnabled
+        defer { settings.threadsEnabled = previous }
+        for direct in [true, false] {
+            settings.threadsEnabled = true
+            var config = JoinedRoomProxyMockConfiguration()
+            config.isDirect = direct; config.members = Array([RoomMemberProxyMock].allMembers.prefix(2))
+            let model = makeViewModel(roomProxy: JoinedRoomProxyMock(config), timelineController: MockTimelineController())
+            XCTAssertEqual(model.state.areThreadsEnabled, !direct)
+            settings.threadsEnabled = false
+            XCTAssertFalse(model.state.areThreadsEnabled)
+            settings.threadsEnabled = true
+            XCTAssertEqual(model.state.areThreadsEnabled, !direct)
+            var opened = false
+            let subscription = model.actions.sink { action in if case .displayThread = action { opened = true } }
+            model.process(viewAction: .displayThread(itemID: .randomEvent))
+            try await Task.sleep(for: .milliseconds(30))
+            XCTAssertEqual(opened, !direct)
+            withExtendedLifetime(subscription) { }
+        }
+    }
+
     var userIndicatorControllerMock: UserIndicatorControllerMock!
     var cancellables = Set<AnyCancellable>()
 

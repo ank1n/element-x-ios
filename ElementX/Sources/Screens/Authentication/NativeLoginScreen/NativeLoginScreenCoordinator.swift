@@ -47,4 +47,8 @@ final class NativeLoginScreenCoordinator: CoordinatorProtocol {
             NativeLoginScreen(context: viewModel.context)
         })
     }
+
+    func stop() {
+        viewModel.cancelPendingAuthentication()
+    }
 }

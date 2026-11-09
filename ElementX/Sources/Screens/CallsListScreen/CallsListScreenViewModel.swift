@@ -301,7 +301,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
             func enqueue(_ roomID: String) {
                 group.addTask {
                     guard let events = await self.fetchCallMemberEvents(roomID: roomID, homeserver: homeserver, accessToken: token) else { return (roomID, nil) }
-                    let calls = await self.extractCallSessions(events, roomID: roomID, ownUserID: ownUserID, cutoffDate: cutoff, sessionGapMs: 60000)
+                    let calls = await Self.extractCallSessions(events, roomID: roomID, ownUserID: ownUserID, cutoffDate: cutoff, sessionGapMs: 60000)
                     return (roomID, calls)
                 }
             }
@@ -327,12 +327,44 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
     }
 
     private func rebuildFetchedHistory() {
-        serverRecordings = CallHistoryItem.mergingTaskMetadata(in: snapshot.recordings)
-        for call in snapshot.roomCalls.values.flatMap({ $0 }) {
-            if let index = serverRecordings.firstIndex(where: { $0.contactId == call.contactId && abs($0.timestamp.timeIntervalSince(call.timestamp)) < 300 }) {
-                serverRecordings[index].attendeeIDs = CallSummaryPeople.uniqueIDs((serverRecordings[index].attendeeIDs ?? []) + (call.attendeeIDs ?? []))
-            } else { serverRecordings.append(call) }
+        serverRecordings = Self.mergingRoomSessions(recordings: snapshot.recordings,
+                                                    roomCalls: snapshot.roomCalls.values.flatMap { $0 })
+    }
+
+    /// Membership renewals can happen long after recording starts. Match the
+    /// actual interval in this room, never a five-minute start-time shortcut.
+    static func callsOverlap(_ first: CallHistoryItem, _ second: CallHistoryItem) -> Bool {
+        guard first.contactId == second.contactId else { return false }
+        if let a = first.callId, let b = second.callId, !a.isEmpty, !b.isEmpty, a != b { return false }
+        let a = max(0, first.duration ?? 0), b = max(0, second.duration ?? 0)
+        if a > 0, b > 0 {
+            return max(first.timestamp, second.timestamp) < min(first.timestamp.addingTimeInterval(a), second.timestamp.addingTimeInterval(b))
         }
+        if a > 0 { return second.timestamp >= first.timestamp && second.timestamp < first.timestamp.addingTimeInterval(a) }
+        if b > 0 { return first.timestamp >= second.timestamp && first.timestamp < second.timestamp.addingTimeInterval(b) }
+        return abs(first.timestamp.timeIntervalSince(second.timestamp)) <= 2
+    }
+
+    static func mergingRoomSessions(recordings: [CallHistoryItem], roomCalls: [CallHistoryItem]) -> [CallHistoryItem] {
+        var result = CallHistoryItem.mergingTaskMetadata(in: recordings)
+        for call in roomCalls.sorted(by: { $0.timestamp < $1.timestamp }) {
+            let matches = result.indices.filter { callsOverlap(result[$0], call) }
+            guard matches.count == 1, let index = matches.first else {
+                result.append(call)
+                continue
+            }
+            let hadRoomRoster = !(result[index].attendeeIDs ?? []).isEmpty
+            if let duration = call.duration {
+                let recordingEnd = result[index].timestamp.addingTimeInterval(result[index].duration ?? 0)
+                let end = max(call.timestamp.addingTimeInterval(duration), recordingEnd)
+                result[index].timestamp = min(call.timestamp, result[index].timestamp)
+                result[index].duration = end.timeIntervalSince(result[index].timestamp)
+            }
+            result[index].attendeeIDs = CallSummaryPeople.uniqueIDs((result[index].attendeeIDs ?? []) + (call.attendeeIDs ?? []))
+            if let attendees = result[index].attendeeIDs, !attendees.isEmpty { result[index].participantCount = attendees.count }
+            result[index].isMissed = hadRoomRoster ? result[index].isMissed && call.isMissed : call.isMissed
+        }
+        return result
     }
 
     private func persistHistory() async {
@@ -421,11 +453,10 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
     /// Кэш записей с сервера (egressId -> recording info)
     private var serverRecordings: [CallHistoryItem] = []
 
-    private func updateCallHistoryFromLocal(_ localCalls: [LocalCallHistoryItem], resolveMetadata: Bool = true) {
-        MXLog.info("📞 Updating call history from local: \(localCalls.count) calls, server recordings: \(serverRecordings.count)")
-
+    static func combinedCallHistory(localCalls: [LocalCallHistoryItem], recordings: [CallHistoryItem], homeserver: String) -> [CallHistoryItem] {
         // Конвертируем локальные записи в CallHistoryItem
-        var calls = localCalls.map { (local: LocalCallHistoryItem) -> CallHistoryItem in
+        var representedRecordings = Set<String>()
+        var calls = localCalls.compactMap { (local: LocalCallHistoryItem) -> CallHistoryItem? in
             // Определяем тип звонка
             let callType: CallHistoryItem.CallType
             switch local.direction {
@@ -435,12 +466,13 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
                 callType = .outgoing
             }
 
-            let matchedRecording = findMatchingRecording(for: local)
+            let matchedRecording = findMatchingRecording(for: local, recordings: recordings)
+            if let matchedRecording, !representedRecordings.insert(matchedRecording.contactId + "\n" + (matchedRecording.callId ?? matchedRecording.id)).inserted { return nil }
             let recordingURL: URL?
             if let matchedRecording {
                 recordingURL = matchedRecording.recordingURL
             } else if let egressID = local.recordingEgressId {
-                let domain = URL(string: userSession.clientProxy.homeserver)?.host ?? "stalk.implica.ru"
+                let domain = URL(string: homeserver)?.host ?? "stalk.implica.ru"
                 recordingURL = URL(string: "https://\(domain)/recording-api/api/recording/play/\(egressID)")
             } else {
                 recordingURL = nil
@@ -449,13 +481,14 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
                 (local.recordingEgressId.map { [$0] } ?? []))
 
             return CallHistoryItem(id: local.id,
-                                   contactName: local.displayName,
+                                   contactName: local.roomDisplayName ?? matchedRecording?.contactName ?? local.displayName,
                                    contactId: local.roomID,
                                    callType: callType,
-                                   timestamp: local.startedAt,
-                                   duration: local.duration,
-                                   isMissed: local.isMissed,
+                                   timestamp: matchedRecording?.timestamp ?? local.startedAt,
+                                   duration: matchedRecording?.duration ?? local.duration,
+                                   isMissed: matchedRecording?.isMissed ?? local.isMissed,
                                    recordingURL: recordingURL,
+                                   participantCount: matchedRecording?.attendeeIDs?.count ?? max(local.participantUserIDs.count, 2),
                                    recordingParticipants: matchedRecording?.recordingParticipants ?? local.participantUserIDs.map { RecordingParticipant(userId: $0, displayName: local.participantDisplayNames[$0] ?? $0) },
                                    attendeeIDs: matchedRecording?.attendeeIDs,
                                    createdTaskCount: matchedRecording?.createdTaskCount,
@@ -464,10 +497,8 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         }
 
         // Добавляем записи с сервера которые не имеют соответствия в локальной истории
-        for recording in serverRecordings {
-            let hasLocalMatch = localCalls.contains { local in
-                isRecordingMatchingCall(recording, localCall: local)
-            }
+        for recording in recordings {
+            let hasLocalMatch = representedRecordings.contains(recording.contactId + "\n" + (recording.callId ?? recording.id))
             if !hasLocalMatch {
                 calls.append(recording)
             }
@@ -476,13 +507,31 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         // Сортируем по времени (новые сверху)
         calls.sort { $0.timestamp > $1.timestamp }
 
+        return calls
+    }
+
+    private func updateCallHistoryFromLocal(_ localCalls: [LocalCallHistoryItem], resolveMetadata: Bool = true) {
+        MXLog.info("📞 Updating call history from local: \(localCalls.count) calls, server recordings: \(serverRecordings.count)")
+
+        var calls = Self.combinedCallHistory(localCalls: localCalls, recordings: serverRecordings,
+                                             homeserver: userSession.clientProxy.homeserver)
+
         // Apply cached room data (names, avatars) to freshly created items
         for i in calls.indices {
+            if let attendees = calls[i].attendeeIDs, !attendees.isEmpty { calls[i].participantCount = attendees.count }
             if let cached = resolvedRoomData[calls[i].contactId] {
                 if let name = cached.contactName { calls[i].contactName = name }
                 if let url = cached.avatarURL { calls[i].avatarURL = url }
-                if let count = cached.participantCount { calls[i].participantCount = count }
-                if let urls = cached.participantAvatarURLs { calls[i].participantAvatarURLs = urls }
+                if let isDirect = cached.isDirect { calls[i].isGroupRoom = !isDirect }
+                if let attendeeIDs = calls[i].attendeeIDs, !attendeeIDs.isEmpty {
+                    calls[i].participantCount = attendeeIDs.count
+                    if let avatars = cached.avatarsByUserID {
+                        calls[i].participantAvatarURLs = attendeeIDs.filter { $0 != userSession.clientProxy.userID }.compactMap { avatars[$0] }
+                    }
+                } else {
+                    if let count = cached.participantCount { calls[i].participantCount = count }
+                    if let urls = cached.participantAvatarURLs { calls[i].participantAvatarURLs = urls }
+                }
             }
         }
 
@@ -507,7 +556,10 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
     private func resolveAvatars(force: Bool = false) {
         guard isActive, applicationIsActive(), !stopped, avatarTask == nil,
               userSession.clientProxy.staticRoomSummaryProvider.statePublisher.value.isLoaded else { return }
-        let ids = Set(state.callHistory.map(\.contactId)).filter { force || resolvedRoomData[$0] == nil }
+        let ids = Set(state.callHistory.map(\.contactId)).filter {
+            guard !force, let cached = resolvedRoomData[$0] else { return true }
+            return cached.isDirect == nil || (cached.isDirect == false && cached.avatarsByUserID == nil)
+        }
         guard !ids.isEmpty else { return }
         let ownUserID = userSession.clientProxy.userID
         avatarTask = Task { [weak self] in
@@ -518,10 +570,11 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
                 guard userSession.clientProxy.roomMembership(roomID: roomID) == .joined,
                       case let .joined(room) = await userSession.clientProxy.roomForIdentifier(roomID) else { continue }
                 let info = room.infoPublisher.value
-                var metadata = CallHistoryRoomInfo(contactName: info.displayName, participantCount: Int(info.activeMembersCount))
-                if info.activeMembersCount > 2, let members = await room.members() {
+                var metadata = CallHistoryRoomInfo(contactName: info.displayName, participantCount: Int(info.activeMembersCount), isDirect: room.isDirectOneToOneRoom)
+                if !room.isDirectOneToOneRoom, let members = await room.members() {
                     let otherMembers = members.filter { $0.userID != ownUserID }
                     metadata.participantAvatarURLs = otherMembers.compactMap(\.avatarURL)
+                    metadata.avatarsByUserID = Dictionary(otherMembers.compactMap { member in member.avatarURL.map { (member.userID, $0) } }, uniquingKeysWith: { first, _ in first })
                 } else {
                     metadata.avatarURL = switch info.avatar {
                     case .heroes(let heroes) where heroes.count == 1: heroes[0].avatarURL
@@ -541,62 +594,27 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         }
     }
 
-    private func findMatchingRecording(for localCall: LocalCallHistoryItem) -> CallHistoryItem? {
+    private static func findMatchingRecording(for localCall: LocalCallHistoryItem, recordings: [CallHistoryItem]) -> CallHistoryItem? {
         if let egressID = localCall.recordingEgressId,
-           let primary = serverRecordings.first(where: { $0.id == egressID }) {
+           let primary = recordings.first(where: { $0.id == egressID }) {
             return primary
         }
-        return serverRecordings.first { recording in
-            isRecordingMatchingCall(recording, localCall: localCall)
-        }
+        let matches = recordings.filter { isRecordingMatchingCall($0, localCall: localCall) }
+        let identities = Set(matches.map { $0.contactId + "\n" + ($0.callId ?? $0.id) })
+        guard identities.count == 1 else { return nil }
+        return matches.first(where: \.hasRecording) ?? matches.first
     }
 
-    /// Проверяет соответствует ли запись локальному звонку
-    private func isRecordingMatchingCall(_ recording: CallHistoryItem, localCall: LocalCallHistoryItem) -> Bool {
+    private static func isRecordingMatchingCall(_ recording: CallHistoryItem, localCall: LocalCallHistoryItem) -> Bool {
         if let egressID = localCall.recordingEgressId {
-            return recording.id == egressID || recording.taskRecordingIDs.contains(egressID)
+            return recording.id == egressID || recording.callId == egressID || recording.taskRecordingIDs.contains(egressID)
         }
-        // Проверяем roomID (contactId в recording может быть matrixRoomId или encoded roomName)
-        let roomMatches = recording.contactId == localCall.roomID ||
-            recording.contactId.contains(localCall.roomID)
-
-        // Build 129 (Молли STMOB-104 spec): асимметричное окно match.
-        // Recording.startedAt всегда >= callStart (egress lag 1-3 мин обычно):
-        //   -30s buffer для jitter timestamp (Synapse vs egress)
-        //   +5min для egress lag
-        let delta = recording.timestamp.timeIntervalSince(localCall.startedAt)
-        let callEndTs = (localCall.duration ?? 0) > 0 ? (localCall.duration ?? 0) : 0
-        let timeMatches = delta >= -30 && delta <= callEndTs + 300
-
-        // Вариант 1: roomID совпадает + время близко
-        if roomMatches, timeMatches {
-            return true
-        }
-
-        // Вариант 2: roomID разные (DM vs call room), но время и длительность совпадают
-        // Это случай когда local хранит DM roomID, а сервер — call roomID
-        if timeMatches {
-            let localDuration = localCall.duration ?? 0
-            let recordingDuration = recording.duration ?? 0
-            // Если обе длительности > 0 и разница < 10 секунд — это один звонок
-            if localDuration > 0, recordingDuration > 0 {
-                let durationDiff = abs(localDuration - recordingDuration)
-                if durationDiff < 10 {
-                    return true
-                }
-            }
-            // Или если время начала совпадает с точностью до 30 секунд — скорее всего один звонок
-            if abs(delta) < 30 {
-                return true
-            }
-        }
-
-        return false
+        let local = CallHistoryItem(id: localCall.id, contactName: localCall.displayName, contactId: localCall.roomID,
+                                    callType: .incoming, timestamp: localCall.startedAt, duration: localCall.duration,
+                                    isMissed: localCall.isMissed, recordingURL: nil)
+        return Self.callsOverlap(recording, local)
     }
 
-    // MARK: - Call Events from Matrix Rooms
-
-    /// Fetch call.member events from a room via Matrix API
     private func fetchCallMemberEvents(roomID: String, homeserver: String, accessToken: String) async -> [[String: Any]]? {
         let pathCharacters = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))
         guard let encodedRoomID = roomID.addingPercentEncoding(withAllowedCharacters: pathCharacters),
@@ -635,74 +653,75 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         return nil
     }
 
-    /// Group call.member events into call sessions (mirrors web's extractCallSessions)
-    private func extractCallSessions(_ events: [[String: Any]], roomID: String, ownUserID: String, cutoffDate: Date, sessionGapMs: Int) -> [CallHistoryItem] {
-        // Sort by timestamp ascending
+    /// Membership is a lease per state key/device, not an activity heartbeat.
+    /// A quiet minute or one device reconnecting does not end the conference.
+    static func extractCallSessions(_ events: [[String: Any]], roomID: String, ownUserID: String,
+                                    cutoffDate: Date, sessionGapMs: Int) -> [CallHistoryItem] {
         let sorted = events.sorted { ($0["origin_server_ts"] as? Int ?? 0) < ($1["origin_server_ts"] as? Int ?? 0) }
-
+        var active: [String: (stateKey: String, expiresAt: Int)] = [:]
         var sessions: [CallHistoryItem] = []
-        var sessionStart = 0
-        var sessionEnd = 0
-        var caller: String?
-        var allParticipants = Set<String>()
-        var activeParticipants = Set<String>()
-        var inSession = false
+        var start: Int?
+        var last = 0
+        var caller = ""
+        var participants = Set<String>()
 
-        func flushSession() {
-            guard inSession, let caller else { return }
-            let date = Date(timeIntervalSince1970: TimeInterval(sessionStart) / 1000)
-            guard date > cutoffDate else { inSession = false; return }
-
-            let isIncoming = caller != ownUserID
-            let duration = TimeInterval(sessionEnd - sessionStart) / 1000
-            let isMissed = isIncoming && !allParticipants.contains(ownUserID)
-
-            sessions.append(CallHistoryItem(id: "rtc_\(CallHistoryCacheSnapshot.digest(roomID))_\(sessionStart)",
-                                            contactName: SL10n.callDefault,
-                                            contactId: roomID,
-                                            callType: isIncoming ? .incoming : .outgoing,
-                                            timestamp: date,
-                                            duration: duration > 5 ? duration : nil,
-                                            isMissed: isMissed,
-                                            recordingURL: nil, attendeeIDs: allParticipants.sorted()))
-            inSession = false
+        func flush(knownEnd: Bool) {
+            guard let beginning = start else { return }
+            defer { start = nil }
+            let date = Date(timeIntervalSince1970: Double(beginning) / 1000)
+            guard date > cutoffDate else { return }
+            let duration = knownEnd ? Double(last - beginning) / 1000 : 0
+            sessions.append(CallHistoryItem(id: "rtc_\(CallHistoryCacheSnapshot.digest(roomID))_\(beginning)",
+                                            contactName: SL10n.callDefault, contactId: roomID,
+                                            callType: caller == ownUserID ? .outgoing : .incoming, timestamp: date,
+                                            duration: duration > 0 ? duration : nil,
+                                            isMissed: knownEnd && caller != ownUserID && !participants.contains(ownUserID),
+                                            recordingURL: nil, attendeeIDs: participants.sorted()))
         }
 
         for event in sorted {
-            guard let ts = event["origin_server_ts"] as? Int else { continue }
-            let sender = event["sender"] as? String ?? ""
-            let content = event["content"] as? [String: Any]
-            // MatrixRTC: join = has "application" field (like web's isRtcJoin)
-            // OR legacy: has non-empty "memberships" array
-            let hasApplication = content?["application"] as? String != nil
-            let memberships = content?["memberships"] as? [[String: Any]] ?? []
-            let isJoin = hasApplication || !memberships.isEmpty
-
-            if isJoin {
-                if !inSession || (ts - sessionEnd) > sessionGapMs {
-                    flushSession()
-                    sessionStart = ts
-                    sessionEnd = ts
-                    caller = sender
-                    allParticipants = [sender]
-                    activeParticipants = [sender]
-                    inSession = true
-                } else {
-                    allParticipants.insert(sender)
-                    activeParticipants.insert(sender)
-                    sessionEnd = ts
+            guard let ts = event["origin_server_ts"] as? Int,
+                  let sender = event["sender"] as? String, !sender.isEmpty else { continue }
+            let remaining = active.filter { $0.value.expiresAt > ts }
+            if !active.isEmpty, remaining.isEmpty { flush(knownEnd: false) }
+            active = remaining
+            let key = event["state_key"] as? String ?? sender
+            let content = event["content"] as? [String: Any] ?? [:]
+            var leases: [[String: Any]] = []
+            if content["application"] as? String != nil { leases = [content] }
+            else { leases = content["memberships"] as? [[String: Any]] ?? [] }
+            // A state update replaces this device/user's old memberships atomically.
+            active = active.filter { $0.value.stateKey != key }
+            var joined = false
+            for (index, lease) in leases.enumerated() {
+                let base = lease["created_ts"] as? Int ?? ts
+                let expiresAt: Int
+                if let absolute = lease["expires_ts"] as? Int { expiresAt = absolute }
+                else {
+                    let lifetime = lease["expires"] as? Int ?? sessionGapMs
+                    guard lifetime > 0 else { continue }
+                    let sum = base.addingReportingOverflow(lifetime)
+                    guard !sum.overflow else { continue }
+                    expiresAt = sum.partialValue
                 }
-            } else {
-                if inSession {
-                    sessionEnd = ts
-                    activeParticipants.remove(sender)
-                    if activeParticipants.isEmpty {
-                        flushSession()
-                    }
+                guard expiresAt > ts else { continue }
+                let device = lease["device_id"] as? String ?? String(index)
+                active[key + "|" + device] = (key, expiresAt)
+                joined = true
+            }
+            if joined {
+                if start == nil {
+                    start = ts; caller = sender; participants = []
                 }
+                participants.insert(sender)
+                last = ts
+            } else if start != nil {
+                last = ts
+                if active.isEmpty { flush(knownEnd: true) }
             }
         }
-        flushSession()
+        // A missing leave is not a measured call duration.
+        flush(knownEnd: false)
         return sessions
     }
 

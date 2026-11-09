@@ -11,13 +11,19 @@ import XCTest
 
 enum Application {
     static func launch(_ identifier: UITestsScreenIdentifier, disableTimelineAccessibility: Bool = true) -> XCUIApplication {
+        checkEnvironments()
+        return launchForInteraction(identifier, disableTimelineAccessibility: disableTimelineAccessibility)
+    }
+
+    /// Interaction assertions do not compare pixel baselines and can run on the
+    /// developer's current simulator. Snapshot tests keep their exact OS/device guard.
+    static func launchForInteraction(_ identifier: UITestsScreenIdentifier, disableTimelineAccessibility: Bool = true, language: String? = nil) -> XCUIApplication {
         if ProcessInfo().environment["RECORD_FAILURES"].map(Bool.init) == true {
             XCUIApplication.recordMode = .failed
         }
         
-        checkEnvironments()
-        
         let app = XCUIApplication()
+        if let language { app.launchArguments += ["-AppleLanguages", "(\(language))"] }
         
         var launchEnvironment = [
             "UI_TESTS_SCREEN": identifier.rawValue

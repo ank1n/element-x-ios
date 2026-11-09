@@ -5,6 +5,56 @@ import UniformTypeIdentifiers
 import XCTest
 
 final class SharedFileImportTests: XCTestCase {
+    func testNestedSharePayloadSurvivesStartupAndKeepsDuplicateFilenames() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let group = root.appendingPathComponent("group", isDirectory: true)
+        let target = root.appendingPathComponent("app", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var files = [ShareExtensionMediaFile]()
+        for (folder, body) in [("first", "one"), ("second", "two")] {
+            let directory = group.appendingPathComponent(folder, isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let file = directory.appendingPathComponent("Смета проекта.pdf")
+            try Data(body.utf8).write(to: file)
+            files.append(.init(url: file, suggestedName: "Смета проекта.pdf"))
+        }
+        try ShareExtensionConstants.removeExpiredFiles(in: group)
+        let encoded = try JSONEncoder().encode(ShareExtensionPayload.mediaFiles(roomID: nil, mediaFiles: files))
+        let payload = try JSONDecoder().decode(ShareExtensionPayload.self, from: encoded)
+        guard case let .mediaFiles(roomID, staged) = try payload.withDefaultTemporaryDirectory(sourceDirectory: group, destinationDirectory: target) else { return XCTFail("Expected files") }
+        XCTAssertNil(roomID, "Share without a direct recipient must open the room picker")
+        XCTAssertEqual(staged.map(\.suggestedName), ["Смета проекта.pdf", "Смета проекта.pdf"])
+        XCTAssertEqual(staged.map(\.url.lastPathComponent), ["Смета проекта.pdf", "Смета проекта.pdf"])
+        XCTAssertNotEqual(staged[0].url, staged[1].url)
+        XCTAssertEqual(try Data(contentsOf: staged[0].url), Data("one".utf8))
+        XCTAssertEqual(try Data(contentsOf: staged[1].url), Data("two".utf8))
+        XCTAssertFalse(files.contains { FileManager.default.fileExists(atPath: $0.url.path) })
+    }
+
+    func testFailedPayloadImportKeepsOriginalsAndRemovesIncompleteCopies() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let group = root.appendingPathComponent("group", isDirectory: true)
+        let target = root.appendingPathComponent("app", isDirectory: true)
+        try FileManager.default.createDirectory(at: group, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let good = group.appendingPathComponent("report.pdf")
+        try Data("document".utf8).write(to: good)
+        let payload = ShareExtensionPayload.mediaFiles(roomID: nil, mediaFiles: [.init(url: good, suggestedName: "report.pdf"), .init(url: group.appendingPathComponent("missing.pdf"), suggestedName: nil)])
+        XCTAssertThrowsError(try payload.withDefaultTemporaryDirectory(sourceDirectory: group, destinationDirectory: target))
+        XCTAssertEqual(try Data(contentsOf: good), Data("document".utf8))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: target.path), [])
+    }
+
+    func testStartupCleanupOnlyRemovesExpiredShareDirectories() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("fresh-a"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("fresh-b"), withIntermediateDirectories: true)
+        // Advance the cleanup clock so these entries are demonstrably expired.
+        try ShareExtensionConstants.removeExpiredFiles(in: root, now: Date().addingTimeInterval(25 * 60 * 60))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path), [])
+    }
+
     func testOriginalFilenameWinsOverSuggestion() {
         XCTAssertEqual(SharedFileImport.filename(original: "Смета проекта.docx", suggested: "copy.docx", fileExtension: "docx"), "Смета проекта.docx")
     }

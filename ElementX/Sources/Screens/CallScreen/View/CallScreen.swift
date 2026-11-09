@@ -223,6 +223,9 @@ struct CallScreen: View {
                                    selectedContact = CallParticipantSelection.contact(identity: identity, participants: context.viewState.participants)
                                })
                                .ignoresSafeArea(.container, edges: .bottom)
+                               .safeAreaInset(edge: .top, spacing: 0) {
+                                   if !isMinimized { CallIncomingVideoNotice(reception: roomManager.cameraReception) }
+                               }
                                // Подложка для системного окна «картинка в картинке»: она должна
                                // быть в иерархии в момент сворачивания приложения, иначе система
                                // окно не откроет. Невидимая и не перехватывает касания.
@@ -327,6 +330,9 @@ struct CallScreen: View {
                         Label(context.viewState.isScreenSharing ? NSLocalizedString("stalk_call_stop_sharing", tableName: "Localizable", value: "Остановить шаринг", comment: "Stop screen sharing in call") : SL10n.callScreenShare,
                               systemImage: context.viewState.isScreenSharing ? "rectangle.inset.filled.and.person.filled" : "rectangle.on.rectangle")
                     }
+                }
+                if !context.viewState.allowsLayoutChoice, let manager = context.viewState.liveKitRoomManager {
+                    CallReceiveVideoToggle(reception: manager.cameraReception) { context.send(viewAction: .setReceiveCameraVideo($0)) }
                 }
                 Toggle(isOn: Binding(get: { context.viewState.callBackgroundMode != .off },
                                      set: { _ in context.send(viewAction: .toggleCallBackground) })) {
@@ -446,6 +452,9 @@ struct CallScreen: View {
                                 Label(NSLocalizedString("stalk_call_hide_without_video", value: "Hide participants without video", comment: "Call view filter"),
                                       systemImage: context.viewState.videoVisibility.hideParticipantsWithoutVideo ? "checkmark" : "video.slash")
                             }
+                        }
+                        if let manager = context.viewState.liveKitRoomManager {
+                            CallReceiveVideoToggle(reception: manager.cameraReception) { context.send(viewAction: .setReceiveCameraVideo($0)) }
                         }
                     } label: {
                         Image(systemName: "square.grid.2x2")

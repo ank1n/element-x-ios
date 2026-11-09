@@ -45,7 +45,7 @@ struct TimelineView: View {
                                                              emojiProvider: timelineContext.viewState.emojiProvider, channel: timelineContext.viewState.channelAccess)
                     .makeActions()
                 if let actions {
-                    TimelineItemMenu(item: info.item, actions: actions)
+                    TimelineItemMenu(item: info.item, actions: actions, compact: info.compact)
                         .environmentObject(timelineContext)
                 }
             }

@@ -10,6 +10,8 @@ import SwiftUI
 struct CallDetailScreen: View {
     @ObservedObject var context: CallDetailScreenViewModelType.Context
     var showsCallBack = true
+    @State private var showsParticipants = false
+    @State private var participantToOpen: String?
     @AppStorage("stalk_design_theme") private var designTheme = "cosmos"
 
     private var isCosmos: Bool {
@@ -22,10 +24,6 @@ struct CallDetailScreen: View {
                 callHeader
                     .padding(.horizontal, 16)
                     .padding(.top, 16)
-                    .padding(.bottom, 12)
-
-                actualParticipants
-                    .padding(.horizontal, 16)
                     .padding(.bottom, 12)
 
                 linkedTaskSummary
@@ -43,6 +41,19 @@ struct CallDetailScreen: View {
         .background(isCosmos ? Color(.systemGroupedBackground) : Color(.systemBackground))
         .navigationTitle(NSLocalizedString("stalk_calldetail_title", tableName: "Localizable", value: "Детали звонка", comment: "Call detail screen title"))
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showsParticipants, onDismiss: {
+            if let id = participantToOpen {
+                participantToOpen = nil
+                context.send(viewAction: .openParticipant(id))
+            }
+        }) {
+            NavigationStack {
+                ScrollView { actualParticipants.padding(16) }
+                    .navigationTitle(NSLocalizedString("stalk_call_actual_participants", comment: "Actual call attendees"))
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.actionClose) { showsParticipants = false } } }
+            }
+        }
         .onAppear { context.send(viewAction: .appeared) }
         .onDisappear { context.send(viewAction: .disappeared) }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
@@ -52,10 +63,8 @@ struct CallDetailScreen: View {
 
     private var actualParticipants: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(NSLocalizedString("stalk_call_actual_participants", comment: "Actual call attendees"))
-                .font(.caption).foregroundStyle(.secondary)
             ForEach(context.viewState.actualAttendees) { person in
-                participantButton(person.id, fallbackName: person.name)
+                participantButton(person.id, fallbackName: person.name, dismissParticipants: true)
             }
             if context.viewState.isAttendeesLoading { ProgressView() }
             if context.viewState.attendeesError {
@@ -68,22 +77,61 @@ struct CallDetailScreen: View {
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    @ViewBuilder
-    private func topicAttribution(_ topic: SummaryTopic) -> some View {
-        let ids = CallSummaryPeople.uniqueIDs(topic.mentions ?? [])
-        if !ids.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(NSLocalizedString("stalk_call_topic_participants", comment: "Topic participants"))
-                    .font(.caption).foregroundStyle(.secondary)
-                ForEach(ids, id: \.self) { id in participantButton(id) }
-            }.padding(.leading, 36)
+    private var knownParticipantIDs: [String] {
+        Array(Set(context.viewState.participantProfiles.keys).union(context.viewState.actualAttendees.map(\.id)))
+    }
+
+    private func summaryText(_ text: String) -> some View {
+        CallSummaryMentionText(text: text, profiles: context.viewState.participantProfiles,
+                               knownIDs: knownParticipantIDs, mediaProvider: context.mediaProvider) {
+            context.send(viewAction: .openParticipant($0))
         }
     }
 
-    private func participantButton(_ id: String, fallbackName: String? = nil) -> some View {
+    private var participantsButton: some View {
+        Button { showsParticipants = true } label: {
+            ViewThatFits(in: .horizontal) {
+                attendeeAvatars(limit: 4)
+                attendeeAvatars(limit: 2)
+                attendeeAvatars(limit: 1)
+            }
+            .frame(minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(NSLocalizedString("stalk_call_actual_participants", comment: "Actual call attendees"))
+    }
+
+    private func attendeeAvatars(limit: Int) -> some View {
+        HStack(spacing: -5) {
+            ForEach(context.viewState.actualAttendees.prefix(limit)) { person in
+                let profile = context.viewState.participantProfiles[person.id]
+                LoadableAvatarImage(url: profile?.avatarURL, name: profile?.displayName ?? person.name,
+                                    contentID: person.id, avatarSize: .custom(26), mediaProvider: context.mediaProvider)
+                    .accessibilityHidden(true)
+            }
+            if context.viewState.actualAttendees.count > limit {
+                Text("+\(context.viewState.actualAttendees.count - limit)")
+                    .font(.caption.weight(.semibold)).padding(5)
+                    .background(Color(.secondarySystemFill), in: Circle())
+            }
+            if context.viewState.actualAttendees.isEmpty {
+                Image(systemName: "person.2.circle.fill").font(.title2).foregroundStyle(.secondary)
+            }
+            if context.viewState.isAttendeesLoading { ProgressView().padding(.leading, 8) }
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private func participantButton(_ id: String, fallbackName: String? = nil, dismissParticipants: Bool = false) -> some View {
         let profile = context.viewState.participantProfiles[id]
         let name = profile?.displayName ?? fallbackName ?? id
-        return Button { context.send(viewAction: .openParticipant(id)) } label: {
+        return Button {
+            if dismissParticipants {
+                participantToOpen = id
+                showsParticipants = false
+            } else { context.send(viewAction: .openParticipant(id)) }
+        } label: {
             HStack(spacing: 8) {
                 LoadableAvatarImage(url: profile?.avatarURL, name: name, contentID: id,
                                     avatarSize: .custom(28), mediaProvider: context.mediaProvider)
@@ -113,32 +161,27 @@ struct CallDetailScreen: View {
                     .foregroundColor(.primary)
                     .lineLimit(1)
 
-                HStack(spacing: 6) {
-                    Image(systemName: callDirectionIcon)
-                        .font(.system(size: 12))
-                        .foregroundColor(callDirectionColor)
-
-                    Text(callDateString)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-
-                    if let duration = context.viewState.call.duration {
-                        Text("·")
-                            .foregroundColor(.secondary)
-                        Text(formatDuration(duration))
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 6) {
+                        callDateLabel.fixedSize()
+                        if let duration = context.viewState.call.duration {
+                            Text("·")
+                            Text(formatDuration(duration)).fixedSize()
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        callDateLabel
+                        if let duration = context.viewState.call.duration {
+                            Text(formatDuration(duration)).lineLimit(1)
+                        }
                     }
                 }
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
 
-                if context.viewState.call.isGroupCall {
-                    Text(String(format: NSLocalizedString("stalk_calldetail_participants_count", tableName: "Localizable", value: "%d участников", comment: "Call detail: participants count"), context.viewState.call.participantCount))
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+                participantsButton
             }
-
-            Spacer()
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             // Call back button
             if showsCallBack {
@@ -155,6 +198,16 @@ struct CallDetailScreen: View {
                     }
                 }
             }
+        }
+    }
+
+    private var callDateLabel: some View {
+        Label {
+            Text(callDateString).lineLimit(2)
+        } icon: {
+            Image(systemName: callDirectionIcon)
+                .font(.system(size: 12))
+                .foregroundColor(callDirectionColor)
         }
     }
 
@@ -355,13 +408,6 @@ struct CallDetailScreen: View {
                     .padding(.vertical, 24)
             }
 
-            if !pending.isEmpty {
-                sectionHeader(NSLocalizedString("stalk_calldetail_llm_suggestions", tableName: "Localizable", value: "Предложения LLM", comment: "Section header: LLM suggestions"))
-                ForEach(pending) { task in
-                    suggestedTaskCard(task)
-                }
-            }
-
             if !created.isEmpty {
                 HStack {
                     sectionHeader(NSLocalizedString("stalk_calldetail_created_tasks", tableName: "Localizable", value: "Созданные задачи", comment: "Section header: created tasks"))
@@ -376,6 +422,13 @@ struct CallDetailScreen: View {
                 }
                 ForEach(created) { task in
                     createdTaskCard(task)
+                }
+            }
+
+            if !pending.isEmpty {
+                sectionHeader(NSLocalizedString("stalk_calldetail_llm_suggestions", tableName: "Localizable", value: "Предложения LLM", comment: "Section header: LLM suggestions"))
+                ForEach(pending) { task in
+                    suggestedTaskCard(task)
                 }
             }
 
@@ -404,6 +457,8 @@ struct CallDetailScreen: View {
 
     private func suggestedTaskCard(_ task: SuggestedTask) -> some View {
         VStack(alignment: .leading, spacing: 10) {
+            Text(NSLocalizedString("stalk_call_task_proposal", value: "Suggestion", comment: "Unconverted call task suggestion"))
+                .font(.caption.weight(.medium)).foregroundStyle(.secondary)
             if let assignee = task.assignee, CallSummaryPeople.isUserID(assignee.matrixID) {
                 Text(NSLocalizedString("stalk_call_assignee", comment: "Assignee"))
                     .font(.caption).foregroundStyle(.secondary)
@@ -423,6 +478,7 @@ struct CallDetailScreen: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
+            .disabled(!context.viewState.tasksHaveLoaded || context.viewState.isTasksLoading || context.viewState.tasksError != nil)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -437,22 +493,17 @@ struct CallDetailScreen: View {
             }
         } label: {
             VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 6) {
-                    if let identifier = task.trackitProjectIdentifier, let seq = task.trackitSequenceId {
-                        Text("\(identifier)-\(seq)")
-                            .font(.caption)
-                            .fontWeight(.bold)
-                            .foregroundColor(.accentColor)
+                Label(NSLocalizedString("stalk_call_task_created", value: "Created in TrackIT", comment: "Created call task"), systemImage: "checkmark.circle.fill")
+                    .font(.caption).foregroundStyle(.secondary)
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline) {
+                        taskIdentifier(task)
+                        Spacer(minLength: 8)
+                        taskStatus(task)
                     }
-                    Spacer()
-                    if let stateName = task.trackitStateName {
-                        Text(stateName)
-                            .font(.caption)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(stateBadgeColor(group: task.trackitStateGroup).opacity(0.18))
-                            .foregroundColor(.primary)
-                            .cornerRadius(8)
+                    VStack(alignment: .leading, spacing: 6) {
+                        taskIdentifier(task)
+                        taskStatus(task)
                     }
                 }
                 Text(task.taskText)
@@ -467,6 +518,20 @@ struct CallDetailScreen: View {
             .cornerRadius(10)
         }
         .buttonStyle(.plain)
+    }
+
+    private func taskIdentifier(_ task: CreatedTask) -> some View {
+        Text(task.callDisplayIdentifier)
+            .font(.subheadline.weight(.semibold)).foregroundStyle(Color.accentColor)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func taskStatus(_ task: CreatedTask) -> some View {
+        Text(task.callDisplayStatus)
+            .font(.caption.weight(.semibold))
+            .padding(.horizontal, 9).padding(.vertical, 5)
+            .background(stateBadgeColor(group: task.trackitStateGroup).opacity(0.14), in: Capsule())
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private func stateBadgeColor(group: String?) -> Color {
@@ -521,7 +586,6 @@ struct CallDetailScreen: View {
             if let topics = context.viewState.transcriptionData?.summary?.topics, !topics.isEmpty {
                 ForEach(Array(topics.enumerated()), id: \.offset) { index, topic in
                     topicRow(index: index + 1, topic: topic)
-                    topicAttribution(topic)
                 }
             } else if let text = context.viewState.transcriptionData?.summary?.text, !text.isEmpty {
                 let points = text.split(separator: ";").map { String($0).trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
@@ -531,7 +595,7 @@ struct CallDetailScreen: View {
                             .fill(Color.accentColor)
                             .frame(width: 6, height: 6)
                             .padding(.top, 6)
-                        Text(point)
+                        summaryText(point)
                             .font(.subheadline)
                     }
                 }
@@ -546,7 +610,7 @@ struct CallDetailScreen: View {
                             .font(.system(size: 10))
                             .foregroundColor(.orange)
                             .padding(.top, 4)
-                        Text(point)
+                        summaryText(point)
                             .font(.subheadline)
                     }
                 }
@@ -561,7 +625,7 @@ struct CallDetailScreen: View {
                             .font(.system(size: 14))
                             .foregroundColor(.accentColor)
                             .padding(.top, 2)
-                        Text(item)
+                        summaryText(item)
                             .font(.subheadline)
                     }
                 }
@@ -579,10 +643,9 @@ struct CallDetailScreen: View {
                 ForEach(Array(topics.enumerated()), id: \.offset) { index, topic in
                     VStack(alignment: .leading, spacing: 8) {
                         topicRow(index: index + 1, topic: topic)
-                        topicAttribution(topic)
 
                         if let discussed = topic.discussed, !discussed.isEmpty {
-                            Text(discussed)
+                            summaryText(discussed)
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                                 .padding(.leading, 36)
@@ -595,7 +658,7 @@ struct CallDetailScreen: View {
                                 Image(systemName: "checkmark.circle.fill")
                                     .font(.system(size: 14))
                                     .foregroundColor(.green)
-                                Text(agreed)
+                                summaryText(agreed)
                                     .font(.subheadline)
                                     .foregroundColor(.primary)
                             }
@@ -621,8 +684,10 @@ struct CallDetailScreen: View {
                     HStack(alignment: .top, spacing: 10) {
                         // Build 126: реальный avatar если найден в speakerAvatars,
                         // fallback — colored circle с инициалами.
-                        let speakerName = segment.speakerLabel ?? segment.speaker
-                        LoadableAvatarImage(url: segment.speakerID.flatMap { context.viewState.participantProfiles[$0]?.avatarURL } ?? (segment.speakerID == nil ? context.viewState.speakerAvatars[speakerName] : nil),
+                        let speakerID = CallSummaryMentions.userID(segment.speakerID ?? segment.speaker, knownIDs: knownParticipantIDs)
+                        let profile = speakerID.flatMap { context.viewState.participantProfiles[$0] }
+                        let speakerName = profile?.displayName ?? segment.speakerLabel ?? speakerID.map(CallSummaryMentions.fallbackName) ?? segment.speaker
+                        LoadableAvatarImage(url: profile?.avatarURL ?? (speakerID == nil ? context.viewState.speakerAvatars[speakerName] : nil),
                                             name: speakerName,
                                             contentID: speakerName,
                                             avatarSize: .custom(32),
@@ -631,12 +696,12 @@ struct CallDetailScreen: View {
                         VStack(alignment: .leading, spacing: 2) {
                             HStack {
                                 Button {
-                                    if let id = segment.speakerID { context.send(viewAction: .openParticipant(id)) }
+                                    if let speakerID { context.send(viewAction: .openParticipant(speakerID)) }
                                 } label: {
-                                    Text(segment.speakerID.flatMap { context.viewState.participantProfiles[$0]?.displayName } ?? speakerName)
+                                    Text(speakerName)
                                 }
                                 .buttonStyle(.plain)
-                                .disabled(segment.speakerID.map { !CallSummaryPeople.isUserID($0) } ?? true)
+                                .disabled(speakerID == nil)
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundColor(.primary)
                                 .lineLimit(1)
@@ -656,7 +721,7 @@ struct CallDetailScreen: View {
                                 }
                             }
 
-                            Text(segment.text)
+                            summaryText(segment.text)
                                 .font(.subheadline)
                                 .foregroundColor(.primary)
                         }
@@ -745,8 +810,7 @@ struct CallDetailScreen: View {
 
     private var callDateString: String {
         let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
+        formatter.setLocalizedDateFormatFromTemplate("dMMMyHm")
         return formatter.string(from: context.viewState.call.timestamp)
     }
 

@@ -8,157 +8,61 @@
 
 import SwiftUI
 
-struct SwipeRightAction<Label: View>: ViewModifier {
-    private let actionThreshold = 50.0
-    private let xOffsetThreshold = 100.0
-    private let swipeThreshold = 1000.0
-    
-    private let feedbackGenerator = UIImpactFeedbackGenerator(style: .heavy)
-    
-    @State private var canStartAction = false
-    @GestureState private var dragGestureActive = false
-    
-    @State private var hasReachedActionThreshold = false
-    @State private var xOffset = 0.0
-    
-    /// The view to be shown on the left side of the content
-    let label: () -> Label
-    /// Defer computing whether an action is available until the gesture is started
-    let shouldStartAction: () -> Bool
-    /// Callback for when the dragged past the action threshold
-    let action: () -> Void
-    
-    func body(content: Content) -> some View {
-        mainContent(content: content)
-            .onChange(of: dragGestureActive) { _, newValue in
-                if newValue == true {
-                    if shouldStartAction() {
-                        feedbackGenerator.prepare()
-                        canStartAction = true
-                    }
-                }
-            }
-            .overlay(alignment: .leading) {
-                // We want the action icon to follow the view translation and gradually fade in
-                label()
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: actionThreshold)
-                    .opacity(xOffset / 50)
-                    .animation(.interactiveSpring().speed(0.5), value: xOffset)
-                    .offset(x: -actionThreshold + min(xOffset, actionThreshold), y: 0.0)
-            }
+/// Shared gesture state, including cancellation and permissions changing mid-swipe.
+struct SwipeReplyActionState {
+    static let threshold: CGFloat = 56
+    private(set) var offset: CGFloat = 0
+
+    mutating func update(_ translation: CGSize, enabled: Bool) -> Bool {
+        let wasReady = offset >= Self.threshold
+        guard enabled, -translation.width > abs(translation.height) else {
+            offset = 0
+            return false
+        }
+        let width = max(0, -translation.width)
+        offset = width <= 100 ? width : 100 + sqrt(width - 100)
+        return !wasReady && offset >= Self.threshold
     }
-    
-    private func mainContent(content: Content) -> some View {
+
+    mutating func finish(cancelled: Bool, enabled: Bool) -> Bool {
+        defer { offset = 0 }
+        return !cancelled && enabled && offset >= Self.threshold
+    }
+}
+
+struct SwipeReplyAction: ViewModifier {
+    private let feedbackGenerator = UIImpactFeedbackGenerator(style: .medium)
+    @State private var swipe = SwipeReplyActionState()
+    let shouldStartAction: () -> Bool
+    let action: () -> Void
+
+    func body(content: Content) -> some View {
         content
-            .offset(x: xOffset, y: 0.0)
-            .animation(.interactiveSpring().speed(0.5), value: xOffset)
-            .gesture(PanGestureRepresentable { gesture in
+            .contentShape(Rectangle())
+            .offset(x: -swipe.offset)
+            .animation(.interactiveSpring(), value: swipe.offset)
+            .gesture(HorizontalPanGesture(shouldBegin: shouldStartAction, allowsLeftward: true, allowsRightward: false) { gesture in
                 switch gesture.state {
-                case .ended, .cancelled, .failed:
-                    if xOffset > actionThreshold {
-                        action()
+                case .ended:
+                    if swipe.finish(cancelled: false, enabled: shouldStartAction()) { action() }
+                case .cancelled, .failed:
+                    _ = swipe.finish(cancelled: true, enabled: false)
+                case .began, .changed:
+                    if gesture.state == .began { feedbackGenerator.prepare() }
+                    let translation = gesture.translation(in: gesture.view)
+                    if swipe.update(CGSize(width: translation.x, height: translation.y), enabled: shouldStartAction()) {
+                        feedbackGenerator.impactOccurred()
                     }
-                    
-                    xOffset = 0.0
-                default:
-                    guard shouldStartAction() else {
-                        return
-                    }
-                    let translation = gesture.translation(in: nil)
-                    
-                    // Due to https://forums.developer.apple.com/forums/thread/760035 we had to make
-                    // the drag a simultaneous gesture otherwise it was impossible to scroll the timeline.
-                    // Therefore we need to prevent the animation to run if the user is to scrolling vertically.
-                    // It would be nice if we could somehow abort the gesture in this case.
-                    let width: CGFloat = if translation.x > abs(translation.y) {
-                        translation.x
-                    } else {
-                        0.0
-                    }
-                    
-                    // We want to add a spring like behaviour to the drag in which the view
-                    // moves slower the more it's dragged. We use a circular easing function
-                    // to generate those values up to the `swipeThreshold`
-                    // The final translation will be between 0 and `swipeThreshold` with the action being enabled from
-                    // `actionThreshold` onwards
-                    let screenWidthNormalisedTranslation = max(0.0, min(width, swipeThreshold)) / swipeThreshold
-                    let easedTranslation = circularEaseOut(screenWidthNormalisedTranslation)
-                    xOffset = easedTranslation * xOffsetThreshold
-                    
-                    if xOffset > actionThreshold {
-                        if !hasReachedActionThreshold {
-                            feedbackGenerator.impactOccurred()
-                            hasReachedActionThreshold = true
-                        }
-                    } else {
-                        hasReachedActionThreshold = false
-                    }
+                default: break
                 }
             })
-    }
-    
-    private var oldGesture: some Gesture {
-        DragGesture()
-            .updating($dragGestureActive) { _, state, _ in
-                // Available actions should be computed on the fly so we use a gesture state change
-                // to ask whether the move should be started or not.
-                state = true
-            }
-            .onChanged { value in
-                guard canStartAction, value.translation.width > value.translation.height else {
-                    return
-                }
-                
-                // Due to https://forums.developer.apple.com/forums/thread/760035 we had to make
-                // the drag a simultaneous gesture otherwise it was impossible to scroll the timeline.
-                // Therefore we need to prevent the animation to run if the user is to scrolling vertically.
-                // It would be nice if we could somehow abort the gesture in this case.
-                let width: CGFloat = if value.translation.width > abs(value.translation.height) {
-                    value.translation.width
-                } else {
-                    0.0
-                }
-                
-                // We want to add a spring like behaviour to the drag in which the view
-                // moves slower the more it's dragged. We use a circular easing function
-                // to generate those values up to the `swipeThreshold`
-                // The final translation will be between 0 and `swipeThreshold` with the action being enabled from
-                // `actionThreshold` onwards
-                let screenWidthNormalisedTranslation = max(0.0, min(width, swipeThreshold)) / swipeThreshold
-                let easedTranslation = circularEaseOut(screenWidthNormalisedTranslation)
-                xOffset = easedTranslation * xOffsetThreshold
-                
-                if xOffset > actionThreshold {
-                    if !hasReachedActionThreshold {
-                        feedbackGenerator.impactOccurred()
-                        hasReachedActionThreshold = true
-                    }
-                } else {
-                    hasReachedActionThreshold = false
-                }
-            }
-            .onEnded { _ in
-                if xOffset > actionThreshold {
-                    action()
-                }
-                
-                xOffset = 0.0
-            }
-    }
-    
-    /// Used to compute the horizontal translation amount.
-    /// The more it's dragged the less it moves on a circular ease out curve
-    private func circularEaseOut(_ value: Double) -> Double {
-        sqrt((2 - value) * value)
     }
 }
 
 extension View {
-    func swipeRightAction(label: @escaping () -> some View,
-                          shouldStartAction: @escaping () -> Bool,
+    func swipeReplyAction(shouldStartAction: @escaping () -> Bool,
                           action: @escaping () -> Void) -> some View {
-        modifier(SwipeRightAction(label: label, shouldStartAction: shouldStartAction, action: action))
+        modifier(SwipeReplyAction(shouldStartAction: shouldStartAction, action: action))
     }
 }
 
@@ -176,11 +80,9 @@ struct SwipeRightAction_Previews: PreviewProvider, TestablePreview {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("This is a message from somebody with a couple of lines of text.")
                             .bubbleBackground()
-                            .swipeRightAction {
-                                Image(systemName: "flame")
-                            } shouldStartAction: {
+                            .swipeReplyAction(shouldStartAction: {
                                 true
-                            } action: {
+                            }) {
                                 isPresentingSheet = true
                             }
                     }
@@ -199,35 +101,55 @@ struct SwipeRightAction_Previews: PreviewProvider, TestablePreview {
 
 /// Fixes the issue on iOS 18 where DragGesture conflicts with the scroll view
 /// https://github.com/feedback-assistant/reports/issues/542#issuecomment-2581322968
-private struct PanGestureRepresentable: UIGestureRecognizerRepresentable {
+struct HorizontalPanGesture: UIGestureRecognizerRepresentable {
+    var shouldBegin: () -> Bool
+    var allowsLeftward = false
+    var allowsRightward = true
     var handle: (UIPanGestureRecognizer) -> Void
     
     func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator {
-        .init()
+        .init(shouldBegin: shouldBegin, allowsLeftward: allowsLeftward, allowsRightward: allowsRightward)
     }
     
     func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
         let gesture = UIPanGestureRecognizer()
         gesture.delegate = context.coordinator
         gesture.isEnabled = true
+        gesture.cancelsTouchesInView = false
         return gesture
     }
     
+    func updateUIGestureRecognizer(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        context.coordinator.shouldBegin = shouldBegin
+        context.coordinator.allowsLeftward = allowsLeftward
+        context.coordinator.allowsRightward = allowsRightward
+    }
+
     func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
         handle(recognizer)
     }
     
     class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var shouldBegin: () -> Bool
+        var allowsLeftward: Bool
+        var allowsRightward: Bool
+
+        init(shouldBegin: @escaping () -> Bool, allowsLeftward: Bool, allowsRightward: Bool = true) {
+            self.shouldBegin = shouldBegin
+            self.allowsLeftward = allowsLeftward
+            self.allowsRightward = allowsRightward
+        }
+
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
                                shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-            false
+            otherGestureRecognizer is UIPanGestureRecognizer && otherGestureRecognizer.view is UIScrollView
         }
         
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
             guard let panRecognizer = gestureRecognizer as? UIPanGestureRecognizer else { return false }
 
             let velocity = panRecognizer.velocity(in: gestureRecognizer.view)
-            return abs(velocity.y) < abs(velocity.x)
+            return shouldBegin() && abs(velocity.x) > abs(velocity.y) && ((allowsLeftward && velocity.x < 0) || (allowsRightward && velocity.x > 0))
         }
     }
 }

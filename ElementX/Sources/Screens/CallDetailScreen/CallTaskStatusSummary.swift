@@ -123,18 +123,22 @@ struct CallTaskStatusSummary: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label {
-                Text(NSLocalizedString("stalk_call_tasks_summary_title", tableName: "Localizable", value: "Linked tasks", comment: "Call task status summary heading"))
-            } icon: {
-                Image(systemName: "checkmark.circle")
-                    .accessibilityHidden(true)
+            HStack {
+                Label {
+                    Text(NSLocalizedString("stalk_call_tasks_summary_title", tableName: "Localizable", value: "Linked tasks", comment: "Call task status summary heading"))
+                } icon: {
+                    Image(systemName: "checkmark.circle")
+                        .accessibilityHidden(true)
+                }
+                .font(.subheadline.weight(.semibold))
+                .accessibilityAddTraits(.isHeader)
+                Spacer()
+                Text(String(statistics.total)).font(.headline.monospacedDigit())
+                    .padding(.horizontal, 9).padding(.vertical, 4)
+                    .background(Color.accentColor.opacity(0.12), in: Capsule())
             }
-            .font(.subheadline.weight(.semibold))
-            .accessibilityAddTraits(.isHeader)
 
             LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
-                count(NSLocalizedString("stalk_call_tasks_total", tableName: "Localizable", value: "Total: %ld", comment: "Total linked task count"),
-                      value: statistics.total, symbol: "number.circle", color: .primary, emphasized: true)
                 count(NSLocalizedString("stalk_call_tasks_backlog", tableName: "Localizable", value: "Backlog: %ld", comment: "Backlog and unstarted task count"),
                       value: statistics.backlog, symbol: "tray", color: .secondary)
                 count(NSLocalizedString("stalk_call_tasks_started", tableName: "Localizable", value: "In progress: %ld", comment: "Started task count"),
@@ -159,10 +163,10 @@ struct CallTaskStatusSummary: View {
         if dynamicTypeSize >= .xxxLarge {
             return [GridItem(.flexible(), alignment: .leading)]
         }
-        return [GridItem(.adaptive(minimum: 150), alignment: .leading)]
+        return [GridItem(.adaptive(minimum: 100), alignment: .leading)]
     }
 
-    private func count(_ format: String, value: Int, symbol: String, color: Color, emphasized: Bool = false) -> some View {
+    private func count(_ format: String, value: Int, symbol: String, color: Color) -> some View {
         let label = String(format: format, locale: Locale.current, value)
         return HStack(alignment: .firstTextBaseline, spacing: 6) {
             Image(systemName: symbol)
@@ -172,7 +176,9 @@ struct CallTaskStatusSummary: View {
                 .foregroundColor(.primary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .font(.subheadline.weight(emphasized ? .semibold : .regular))
+        .font(.caption.weight(.medium))
+        .padding(.horizontal, 8).padding(.vertical, 6)
+        .background(color.opacity(0.08), in: Capsule())
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(label))

@@ -12,6 +12,12 @@ import MatrixRustSDK
 /// The resulting callback URL (with auth code) is passed back to the SDK
 /// for standard token exchange and device registration.
 final class HeadlessOIDCAuthenticator {
+    private let sessionFactory: (() -> URLSession)?
+
+    init(sessionFactory: (() -> URLSession)? = nil) {
+        self.sessionFactory = sessionFactory
+    }
+
     enum AuthError: LocalizedError {
         case noLoginFormFound
         case loginFailed(String)
@@ -42,9 +48,13 @@ final class HeadlessOIDCAuthenticator {
     /// STMOB-202: the chosen homeserver (e.g. "market.implica.ru"). Used to recognise the
     /// final OIDC callback and to scope cookie clearing, so login works on any server.
     private var homeserver = "stalk.implica.ru"
+    private var requestOneTimeCode: (@MainActor (Bool) async throws -> String)?
 
-    func authenticate(authURL: URL, username: String, password: String, homeserver: String = "stalk.implica.ru") async throws -> URL {
+    func authenticate(authURL: URL, username: String, password: String, homeserver: String = "stalk.implica.ru",
+                      requestOneTimeCode: (@MainActor (Bool) async throws -> String)? = nil) async throws -> URL {
         self.homeserver = homeserver
+        self.requestOneTimeCode = requestOneTimeCode
+        defer { self.requestOneTimeCode = nil }
 
         // STMOB-182: clear any leftover SSO session cookies before a fresh login.
         // Otherwise Keycloak/MAS sees a previous user's session, serves the consent
@@ -104,6 +114,9 @@ final class HeadlessOIDCAuthenticator {
         // If we got 200, it means login failed (Keycloak shows the form again with error)
         if postHTTPResponse.statusCode == 200 {
             let responseHTML = String(data: postData, encoding: .utf8) ?? ""
+            if Self.isOneTimeCodeForm(html: responseHTML) {
+                return try await submitOneTimeCode(html: responseHTML, pageURL: postHTTPResponse.url ?? formActionURL, session: session)
+            }
             let errorMsg = parseKeycloakError(html: responseHTML)
             throw AuthError.loginFailed(errorMsg ?? SL10n.authInvalidCredentials)
         }
@@ -112,6 +125,47 @@ final class HeadlessOIDCAuthenticator {
         let responseBody = String(data: postData, encoding: .utf8) ?? "(binary)"
         MXLog.info("sTalk HeadlessOIDC: Unexpected POST status \(postHTTPResponse.statusCode), body prefix: \(String(responseBody.prefix(500)))")
         throw AuthError.invalidResponse
+    }
+
+    /// Only an explicit OTP challenge advances to this step; a password error never does.
+    static func isOneTimeCodeForm(html: String) -> Bool {
+        let names = parseFormFields(html: html).map(\.name)
+        return names.contains("otp") && !names.contains("password") && !names.contains("totpSecret")
+    }
+
+    private func submitOneTimeCode(html: String, pageURL: URL, session: URLSession) async throws -> URL {
+        guard let requestOneTimeCode else { throw AuthError.invalidResponse }
+        var currentHTML = html
+        var currentURL = pageURL
+        var rejected = false
+        while Self.isOneTimeCodeForm(html: currentHTML) {
+            try Task.checkCancellation()
+            guard let action = parseFormAction(html: currentHTML, baseURL: currentURL)?.absoluteURL,
+                  action.scheme == "https", action.host == pageURL.host,
+                  action.port == pageURL.port else { throw AuthError.invalidResponse }
+            let code = try await requestOneTimeCode(rejected)
+            try Task.checkCancellation()
+            var request = URLRequest(url: action)
+            request.httpMethod = "POST"
+            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            // Preserve CSRF and the server-selected OTP credential, but never resubmit a password.
+            request.httpBody = Self.parseFormFields(html: currentHTML)
+                .map { "\(urlEncode($0.name))=\(urlEncode($0.name == "otp" ? code : $0.value))" }
+                .joined(separator: "&").data(using: .utf8)
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else { throw AuthError.invalidResponse }
+            saveCookies(from: http, for: action)
+            if [301, 302, 303, 307, 308].contains(http.statusCode) {
+                return try await followRedirects(from: http, session: session, maxRedirects: 10, baseURL: action)
+            }
+            guard http.statusCode == 200, let nextHTML = String(data: data, encoding: .utf8) else {
+                throw AuthError.invalidResponse
+            }
+            currentHTML = nextHTML
+            currentURL = http.url ?? action
+            rejected = true
+        }
+        throw AuthError.loginFailed(parseKeycloakError(html: currentHTML) ?? SL10n.authInvalidCredentials)
     }
 
     /// Submit MAS consent page and follow redirects to callback URL.
@@ -160,6 +214,7 @@ final class HeadlessOIDCAuthenticator {
     }
 
     private func makeSessionWithCookies() -> URLSession {
+        if let sessionFactory { return sessionFactory() }
         let config = URLSessionConfiguration.ephemeral
         config.httpCookieAcceptPolicy = .always
         config.httpCookieStorage = cookieStorage
@@ -281,6 +336,10 @@ final class HeadlessOIDCAuthenticator {
 
             // Check if this is MAS consent page — auto-submit with CSRF token
             MXLog.info("sTalk HeadlessOIDC: POST chain: status \(nextHTTPResponse.statusCode) at \(locationURL)")
+            if nextHTTPResponse.statusCode == 200,
+               let html = String(data: nextData, encoding: .utf8), Self.isOneTimeCodeForm(html: html) {
+                return try await submitOneTimeCode(html: html, pageURL: locationURL, session: session)
+            }
             if nextHTTPResponse.statusCode == 200,
                let html = String(data: nextData, encoding: .utf8),
                let csrfToken = parseCSRFToken(html: html) {
@@ -410,8 +469,11 @@ final class HeadlessOIDCAuthenticator {
     }
 
     private static func attributeValue(_ attribute: String, in tag: String) -> String? {
-        guard let range = tag.range(of: "\\b\(attribute)=\"[^\"]*\"", options: [.regularExpression, .caseInsensitive]) else { return nil }
-        let raw = String(tag[range]).drop { $0 != "\"" }.dropFirst().dropLast()
+        let pattern = "(?:^|\\s)\(attribute)\\s*=\\s*([\"'])(.*?)\\1"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators]),
+              let match = regex.firstMatch(in: tag, range: NSRange(tag.startIndex..., in: tag)),
+              let range = Range(match.range(at: 2), in: tag) else { return nil }
+        let raw = tag[range]
         return String(raw)
             .replacingOccurrences(of: "&amp;", with: "&")
             .replacingOccurrences(of: "&quot;", with: "\"")

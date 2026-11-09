@@ -12,57 +12,132 @@ import SwiftUI
 struct TimelineItemMenu: View {
     @EnvironmentObject private var context: TimelineViewModel.Context
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    
-    @State private var reactionsFrame = CGRect.zero
     
     let item: EventBasedTimelineItemProtocol
     let actions: TimelineItemMenuActions
+    var compact = false
     private let feedbackGenerator = UIImpactFeedbackGenerator(style: .heavy)
     
-    @AppStorage("stalk_design_theme") private var designTheme = "cosmos"
-    private var isCosmos: Bool {
-        designTheme == "cosmos"
+    var body: some View {
+        if compact, context.viewState.isChannelMain {
+            compactMenu
+        } else {
+            fullMenu
+        }
     }
 
-    var body: some View {
-        VStack(spacing: 6) {
-            messagePreview
-                .padding(.horizontal, 16)
-                .padding(.top, 14.0)
-                .padding(.bottom, 2.0)
+    private var fullMenu: some View {
+        ScrollView {
+            VStack(spacing: 12) {
+                HStack {
+                    Text(menuTitle)
+                        .font(.headline)
+                    Spacer()
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 30, height: 30)
+                            .background(.regularMaterial, in: Circle())
+                            .frame(minWidth: 44, minHeight: 44)
+                    }.buttonStyle(.plain).accessibilityLabel(L10n.actionClose)
+                }
+                messagePreview
+                    .padding(14)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22))
+                if !actions.reactions.isEmpty {
+                    reactionsSection
+                        .padding(.vertical, 8)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22))
+                }
+                channelActionGroup(actions.actions)
+                channelActionGroup(actions.secondaryActions)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 24)
+        }
+        .background(Color(uiColor: .systemGroupedBackground))
+        .accessibilityIdentifier(A11yIdentifiers.roomScreen.timelineItemActionMenu)
+        .presentationDetents([.medium, .large])
+        .presentationBackground(Color(uiColor: .systemGroupedBackground))
+        .presentationDragIndicator(.visible)
+        .presentationCornerRadius(32)
+    }
 
-            Divider()
-                .background(isCosmos ? Color.secondary.opacity(0.2) : Color.compound.bgSubtlePrimary)
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0.0) {
-                    if !actions.reactions.isEmpty {
-                        reactionsSection
-                            .padding(.bottom, 6.0)
-
-                        Divider()
-                            .background(isCosmos ? Color.secondary.opacity(0.2) : Color.compound.bgSubtlePrimary)
-                    }
-
-                    if !actions.actions.isEmpty {
-                        viewsForActions(actions.actions)
-
-                        Divider()
-                            .background(isCosmos ? Color.secondary.opacity(0.2) : Color.compound.bgSubtlePrimary)
-                    }
-
-                    viewsForActions(actions.secondaryActions)
+    @ViewBuilder
+    private func channelActionGroup(_ values: [TimelineItemMenuAction]) -> some View {
+        if !values.isEmpty {
+            VStack(spacing: 0) {
+                ForEach(Array(values.enumerated()), id: \.element) { index, action in
+                    if index > 0 { Divider().padding(.leading, 60) }
+                    Button(role: action.isDestructive ? .destructive : nil) { send(action) } label: {
+                        action.label(isChannelPost: context.viewState.isChannelMain)
+                            .labelStyle(TimelineMenuLabelStyle(isDestructive: action.isDestructive))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .frame(minHeight: 52)
+                            .contentShape(Rectangle())
+                    }.buttonStyle(.plain)
                 }
             }
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22))
         }
-        .accessibilityIdentifier(A11yIdentifiers.roomScreen.timelineItemActionMenu)
-        .presentationDetents([.fraction(0.4), .medium])
-        .presentationBackground(isCosmos ? Color(UIColor.systemBackground) : Color.compound.bgCanvasDefault)
-        .presentationDragIndicator(.visible)
-        .presentationCornerRadius(20)
     }
-    
+
+    private var menuTitle: String {
+        context.viewState.isChannelMain
+            ? NSLocalizedString("stalk_channels_post_menu", value: "Post", comment: "Channel post action sheet")
+            : NSLocalizedString("stalk_message_menu", value: "Message", comment: "Message action sheet")
+    }
+
+    private var compactMenu: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                HStack {
+                    Text(menuTitle).font(.headline)
+                    Spacer()
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 30, height: 30)
+                            .background(.regularMaterial, in: Circle())
+                            .frame(minWidth: 44, minHeight: 44)
+                    }.buttonStyle(.plain).accessibilityLabel(L10n.actionClose)
+                }
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), alignment: .leading, spacing: 12) {
+                    ForEach(actions.actions.filter { action in
+                        switch action {
+                        case .replyInThread, .forward, .copy, .copyCaption: true
+                        default: false
+                        }
+                    }) { action in
+                        Button { send(action) } label: {
+                            action.label(isChannelPost: true)
+                                .labelStyle(CompactPostMenuLabelStyle())
+                        }.buttonStyle(.plain)
+                    }
+                    if !actions.reactions.isEmpty {
+                        Button { send(.displayEmojiPicker(itemID: item.id)) } label: {
+                            Label(StalkChannelStrings.text("react"), systemImage: "face.smiling")
+                                .labelStyle(CompactPostMenuLabelStyle())
+                        }.buttonStyle(.plain)
+                    }
+                }
+                .padding(12)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
+            }
+            .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 24)
+        }
+        .background(Color(uiColor: .systemGroupedBackground))
+        .accessibilityIdentifier(A11yIdentifiers.roomScreen.timelineItemActionMenu)
+        .presentationDetents([.height(240), .medium])
+        .presentationBackground(Color(uiColor: .systemGroupedBackground))
+        .presentationDragIndicator(.visible)
+        .presentationCornerRadius(32)
+    }
+
     private var messagePreview: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 0.0) {
@@ -117,27 +192,15 @@ struct TimelineItemMenu: View {
     private var reactionsSection: some View {
         HStack(spacing: 8) {
             ScrollView(.horizontal) {
-                HStack(alignment: .center, spacing: 8) {
+                HStack(alignment: .center, spacing: 4) {
                     ForEach(actions.reactions, id: \.key) {
                         reactionButton(for: $0.key)
                     }
                 }
-                .padding(.horizontal)
-                .frame(minWidth: reactionsFrame.width, maxWidth: .infinity, alignment: .center)
+                .padding(.horizontal, 8)
             }
             .scrollIndicators(.hidden)
             .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
-            .readFrame($reactionsFrame)
-            .overlay {
-                if horizontalSizeClass == .compact {
-                    LinearGradient(stops: [.init(color: .clear, location: 0.0),
-                                           .init(color: .clear, location: 0.9),
-                                           .init(color: .compound.bgCanvasDefault, location: 1.0)],
-                                   startPoint: .leading,
-                                   endPoint: .trailing)
-                        .allowsHitTesting(false)
-                }
-            }
             
             Button {
                 dismiss()
@@ -146,9 +209,12 @@ struct TimelineItemMenu: View {
                     context.send(viewAction: .displayEmojiPicker(itemID: item.id))
                 }
             } label: {
-                CompoundIcon(\.reactionAdd, size: .medium, relativeTo: .compound.headingLG)
-                    .foregroundColor(.compound.iconSecondary)
-                    .padding(10)
+                Image(systemName: "face.smiling")
+                    .font(.system(size: 20))
+                    .foregroundStyle(StalkTheme.accent)
+                    .frame(width: 44, height: 44)
+                    .background(StalkTheme.accent.opacity(0.08), in: Circle())
+                    .padding(.trailing, 8)
             }
             .accessibilityLabel(L10n.actionReact)
         }
@@ -161,12 +227,12 @@ struct TimelineItemMenu: View {
             context.send(viewAction: .toggleReaction(key: emoji, itemID: item.id))
         } label: {
             Text(emoji)
-                .font(.compound.headingLG)
-                .padding(8)
+                .font(.system(size: 26))
+                .frame(width: 44, height: 44)
                 .background(Circle()
                     .foregroundColor(reactionBackgroundColor(for: emoji)))
-                .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .buttonStyle(.plain)
         .accessibilityLabel(hasReacted(to: emoji) ? L10n.a11yRemoveReaction(emoji) : L10n.a11yAddReaction(emoji))
     }
     
@@ -182,17 +248,6 @@ struct TimelineItemMenu: View {
         hasReacted(to: emoji) ? .compound.bgActionPrimaryRest : .clear
     }
     
-    private func viewsForActions(_ actions: [TimelineItemMenuAction]) -> some View {
-        ForEach(actions, id: \.self) { action in
-            Button(role: action.isDestructive ? .destructive : nil) {
-                send(action)
-            } label: {
-                action.label
-            }
-            .buttonStyle(.menuSheet)
-        }
-    }
-    
     private func send(_ action: TimelineItemMenuAction) {
         send(.handleTimelineItemMenuAction(itemID: item.id, action: action))
     }
@@ -202,6 +257,47 @@ struct TimelineItemMenu: View {
         // Otherwise we might get errors that a sheet is already presented
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             context.send(viewAction: action)
+        }
+    }
+}
+
+private struct CompactPostMenuLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        VStack(spacing: 8) {
+            configuration.icon
+                .font(.system(size: 21))
+                .foregroundStyle(StalkTheme.accent)
+                .frame(width: 44, height: 44)
+                .background(StalkTheme.accent.opacity(0.08), in: Circle())
+            configuration.title
+                .font(.caption).foregroundStyle(.primary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, minHeight: 88, alignment: .top)
+        .contentShape(Rectangle())
+    }
+}
+
+private struct TimelineMenuLabelStyle: LabelStyle {
+    let isDestructive: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 12) {
+            configuration.icon
+                .font(.system(size: 18))
+                .foregroundStyle(isDestructive ? Color.red : StalkTheme.accent)
+                .frame(width: 36, height: 36)
+                .background((isDestructive ? Color.red : StalkTheme.accent).opacity(0.08), in: Circle())
+            configuration.title
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(isDestructive ? Color.red : Color.primary)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 6)
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
         }
     }
 }

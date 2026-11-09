@@ -711,6 +711,7 @@ class ChatsTabFlowCoordinator: FlowCoordinatorProtocol {
     private func presentMessageSearch() {
         let parameters = MessageSearchScreenCoordinatorParameters(clientProxy: userSession.clientProxy,
                                                                   roomSummaryProvider: userSession.clientProxy.alternateRoomSummaryProvider,
+                                                                  mediaProvider: userSession.mediaProvider,
                                                                   isCallActive: { [weak self] in self?.flowParameters.ongoingCallRoomIDPublisher.value != nil })
         let coordinator = MessageSearchScreenCoordinator(parameters: parameters)
 

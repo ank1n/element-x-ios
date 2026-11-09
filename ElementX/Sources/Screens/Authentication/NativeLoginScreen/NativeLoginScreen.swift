@@ -24,7 +24,7 @@ struct NativeLoginScreen: View {
     private let bgGradientBottom = Color(red: 0.95, green: 0.96, blue: 1.0)
 
     private enum Field: Hashable {
-        case username, password
+        case username, password, oneTimeCode
     }
 
     var body: some View {
@@ -46,29 +46,45 @@ struct NativeLoginScreen: View {
 
                     // Login form
                     VStack(spacing: 16) {
-                        TextField(SL10n.authUsername, text: $context.username)
-                            .textContentType(.username)
-                            .autocapitalization(.none)
-                            .autocorrectionDisabled()
-                            .focused($focusedField, equals: .username)
-                            .submitLabel(.next)
-                            .onSubmit { focusedField = .password }
-                            .padding()
-                            .background(isCosmos ? Color(UIColor.systemBackground) : Color(.systemGray6))
-                            .cornerRadius(14)
-                            .overlay(RoundedRectangle(cornerRadius: 14)
-                                .stroke(isCosmos ? accentBlue.opacity(0.15) : Color.clear, lineWidth: 1))
+                        if context.viewState.requiresOneTimeCode {
+                            Text(NSLocalizedString("stalk_auth_otp_prompt", value: "Введите код из приложения-аутентификатора", comment: "OTP prompt"))
+                            TextField(NSLocalizedString("stalk_auth_otp_code", value: "Одноразовый код", comment: "OTP field"), text: $context.oneTimeCode)
+                                .textContentType(.oneTimeCode)
+                                .keyboardType(.numberPad)
+                                .focused($focusedField, equals: .oneTimeCode)
+                                .padding()
+                                .background(Color(UIColor.systemBackground))
+                                .cornerRadius(14)
+                                .accessibilityIdentifier("native_login_otp")
+                            if context.viewState.oneTimeCodeRejected {
+                                Text(NSLocalizedString("stalk_auth_otp_retry", value: "Код не принят. Проверьте код и попробуйте снова.", comment: "OTP retry"))
+                                    .foregroundStyle(.red)
+                            }
+                        } else {
+                            TextField(SL10n.authUsername, text: $context.username)
+                                .textContentType(.username)
+                                .autocapitalization(.none)
+                                .autocorrectionDisabled()
+                                .focused($focusedField, equals: .username)
+                                .submitLabel(.next)
+                                .onSubmit { focusedField = .password }
+                                .padding()
+                                .background(isCosmos ? Color(UIColor.systemBackground) : Color(.systemGray6))
+                                .cornerRadius(14)
+                                .overlay(RoundedRectangle(cornerRadius: 14)
+                                    .stroke(isCosmos ? accentBlue.opacity(0.15) : Color.clear, lineWidth: 1))
 
-                        SecureField(SL10n.authPassword, text: $context.password)
-                            .textContentType(.password)
-                            .focused($focusedField, equals: .password)
-                            .submitLabel(.go)
-                            .onSubmit { loginIfValid() }
-                            .padding()
-                            .background(isCosmos ? Color(UIColor.systemBackground) : Color(.systemGray6))
-                            .cornerRadius(14)
-                            .overlay(RoundedRectangle(cornerRadius: 14)
-                                .stroke(isCosmos ? accentBlue.opacity(0.15) : Color.clear, lineWidth: 1))
+                            SecureField(SL10n.authPassword, text: $context.password)
+                                .textContentType(.password)
+                                .focused($focusedField, equals: .password)
+                                .submitLabel(.go)
+                                .onSubmit { loginIfValid() }
+                                .padding()
+                                .background(isCosmos ? Color(UIColor.systemBackground) : Color(.systemGray6))
+                                .cornerRadius(14)
+                                .overlay(RoundedRectangle(cornerRadius: 14)
+                                    .stroke(isCosmos ? accentBlue.opacity(0.15) : Color.clear, lineWidth: 1))
+                        }
                     }
 
                     // Login button
@@ -133,7 +149,10 @@ struct NativeLoginScreen: View {
                   message: alertInfo.message.map { Text($0) },
                   dismissButton: .default(Text("OK")))
         }
-        .interactiveDismissDisabled(context.viewState.isLoading)
+        .interactiveDismissDisabled(context.viewState.isLoading || context.viewState.requiresOneTimeCode)
+        .onChange(of: context.viewState.requiresOneTimeCode) { _, required in
+            focusedField = required ? .oneTimeCode : .username
+        }
         .onAppear {
             focusedField = .username
         }
@@ -184,7 +203,11 @@ struct NativeLoginScreen: View {
     }
 
     private var isFormValid: Bool {
-        !context.username.trimmingCharacters(in: .whitespaces).isEmpty &&
+        if context.viewState.requiresOneTimeCode {
+            let code = context.oneTimeCode.trimmingCharacters(in: .whitespacesAndNewlines)
+            return (6...8).contains(code.count) && code.utf8.allSatisfy { (48...57).contains($0) }
+        }
+        return !context.username.trimmingCharacters(in: .whitespaces).isEmpty &&
             !context.password.isEmpty
     }
 

@@ -14,6 +14,8 @@ struct RoomListFiltersEmptyStateView: View {
     private var emptyStateTitle: String {
         if state.activeFilters.count == 1 {
             switch state.activeFilters[0] {
+            case .mentions:
+                return NSLocalizedString("stalk_roomlist_filter_mentions_empty", value: "No unread mentions", comment: "Empty mentioned chats")
             case .unreads:
                 return L10n.screenRoomlistFilterUnreadsEmptyStateTitle
             case .people:

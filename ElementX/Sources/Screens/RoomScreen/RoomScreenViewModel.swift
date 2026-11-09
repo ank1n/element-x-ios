@@ -77,7 +77,6 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
         super.init(initialViewState: appHooks.roomScreenHook.update(viewState),
                    mediaProvider: userSession.mediaProvider)
         
-        state.canShowThreads = appSettings.threadsEnabled && !roomProxy.infoPublisher.value.isSpace
         updateRoomInfo(roomProxy.infoPublisher.value)
         setupSubscriptions(ongoingCallRoomIDPublisher: ongoingCallRoomIDPublisher)
         setupSearchSubscription()
@@ -148,6 +147,7 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
         case .refreshChannelAccess:
             Task { await refreshChannelAccess() }
         case .displayThreadList:
+            guard state.canShowThreads else { return }
             actionsSubject.send(.displayThreadList)
         case .toggleSearch:
             toggleSearch()
@@ -201,6 +201,12 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
     // MARK: - Private
     
     private func setupSubscriptions(ongoingCallRoomIDPublisher: CurrentValuePublisher<String?, Never>) {
+        appSettings.$threadsEnabled
+            .sink { [weak self] enabled in
+                guard let self else { return }
+                self.state.canShowThreads = enabled && !self.roomProxy.isDirectOneToOneRoom && !self.roomProxy.infoPublisher.value.isSpace
+            }
+            .store(in: &cancellables)
         appSettings.$knockingEnabled
             .weakAssign(to: \.state.isKnockingEnabled, on: self)
             .store(in: &cancellables)
@@ -468,6 +474,7 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
     }
     
     private func updateRoomInfo(_ roomInfo: RoomInfoProxyProtocol) {
+        state.canShowThreads = appSettings.threadsEnabled && !roomProxy.isDirectOneToOneRoom && !roomInfo.isSpace
         let nativeLevel = roomInfo.powerLevels.map { $0.userPowerLevels[roomProxy.ownUserID] ?? $0.values.usersDefault }
         state.channelService?.restrictNativeAccess(roomID: roomProxy.id, joined: roomInfo.membership == .joined, level: nativeLevel)
         state.roomTitle = roomInfo.displayName ?? roomProxy.id
@@ -576,7 +583,7 @@ class RoomScreenViewModel: RoomScreenViewModelType, RoomScreenViewModelProtocol 
             Task {
                 switch await roomProxy.loadOrFetchEventDetails(for: eventID) {
                 case .success(let event):
-                    if appSettings.threadsEnabled,
+                    if state.canShowThreads,
                        let threadRootEventID = event.threadRootEventId() {
                         actionsSubject.send(.focusEvent(eventID: threadRootEventID))
                         actionsSubject.send(.displayThread(threadRootEventID: threadRootEventID, focussedEventID: eventID))

@@ -43,19 +43,6 @@ struct ComposerToolbar: View {
             }
         }
         .readFrame($frame)
-        .safeAreaInset(edge: .top) {
-            if !context.viewState.isRoomEncrypted {
-                Label {
-                    Text(L10n.commonNotEncrypted)
-                        .font(.compound.bodySM)
-                        .foregroundStyle(.compound.textSecondary)
-                } icon: {
-                    CompoundIcon(\.lockOff, size: .xSmall, relativeTo: .compound.bodyMD)
-                        .foregroundStyle(.compound.iconInfoPrimary)
-                }
-                .padding(4.0)
-            }
-        }
         .overlay(alignment: .bottom) {
             ZStack {
                 if verticalSizeClass != .compact, !context.composerExpanded {

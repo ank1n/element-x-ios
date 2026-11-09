@@ -27,7 +27,7 @@ struct StalkFileShareView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Button(action: onTap) {
                     HStack(alignment: .top, spacing: 10) {
-                        FileBadge(fileShare: fileShare)
+                        StalkFileBadge(fileShare: fileShare)
                         VStack(alignment: .leading, spacing: 5) {
                             Text(fileShare.name).font(.body.weight(.semibold)).foregroundStyle(Color.stalkFileShareTitle)
                                 .lineLimit(3).truncationMode(.middle).multilineTextAlignment(.leading)
@@ -53,7 +53,7 @@ struct StalkFileShareView: View {
     private var existingCard: some View {
         Button(action: onTap) {
             HStack(spacing: 10) {
-                FileBadge(fileShare: fileShare)
+                StalkFileBadge(fileShare: fileShare)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(fileShare.name)
@@ -177,7 +177,7 @@ struct StalkFileShareView: View {
 ///
 /// Считается локально из имени и mimetype — ни превью, ни ссылки на картинку в
 /// событии нет, и веб делает ровно так же (`getFileBadge`).
-private struct FileBadge: View {
+struct StalkFileBadge: View {
     let fileShare: StalkFileShare
 
     var body: some View {

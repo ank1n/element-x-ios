@@ -6,6 +6,12 @@
 
 import Compound
 import SwiftUI
+
+extension EnvironmentValues {
+    @Entry var stalkBottomBarInset: CGFloat = 0
+    @Entry var setStalkBottomBarHidden: @MainActor (Bool) -> Void = { _ in }
+}
+
 import UIKit
 
 // MARK: - sTalk Adaptive Colors

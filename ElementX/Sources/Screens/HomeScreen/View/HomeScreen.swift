@@ -15,7 +15,6 @@ struct HomeScreen: View {
     @ObservedObject var context: HomeScreenViewModel.Context
     
     @Environment(\.scenePhase) private var scenePhase
-    @State private var showChannels = false
     @State private var scrollViewAdapter = ScrollViewAdapter()
     
     var body: some View {
@@ -31,11 +30,6 @@ struct HomeScreen: View {
             .toolbar { toolbar }
             .disableAutocorrection(true)
             .background(Color.compound.bgCanvasDefault.ignoresSafeArea())
-            .sheet(isPresented: $showChannels) {
-                if let service = context.viewState.channelService {
-                    StalkChannelDirectoryView(service: service) { id in context.send(viewAction: .selectRoom(roomIdentifier: id)) }
-                }
-            }
             .task(id: scenePhase) {
                 guard scenePhase == .active else { return }
                 repeat {
@@ -51,14 +45,13 @@ struct HomeScreen: View {
         
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
-            refreshButton
-        }
-        ToolbarItem(placement: .primaryAction) {
-            if context.viewState.channelService != nil {
-                Button { showChannels = true } label: { Image(systemName: "megaphone") }
-                    .accessibilityLabel(StalkChannelStrings.title)
+        ToolbarItem(placement: .principal) {
+            HStack(spacing: 6) {
+                if context.viewState.syncStatus.showsActivity { ProgressView().controlSize(.small) }
+                if context.viewState.syncStatus == .waitingForNetwork { Image(systemName: "wifi.slash").font(.caption) }
+                Text(context.viewState.syncStatus.title).font(.headline).lineLimit(1)
             }
+            .accessibilityElement(children: .combine)
         }
         ToolbarItem(placement: .primaryAction) {
             if #available(iOS 26, *) {
@@ -70,26 +63,6 @@ struct HomeScreen: View {
         }
     }
 
-    @ViewBuilder
-    private var refreshButton: some View {
-        switch context.viewState.roomListMode {
-        case .empty, .rooms:
-            Button {
-                context.send(viewAction: .forceRefresh)
-            } label: {
-                if context.viewState.isRefreshing {
-                    ProgressView()
-                } else {
-                    Image(systemName: "arrow.clockwise")
-                }
-            }
-            .disabled(context.viewState.isRefreshing)
-            .accessibilityLabel(NSLocalizedString("stalk_chats_refresh", tableName: "Localizable", value: "Обновить", comment: "Chat list refresh button"))
-        default:
-            EmptyView()
-        }
-    }
-    
     @ViewBuilder
     private var newRoomButton: some View {
         switch context.viewState.roomListMode {

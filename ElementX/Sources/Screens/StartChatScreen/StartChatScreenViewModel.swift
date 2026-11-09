@@ -39,6 +39,10 @@ class StartChatScreenViewModel: StartChatScreenViewModelType, StartChatScreenVie
         
         super.init(initialViewState: StartChatScreenViewState(userID: userSession.clientProxy.userID), mediaProvider: userSession.mediaProvider)
         
+        if userSession.clientProxy is ClientProxy {
+            state.channelService = StalkChannelService.shared(client: userSession.clientProxy)
+        }
+
         setupBindings()
         
         Task {
@@ -54,6 +58,8 @@ class StartChatScreenViewModel: StartChatScreenViewModelType, StartChatScreenVie
     
     override func process(viewAction: StartChatScreenViewAction) {
         switch viewAction {
+        case .openChannel(let roomID):
+            actionsSubject.send(.showRoom(roomID: roomID))
         case .close:
             actionsSubject.send(.close)
         case .createRoom:

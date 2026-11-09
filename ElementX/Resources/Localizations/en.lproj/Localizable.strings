@@ -2865,3 +2865,69 @@
 "stalk_update_icon_lightbulb" = "Idea";
 
 "stalk_update_icon_star" = "Star";
+
+// Call detail presentation
+"stalk_call_task_proposal" = "Suggestion";
+"stalk_call_task_created" = "Created in TrackIT";
+"stalk_call_task_number_unavailable" = "Task number unavailable";
+"stalk_call_task_status_backlog" = "Backlog";
+"stalk_call_task_status_started" = "In progress";
+"stalk_call_task_status_completed" = "Completed";
+"stalk_call_task_status_cancelled" = "Cancelled";
+"stalk_call_task_status_unavailable" = "Status unavailable";
+
+"stalk_search_query_placeholder" = "Messages, files, meetings, tasks";
+"stalk_search_via_ailock" = "Search with Ailock";
+"stalk_search_history_empty" = "Your recent searches will appear here";
+"stalk_search_saved_conditions" = "Search by filters";
+
+"stalk_roomlist_filter_mentions" = "Mentions";
+"stalk_roomlist_filter_people" = "People";
+"stalk_roomlist_filter_rooms" = "Groups";
+"stalk_roomlist_filter_mentions_empty" = "No unread mentions";
+
+"stalk_filters_collapse" = "Collapse filters";
+"stalk_filters_expand" = "All filters";
+
+"stalk_sync_waiting" = "Waiting for network…";
+"stalk_sync_connecting" = "Connecting…";
+"stalk_sync_updating" = "Updating…";
+"stalk_sync_login" = "Sign in required";
+"stalk_search_planning" = "Ailock is understanding your request…";
+"stalk_search_smart_loading" = "Searching with Ailock…";
+"stalk_search_loading" = "Searching…";
+"stalk_channels_discuss_thread" = "Discuss in thread";
+"stalk_channels_post_menu" = "Post";
+"stalk_action_discuss" = "Discuss";
+"stalk_message_menu" = "Message";
+"stalk_search_semantic_kept_original" = "Semantic search is temporarily unavailable. Results for your original query and filters have been kept.";
+"stalk_search_history_total" = "Found: %lld";
+"stalk_search_history_partial" = "Partial results";
+"stalk_search_history_unknown" = "Run again to see result counts";
+
+"stalk_roomlist_other_conversations" = "Others";
+
+"stalk_share_import_failed" = "Could not import the shared file. Please share it again.";
+
+"stalk_search_history_today" = "Today";
+"stalk_search_history_yesterday" = "Yesterday";
+"stalk_search_history_this_week" = "This week";
+"stalk_search_history_last_week" = "Last week";
+"stalk_search_history_this_month" = "This month";
+"stalk_search_history_last_month" = "Last month";
+"stalk_search_history_undated" = "Date not saved";
+
+"stalk_call_receive_video" = "Receive participant video";
+"stalk_call_receive_video_hint" = "Disable on a slow connection. Audio and screen sharing stay on.";
+"stalk_call_receive_video_disabled" = "Participant video is off";
+"stalk_call_receive_video_enable" = "Enable";
+"stalk_call_receive_video_retry" = "Retry";
+"stalk_call_receive_video_enabling" = "Enabling participant video…";
+"stalk_call_receive_video_disabling" = "Disabling participant video…";
+"stalk_call_receive_video_enable_failed" = "Could not enable participant video";
+"stalk_call_receive_video_disable_failed" = "Could not disable participant video";
+
+// Native two-factor sign-in
+"stalk_auth_otp_prompt" = "Enter the code from your authenticator app";
+"stalk_auth_otp_code" = "One-time code";
+"stalk_auth_otp_retry" = "Code not accepted. Check the code and try again.";

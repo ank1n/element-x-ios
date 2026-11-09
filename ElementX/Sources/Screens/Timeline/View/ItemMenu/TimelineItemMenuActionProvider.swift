@@ -56,17 +56,18 @@ struct TimelineItemMenuActionProvider {
                 if let messageItem = item as? EventBasedMessageTimelineItemProtocol {
                     // If threads are enabled we will have the dedicated `replyInThread` action
                     // so there is no need to make the normal reply use the thread.
-                    actions.append(.reply(isThread: areThreadsEnabled ? false : messageItem.properties.isThreaded))
+                    actions.append(.reply(isThread: !isDM && !areThreadsEnabled && messageItem.properties.isThreaded))
                 } else {
                     actions.append(.reply(isThread: false))
                 }
             }
-            let supportedChannelRoot = item is EventBasedMessageTimelineItemProtocol || item is StickerRoomTimelineItem
-            let canOpenComments = channel?.isChannel == true ? supportedChannelRoot && channel?.joined == true && ((channel?.comments == true && channel?.archived != true) || item.properties.threadSummary != nil) : canCurrentUserSendMessage
-            if areThreadsEnabled, canOpenComments, !timelineKind.isThread, !item.properties.isThreaded,
-               !(item is UnsupportedRoomTimelineItem) {
-                actions.append(.replyInThread)
-            }
+        }
+        // A channel discussion is independent of permission to reply in its main feed.
+        let supportedChannelRoot = item is EventBasedMessageTimelineItemProtocol || item is StickerRoomTimelineItem
+        let canOpenComments = channel?.isChannel == true ? supportedChannelRoot && channel?.joined == true && ((channel?.comments == true && channel?.archived != true) || item.properties.threadSummary != nil) : item.canBeRepliedTo && canCurrentUserSendMessage
+        if areThreadsEnabled, !isDM, canOpenComments, !timelineKind.isThread, !item.properties.isThreaded,
+           !(item is UnsupportedRoomTimelineItem) {
+            actions.append(.replyInThread)
         }
         
         if item.isForwardable {
@@ -94,11 +95,6 @@ struct TimelineItemMenuActionProvider {
         if item.isCopyable {
             actions.append(.copy)
             
-            if !ProcessInfo.processInfo.isiOSAppOnMac {
-                // As of macOS 26.2, the sheet isn't presented, but it is easy enough
-                // to select some text and right click on Mac anyway so hide this one.
-                actions.append(.translate)
-            }
         } else if item.hasMediaCaption {
             actions.append(.copyCaption)
         }
@@ -108,7 +104,7 @@ struct TimelineItemMenuActionProvider {
         }
 
         // Bookmark action — available for all event-based items with an eventID
-        if let eventID = item.id.eventID, let bookmarkService {
+        if channel?.isChannel != true, let eventID = item.id.eventID, let bookmarkService {
             if bookmarkService.isBookmarked(eventID: eventID) {
                 actions.append(.removeBookmark)
             } else {
@@ -116,10 +112,6 @@ struct TimelineItemMenuActionProvider {
             }
         }
 
-        if !item.isOutgoing {
-            secondaryActions.append(.report)
-        }
-        
         if canRedactItem(item) {
             secondaryActions.append(.redact)
         }

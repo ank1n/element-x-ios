@@ -1,4 +1,29 @@
-Search across messages, documents, meetings and tasks with filters, history and saved queries.
-Open Disk documents from chat links and cards. Explore photo albums and collections, search text in photos and edit a separate copy.
-Enjoy capybara stickers and emoji, plus improved Ailock attachments.
-Updated call participants, raised-hand queue, invitations and local audio controls.
+A major sTalk update: Drive, search, channels, meetings and calls.
+
+Drive and files
+• Drive file cards in chats, support for internal and external links, and document opening from conversations.
+• Expanded document and photo search, photo albums and favourites.
+• Fixed sharing from other apps, including chat selection and preservation of original attachment names.
+
+Search and Ailock
+• A dedicated Search app for messages, files, meetings, call recordings and tasks.
+• Standard search and smart search with Ailock, voice input and result filters.
+• Search history grouped by date, with result counts by content type.
+• Updated file cards showing file type, name and author without unnecessary document excerpts.
+
+Chats and channels
+• Channels with posts, discussions and participant permissions.
+• Create chats, groups and channels from the same screen.
+• Filters for people, groups, channels and meetings, with a separate favourites section.
+• Updated message menus. Swipe right to left to reply directly to a selected message.
+• Discussions in groups and channels, and a simpler interface for direct chats.
+• Automatic reconnection and sync status in the chat list header.
+• Updated stickers and emoji.
+
+Meetings and calls
+• Meeting room selection and booking, room photos, booking rules and check-in.
+• Improved participant layouts and restoration of your preferred call view.
+• Turn off incoming participant video while keeping audio and screen sharing.
+• Updated call history, participant details, summaries and transcripts.
+• Linked TrackIT tasks display their numbers and statuses; call results are available in the conversation.
+• Fixed meeting details loading errors and other stability issues.

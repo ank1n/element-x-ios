@@ -251,6 +251,13 @@ class ChatsTabFlowCoordinatorTests: XCTestCase {
                        "A new timeline should be created for the same room ID, so that the screen isn't stale while loading.")
     }
     
+    func testShareMediaWithoutRecipientPresentsRoomPicker() async throws {
+        let payload = ShareExtensionPayload.mediaFiles(roomID: nil, mediaFiles: [.init(url: .temporaryDirectory.appendingPathComponent("Смета.pdf"), suggestedName: "Смета.pdf")])
+        try await process(route: .share(payload), expectedState: .shareExtensionRoomList(sharePayload: payload))
+        let sheet = try XCTUnwrap(splitCoordinator.sheetCoordinator as? NavigationStackCoordinator)
+        XCTAssertTrue(sheet.rootCoordinator is RoomSelectionScreenCoordinator)
+    }
+
     func testShareMediaRouteWithRoom() async throws {
         try await process(route: .event(eventID: "1", roomID: "1", via: []), expectedState: .roomList(detailState: .room(roomID: "1")))
         XCTAssertTrue(detailNavigationStack?.rootCoordinator is RoomScreenCoordinator)

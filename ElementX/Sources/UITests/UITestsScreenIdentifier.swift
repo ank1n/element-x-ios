@@ -17,6 +17,7 @@ enum UITestsScreenIdentifier: String {
     case appLockSetupFlowMandatory
     case appLockSetupFlowUnlock
     case authenticationFlow
+    case nativeOTP
     case provisionedAuthenticationFlow
     case singleProviderAuthenticationFlow
     case multipleProvidersAuthenticationFlow
@@ -34,6 +35,8 @@ enum UITestsScreenIdentifier: String {
     case roomPlainNoAvatar
     case roomRolesAndPermissionsFlow
     case roomSmallTimeline
+    case roomOngoingCallHeader
+    case callVideoReceptionControls
     case roomSmallTimelineIncomingAndSmallPagination
     case roomSmallTimelineLargePagination
     case roomSmallTimelineWithReactions
@@ -45,6 +48,9 @@ enum UITestsScreenIdentifier: String {
     case sessionVerification
     case startChatFlow
     case userSessionScreen
+    case userSessionScroll
+    case userSessionShare
+    case userSessionShareFromRoom
     case userSessionScreenReply
     case userSessionSpacesFlow
     case autoUpdatingTimeline

@@ -10,6 +10,8 @@ import Compound
 import SwiftUI
 
 struct StartChatScreen: View {
+    @State private var creatingChannel = false
+    @State private var browsingChannels = false
     @ObservedObject var context: StartChatScreenViewModel.Context
     @AppStorage("stalk_design_theme") private var designTheme = "cosmos"
 
@@ -38,6 +40,20 @@ struct StartChatScreen: View {
             .environment(\.defaultMinListRowHeight, 48)
             .scrollContentBackground(.hidden)
             .background(isCosmos ? Color.clear.ignoresSafeArea() : Color.compound.bgSubtleSecondaryLevel0.ignoresSafeArea())
+        }
+        .sheet(isPresented: $creatingChannel) {
+            if let service = context.viewState.channelService {
+                StalkChannelCreationView(service: service) { roomID in
+                    context.send(viewAction: .openChannel(roomID: roomID))
+                }
+            }
+        }
+        .sheet(isPresented: $browsingChannels) {
+            if let service = context.viewState.channelService {
+                StalkChannelDirectoryView(service: service) { roomID in
+                    context.send(viewAction: .openChannel(roomID: roomID))
+                }
+            }
         }
         .track(screen: .StartChat)
         .scrollDismissesKeyboard(.immediately)
@@ -107,6 +123,14 @@ struct StartChatScreen: View {
                                     icon: \.plus),
                     kind: .navigationLink { context.send(viewAction: .createRoom) })
                 .accessibilityIdentifier(A11yIdentifiers.startChatScreen.createRoom)
+            if context.viewState.channelService != nil {
+                Button { creatingChannel = true } label: {
+                    Label(StalkUpdateStrings.text("create_channel"), systemImage: "megaphone")
+                }
+                Button { browsingChannels = true } label: {
+                    Label(StalkChannelStrings.title, systemImage: "list.bullet")
+                }
+            }
         }
     }
     

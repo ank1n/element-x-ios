@@ -45,6 +45,8 @@ struct CallHistoryRoomInfo: Codable {
     var avatarURL: URL?
     var participantCount: Int?
     var participantAvatarURLs: [URL]?
+    var isDirect: Bool?
+    var avatarsByUserID: [String: URL]?
 }
 
 enum CallsListScreenViewAction {
@@ -126,9 +128,9 @@ struct CallHistoryItem: Identifiable, Equatable, Codable {
     var contactName: String
     let contactId: String
     let callType: CallType
-    let timestamp: Date
-    let duration: TimeInterval?
-    let isMissed: Bool
+    var timestamp: Date
+    var duration: TimeInterval?
+    var isMissed: Bool
     let recordingURL: URL?
     /// Avatar URL from Matrix (mxc:// or https://)
     var avatarURL: URL?
@@ -146,6 +148,7 @@ struct CallHistoryItem: Identifiable, Equatable, Codable {
     var callId: String?
     /// API egress IDs, including fragments without playable audio.
     var recordingSessionIDs: [String]?
+    var isGroupRoom: Bool?
 
     /// Never use `id`: merged local rows use a device UUID rather than an API ID.
     var taskRecordingIDs: [String] {
@@ -200,7 +203,7 @@ struct CallHistoryItem: Identifiable, Equatable, Codable {
     }
 
     var isGroupCall: Bool {
-        participantCount > 2
+        isGroupRoom ?? (participantCount > 2)
     }
 
     enum CallType: String, Codable {
@@ -342,7 +345,7 @@ struct CallHistoryAPIItem: Codable {
         // Use matrixRoomId if available, otherwise fallback to roomName
         let contactId = matrixRoomId ?? roomName
 
-        let participantCount = (participants?.count ?? 0) + 1 // +1 для инициатора
+        let participantCount = CallSummaryPeople.uniqueIDs((participants ?? []).map(\.userId) + (initiatedBy.map { [$0] } ?? [])).count
 
         return CallHistoryItem(id: egressId,
                                contactName: displayName,

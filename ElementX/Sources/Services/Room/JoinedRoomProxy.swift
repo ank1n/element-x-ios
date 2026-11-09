@@ -89,7 +89,8 @@ class JoinedRoomProxy: JoinedRoomProxyProtocol {
         
         let requiresAuthorization = clientProxy != nil
         let creators = infoSubject.value.creators
-        timeline = try await TimelineProxy(timeline: room.timelineWithConfiguration(configuration: .init(focus: .live(hideThreadedEvents: appSettings.threadsEnabled),
+        let hideThreadedEvents = appSettings.threadsEnabled && !(infoSubject.value.isDirect && infoSubject.value.activeMembersCount <= 2) && !infoSubject.value.isSpace
+        timeline = try await TimelineProxy(timeline: room.timelineWithConfiguration(configuration: .init(focus: .live(hideThreadedEvents: hideThreadedEvents),
                                                                                                          filter: .eventFilter(filter: excludedEventsFilter),
                                                                                                          internalIdPrefix: nil,
                                                                                                          dateDividerMode: .daily,
@@ -229,7 +230,7 @@ class JoinedRoomProxy: JoinedRoomProxyProtocol {
         do {
             let sdkTimeline = try await room.timelineWithConfiguration(configuration: .init(focus: .event(eventId: eventID,
                                                                                                           numContextEvents: numberOfEvents,
-                                                                                                          threadMode: .automatic(hideThreadedEvents: appSettings.threadsEnabled)),
+                                                                                                          threadMode: .automatic(hideThreadedEvents: appSettings.threadsEnabled && !isDirectOneToOneRoom && !infoPublisher.value.isSpace)),
                                                                                             filter: .all,
                                                                                             internalIdPrefix: UUID().uuidString,
                                                                                             dateDividerMode: .daily,
@@ -256,7 +257,8 @@ class JoinedRoomProxy: JoinedRoomProxyProtocol {
     }
     
     func threadListService() -> ThreadListServiceProtocol? {
-        room.threadListService()
+        guard appSettings.threadsEnabled, !isDirectOneToOneRoom, !infoPublisher.value.isSpace else { return nil }
+        return room.threadListService()
     }
 
     func threadTimeline(eventID: String) async -> Result<TimelineProxyProtocol, RoomProxyError> {

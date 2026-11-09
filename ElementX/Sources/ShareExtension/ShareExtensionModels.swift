@@ -10,6 +10,19 @@ import Foundation
 
 enum ShareExtensionConstants {
     static let urlPath = "share"
+
+    /// A cold launch can be triggered by several freshly shared attachments.
+    /// Their count is not a signal that they are safe to delete.
+    static func removeExpiredFiles(in directory: URL = .appGroupTemporaryDirectory, now: Date = Date()) throws {
+        let manager = FileManager.default
+        let keys: Set<URLResourceKey> = [.creationDateKey, .contentModificationDateKey]
+        for url in try manager.contentsOfDirectory(at: directory, includingPropertiesForKeys: Array(keys)) {
+            let values = try url.resourceValues(forKeys: keys)
+            guard let newest = [values.creationDate, values.contentModificationDate].compactMap({ $0 }).max(),
+                  now.timeIntervalSince(newest) > 24 * 60 * 60 else { continue }
+            try manager.removeItem(at: url)
+        }
+    }
 }
 
 enum ShareExtensionPayload: Hashable, Codable {
@@ -24,23 +37,34 @@ enum ShareExtensionPayload: Hashable, Codable {
         }
     }
     
-    /// Moves any files in the payload from our `appGroupTemporaryDirectory` to the
-    /// system's `temporaryDirectory` returning a modified payload with updated file URLs.
-    func withDefaultTemporaryDirectory() throws -> Self {
-        switch self {
-        case .mediaFiles(let roomID, let mediaFiles):
-            return try .mediaFiles(roomID: roomID, mediaFiles: mediaFiles.map { mediaFile in
-                let path = mediaFile.url.path.replacing(URL.appGroupTemporaryDirectory.path, with: "").trimmingPrefix("/")
-                let newURL = URL.temporaryDirectory.appending(path: path)
-                
-                try? FileManager.default.removeItem(at: newURL)
-                try FileManager.default.moveItem(at: mediaFile.url, to: newURL)
-                
-                return mediaFile.replacingURL(with: newURL)
-            })
-        case .text:
-            return self
+    /// Stage the whole share before deleting any originals. Attachments keep their
+    /// names and relative subdirectories; a failed import leaves the share retryable.
+    func withDefaultTemporaryDirectory(sourceDirectory: URL = .appGroupTemporaryDirectory,
+                                       destinationDirectory: URL = .temporaryDirectory) throws -> Self {
+        guard case let .mediaFiles(roomID, mediaFiles) = self else { return self }
+        let manager = FileManager.default
+        let sourceRoot = sourceDirectory.standardizedFileURL.resolvingSymlinksInPath().path + "/"
+        let destination = destinationDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        var completed = false
+        defer { if !completed { try? manager.removeItem(at: destination) } }
+        let staged = try mediaFiles.map { file -> ShareExtensionMediaFile in
+            let source = file.url.standardizedFileURL.resolvingSymlinksInPath()
+            guard source.isFileURL, source.path.hasPrefix(sourceRoot),
+                  try source.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else {
+                throw CocoaError(.fileReadNoPermission)
+            }
+            let relativePath = String(source.path.dropFirst(sourceRoot.count))
+            let target = destination.appendingPathComponent(relativePath, isDirectory: false)
+            try manager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            // Some share providers repeat one attachment. Reuse its staged copy.
+            if !manager.fileExists(atPath: target.path) { try manager.copyItem(at: source, to: target) }
+            return file.replacingURL(with: target)
         }
+        for source in Set(mediaFiles.map(\.url)) {
+            try? manager.removeItem(at: source)
+        }
+        completed = true
+        return .mediaFiles(roomID: roomID, mediaFiles: staged)
     }
 }
 

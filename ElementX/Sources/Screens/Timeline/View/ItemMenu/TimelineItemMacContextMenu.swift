@@ -40,7 +40,7 @@ struct TimelineItemMacContextMenu: View {
                         Button(role: action.isDestructive ? .destructive : nil) {
                             send(action)
                         } label: {
-                            action.label
+                            action.label(isChannelPost: actionProvider.channel?.isChannel == true && !actionProvider.timelineKind.isThread)
                         }
                     }
                 }
@@ -50,7 +50,7 @@ struct TimelineItemMacContextMenu: View {
                         Button(role: action.isDestructive ? .destructive : nil) {
                             send(action)
                         } label: {
-                            action.label
+                            action.label(isChannelPost: actionProvider.channel?.isChannel == true && !actionProvider.timelineKind.isThread)
                         }
                     }
                 }

@@ -132,7 +132,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             if case .roomCall(_, let clientProxy, _, _, _, _) = configuration.kind,
                let concreteProxy = clientProxy as? ClientProxy {
                 concreteRecording.tokenProvider = { [weak concreteProxy] in try? concreteProxy?.matrixAccessToken() }
-                concreteRecording.tokenRefresher = { [weak concreteProxy] in await concreteProxy?.forceTokenRefresh() }
+                concreteRecording.tokenRefresher = { [weak concreteProxy] in await concreteProxy?.forceTokenRefreshDuringCall() }
                 if let token = try? concreteProxy.matrixAccessToken() {
                     concreteRecording.updateAccessToken(token)
                 }
@@ -583,6 +583,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             state.layoutOverride = mode
         case .unpinParticipant:
             state.pinnedParticipantSID = nil
+        case .setReceiveCameraVideo(let enabled):
+            liveKitRoomManager.cameraReception.setEnabled(enabled)
         case .toggleHideOwnVideo:
             guard state.allowsLayoutChoice else { return }
             state.videoVisibility.hideOwnVideo.toggle()
@@ -757,7 +759,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                                                         (try? concreteProxy?.matrixAccessToken()) ?? ""
                                                     },
                                                     tokenRefresher: { [weak concreteProxy] in
-                                                        await concreteProxy?.forceTokenRefresh()
+                                                        await concreteProxy?.forceTokenRefreshDuringCall()
                                                     },
                                                     roomProxy: roomProxy,
                                                     enableCameraOnConnect: startWithVideoEnabled)
@@ -1807,6 +1809,7 @@ final class RingbackTonePlayer {
     }
 
     private func startEngine() {
+        guard !SimulatorQASettings.isSilent else { return }
         let engine = AVAudioEngine()
         let sampleRate = Self.toneSampleRate
         guard let toneFormat = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1) else { return }

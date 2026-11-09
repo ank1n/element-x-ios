@@ -22,6 +22,7 @@ enum StartChatScreenViewModelAction: Equatable {
 
 struct StartChatScreenViewState: BindableState {
     let userID: String
+    var channelService: StalkChannelService?
     var bindings = StartChatScreenViewStateBindings()
     var usersSection: UserDiscoverySection = .init(type: .suggestions, users: [])
     var isRoomDirectoryEnabled = false
@@ -49,6 +50,7 @@ struct StartChatScreenViewStateBindings {
 }
 
 enum StartChatScreenViewAction {
+    case openChannel(roomID: String)
     case close
     case createRoom
     case createDM(user: UserProfileProxy)

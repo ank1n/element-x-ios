@@ -58,6 +58,21 @@ struct SystemSearchConditions: Codable, Equatable {
     }
 }
 
+struct SystemSearchHistorySummary: Codable, Equatable {
+    struct Facet: Codable, Equatable, Identifiable {
+        let type: String
+        let count: Int
+        var id: String {
+            type
+        }
+    }
+
+    let total: Int
+    let facets: [Facet]
+    let updatedAt: Date
+    let isPartial: Bool
+}
+
 struct SystemSearchTarget: Codable, Hashable {
     let kind: String
     var room_id: String?
@@ -75,13 +90,16 @@ struct SystemSearchTarget: Codable, Hashable {
 struct SystemSearchHit: Decodable, Identifiable {
     struct Metadata: Decodable {
         var room: String?; var author: String?; var filename: String?
+        var mimetype: String?; var size: Int64?
         var intake: Bool?; var archived: Bool?; var series_collapsed: Int?
-        private enum CodingKeys: String, CodingKey { case room, author, filename, intake, archived, series_collapsed }
+        private enum CodingKeys: String, CodingKey { case room, author, filename, mimetype, size, intake, archived, series_collapsed }
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             room = try? c.decode(String.self, forKey: .room)
             author = try? c.decode(String.self, forKey: .author)
             filename = try? c.decode(String.self, forKey: .filename)
+            mimetype = try? c.decode(String.self, forKey: .mimetype)
+            size = (try? c.decode(Int64.self, forKey: .size)) ?? (try? c.decode(String.self, forKey: .size)).flatMap(Int64.init)
             intake = try? c.decode(Bool.self, forKey: .intake)
             archived = try? c.decode(Bool.self, forKey: .archived)
             series_collapsed = try? c.decode(Int.self, forKey: .series_collapsed)
@@ -138,6 +156,19 @@ struct SystemSearchHit: Decodable, Identifiable {
         meta = try container.decodeIfPresent(Metadata.self, forKey: .meta)
     }
 
+    var isFileResult: Bool {
+        ["file", "attachment", "disk_doc"].contains(entity_type) || ["attachment", "disk_doc"].contains(facetKind)
+    }
+
+    var fileDisplayName: String {
+        [meta?.filename, title].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.first(where: { !$0.isEmpty }) ?? L10n.commonFile
+    }
+
+    /// Extraction is indexed for matching, not rendered as a document preview.
+    var displayedSnippet: String? {
+        isFileResult ? nil : text
+    }
+
     var text: String {
         (snippet ?? title ?? "").replacingOccurrences(of: "\u{0002}", with: "").replacingOccurrences(of: "\u{0003}", with: "")
     }
@@ -175,5 +206,78 @@ enum SystemSearchError: Error, LocalizedError {
         case .targetUnavailable: NSLocalizedString("Источник не предоставил доступный переход к этому объекту.", comment: "System search error")
         case .plannerFailed: NSLocalizedString("Айлок не смог уточнить условия. Исходный запрос и ваши фильтры сохранены.", comment: "System search error")
         }
+    }
+}
+
+/// Relative calendar periods use local days/weeks, including daylight-saving changes.
+enum SystemSearchHistoryPeriod: Hashable {
+    case today, yesterday, thisWeek, lastWeek, thisMonth, lastMonth, month(Date), undated
+
+    var title: String {
+        let key: String
+        switch self {
+        case .today: key = "stalk_search_history_today"
+        case .yesterday: key = "stalk_search_history_yesterday"
+        case .thisWeek: key = "stalk_search_history_this_week"
+        case .lastWeek: key = "stalk_search_history_last_week"
+        case .thisMonth: key = "stalk_search_history_this_month"
+        case .lastMonth: key = "stalk_search_history_last_month"
+        case .undated: key = "stalk_search_history_undated"
+        case .month(let date):
+            let formatter = DateFormatter()
+            formatter.setLocalizedDateFormatFromTemplate("LLLL yyyy")
+            let text = formatter.string(from: date)
+            return text.prefix(1).uppercased() + text.dropFirst()
+        }
+        return NSLocalizedString(key, comment: "Search history date group")
+    }
+
+    fileprivate var rank: Int {
+        switch self {
+        case .today: 0
+        case .yesterday: 1
+        case .thisWeek: 2
+        case .lastWeek: 3
+        case .thisMonth: 4
+        case .lastMonth: 5
+        case .month: 6
+        case .undated: 7
+        }
+    }
+
+    static func period(for date: Date?, now: Date, calendar: Calendar) -> Self {
+        guard let date else { return .undated }
+        if calendar.isDate(date, inSameDayAs: now) { return .today }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: yesterday) { return .yesterday }
+        if calendar.dateInterval(of: .weekOfYear, for: now)?.contains(date) == true { return .thisWeek }
+        if let lastWeek = calendar.date(byAdding: .weekOfYear, value: -1, to: now), calendar.dateInterval(of: .weekOfYear, for: lastWeek)?.contains(date) == true { return .lastWeek }
+        if calendar.isDate(date, equalTo: now, toGranularity: .month) { return .thisMonth }
+        if let lastMonth = calendar.date(byAdding: .month, value: -1, to: calendar.dateInterval(of: .month, for: now)?.start ?? now), calendar.isDate(date, equalTo: lastMonth, toGranularity: .month) { return .lastMonth }
+        return .month(calendar.dateInterval(of: .month, for: date)?.start ?? date)
+    }
+}
+
+struct SystemSearchHistorySection: Identifiable {
+    let period: SystemSearchHistoryPeriod
+    let queries: [SystemSearchConditions]
+    var id: SystemSearchHistoryPeriod {
+        period
+    }
+
+    static func grouped(_ queries: [SystemSearchConditions], date: (SystemSearchConditions) -> Date?, now: Date, calendar: Calendar = .current) -> [Self] {
+        let ordered = queries.enumerated().sorted {
+            let left = date($0.element), right = date($1.element)
+            if left == right { return $0.offset < $1.offset }
+            return (left ?? .distantPast) > (right ?? .distantPast)
+        }
+        var groups: [SystemSearchHistoryPeriod: [SystemSearchConditions]] = [:]
+        for entry in ordered {
+            groups[.period(for: date(entry.element), now: now, calendar: calendar), default: []].append(entry.element)
+        }
+        return groups.keys.sorted {
+            if $0.rank != $1.rank { return $0.rank < $1.rank }
+            if case .month(let left) = $0, case .month(let right) = $1 { return left > right }
+            return false
+        }.map { .init(period: $0, queries: groups[$0] ?? []) }
     }
 }

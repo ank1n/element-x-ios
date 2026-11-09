@@ -8,19 +8,23 @@ import Foundation
 @MainActor
 final class SystemSearchViewModel: ObservableObject {
     @Published var conditions = SystemSearchConditions() {
-        didSet { if conditions != oldValue { generation += 1; task?.cancel(); loading = false; hasMore = false; viewType = nil; completeSnapshot = nil } }
+        didSet { if conditions != oldValue, !applyingPlan { generation += 1; task?.cancel(); loading = false; smartSearchRunning = false; planning = false; hasMore = false; viewType = nil; completeSnapshot = nil; hasSubmittedSearch = false } }
     }
 
+    @Published private(set) var hasSubmittedSearch = false
     @Published private(set) var hits: [SystemSearchHit] = []
     @Published private(set) var facets: [SystemSearchResponse.Facet] = []
     @Published private(set) var total = 0
     @Published private(set) var loading = false
+    @Published private(set) var smartSearchRunning = false
+    @Published private(set) var planning = false
     @Published private(set) var hasMore = false
     @Published private(set) var error: String?
     @Published private(set) var notice: String?
     @Published private(set) var viewType: String?
     @Published private(set) var pinned: [SystemSearchConditions] = []
     @Published private(set) var recent: [SystemSearchConditions] = []
+    @Published private(set) var historySummaries: [String: SystemSearchHistorySummary] = [:]
     @Published var senderQuery = ""
     @Published private(set) var senders: [SystemSearchPerson] = []
     @Published private(set) var senderNotice: String?
@@ -43,6 +47,7 @@ final class SystemSearchViewModel: ObservableObject {
     private var task: Task<Void, Never>?
     private var senderTask: Task<Void, Never>?
     private var generation = 0
+    private var applyingPlan = false
     private var offset = 0
     private var completeSnapshot: (Date, [SystemSearchHit])?
     private var submitted: SystemSearchConditions?
@@ -51,7 +56,12 @@ final class SystemSearchViewModel: ObservableObject {
         "stalk.search.saved.v1." + SHA256.hash(data: Data((service.base + "\n" + service.client.userID).utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
-    private struct Saved: Codable { let version: Int; let pinned: [SystemSearchConditions]; let recent: [SystemSearchConditions] }
+    private struct Saved: Codable {
+        let version: Int
+        let pinned: [SystemSearchConditions]
+        let recent: [SystemSearchConditions]
+        var summaries: [String: SystemSearchHistorySummary]?
+    }
 
     init(client: ClientProxyProtocol, session: URLSession = .shared, defaults: UserDefaults = .standard, isCallActive: @escaping () -> Bool = { false },
          planner: (@MainActor (SystemSearchConditions) async throws -> SystemSearchConditions)? = nil) {
@@ -61,6 +71,7 @@ final class SystemSearchViewModel: ObservableObject {
         self.planner = planner ?? { try await searchService.plan($0) }
         if let data = defaults.data(forKey: key), let saved = try? JSONDecoder().decode(Saved.self, from: data), saved.version == 1 {
             pinned = Array(saved.pinned.filter(\.valid).prefix(50)); recent = Array(saved.recent.filter(\.valid).prefix(12))
+            historySummaries = saved.summaries ?? [:]
         }
         audioInterruption = NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)
             .receive(on: DispatchQueue.main)
@@ -78,11 +89,22 @@ final class SystemSearchViewModel: ObservableObject {
         cancelVoice()
         conditions.query = value
         conditions.topic = nil; conditions.expand = []; conditions.mode = "basic"; conditions.unsupported = nil; conditions.pendingSenderQuery = nil
-        lookupPeople()
+        peopleTask?.cancel(); people = []; peopleNotice = nil
+        error = nil; notice = nil
+    }
+
+    func showHistory() {
+        cancelVoice(); generation += 1; task?.cancel(); task = nil; peopleTask?.cancel()
+        loading = false; smartSearchRunning = false; planning = false; hasSubmittedSearch = false; error = nil; notice = nil; voiceNotice = nil
+    }
+
+    func insertDictation(_ phrase: String) {
+        guard !stopped else { return }
+        updateQuery(phrase)
     }
 
     func restore(_ value: SystemSearchConditions) {
-        cancelVoice(); conditions = value; lookupPeople(); search()
+        cancelVoice(); conditions = value; search()
     }
 
     func pin() {
@@ -97,18 +119,58 @@ final class SystemSearchViewModel: ObservableObject {
     }
 
     private func save() {
-        defaults.set(try? JSONEncoder().encode(Saved(version: 1, pinned: pinned, recent: recent)), forKey: key)
+        let retained = Set((pinned + recent).map(Self.historyKey))
+        historySummaries = historySummaries.filter { retained.contains($0.key) }
+        defaults.set(try? JSONEncoder().encode(Saved(version: 1, pinned: pinned, recent: recent, summaries: historySummaries)), forKey: key)
+    }
+
+    static func historyKey(_ value: SystemSearchConditions) -> String {
+        let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
+        let data = (try? encoder.encode(value)) ?? Data()
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private var fileAuthors: [String: UserProfileProxy] = [:]
+    private var fileAuthorReads = 0
+
+    /// Resolve identity from the exact event, never by guessing from a display name.
+    func authorProfile(for hit: SystemSearchHit) async -> UserProfileProxy? {
+        guard hit.isFileResult, !stopped else { return nil }
+        let key = [hit.target?.room_id ?? "", hit.target?.event_id ?? hit.id].joined(separator: "/")
+        if let cached = fileAuthors[key] { return cached }
+        while fileAuthorReads >= 2 {
+            do { try await Task.sleep(for: .milliseconds(20)) } catch { return nil }
+            guard !stopped else { return nil }
+        }
+        guard !stopped, !Task.isCancelled else { return nil }
+        fileAuthorReads += 1; defer { fileAuthorReads -= 1 }
+        var sender: String?
+        if let roomID = hit.target?.room_id, let eventID = hit.target?.event_id, eventID.hasPrefix("$"),
+           case .joined(let room) = await service.client.roomForIdentifier(roomID),
+           case .success(let event) = await room.loadOrFetchEventDetails(for: eventID) {
+            sender = event.senderId()
+        }
+        guard let sender, SystemSearchPerson.validID(sender), !stopped, !Task.isCancelled,
+              case .success(let profile) = await service.client.profile(for: sender), profile.userID == sender, !stopped, !Task.isCancelled else { return nil }
+        if fileAuthors.count >= 128 { fileAuthors = [:] }
+        fileAuthors[key] = profile
+        return profile
+    }
+
+    func historySummary(for value: SystemSearchConditions) -> SystemSearchHistorySummary? {
+        historySummaries[Self.historyKey(value)]
     }
 
     func resume() {
         stopped = false
+        guard hasSubmittedSearch else { return }
         lookupPeople()
         if let lastResultAt, Date().timeIntervalSince(lastResultAt) > 30, conditions.canSearch { search() }
     }
 
     func stop() {
         stopped = true; generation += 1
-        task?.cancel(); senderTask?.cancel(); peopleTask?.cancel(); cancelVoice(); loading = false
+        task?.cancel(); senderTask?.cancel(); peopleTask?.cancel(); cancelVoice(); loading = false; smartSearchRunning = false; planning = false
     }
 
     func lookupSenders() {
@@ -151,6 +213,7 @@ final class SystemSearchViewModel: ObservableObject {
 
     func search(smart: Bool = false, planNotice: String? = nil) {
         task?.cancel()
+        smartSearchRunning = false; planning = false
         if smart {
             conditions.topic = nil; conditions.expand = []; conditions.mode = "basic"; conditions.unsupported = nil; conditions.pendingSenderQuery = nil
         }
@@ -172,8 +235,12 @@ final class SystemSearchViewModel: ObservableObject {
             return
         }
         guard snapshot.canSearch else { hits = []; facets = []; total = 0; loading = false; return }
+        smartSearchRunning = smart
+        planning = smart
+        hasSubmittedSearch = true
+        lookupPeople()
         task = Task {
-            defer { if generation == revision { loading = false } }
+            defer { if generation == revision { loading = false; smartSearchRunning = false; planning = false } }
             if smart {
                 async let planned = planner(snapshot)
                 var lexicalError: Error?
@@ -188,10 +255,30 @@ final class SystemSearchViewModel: ObservableObject {
                 do {
                     let plan = try await planned
                     guard !Task.isCancelled, revision == generation, conditions == snapshot else { return }
-                    task = nil; conditions = plan
-                    search()
+                    planning = false
+                    setPlannedConditions(plan)
+                    if let requested = plan.pendingSenderQuery {
+                        senderQuery = requested; submitted = nil
+                        hits = []; facets = []; total = 0; hasMore = false
+                        notice = String(format: NSLocalizedString("stalk_search_sender_unverified", comment: "Unverified search sender warning"), requested)
+                        return
+                    }
+                    let response = try await service.search(plan)
+                    guard !Task.isCancelled, revision == generation, conditions == plan else { return }
+                    // The search API reports semantic timeouts inside HTTP 200.
+                    // An empty degraded result must not erase a successful first pass.
+                    if response.semantic?.error != nil, response.results.isEmpty, !hits.isEmpty, lexicalError == nil {
+                        setPlannedConditions(snapshot)
+                        notice = [NSLocalizedString("stalk_search_semantic_kept_original", value: "Semantic search is temporarily unavailable. Results for your original query and filters have been kept.", comment: "HTTP 200 semantic failure fallback"), lexicalNotice]
+                            .compactMap { $0 }.joined(separator: "\n")
+                        return
+                    }
+                    let unsupported = (plan.unsupported ?? []).compactMap { SystemSearchService.unsupportedLabels[$0] }
+                    let warning = unsupported.isEmpty ? nil : String(format: NSLocalizedString("stalk_search_unsupported_conditions", comment: "Unsupported search filter warning"), unsupported.joined(separator: ", "))
+                    apply(response, snapshot: plan, planNotice: warning)
                 } catch {
                     guard !Task.isCancelled, revision == generation else { return }
+                    setPlannedConditions(snapshot)
                     let fallback = lexicalError == nil
                         ? NSLocalizedString("Не удалось уточнить запрос через Айлок. Показаны результаты по исходной фразе; ваши фильтры сохранены.", comment: "System search notice")
                         : NSLocalizedString("Не удалось уточнить запрос через Айлок. Поиск по исходной фразе также не удался; ваши фильтры сохранены.", comment: "System search notice")
@@ -210,6 +297,14 @@ final class SystemSearchViewModel: ObservableObject {
         }
     }
 
+    /// Updating inferred filters belongs to the current request, not a new user edit.
+    /// Keep preliminary results visible until the planned search actually succeeds.
+    private func setPlannedConditions(_ value: SystemSearchConditions) {
+        applyingPlan = true
+        conditions = value
+        applyingPlan = false
+    }
+
     private func apply(_ response: SystemSearchResponse, snapshot: SystemSearchConditions, planNotice: String? = nil) {
         submitted = snapshot; hits = response.results; facets = response.facets ?? []; total = response.total + (response.semantic?.tail ?? 0)
         lastResultAt = Date(); offset = response.results.count
@@ -222,6 +317,11 @@ final class SystemSearchViewModel: ObservableObject {
         }
         if response.semantic?.error != nil { notices.append(NSLocalizedString("Смысловой поиск временно недоступен. Показаны результаты по словам.", comment: "System search notice")) }
         notice = notices.isEmpty ? nil : notices.joined(separator: "\n")
+        var seen = Set<String>()
+        let summaryFacets = (response.facets ?? []).filter {
+            SystemSearchConditions.allowedTypes.contains($0.entity_type) && $0.count > 0 && seen.insert($0.entity_type).inserted
+        }.map { SystemSearchHistorySummary.Facet(type: $0.entity_type, count: $0.count) }
+        historySummaries[Self.historyKey(snapshot)] = .init(total: total, facets: summaryFacets, updatedAt: Date(), isPartial: response.semantic?.error != nil)
         recent.removeAll { $0.query == snapshot.query }; recent.insert(snapshot, at: 0); recent = Array(recent.prefix(12)); save()
     }
 
@@ -280,7 +380,7 @@ final class SystemSearchViewModel: ObservableObject {
                 let phrase = try await transcriber.transcribe(fileURL: file)
                 guard !Task.isCancelled, !stopped, conditions == snapshot else { return }
                 voiceTask = nil; transcribing = false
-                updateQuery(phrase); search(smart: true)
+                insertDictation(phrase)
             } catch {
                 guard !Task.isCancelled else { return }
                 transcribing = false; voiceTask = nil; voiceNotice = error.localizedDescription

@@ -72,7 +72,8 @@ extension RoomSummaryProviderMock {
 extension RoomSummary {
     static func mock(id: String,
                      name: String,
-                     canonicalAlias: String? = nil) -> RoomSummary {
+                     canonicalAlias: String? = nil,
+                     isFavourite: Bool = false) -> RoomSummary {
         RoomSummary(room: RoomSDKMock(),
                     id: id,
                     joinRequestType: nil,
@@ -93,7 +94,7 @@ extension RoomSummary {
                     alternativeAliases: [],
                     hasOngoingCall: false,
                     isMarkedUnread: false,
-                    isFavourite: false,
+                    isFavourite: isFavourite,
                     isTombstoned: false)
     }
 }

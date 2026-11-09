@@ -144,6 +144,15 @@ enum TimelineItemMenuAction: Identifiable, Hashable {
         }
     }
     
+    @ViewBuilder
+    func label(isChannelPost: Bool) -> some View {
+        if isChannelPost, self == .replyInThread {
+            Label(NSLocalizedString("stalk_channels_discuss_thread", value: "Discuss in thread", comment: "Open discussion of a channel post"), icon: \.threads)
+        } else {
+            label
+        }
+    }
+
     /// The action's label.
     @ViewBuilder
     var label: some View {
@@ -167,9 +176,9 @@ enum TimelineItemMenuAction: Identifiable, Hashable {
         case .copyPermalink:
             Label(L10n.actionCopyLinkToMessage, icon: \.link)
         case .reply(let isThread):
-            Label(isThread ? L10n.actionReplyInThread : L10n.actionReply, icon: \.reply)
+            Label(isThread ? NSLocalizedString("stalk_action_discuss", value: "Discuss", comment: "Open message discussion") : L10n.actionReply, icon: \.reply)
         case .replyInThread:
-            Label(L10n.actionReplyInThread, icon: \.threads)
+            Label(NSLocalizedString("stalk_action_discuss", value: "Discuss", comment: "Open message discussion"), icon: \.threads)
         case .forward:
             Label(L10n.actionForward, icon: \.forward)
         case .redact:

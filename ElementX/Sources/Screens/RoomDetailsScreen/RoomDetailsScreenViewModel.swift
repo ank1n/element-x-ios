@@ -77,7 +77,7 @@ class RoomDetailsScreenViewModel: RoomDetailsScreenViewModelType, RoomDetailsScr
                                            bindings: .init()),
                    mediaProvider: userSession.mediaProvider)
         
-        state.canShowThreads = appSettings.threadsEnabled && !roomProxy.infoPublisher.value.isSpace
+        state.canShowThreads = appSettings.threadsEnabled && !roomProxy.isDirectOneToOneRoom && !roomProxy.infoPublisher.value.isSpace
 
         appSettings.$knockingEnabled
             .weakAssign(to: \.state.knockingEnabled, on: self)
@@ -177,6 +177,7 @@ class RoomDetailsScreenViewModel: RoomDetailsScreenViewModelType, RoomDetailsScr
         case .processTapWidgets:
             actionsSubject.send(.displayWidgets)
         case .processTapThreads:
+            guard appSettings.threadsEnabled, !roomProxy.isDirectOneToOneRoom, state.canShowThreads else { return }
             actionsSubject.send(.displayThreadList)
         case .processTapSearch:
             actionsSubject.send(.displayRoomSearch)
@@ -286,6 +287,7 @@ class RoomDetailsScreenViewModel: RoomDetailsScreenViewModelType, RoomDetailsScr
     }
     
     private func updateRoomInfo(_ roomInfo: RoomInfoProxyProtocol) {
+        state.canShowThreads = appSettings.threadsEnabled && !roomProxy.isDirectOneToOneRoom && !roomInfo.isSpace
         state.isEncrypted = roomInfo.isEncrypted
         state.isDirect = roomInfo.isDirect
         state.bindings.isFavourite = roomInfo.isFavourite

@@ -14,6 +14,31 @@ import XCTest
 
 @MainActor
 class RoomScreenViewModelTests: XCTestCase {
+    func testThreadListOnlyInGroupRoomsAcrossSettingsChanges() async throws {
+        let settings = try XCTUnwrap(ServiceLocator.shared.settings)
+        for direct in [true, false] {
+            settings.threadsEnabled = true
+            var config = JoinedRoomProxyMockConfiguration()
+            config.isDirect = direct; config.members = Array([RoomMemberProxyMock].allMembers.prefix(2))
+            let room = JoinedRoomProxyMock(config)
+            let model = RoomScreenViewModel(userSession: UserSessionMock(.init()), roomProxy: room,
+                                            initialSelectedPinnedEventID: nil, ongoingCallRoomIDPublisher: .init(.init(nil)),
+                                            appSettings: settings, appHooks: AppHooks(), analyticsService: ServiceLocator.shared.analytics,
+                                            userIndicatorController: ServiceLocator.shared.userIndicatorController)
+            XCTAssertEqual(model.state.canShowThreads, !direct)
+            settings.threadsEnabled = false
+            XCTAssertFalse(model.state.canShowThreads)
+            settings.threadsEnabled = true
+            XCTAssertEqual(model.state.canShowThreads, !direct)
+            var opened = false
+            let subscription = model.actions.sink { action in if case .displayThreadList = action { opened = true } }
+            model.context.send(viewAction: .displayThreadList)
+            try await Task.sleep(for: .milliseconds(30))
+            XCTAssertEqual(opened, !direct)
+            withExtendedLifetime(subscription) { }
+        }
+    }
+
     private var viewModel: RoomScreenViewModel!
     
     override func setUp() async throws {

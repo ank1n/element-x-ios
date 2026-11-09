@@ -8,6 +8,7 @@
 
 import Combine
 import MatrixRustSDK
+import MatrixRustSDKMocks
 import SwiftUI
 import UIKit
 
@@ -38,6 +39,10 @@ class UITestsAppCoordinator: AppCoordinatorProtocol, SecureWindowManagerDelegate
         AppSettings.configureWithSuiteName("ru.implica.stalk.uitests")
         AppSettings.resetAllSettings()
         ServiceLocator.shared.register(appSettings: AppSettings())
+        // User-session fixtures also construct the Calls tab. Keep its history isolated.
+        let historyDefaults = UserDefaults(suiteName: "ru.implica.stalk.uitests.call-history")!
+        historyDefaults.removePersistentDomain(forName: "ru.implica.stalk.uitests.call-history")
+        ServiceLocator.shared.register(localCallHistoryService: LocalCallHistoryService(userDefaults: historyDefaults))
         
         let analyticsClient = AnalyticsClientMock()
         analyticsClient.isRunning = false
@@ -113,6 +118,12 @@ class MockScreen: Identifiable {
     
     lazy var coordinator: CoordinatorProtocol? = {
         switch id {
+        case .nativeOTP:
+            #if DEBUG
+            return NativeOTPFixtureCoordinator()
+            #else
+            return BlankFormCoordinator()
+            #endif
         case .serverSelection:
             let navigationStackCoordinator = NavigationStackCoordinator()
             let coordinator = ServerSelectionScreenCoordinator(parameters: .init(authenticationService: AuthenticationService.mock,
@@ -281,12 +292,14 @@ class MockScreen: Identifiable {
             let coordinator = RoomScreenCoordinator(parameters: parameters)
             navigationStackCoordinator.setRootCoordinator(coordinator)
             return navigationStackCoordinator
-        case .roomSmallTimeline:
+        case .callVideoReceptionControls:
+            return CallVideoReceptionTestCoordinator()
+        case .roomSmallTimeline, .roomOngoingCallHeader:
             let navigationStackCoordinator = NavigationStackCoordinator()
             let timelineController = MockTimelineController()
             timelineController.timelineItems = RoomTimelineItemFixtures.smallChunk
             let parameters = RoomScreenCoordinatorParameters(userSession: UserSessionMock(.init()),
-                                                             roomProxy: JoinedRoomProxyMock(.init(name: "New room", avatarURL: .mockMXCAvatar)),
+                                                             roomProxy: JoinedRoomProxyMock(.init(name: id == .roomOngoingCallHeader ? "Пресейл и маркетинговые материалы" : "New room", avatarURL: .mockMXCAvatar, hasOngoingCall: true)),
                                                              timelineController: timelineController,
                                                              mediaPlayerProvider: MediaPlayerProviderMock(),
                                                              emojiProvider: EmojiProvider(appSettings: ServiceLocator.shared.settings),
@@ -581,7 +594,7 @@ class MockScreen: Identifiable {
                                                                             appSettings: ServiceLocator.shared.settings,
                                                                             mediaProvider: MediaProviderMock(configuration: .init()))
             return SessionVerificationScreenCoordinator(parameters: parameters)
-        case .userSessionScreen, .userSessionScreenReply, .userSessionSpacesFlow:
+        case .userSessionScreen, .userSessionScreenReply, .userSessionSpacesFlow, .userSessionScroll, .userSessionShare, .userSessionShareFromRoom:
             let appSettings: AppSettings = ServiceLocator.shared.settings
             appSettings.hasRunIdentityConfirmationOnboarding = true
             appSettings.hasRunNotificationPermissionsOnboarding = true
@@ -590,6 +603,8 @@ class MockScreen: Identifiable {
             
             let roomSummaries: [RoomSummary] = if id == .userSessionSpacesFlow {
                 [[RoomSummary].mockSpaceInvites[0]] + .mockRooms
+            } else if id == .userSessionScroll {
+                (0..<40).map { RoomSummary.mock(id: "!scroll\($0):example.invalid", name: String(format: "Scroll room %02d", $0), isFavourite: $0 == 1 || $0 == 3) }
             } else {
                 .mockRooms
             }
@@ -625,7 +640,21 @@ class MockScreen: Identifiable {
                                                                                                   stateMachineFactory: StateMachineFactory()))
 
             flowCoordinator.start()
-            
+            if id == .userSessionShare || id == .userSessionShareFromRoom {
+                clientProxy.alternateRoomSummaryProvider = RoomSummaryProviderMock(.init(state: .loaded(.mockRooms)))
+                Task { @MainActor in
+                    try await Task.sleep(for: .milliseconds(700))
+                    if id == .userSessionShareFromRoom {
+                        flowCoordinator.handleAppRoute(.room(roomID: "1", via: []), animated: false)
+                        try await Task.sleep(for: .milliseconds(700))
+                    }
+                    let file = try SharedFileImport.write(Data("Shared document contents".utf8), suggestedName: "Смета проекта.txt", fileExtension: "txt", withinAppGroupContainer: true)
+                    try ShareExtensionConstants.removeExpiredFiles()
+                    let encoded = try JSONEncoder().encode(ShareExtensionPayload.mediaFiles(roomID: nil, mediaFiles: [.init(url: file, suggestedName: "Смета проекта.txt")]))
+                    let payload = try JSONDecoder().decode(ShareExtensionPayload.self, from: encoded)
+                    try flowCoordinator.handleAppRoute(.share(payload.withDefaultTemporaryDirectory()), animated: false)
+                }
+            }
             retainedState.append(flowCoordinator)
             
             return nil
@@ -824,3 +853,94 @@ class MockScreen: Identifiable {
         }
     }()
 }
+
+#if DEBUG
+/// Exercises the production native form against local OTP responses, without real credentials.
+@Observable
+private final class NativeOTPFixtureCoordinator: CoordinatorProtocol {
+    var viewModel: NativeLoginScreenViewModel?
+    var result = "Preparing local OTP fixture"
+    private var cancellables = Set<AnyCancellable>()
+
+    func start() {
+        Task {
+            let service = AuthenticationService.mock
+            _ = await service.configure(for: "company.com", flow: .login)
+            let data = OAuthAuthorizationDataSDKMock()
+            data.loginUrlReturnValue = "https://otp.example/authorize"
+            let authenticator = HeadlessOIDCAuthenticator(sessionFactory: {
+                let configuration = URLSessionConfiguration.ephemeral
+                configuration.protocolClasses = [NativeOTPFixtureProtocol.self]
+                return URLSession(configuration: configuration)
+            })
+            let model = NativeLoginScreenViewModel(authenticationService: service,
+                                                   oidcData: .init(underlyingData: data),
+                                                   headlessAuthenticator: authenticator)
+            model.actionsPublisher.sink { [weak self] action in
+                switch action {
+                case .signedIn: self?.result = "OTP fixture: signed in"
+                case .cancelled: self?.result = "OTP fixture: cancelled"
+                }
+                self?.viewModel = nil
+            }.store(in: &cancellables)
+            viewModel = model
+        }
+    }
+
+    func stop() {
+        viewModel?.cancelPendingAuthentication()
+    }
+
+    func toPresentable() -> AnyView {
+        AnyView(NavigationStack {
+            if let viewModel {
+                NativeLoginScreen(context: viewModel.context)
+            } else {
+                Text(result).accessibilityIdentifier("native_otp_fixture_result")
+            }
+        })
+    }
+}
+
+private final class NativeOTPFixtureProtocol: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        guard let url = request.url, url.host == "otp.example" else {
+            client?.urlProtocol(self, didFailWithError: URLError(.unsupportedURL)); return
+        }
+        var data = request.httpBody ?? Data()
+        if let stream = request.httpBodyStream {
+            stream.open()
+            defer { stream.close() }
+            var buffer = [UInt8](repeating: 0, count: 4096)
+            while stream.hasBytesAvailable {
+                let count = stream.read(&buffer, maxLength: buffer.count)
+                if count <= 0 { break }
+                data.append(contentsOf: buffer.prefix(count))
+            }
+        }
+        let body = String(data: data, encoding: .utf8) ?? ""
+        let accepted = url.path == "/otp" && body.contains("otp=123456")
+        let html: String
+        if request.httpMethod == "GET" {
+            html = #"<form action="https://otp.example/login"><input name="username"><input name="password"></form>"#
+        } else {
+            html = #"<form id="kc-otp-login-form" action="https://otp.example/otp"><input name="otp" autocomplete="one-time-code"></form>"#
+        }
+        let response = HTTPURLResponse(url: url, statusCode: accepted ? 302 : 200, httpVersion: nil,
+                                       headerFields: accepted ? ["Location": "ru.implica.stalk://oidc/callback?code=fixture&state=fixture"] : [:])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(html.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() { }
+}
+#endif

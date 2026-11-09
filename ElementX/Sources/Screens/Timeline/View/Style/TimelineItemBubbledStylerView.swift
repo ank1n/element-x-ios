@@ -53,14 +53,14 @@ struct TimelineItemBubbledStylerView<Content: View>: View {
                 }
 
                 VStack(alignment: alignment, spacing: 0) {
-                    HStack(spacing: 0) {
+                    HStack(alignment: .bottom, spacing: 4) {
                         if timelineItem.isOutgoing {
                             Spacer()
                         }
 
                         messageBubbleWithReactions
                     }
-                    .padding(timelineItem.isOutgoing ? .leading : .trailing, 48) // Additional padding to differentiate alignment.
+                    .padding(timelineItem.isOutgoing ? .leading : .trailing, 48)
 
                     HStack(spacing: 0) {
                         if !timelineItem.isOutgoing {
@@ -128,6 +128,7 @@ struct TimelineItemBubbledStylerView<Content: View>: View {
             }
             
             if context.viewState.areThreadsEnabled,
+               !isChannelPost,
                !context.viewState.timelineKind.isThread,
                let threadSummary = timelineItem.properties.threadSummary {
                 TimelineThreadSummaryView(threadSummary: threadSummary) {
@@ -141,6 +142,9 @@ struct TimelineItemBubbledStylerView<Content: View>: View {
     var messageBubbleWithActions: some View {
         messageBubble
             .onTapGesture {
+                if isChannelPost {
+                    context.send(viewAction: .displayChannelPostActions(itemID: timelineItem.id))
+                }
                 // We need a tap gesture before the long press gesture below, otherwise something
                 // on iOS 17 hijacks the long press and you can't bring up the context menu. This
                 // is no longer an issue on iOS 18. Note: it's fine for this to be empty, we handle
@@ -149,11 +153,9 @@ struct TimelineItemBubbledStylerView<Content: View>: View {
             .longPressWithFeedback {
                 context.send(viewAction: .displayTimelineItemMenu(itemID: timelineItem.id))
             }
-            .swipeRightAction {
-                SwipeToReplyView(timelineItem: timelineItem)
-            } shouldStartAction: {
-                timelineItem.canBeRepliedTo
-            } action: {
+            .swipeReplyAction(shouldStartAction: {
+                !isChannelPost && timelineItem.canBeRepliedTo && context.viewState.canCurrentUserSendMessage
+            }) {
                 context.send(viewAction: .handleTimelineItemMenuAction(itemID: timelineItem.id,
                                                                        action: .reply(isThread: timelineItem.properties.isThreaded)))
             }
@@ -185,9 +187,14 @@ struct TimelineItemBubbledStylerView<Content: View>: View {
                               color: timelineItem.bubbleBackgroundColor)
     }
     
+    private var isChannelPost: Bool {
+        context.viewState.isChannelMain &&
+            (timelineItem is EventBasedMessageTimelineItemProtocol || timelineItem is StickerRoomTimelineItem)
+    }
+
     var contentWithReply: some View {
         TimelineBubbleLayout(spacing: 8) {
-            if !context.viewState.timelineKind.isThread, timelineItem.properties.isThreaded {
+            if context.viewState.areThreadsEnabled, !context.viewState.timelineKind.isThread, timelineItem.properties.isThreaded {
                 ThreadDecorator()
                     .padding(.leading, 4)
                     .layoutPriority(TimelineBubbleLayout.Priority.regularText)

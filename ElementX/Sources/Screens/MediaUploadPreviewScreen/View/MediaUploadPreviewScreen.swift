@@ -106,6 +106,8 @@ struct MediaUploadPreviewScreen: View {
                     .frame(width: 34, height: 34)
                     .background(Color(red: 0.38, green: 0.42, blue: 0.96), in: Circle())
             }
+            .accessibilityLabel(L10n.actionSend)
+            .accessibilityIdentifier("shared_media_send")
         }
     }
     

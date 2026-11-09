@@ -102,7 +102,7 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
                                                        homeserver: userSession.clientProxy.homeserver,
                                                        hideTimelineMedia: hideTimelineMedia,
                                                        isViewSourceEnabled: appSettings.viewSourceEnabled,
-                                                       areThreadsEnabled: appSettings.threadsEnabled,
+                                                       areThreadsEnabled: appSettings.threadsEnabled && !roomProxy.isDirectOneToOneRoom,
                                                        linkPreviewsEnabled: appSettings.linkPreviewsEnabled,
                                                        hasPredecessor: roomProxy.predecessorRoom != nil,
                                                        pinnedEventIDs: roomProxy.infoPublisher.value.pinnedEventIDs,
@@ -207,6 +207,9 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
             scrollToBottom()
         case .displayTimelineItemMenu(let itemID):
             timelineInteractionHandler.displayTimelineItemActionMenu(for: itemID)
+        case .displayChannelPostActions(let itemID):
+            guard state.isChannelMain else { return }
+            timelineInteractionHandler.displayTimelineItemActionMenu(for: itemID, compact: true)
         case .handleTimelineItemMenuAction(let itemID, let action):
             timelineInteractionHandler.handleTimelineItemMenuAction(action, itemID: itemID)
         case .tappedOnSenderDetails(let sender):
@@ -218,6 +221,7 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
         case .displayReadReceipts(let itemID):
             displayReadReceipts(for: itemID)
         case .displayThread(let itemID):
+            guard state.areThreadsEnabled else { return }
             actionsSubject.send(.displayThread(itemID: itemID))
         case .handlePasteOrDrop(let providers):
             timelineInteractionHandler.handlePasteOrDrop(providers)
@@ -445,6 +449,8 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
     }
     
     private func updateRoomInfo(_ roomInfo: RoomInfoProxyProtocol) {
+        state.isDirectOneToOneRoom = roomProxy.isDirectOneToOneRoom
+        state.areThreadsEnabled = appSettings.threadsEnabled && !roomProxy.isDirectOneToOneRoom && !roomInfo.isSpace
         let nativeLevel = roomInfo.powerLevels.map { $0.userPowerLevels[roomProxy.ownUserID] ?? $0.values.usersDefault }
         channelService?.restrictNativeAccess(roomID: roomProxy.id, joined: roomInfo.membership == .joined, level: nativeLevel)
         state.callSummaryService?.setMembership(joined: roomInfo.membership == .joined)
@@ -550,6 +556,7 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
                 case .viewInRoomTimeline(let eventID):
                     Task { await self.viewInRoomTimeline(eventID: eventID) }
                 case .displayThread(let itemID):
+                    guard state.areThreadsEnabled else { return }
                     actionsSubject.send(.displayThread(itemID: itemID))
                 case .showTranslation(let text):
                     self.state.bindings.textToBeTranslated = text
@@ -562,7 +569,7 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
     func viewInRoomTimeline(eventID: String) async {
         switch await roomProxy.loadOrFetchEventDetails(for: eventID) {
         case .success(let event):
-            let threadRootEventID: String? = if appSettings.threadsEnabled {
+            let threadRootEventID: String? = if state.areThreadsEnabled {
                 event.threadRootEventId()
             } else {
                 nil
@@ -583,7 +590,10 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
             .store(in: &cancellables)
         
         appSettings.$threadsEnabled
-            .weakAssign(to: \.state.areThreadsEnabled, on: self)
+            .sink { [weak self] enabled in
+                guard let self else { return }
+                self.state.areThreadsEnabled = enabled && !self.roomProxy.isDirectOneToOneRoom && !self.roomProxy.infoPublisher.value.isSpace
+            }
             .store(in: &cancellables)
         
         userSession.clientProxy.timelineMediaVisibilityPublisher

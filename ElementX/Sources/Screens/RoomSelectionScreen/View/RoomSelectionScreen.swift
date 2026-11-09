@@ -47,6 +47,7 @@ struct RoomSelectionScreen: View {
                     context.send(viewAction: .confirm)
                 }
                 .disabled(context.viewState.selectedRoomID == nil)
+                .accessibilityIdentifier("room_selection_confirm")
             }
         }
         .searchController(query: $context.searchQuery, showsCancelButton: false)
@@ -76,6 +77,7 @@ private struct RoomSelectionListRow: View {
                 kind: .selection(isSelected: isSelected) {
                     context.send(viewAction: .selectRoom(roomID: room.id))
                 })
+                .accessibilityIdentifier("room_selection_\(room.id)")
     }
     
     @ViewBuilder @MainActor

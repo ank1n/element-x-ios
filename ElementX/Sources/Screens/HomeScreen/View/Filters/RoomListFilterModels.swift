@@ -24,19 +24,26 @@ enum RoomListFilter: Int, CaseIterable, Identifiable {
     case invites
     case lowPriority
     case channels
+    case mentions
 
     static var availableFilters: [RoomListFilter] {
-        RoomListFilter.allCases
+        allCases
+    }
+
+    static var primaryDisplayOrder: [RoomListFilter] {
+        [.people, .rooms, .channels, .meetings]
     }
     
     var localizedName: String {
         switch self {
         case .channels:
             return NSLocalizedString("stalk_channels_title", comment: "Channels")
+        case .mentions:
+            return NSLocalizedString("stalk_roomlist_filter_mentions", value: "Mentions", comment: "Mentioned chats filter")
         case .people:
-            return L10n.screenRoomlistFilterPeople
+            return NSLocalizedString("stalk_roomlist_filter_people", value: "People", comment: "People filter")
         case .rooms:
-            return L10n.screenRoomlistFilterRooms
+            return NSLocalizedString("stalk_roomlist_filter_rooms", value: "Rooms", comment: "Rooms filter")
         case .unreads:
             return L10n.screenRoomlistFilterUnreads
         case .favourites:
@@ -52,28 +59,22 @@ enum RoomListFilter: Int, CaseIterable, Identifiable {
     
     var incompatibleFilters: [RoomListFilter] {
         switch self {
-        case .channels:
-            return [.unreads, .people, .rooms, .favourites, .invites, .lowPriority, .meetings]
-        case .people:
-            return [.rooms, .invites, .meetings, .channels]
-        case .rooms:
-            return [.people, .invites, .meetings, .channels]
-        case .unreads:
-            return [.invites, .meetings, .channels]
-        case .favourites:
-            return [.invites, .lowPriority, .meetings, .channels]
-        case .meetings:
-            // Meetings is a standalone view (only meeting rooms), mutually exclusive with all others.
-            return [.unreads, .people, .rooms, .favourites, .invites, .lowPriority, .channels]
-        case .invites:
-            return [.rooms, .people, .unreads, .favourites, .lowPriority, .meetings, .channels]
-        case .lowPriority:
-            return [.favourites, .invites, .meetings, .channels]
+        case .mentions: return Self.allCases.filter { $0 != .mentions }
+        case .channels: return [.mentions, .unreads, .people, .rooms, .favourites, .invites, .lowPriority, .meetings]
+        case .people: return [.mentions, .rooms, .invites, .meetings, .channels]
+        case .rooms: return [.mentions, .people, .invites, .meetings, .channels]
+        case .unreads: return [.mentions, .invites, .meetings, .channels]
+        case .favourites: return [.mentions, .invites, .lowPriority, .meetings, .channels]
+        case .meetings: return [.mentions, .unreads, .people, .rooms, .favourites, .invites, .lowPriority, .channels]
+        case .invites: return [.mentions, .rooms, .people, .unreads, .favourites, .lowPriority, .meetings, .channels]
+        case .lowPriority: return [.mentions, .favourites, .invites, .meetings, .channels]
         }
     }
-    
+
     var rustFilter: RoomListEntriesDynamicFilterKind {
         switch self {
+        case .mentions:
+            return .all(filters: [.unread, .joined])
         case .people:
             return .all(filters: [.category(expect: .people), .joined])
         case .rooms:

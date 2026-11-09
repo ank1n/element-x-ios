@@ -73,8 +73,12 @@ struct RoomScreenViewState: BindableState {
     var hasOngoingCall: Bool
     /// Whether or not the user is already part of a call in another room.
     var isParticipatingInOngoingCall = false
+    var showsOngoingCallJoinButton: Bool {
+        shouldShowCallButton && hasOngoingCall
+    }
+
     var shouldShowCallButton: Bool {
-        isCallingEnabled && !isParticipatingInOngoingCall // Hide the join call button when already in the call
+        !isChannel && isCallingEnabled && !isParticipatingInOngoingCall // Hide the join call button when already in the call
     }
     
     var isKnockingEnabled = false

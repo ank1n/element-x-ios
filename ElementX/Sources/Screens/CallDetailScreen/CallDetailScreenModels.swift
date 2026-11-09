@@ -179,6 +179,29 @@ struct CreatedTask: Codable, Identifiable, Equatable {
     }
 }
 
+extension CreatedTask {
+    var callDisplayIdentifier: String {
+        if let value = trackitProjectIdentifier, let number = trackitSequenceId, number > 0,
+           case let project = value.trimmingCharacters(in: .whitespacesAndNewlines), !project.isEmpty {
+            return "\(project)-\(number)"
+        }
+        return NSLocalizedString("stalk_call_task_number_unavailable", value: "Task number unavailable", comment: "Missing human-readable task number")
+    }
+
+    var callDisplayStatus: String {
+        if let name = trackitStateName, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return name }
+        let key: String
+        switch trackitStateGroup {
+        case "backlog", "unstarted": key = "backlog"
+        case "started": key = "started"
+        case "completed": key = "completed"
+        case "cancelled": key = "cancelled"
+        default: key = "unavailable"
+        }
+        return NSLocalizedString("stalk_call_task_status_" + key, comment: "Call task status")
+    }
+}
+
 /// STALK-255 build 157: проект TrackIT для выбора при создании задачи.
 struct TrackItProject: Codable, Identifiable, Equatable {
     let id: String

@@ -35,6 +35,28 @@ enum CallBackgroundMode: String, CaseIterable {
 /// Provides published state for SwiftUI views to render native video tracks.
 @MainActor
 final class LiveKitRoomManager: ObservableObject {
+    /// STALK-1132: camera subscriptions are local to this receiver and this call.
+    lazy var cameraReception = CallCameraReception { [weak self] in
+        guard let self, self.room.connectionState == .connected else { return [] }
+        return self.room.remoteParticipants.values.flatMap { participant in
+            participant.trackPublications.values.compactMap { publication -> CallIncomingPublication? in
+                guard let publication = publication as? RemoteTrackPublication else { return nil }
+                return .init(id: AnyHashable(ObjectIdentifier(publication)),
+                             isCameraVideo: CallCameraReception.isCamera(kind: publication.kind, source: publication.source)) { [weak publication] enabled, retry in
+                    guard let publication else { return }
+                    // LiveKit caches the preference before sending. After a failed send,
+                    // change it first so the retry cannot be swallowed by that cache.
+                    if retry { try? await publication.set(subscribed: !enabled) }
+                    try await publication.set(subscribed: enabled)
+                }
+            }
+        }
+    }
+
+    func remoteCameraVideoTrack(for participant: RemoteParticipant) -> VideoTrack? {
+        cameraReception.isEnabled ? participant.firstCameraVideoTrack : nil
+    }
+
     // MARK: - Published State
 
     @Published private(set) var connectionState: ConnectionState = .disconnected
@@ -164,6 +186,7 @@ final class LiveKitRoomManager: ObservableObject {
         room = Room()
         room.add(delegate: self)
         registerLifecycleObservers()
+        cameraReception.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
     }
 
     private static let logBridgeInstalled: Bool = {
@@ -374,6 +397,7 @@ final class LiveKitRoomManager: ObservableObject {
         @unknown default: reasonStr = "other"
         }
         os_log(.info, log: livekitLog, "AudioSession route change: %{public}@", reasonStr)
+        CallAudioDiagnostics.shared.logIfChanged(reason: "route:\(reasonStr)")
     }
 
     // MARK: - Room options (настройки звонка из Settings)
@@ -480,6 +504,9 @@ final class LiveKitRoomManager: ObservableObject {
     ///   - token: The extracted access_token JWT
     ///   - speakerByDefault: If true, start with speaker; if false, earpiece (1:1 calls)
     func connect(wsURL: String, token: String, speakerByDefault: Bool = false) async throws {
+        #if targetEnvironment(simulator)
+        try prepareSimulatorQAAudio()
+        #endif
         let baseURL = extractBaseURL(from: wsURL)
         MXLog.info("sTalk LiveKit: Connecting to \(baseURL)")
 
@@ -508,6 +535,9 @@ final class LiveKitRoomManager: ObservableObject {
 
     /// Connect with E2EE enabled (per-participant keys, manual subscribe)
     func connectWithE2EE(wsURL: String, token: String, keyProvider: BaseKeyProvider, speakerByDefault: Bool = false) async throws {
+        #if targetEnvironment(simulator)
+        try prepareSimulatorQAAudio()
+        #endif
         let baseURL = extractBaseURL(from: wsURL)
         MXLog.info("sTalk LiveKit: Connecting with E2EE to \(baseURL)")
 
@@ -543,6 +573,13 @@ final class LiveKitRoomManager: ObservableObject {
     }
 
     func disconnect() async {
+        #if targetEnvironment(simulator)
+        simulatorQAAudioWanted = false
+        stopSimulatorQAAudio()
+        simulatorVideoTimer?.invalidate()
+        simulatorVideoTimer = nil
+        simulatorBufferCapturer = nil
+        #endif
         locallyMutedIdentities = []; previousRemoteVolumes = [:]; orderedHandSIDs = []; raisedHandsSIDs = []
         reconnectURL = nil
         reconnectToken = nil
@@ -560,6 +597,7 @@ final class LiveKitRoomManager: ObservableObject {
         }
         #endif
         await room.disconnect()
+        cameraReception.reset()
         MXLog.info("sTalk LiveKit: Disconnected")
         os_log(.info, log: livekitLog, "Disconnected (user-initiated)")
         updateState()
@@ -749,6 +787,10 @@ final class LiveKitRoomManager: ObservableObject {
 
     func setMicrophone(enabled: Bool) async throws {
         #if targetEnvironment(simulator)
+        if Self.simulatorSyntheticMediaEnabled {
+            simulatorQAAudioWanted = enabled
+            if !enabled { stopSimulatorQAAudio() }
+        }
         // На симуляторе track.mute()/unmute() кидает Audio Engine Error -4010
         // (WebRTC audio engine на симе не поддерживает re-activation).
         // Вместо mute делаем полный unpublish, при enable — fresh publish.
@@ -757,6 +799,7 @@ final class LiveKitRoomManager: ObservableObject {
             if existing == nil {
                 try await publishSimulatorAudioTrack()
             }
+            if Self.simulatorSyntheticMediaEnabled { startSimulatorQAAudio() }
         } else if let publication = existing as? LocalTrackPublication {
             try await room.localParticipant.unpublish(publication: publication)
         }
@@ -1253,6 +1296,76 @@ final class LiveKitRoomManager: ObservableObject {
     // MARK: - Simulator Fake Tracks
 
     #if targetEnvironment(simulator)
+    static let simulatorSyntheticMediaEnabled = ProcessInfo.processInfo.environment["STALK_QA_SYNTHETIC_MEDIA"] == "1"
+    private var simulatorQAAudioWanted = false
+    private var simulatorQAAudioTimer: Timer?
+    private var simulatorQASample: Int64 = 0
+    private var simulatorQASelfTest = false
+    private let simulatorQASource = SimulatorQAToneSource()
+
+    static func runSimulatorAudioSelfTest() async {
+        guard simulatorSyntheticMediaEnabled,
+              ProcessInfo.processInfo.environment["STALK_QA_AUDIO_SELF_TEST"] == "1" else { return }
+        let manager = LiveKitRoomManager()
+        let meter = SimulatorQAAudioMeter()
+        let track = LocalAudioTrack.createTrack(options: .noProcessing)
+        track.add(audioRenderer: meter)
+        defer {
+            manager.stopSimulatorQAAudio()
+            try? AudioManager.shared.stopLocalRecording()
+            track.remove(audioRenderer: meter)
+        }
+        do {
+            try manager.prepareSimulatorQAAudio()
+            try AudioManager.shared.startLocalRecording()
+            manager.simulatorQASelfTest = true
+            manager.simulatorQAAudioWanted = true
+            manager.startSimulatorQAAudio()
+            try await Task.sleep(for: .seconds(8))
+            let measured = meter.snapshot()
+            let generated = manager.simulatorQASource.snapshot()
+            DiagLog.write("SimulatorQA", "self-test engineFlag=\(AudioManager.shared.isEngineRunning) sourceSamples=\(generated.0) sourceEnergy=\(generated.1) trackRendererSamples=\(measured.0) trackRendererEnergy=\(measured.1)")
+        } catch {
+            DiagLog.write("SimulatorQA", "self-test failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func prepareSimulatorQAAudio() throws {
+        guard Self.simulatorSyntheticMediaEnabled else { return }
+        // No fallback to a device: failure aborts connection/publication.
+        AudioManager.shared.set(engineObservers: [simulatorQASource])
+        try AudioManager.shared.setManualRenderingMode(true)
+        try AudioManager.shared.setEngineAvailability(.default)
+        guard AudioManager.shared.isManualRenderingMode else {
+            throw NSError(domain: "sTalk.SimulatorQA", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "No-device audio mode unavailable"])
+        }
+        DiagLog.write("SimulatorQA", "no-device audio enabled; Mac mic excluded")
+    }
+
+    private func startSimulatorQAAudio() {
+        guard Self.simulatorSyntheticMediaEnabled, simulatorQAAudioWanted,
+              simulatorQAAudioTimer == nil else { return }
+        simulatorQASource.setEnabled(true)
+        let timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            let measured = self.simulatorQASource.snapshot()
+            self.simulatorQASample = Int64(measured.0)
+            DiagLog.write("SimulatorQA", "source rendered=\(measured.0) energy=\(measured.1) manual=\(AudioManager.shared.isManualRenderingMode) engine=\(AudioManager.shared.isEngineRunning)")
+        }
+        simulatorQAAudioTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+        DiagLog.write("SimulatorQA", "tone started: 440Hz 48kHz mono, 2s on / 1s silence")
+    }
+
+    private func stopSimulatorQAAudio() {
+        simulatorQASource.setEnabled(false)
+        simulatorQAAudioTimer?.invalidate()
+        simulatorQAAudioTimer = nil
+        simulatorQASample = Int64(simulatorQASource.snapshot().0)
+        DiagLog.write("SimulatorQA", "tone stopped samples=\(simulatorQASample)")
+    }
+
     private var simulatorVideoTimer: Timer?
     private var simulatorBufferCapturer: BufferCapturer?
 
@@ -1314,6 +1427,19 @@ final class LiveKitRoomManager: ObservableObject {
 
     /// Publish a real microphone audio track on simulator (Mac mic via WebRTC)
     private func publishSimulatorAudioTrack() async throws {
+        if Self.simulatorSyntheticMediaEnabled {
+            try prepareSimulatorQAAudio()
+            let track = LocalAudioTrack.createTrack(name: "qa-synthetic-audio", options: .noProcessing)
+            do {
+                _ = try await room.localParticipant.publish(audioTrack: track)
+                try AudioManager.shared.startLocalRecording()
+                DiagLog.write("SimulatorQA", "explicit no-device recording start: engine=\(AudioManager.shared.isEngineRunning)")
+            } catch {
+                DiagLog.write("SimulatorQA", "audio publication failed: \(error.localizedDescription)")
+                throw error
+            }
+            return
+        }
         let audioTrack = LocalAudioTrack.createTrack(name: "microphone")
         _ = try await room.localParticipant.publish(audioTrack: audioTrack)
         MXLog.info("sTalk LiveKit: Published simulator audio track (Mac microphone)")
@@ -1341,12 +1467,17 @@ final class LiveKitRoomManager: ObservableObject {
     private var speakerRoutePreferred = false
     /// Движок гейтится один раз на звонок, а не на каждый connect (реконнект!).
     private var hasGatedEngineForCall = false
+    private var audioDiagnosticsTask: Task<Void, Never>?
 
     /// Configure AVAudioSession for VoIP call before LiveKit connects.
     /// - Parameter speakerByDefault: If true, route audio to speaker initially (for group calls).
     ///   If false, route to earpiece (for 1:1 calls, like Telegram).
     func configureAudioSession(speakerByDefault: Bool = false) {
+        #if targetEnvironment(simulator)
+        if Self.simulatorSyntheticMediaEnabled { return }
+        #endif
         speakerRoutePreferred = speakerByDefault
+        CallAudioDiagnostics.shared.installIfNeeded()
         #if !targetEnvironment(simulator)
         if Self.kCallKitFullLifecycle {
             // Сессию активирует CallKit — SDK не должен ни конфигурировать её, ни
@@ -1420,6 +1551,16 @@ final class LiveKitRoomManager: ObservableObject {
             DiagLog.write("Call", "audio: сессия активна (system=\(systemOwnsSession)) → движок включён (speaker=\(speakerRoutePreferred))")
         } catch {
             DiagLog.write("Call", "audio: setEngineAvailability(.default) FAIL \(error.localizedDescription)")
+        }
+        // Движок стартует асинхронно, а эхо замечено в первые секунды звонка — снимаем
+        // состояние каждую секунду 30 с. В лог попадают только изменения.
+        audioDiagnosticsTask?.cancel()
+        audioDiagnosticsTask = Task {
+            for second in 1...30 {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard !Task.isCancelled else { return }
+                CallAudioDiagnostics.shared.logIfChanged(reason: "activated+\(second)s")
+            }
         }
         #endif
     }
@@ -1547,9 +1688,16 @@ extension LiveKitRoomManager: RoomDelegate {
 
             switch connectionState {
             case .connected:
+                #if targetEnvironment(simulator)
+                self.startSimulatorQAAudio()
+                #endif
                 self.reconnectAttempt = 0
                 self.updateState()
+                self.cameraReception.reconcile(resetApplied: true)
             case .disconnected:
+                #if targetEnvironment(simulator)
+                self.stopSimulatorQAAudio()
+                #endif
                 // Unexpected drop: try to reconnect silently a few times before giving up.
                 if oldConnectionState == .connected || oldConnectionState == .reconnecting,
                    self.reconnectURL != nil, self.reconnectToken != nil {
@@ -1558,7 +1706,9 @@ extension LiveKitRoomManager: RoomDelegate {
                     self.attemptAutoReconnect()
                 }
             default:
-                break
+                #if targetEnvironment(simulator)
+                self.stopSimulatorQAAudio()
+                #endif
             }
         }
     }
@@ -1602,6 +1752,7 @@ extension LiveKitRoomManager: RoomDelegate {
         let sid = participant.sid?.stringValue ?? "nil"
         Task { @MainActor in
             self.updateState()
+            self.cameraReception.reconcile()
             MXLog.info("sTalk LiveKit: Participant joined: \(identity), sid=\(sid), totalRemote=\(self.remoteParticipants.count)")
             // STMOB-152 build 176: DiagLog для realtime correlation с Molly
             // server-side observation. Видим момент guest JOIN на iOS — после
@@ -1616,9 +1767,21 @@ extension LiveKitRoomManager: RoomDelegate {
         let sid = participant.sid?.stringValue ?? "nil"
         Task { @MainActor in
             self.updateState()
+            self.cameraReception.reconcile()
             MXLog.info("sTalk LiveKit: Participant left: \(identity), sid=\(sid), remainingRemote=\(self.remoteParticipants.count)")
             DiagLog.write("Call", "participant LEAVE identity=\(identity) sid=\(sid) remainingRemote=\(self.remoteParticipants.count)")
         }
+    }
+
+    nonisolated func room(_ room: Room, participant: RemoteParticipant, didPublishTrack publication: RemoteTrackPublication) {
+        Task { @MainActor in
+            self.updateState()
+            self.cameraReception.reconcile(resetApplied: true)
+        }
+    }
+
+    nonisolated func room(_ room: Room, participant: RemoteParticipant, didUnpublishTrack publication: RemoteTrackPublication) {
+        Task { @MainActor in self.updateState(); self.cameraReception.reconcile() }
     }
 
     nonisolated func room(_ room: Room, participant: RemoteParticipant, didSubscribeTrack publication: RemoteTrackPublication) {
@@ -1629,12 +1792,14 @@ extension LiveKitRoomManager: RoomDelegate {
         let identity = participant.identity?.stringValue ?? "?"
         Task { @MainActor in
             self.updateState()
+            self.cameraReception.reconcile()
             MXLog.info("sTalk LiveKit: Subscribed to track: \(pubKind) from \(identity)")
             // STMOB-114: видим в nse-events.log реально ли пришёл screen share track.
             DiagLog.write("Call", "track subscribed kind=\(pubKind) name=\(pubName) source=\(pubSource) isScreenShare=\(isScreenShare) muted=\(publication.isMuted) from=\(identity)")
             // Разбор «не вижу чужое видео» упирался в то, что подписка есть, а
             // дошли ли кадры — неизвестно. Зонд отвечает на это одной строкой.
-            if let videoTrack = publication.track as? VideoTrack {
+            if let videoTrack = publication.track as? VideoTrack,
+               self.cameraReception.isEnabled || !CallCameraReception.isCamera(kind: publication.kind, source: publication.source) {
                 let probe = FirstFrameProbe(label: "\(identity) \(pubSource)") { label, frame in
                     DiagLog.write("Call", "видео от \(label): ПЕРВЫЙ кадр \(frame.dimensions.width)x\(frame.dimensions.height)")
                 } onResolutionChange: { label, oldWidth, oldHeight, newWidth, newHeight in
@@ -1652,6 +1817,7 @@ extension LiveKitRoomManager: RoomDelegate {
         let identity = participant.identity?.stringValue ?? "?"
         Task { @MainActor in
             self.updateState()
+            self.cameraReception.reconcile(resetApplied: self.cameraReception.isEnabled)
             DiagLog.write("Call", "track unsubscribed name=\(pubName) isScreenShare=\(isScreenShare) from=\(identity)")
         }
     }
@@ -1972,6 +2138,7 @@ final class MediaEgressWatchdog: NSObject, TrackDelegate, @unchecked Sendable {
 
         if ticks % Self.telemetryEvery == 0 {
             DiagLog.write("Call", "egress \(kind): bytes=\(bytes) packets=\(packets) encoded=\(encoded) captured=\(captured) active=\(anyActive) ice=\(iceState.map { "\($0)" } ?? "n/a") flat=\(stall)с")
+            CallAudioDiagnostics.shared.logIfChanged(reason: "tick")
         }
 
         if captureFlat == Self.captureStallThreshold, !pathDown, !exhausted {
@@ -2795,3 +2962,220 @@ final class StalkBackgroundBlurProcessor: NSObject, LiveKit.VideoProcessor {
         }
     }
 }
+
+#if targetEnvironment(simulator)
+/// Scalar-only QA meter. Never records or retains audio buffers.
+private final class SimulatorQAAudioMeter: AudioRenderer, @unchecked Sendable {
+    private let lock = NSLock()
+    private var samples: UInt64 = 0
+    private var energy: Double = 0
+    func render(pcmBuffer: AVAudioPCMBuffer) {
+        var sum = 0.0
+        let count = Int(pcmBuffer.frameLength)
+        if let channel = pcmBuffer.floatChannelData?[0] {
+            for index in 0..<count {
+                sum += Double(channel[index] * channel[index])
+            }
+        } else if let channel = pcmBuffer.int16ChannelData?[0] {
+            for index in 0..<count {
+                let value = Double(channel[index]) / 32768; sum += value * value
+            }
+        }
+        lock.lock()
+        samples += UInt64(count)
+        energy += sum
+        lock.unlock()
+    }
+
+    func snapshot() -> (UInt64, Double) {
+        lock.lock(); defer { lock.unlock() }
+        return (samples, energy)
+    }
+}
+#endif
+
+// MARK: - Диагностика эха (STMOB-325)
+
+/// Только читает состояние звука в звонке: флаги SDK говорят, что ЗАПРОШЕНО, а эхо
+/// зависит от того, что реально стоит на входном узле движка. Поэтому узел читаем
+/// напрямую. В лог пишем только при изменении — буфер nse-events ограничен.
+final class CallAudioDiagnostics: AudioEngineObserver, @unchecked Sendable {
+    static let shared = CallAudioDiagnostics()
+
+    var next: (any AudioEngineObserver)? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return nextObserver
+        }
+        set {
+            lock.lock()
+            nextObserver = newValue
+            lock.unlock()
+        }
+    }
+
+    private let lock = NSLock()
+    // Своя очередь: вызовы в аудиомодуль синхронные, тики и уведомления ими не блокируем.
+    private let queue = DispatchQueue(label: "ru.implica.stalk.call-audio-diagnostics")
+    private var nextObserver: (any AudioEngineObserver)?
+    private var isInstalled = false
+    private weak var engine: AVAudioEngine?
+    private var isRecordingEnabled = false
+    private var lastState: String?
+
+    /// Встаёт в голову цепочки, штатные наблюдатели SDK остаются за ним. Зовётся на
+    /// каждый connect: сброс нужен, чтобы новый звонок снова записал состояние.
+    func installIfNeeded() {
+        lock.lock()
+        lastState = nil
+        let shouldInstall = !isInstalled
+        isInstalled = true
+        lock.unlock()
+        guard shouldInstall else { return }
+        AudioManager.shared.set(engineObservers: [self, AudioManager.shared.audioSession, AudioManager.shared.mixer])
+    }
+
+    func engineWillStart(_ engine: AVAudioEngine, isPlayoutEnabled: Bool, isRecordingEnabled: Bool) -> Int {
+        remember(engine: engine, isRecordingEnabled: isRecordingEnabled)
+        DiagLog.write("Call", "audio-engine: старт playout=\(isPlayoutEnabled) recording=\(isRecordingEnabled)")
+        return next?.engineWillStart(engine, isPlayoutEnabled: isPlayoutEnabled, isRecordingEnabled: isRecordingEnabled) ?? 0
+    }
+
+    func engineDidStop(_ engine: AVAudioEngine, isPlayoutEnabled: Bool, isRecordingEnabled: Bool) -> Int {
+        remember(engine: engine, isRecordingEnabled: false)
+        DiagLog.write("Call", "audio-engine: стоп playout=\(isPlayoutEnabled) recording=\(isRecordingEnabled)")
+        return next?.engineDidStop(engine, isPlayoutEnabled: isPlayoutEnabled, isRecordingEnabled: isRecordingEnabled) ?? 0
+    }
+
+    func engineWillRelease(_ engine: AVAudioEngine) -> Int {
+        remember(engine: nil, isRecordingEnabled: false)
+        return next?.engineWillRelease(engine) ?? 0
+    }
+
+    func logIfChanged(reason: String) {
+        queue.async { [self] in
+            let state = currentState()
+            lock.lock()
+            let isNew = state != lastState
+            lastState = state
+            lock.unlock()
+            if isNew {
+                DiagLog.write("Call", "audio-state[\(reason)]: \(state)")
+            }
+        }
+    }
+
+    private func remember(engine: AVAudioEngine?, isRecordingEnabled: Bool) {
+        lock.lock()
+        self.engine = engine
+        self.isRecordingEnabled = isRecordingEnabled
+        lock.unlock()
+    }
+
+    private func currentState() -> String {
+        let session = AVAudioSession.sharedInstance()
+        let route = session.currentRoute
+        let inputs = route.inputs.map(\.portType.rawValue).joined(separator: "+")
+        let outputs = route.outputs.map(\.portType.rawValue).joined(separator: "+")
+        let audioManager = AudioManager.shared
+
+        lock.lock()
+        let engine = engine
+        let isRecordingEnabled = isRecordingEnabled
+        lock.unlock()
+
+        // inputNode создаётся при первом обращении — трогаем только у работающего
+        // захвата, иначе датчик сам бы менял конфигурацию движка.
+        var inputNodeState = "нет-захвата"
+        if let engine, engine.isRunning, isRecordingEnabled {
+            let input = engine.inputNode
+            inputNodeState = "vp=\(input.isVoiceProcessingEnabled) bypass=\(input.isVoiceProcessingBypassed) "
+                + "agc=\(input.isVoiceProcessingAGCEnabled) muted=\(input.isVoiceProcessingInputMuted)"
+        }
+
+        return "cat=\(session.category.rawValue) mode=\(session.mode.rawValue) in=\(inputs) out=\(outputs) "
+            + "volume=\(session.outputVolume) "
+            + "sdk[vp=\(audioManager.isVoiceProcessingEnabled) bypass=\(audioManager.isVoiceProcessingBypassed)] "
+            + "node[\(inputNodeState)] "
+            + "mic[active=\(AVCaptureDevice.activeMicrophoneMode.rawValue) preferred=\(AVCaptureDevice.preferredMicrophoneMode.rawValue)]"
+    }
+}
+
+#if targetEnvironment(simulator)
+/// AVAudioSourceNode feeds WebRTC's input directly; no hardware input node is connected.
+private final class SimulatorQAToneSource: AudioEngineObserver, @unchecked Sendable {
+    var next: (any AudioEngineObserver)?
+    private final class State: @unchecked Sendable {
+        let lock = NSLock()
+        var enabled = false
+        var samples: UInt64 = 0
+        var energy: Double = 0
+    }
+
+    private let state = State()
+    private let format = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 1)!
+    private lazy var node: AVAudioSourceNode = {
+        let state = self.state
+        return AVAudioSourceNode(format: format) { _, _, count, list in
+            state.lock.lock()
+            let enabled = state.enabled
+            var sample = state.samples
+            state.lock.unlock()
+            var energy = 0.0
+            let buffers = UnsafeMutableAudioBufferListPointer(list)
+            for index in 0..<Int(count) {
+                let position = Int(sample % 144_000)
+                let ramp = min(1.0, min(Double(position) / 240, Double(96000 - position) / 240))
+                let value: Float = enabled && position < 96000
+                    ? Float(sin(2 * Double.pi * 440 * Double(sample) / 48000) * 0.15 * max(0, ramp)) : 0
+                for buffer in buffers {
+                    if let output = buffer.mData?.assumingMemoryBound(to: Float.self) { output[index] = value }
+                }
+                if enabled { sample += 1; energy += Double(value * value) }
+            }
+            state.lock.lock()
+            state.samples = sample
+            state.energy += energy
+            state.lock.unlock()
+            return noErr
+        }
+    }()
+
+    func setEnabled(_ value: Bool) {
+        state.lock.lock(); state.enabled = value; state.lock.unlock()
+    }
+
+    func snapshot() -> (UInt64, Double) {
+        state.lock.lock(); defer { state.lock.unlock() }
+        return (state.samples, state.energy)
+    }
+
+    func engineDidCreate(_ engine: AVAudioEngine) -> Int {
+        DiagLog.write("SimulatorQA", "source engine created")
+        engine.attach(node)
+        return 0
+    }
+
+    func engineWillConnectInput(_ engine: AVAudioEngine, src: AVAudioNode?, dst: AVAudioNode,
+                                format: AVAudioFormat, context: [AnyHashable: Any]) -> Int {
+        guard src == nil else {
+            DiagLog.write("SimulatorQA", "refused hardware source in no-device test")
+            return -1
+        }
+        engine.connect(node, to: dst, format: self.format)
+        DiagLog.write("SimulatorQA", "source connected directly to input mixer")
+        return 0
+    }
+
+    func engineWillStart(_ engine: AVAudioEngine, isPlayoutEnabled: Bool, isRecordingEnabled: Bool) -> Int {
+        DiagLog.write("SimulatorQA", "source engine starting manual=\(engine.isInManualRenderingMode) recording=\(isRecordingEnabled)")
+        return 0
+    }
+
+    func engineWillRelease(_ engine: AVAudioEngine) -> Int {
+        engine.detach(node)
+        return 0
+    }
+}
+#endif

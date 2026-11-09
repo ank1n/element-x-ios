@@ -68,6 +68,7 @@ enum TimelineViewAction {
     case scrollToBottom
     
     case displayTimelineItemMenu(itemID: TimelineItemIdentifier)
+    case displayChannelPostActions(itemID: TimelineItemIdentifier)
     case handleTimelineItemMenuAction(itemID: TimelineItemIdentifier, action: TimelineItemMenuAction)
     
     case tappedOnSenderDetails(sender: TimelineItemSender)
@@ -205,10 +206,11 @@ struct TimelineViewStateBindings {
 
 struct TimelineItemActionMenuInfo: Equatable, Identifiable {
     static func == (lhs: TimelineItemActionMenuInfo, rhs: TimelineItemActionMenuInfo) -> Bool {
-        lhs.id == rhs.id
+        lhs.id == rhs.id && lhs.compact == rhs.compact
     }
     
     let item: EventBasedTimelineItemProtocol
+    var compact = false
     
     var id: TimelineItemIdentifier {
         item.id

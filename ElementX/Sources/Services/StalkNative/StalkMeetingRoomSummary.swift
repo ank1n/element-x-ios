@@ -48,6 +48,10 @@ struct StalkMeetingRoomSummary: Equatable {
         if let encrypted = chunk.first(where: { $0["type"] as? String == "m.room.encrypted" }), let id = encrypted["event_id"] as? String,
            case .joined(let room) = await api.client.roomForIdentifier(roomID),
            case .success(let timeline) = await room.timelineFocusedOnEvent(eventID: id, numberOfEvents: 100) {
+            // Focused timelines are returned unsubscribed. Their item provider is
+            // initialized only after subscribeForUpdates finishes (Organizer crash360).
+            await timeline.subscribeForUpdates()
+            try Task.checkCancellation()
             for proxy in timeline.timelineItemProvider.itemProxies {
                 guard case .event(let event) = proxy, let json = event.debugInfo.originalJSON,
                       let bytes = json.data(using: .utf8), let value = (try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any] else { continue }

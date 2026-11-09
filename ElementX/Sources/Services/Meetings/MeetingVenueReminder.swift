@@ -44,7 +44,7 @@ enum MeetingVenueReminder {
             content.title = MeetingVenueStrings.text("checkin") + " · " + room.displayName
             content.body = meeting.title
             content.categoryIdentifier = NotificationConstants.Category.venueCheckin
-            content.sound = .default
+            content.sound = SimulatorQASettings.isSilent ? nil : .default
             content.userInfo = [NotificationConstants.UserInfoKey.meetingIdentifier: meeting.id,
                                 NotificationConstants.UserInfoKey.receiverIdentifier: userID]
             if let roomID = meeting.matrixRoomId { content.userInfo[NotificationConstants.UserInfoKey.roomIdentifier] = roomID }

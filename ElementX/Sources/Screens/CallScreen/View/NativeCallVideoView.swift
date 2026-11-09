@@ -214,13 +214,13 @@ private struct DirectCallLayout: View {
             }
         }
         for participant in roomManager.displayParticipants {
-            if let track = participant.firstCameraVideoTrack {
+            if let track = roomManager.remoteCameraVideoTrack(for: participant) {
                 return track
             }
             // isMuted обязателен: SDK при выключении камеры НЕ удаляет публикацию,
             // а мьютит её. Без проверки запасная ветка возвращала замьюченный трек,
             // и вместо исчезновения картинки собеседник «замерзал» последним кадром.
-            for pub in participant.videoTracks where pub.isSubscribed && !pub.isMuted {
+            for pub in participant.videoTracks where pub.isSubscribed && !pub.isMuted && (pub.source != .camera || roomManager.cameraReception.isEnabled) {
                 if let track = pub.track as? VideoTrack {
                     return track
                 }
@@ -426,7 +426,7 @@ private struct ActiveSpeakerMiniView: View {
         let avatarURL = findAvatarURL(for: identity)
         let cameraPub = speaker.videoTracks.first(where: { !$0.isScreenShareTrack })
         let videoMuted = cameraPub?.isMuted ?? true
-        let track = videoMuted ? nil : speaker.firstCameraVideoTrack
+        let track = videoMuted ? nil : roomManager.remoteCameraVideoTrack(for: speaker)
 
         return SpeakerInfo(identity: identity,
                            name: resolveSpeakerName(for: speaker, identity: identity),
@@ -714,7 +714,7 @@ private struct GroupCallLayout: View {
             let sid = participant.sid?.stringValue ?? ""
             let handRaised = roomManager.raisedHandsSIDs.contains(sid)
             items.append(ParticipantItem(id: identity,
-                                         videoTrack: participant.firstCameraVideoTrack,
+                                         videoTrack: roomManager.remoteCameraVideoTrack(for: participant),
                                          displayName: resolveDisplayName(for: participant, identity: identity),
                                          avatarURL: findAvatarURL(for: identity),
                                          isLocal: false,
@@ -1081,7 +1081,7 @@ private struct SpeakerCallLayout: View {
     }
 
     private var eligibleRemotes: [RemoteParticipant] {
-        roomManager.displayParticipants.filter { !videoVisibility.hideParticipantsWithoutVideo || $0.firstCameraVideoTrack != nil || $0.videoTracks.contains { $0.isScreenShareTrack && $0.isSubscribed && !$0.isMuted } }
+        roomManager.displayParticipants.filter { !videoVisibility.hideParticipantsWithoutVideo || roomManager.remoteCameraVideoTrack(for: $0) != nil || $0.videoTracks.contains { $0.isScreenShareTrack && $0.isSubscribed && !$0.isMuted } }
     }
 
     private var thumbnailRemotes: [RemoteParticipant] {
@@ -1232,7 +1232,7 @@ private struct SpeakerCallLayout: View {
             }
         }
         // Camera focused-участника.
-        if let p = focusedParticipant, let track = p.firstCameraVideoTrack {
+        if let p = focusedParticipant, let track = roomManager.remoteCameraVideoTrack(for: p) {
             return track
         }
         return nil
@@ -1281,7 +1281,7 @@ private struct SpeakerCallLayout: View {
     private func speakerStripTile(for participant: RemoteParticipant, width: CGFloat, height: CGFloat) -> some View {
         let sid = participant.sid?.stringValue ?? ""
         let isPinned = pinnedSID == sid
-        let cameraTrack = participant.firstCameraVideoTrack
+        let cameraTrack = roomManager.remoteCameraVideoTrack(for: participant)
         let hasScreenShare = participant.videoTracks
             .contains(where: { $0.isScreenShareTrack && $0.isSubscribed })
         // STMOB-120
@@ -1524,7 +1524,7 @@ private struct LandscapeScreenShareLayout: View {
             ?? participants.first(where: { identity.hasPrefix($0.userID) })?.avatarURL
         return SpeakerInfo(identity: identity,
                            name: name,
-                           videoTrack: videoMuted ? nil : speaker.firstCameraVideoTrack,
+                           videoTrack: videoMuted ? nil : roomManager.remoteCameraVideoTrack(for: speaker),
                            avatarURL: avatarURL)
     }
 }
@@ -1802,6 +1802,14 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
             }
             .store(in: &cancellables)
 
+        roomManager.cameraReception.$isEnabled
+            .dropFirst().receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                updateAutomaticStart()
+                if isWindowVisible { refreshTrack(fallbackTitle: self.fallbackTitle) }
+            }.store(in: &cancellables)
+
         // STMOB-292: окно ОБЯЗАНО умереть вместе со звонком.
         // Раньше его гасил только dismantleUIView, а он приходит не всегда и не
         // вовремя: в логе 196 звонок завершился в 11:34:21, а окно продолжало
@@ -1931,7 +1939,7 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
         // автозапуск окна не взводился, хотя показывать в окне ровно есть что
         // (демка и так первая по приоритету в refreshTrack).
         let hasRemoteVideo = roomManager.displayParticipants.contains { participant in
-            participant.firstCameraVideoTrack != nil
+            roomManager.remoteCameraVideoTrack(for: participant) != nil
                 || participant.videoTracks.contains { $0.isScreenShareTrack && $0.isSubscribed && !$0.isMuted }
         }
         return hasRemoteVideo || roomManager.localVideoTrack != nil
@@ -1990,13 +1998,13 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
         // 2. Говорящий
         if let speakerSID = roomManager.activeSpeakers.first?.sid?.stringValue,
            let speaker = participants.first(where: { $0.sid?.stringValue == speakerSID }),
-           let track = speaker.firstCameraVideoTrack {
+           let track = roomManager.remoteCameraVideoTrack(for: speaker) {
             contentViewController.update(track: track, title: fallbackTitle)
             return
         }
         // 3. Первый с включённой камерой
         for participant in participants {
-            if let track = participant.firstCameraVideoTrack {
+            if let track = roomManager.remoteCameraVideoTrack(for: participant) {
                 contentViewController.update(track: track, title: fallbackTitle)
                 return
             }

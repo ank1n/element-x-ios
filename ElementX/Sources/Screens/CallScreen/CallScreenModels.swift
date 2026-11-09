@@ -174,6 +174,7 @@ enum CallScreenViewAction {
     case selectLayout(CallLayoutMode)
     case pinParticipant(sid: String, mode: CallLayoutMode)
     case unpinParticipant
+    case setReceiveCameraVideo(Bool)
     case toggleHideOwnVideo
     case toggleHideParticipantsWithoutVideo
     /// STMOB-218: tap on the speaker PiP in landscape screen-share → back to portrait.

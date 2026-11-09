@@ -11,7 +11,9 @@ import Foundation
 class NativeLoginScreenViewModel: NativeLoginScreenViewModelType {
     private let authenticationService: AuthenticationServiceProtocol
     private let oidcData: OIDCAuthorizationDataProxy
-    private let headlessAuthenticator = HeadlessOIDCAuthenticator()
+    private let headlessAuthenticator: HeadlessOIDCAuthenticator
+    private var loginTask: Task<Void, Never>?
+    private var codeContinuation: CheckedContinuation<String, Error>?
 
     private static let credentialsKeychain = Keychain(service: InfoPlistReader.main.baseBundleIdentifier + ".savedLogin")
 
@@ -20,9 +22,11 @@ class NativeLoginScreenViewModel: NativeLoginScreenViewModelType {
         actionsSubject.eraseToAnyPublisher()
     }
 
-    init(authenticationService: AuthenticationServiceProtocol, oidcData: OIDCAuthorizationDataProxy) {
+    init(authenticationService: AuthenticationServiceProtocol, oidcData: OIDCAuthorizationDataProxy,
+         headlessAuthenticator: HeadlessOIDCAuthenticator = HeadlessOIDCAuthenticator()) {
         self.authenticationService = authenticationService
         self.oidcData = oidcData
+        self.headlessAuthenticator = headlessAuthenticator
         super.init(initialViewState: NativeLoginScreenViewState())
         loadSavedCredentials()
     }
@@ -43,13 +47,31 @@ class NativeLoginScreenViewModel: NativeLoginScreenViewModelType {
     override func process(viewAction: NativeLoginScreenViewAction) {
         switch viewAction {
         case .login:
+            guard !state.isLoading else { return }
+            if let continuation = codeContinuation {
+                let code = state.bindings.oneTimeCode.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard (6...8).contains(code.count), code.utf8.allSatisfy({ (48...57).contains($0) }) else { return }
+                codeContinuation = nil
+                state.bindings.oneTimeCode = ""
+                state.isLoading = true
+                continuation.resume(returning: code)
+                return
+            }
             login()
         case .cancel:
+            cancelPendingAuthentication()
             Task {
                 await authenticationService.abortOIDCLogin(data: oidcData)
                 actionsSubject.send(.cancelled)
             }
         }
+    }
+
+    func cancelPendingAuthentication() {
+        loginTask?.cancel()
+        codeContinuation?.resume(throwing: CancellationError())
+        codeContinuation = nil
+        state.bindings.oneTimeCode = ""
     }
 
     private func login() {
@@ -59,7 +81,7 @@ class NativeLoginScreenViewModel: NativeLoginScreenViewModelType {
         state.isLoading = true
         state.bindings.alertInfo = nil
 
-        Task { [weak self] in
+        loginTask = Task { [weak self] in
             guard let self else { return }
 
             do {
@@ -71,8 +93,19 @@ class NativeLoginScreenViewModel: NativeLoginScreenViewModelType {
                 let callbackURL = try await headlessAuthenticator.authenticate(authURL: oidcData.url,
                                                                                username: username,
                                                                                password: password,
-                                                                               homeserver: homeserver)
-                MXLog.info("sTalk NativeLogin: Got callback URL: \(callbackURL)")
+                                                                               homeserver: homeserver) { [weak self] rejected in
+                    guard let self else { throw CancellationError() }
+                    try Task.checkCancellation()
+                    return try await withCheckedThrowingContinuation { continuation in
+                        self.codeContinuation = continuation
+                        self.state.requiresOneTimeCode = true
+                        self.state.oneTimeCodeRejected = rejected
+                        self.state.bindings.oneTimeCode = ""
+                        self.state.isLoading = false
+                    }
+                }
+                try Task.checkCancellation()
+                MXLog.info("sTalk NativeLogin: Received OIDC callback")
 
                 // Step 2: stalk.implica.ru uses an HTTPS redirect_uri (static registration), so
                 // its custom-scheme callback must be rewritten back to HTTPS for the SDK. Other
@@ -84,6 +117,7 @@ class NativeLoginScreenViewModel: NativeLoginScreenViewModelType {
                 // Step 3: Pass callback URL to SDK for token exchange + device registration
                 switch await authenticationService.loginWithOIDCCallback(finalURL) {
                 case .success(let userSession):
+                    try Task.checkCancellation()
                     MXLog.info("sTalk NativeLogin: Login successful!")
                     self.saveCredentials(username: username, password: password)
                     actionsSubject.send(.signedIn(userSession))
@@ -93,6 +127,8 @@ class NativeLoginScreenViewModel: NativeLoginScreenViewModelType {
                                                          title: SL10n.authLoginError,
                                                          message: SL10n.authLoginFailed(error.localizedDescription))
                 }
+            } catch is CancellationError {
+                // Cancellation must not turn into a failed-password alert or a late sign-in.
             } catch let error as HeadlessOIDCAuthenticator.AuthError {
                 MXLog.error("sTalk NativeLogin: Headless auth failed: \(error)")
                 state.bindings.alertInfo = AlertInfo(id: UUID(),
@@ -106,6 +142,9 @@ class NativeLoginScreenViewModel: NativeLoginScreenViewModelType {
             }
 
             state.isLoading = false
+            state.requiresOneTimeCode = false
+            state.oneTimeCodeRejected = false
+            state.bindings.oneTimeCode = ""
         }
     }
 }

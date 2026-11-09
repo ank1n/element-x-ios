@@ -169,6 +169,39 @@ class HomeScreenViewModelTests: XCTestCase {
         XCTAssertTrue(correctResult)
     }
     
+    func testFavouritesStayFirstWithoutDuplicatesAndSearchUsesSameGrouping() {
+        var state = HomeScreenViewState(userID: "@qa:example.com", bindings: .init(filtersState: .init(appSettings: appSettings)))
+        state.roomListMode = .rooms
+        state.rooms = [("recent", false), ("fav-new", true), ("older", false), ("fav-old", true)].map { id, favourite in
+            HomeScreenRoom(summary: .mock(id: id, name: id, isFavourite: favourite), hideUnreadMessagesBadge: false)
+        }
+        XCTAssertEqual(state.visibleRooms.map(\.id), ["fav-new", "fav-old", "recent", "older"])
+        XCTAssertEqual(Set(state.visibleRooms.map(\.id)).count, 4)
+        state.bindings.isSearchFieldFocused = true
+        state.bindings.searchQuery = "fav"
+        state.rooms.removeAll { !$0.isFavourite }
+        XCTAssertEqual(state.visibleRooms.map(\.id), ["fav-new", "fav-old"])
+        state.rooms = state.rooms.filter { $0.id != "fav-new" } + [HomeScreenRoom(summary: .mock(id: "fav-new", name: "fav-new"), hideUnreadMessagesBadge: false)]
+        XCTAssertEqual(state.visibleRooms.map(\.id), ["fav-old", "fav-new"])
+    }
+
+    func testMeetingRoomsHideAgainAfterFilterResetButRemainSearchable() async throws {
+        appSettings.knownMeetingRoomIDs = ["1"]
+        setupViewModel()
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertFalse(context.viewState.visibleRooms.contains { $0.id == "1" })
+        context.filtersState.activateFilter(.meetings)
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(context.viewState.visibleRooms.map(\.id), ["1"])
+        context.filtersState.clearFilters()
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertFalse(context.viewState.visibleRooms.contains { $0.id == "1" })
+        context.isSearchFieldFocused = true
+        context.searchQuery = "Foundation"
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertTrue(context.viewState.visibleRooms.contains { $0.id == "1" })
+    }
+
     func testFilters() async throws {
         setupViewModel()
         

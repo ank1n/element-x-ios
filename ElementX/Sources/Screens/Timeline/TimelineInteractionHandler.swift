@@ -91,7 +91,7 @@ class TimelineInteractionHandler {
     
     // MARK: Timeline Item Action Menu
     
-    func displayTimelineItemActionMenu(for itemID: TimelineItemIdentifier) {
+    func displayTimelineItemActionMenu(for itemID: TimelineItemIdentifier, compact: Bool = false) {
         Task {
             guard let timelineItem = timelineController.timelineItems.firstUsingStableID(itemID),
                   let eventTimelineItem = timelineItem as? EventBasedTimelineItemProtocol else {
@@ -100,7 +100,7 @@ class TimelineInteractionHandler {
             }
 
             actionsSubject.send(.composer(action: .removeFocus))
-            actionsSubject.send(.showActionMenu(.init(item: eventTimelineItem)))
+            actionsSubject.send(.showActionMenu(.init(item: eventTimelineItem, compact: compact)))
         }
     }
 
@@ -163,8 +163,10 @@ class TimelineInteractionHandler {
             let replyInfo = buildReplyInfo(for: eventTimelineItem)
             let replyDetails = TimelineItemReplyDetails.loaded(sender: eventTimelineItem.sender, eventID: eventID, eventContent: replyInfo.type)
             
-            actionsSubject.send(.composer(action: .setMode(mode: .reply(eventID: eventID, replyDetails: replyDetails, isThread: replyInfo.isThread))))
+            actionsSubject.send(.composer(action: .setMode(mode: .reply(eventID: eventID, replyDetails: replyDetails, isThread: replyInfo.isThread && !roomProxy.isDirectOneToOneRoom))))
+            actionsSubject.send(.composer(action: .setFocus))
         case .replyInThread:
+            guard !roomProxy.isDirectOneToOneRoom else { return }
             actionsSubject.send(.displayThread(itemID: eventTimelineItem.id))
         case .forward(let itemID):
             actionsSubject.send(.displayMessageForwarding(itemID: itemID))

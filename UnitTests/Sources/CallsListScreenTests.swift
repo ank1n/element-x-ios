@@ -10,6 +10,87 @@ import XCTest
 
 @MainActor
 class CallsListScreenTests: XCTestCase {
+    func testMembershipReconnectsAndQuietIntervalsRemainOneConference() throws {
+        let base = 1_700_000_000_000
+        func event(_ ms: Int, _ user: String, _ device: String, _ joined: Bool) -> [String: Any] {
+            ["origin_server_ts": base + ms, "sender": user, "state_key": device,
+             "content": joined ? ["application": "m.call", "device_id": device, "expires": 7_200_000] : [:]]
+        }
+        let events = [event(0, "@a:example.com", "a", true), event(32000, "@b:example.com", "b", true),
+                      event(45000, "@c:example.com", "c", true), event(226_000, "@a:example.com", "a", false),
+                      event(230_000, "@a:example.com", "a", true), event(633_000, "@a:example.com", "a", false),
+                      event(708_000, "@a:example.com", "a", true), event(2_688_000, "@a:example.com", "a", false),
+                      event(2_688_358, "@a:example.com", "a", true), event(2_854_000, "@b:example.com", "b", false),
+                      event(2_854_100, "@a:example.com", "a", false), event(2_854_660, "@c:example.com", "c", false)]
+        let calls = CallsListScreenViewModel.extractCallSessions(events, roomID: "!r:example.com", ownUserID: "@owner:example.com", cutoffDate: .distantPast, sessionGapMs: 60000)
+        XCTAssertEqual(calls.count, 1)
+        let conference = try XCTUnwrap(calls.first)
+        XCTAssertEqual(try XCTUnwrap(conference.duration), 2854.66, accuracy: 0.01)
+        XCTAssertEqual(conference.attendeeIDs?.count, 3)
+        let recording = CallHistoryItem(id: "recording", contactName: "Conference", contactId: conference.contactId,
+                                        callType: .incoming, timestamp: conference.timestamp.addingTimeInterval(366), duration: 2487,
+                                        isMissed: false, recordingURL: URL(string: "https://example.com/recording-api/api/recording/play/recording"),
+                                        participantCount: 7, callId: "logical", recordingSessionIDs: ["recording"])
+        let merged = CallsListScreenViewModel.mergingRoomSessions(recordings: [recording], roomCalls: calls)
+        XCTAssertEqual(merged.count, 1)
+        XCTAssertEqual(merged[0].timestamp, conference.timestamp)
+        XCTAssertEqual(try XCTUnwrap(merged[0].duration), 2854.66, accuracy: 0.01)
+        XCTAssertEqual(merged[0].participantCount, 3)
+        XCTAssertEqual(merged[0].taskRecordingIDs, ["recording"])
+        func local(_ id: String, _ offset: TimeInterval, _ duration: TimeInterval, room: String = "!r:example.com") -> LocalCallHistoryItem {
+            let start = conference.timestamp.addingTimeInterval(offset)
+            return .init(id: id, roomID: room, roomDisplayName: nil, participantUserIDs: [], participantDisplayNames: [:],
+                         direction: .incoming, startedAt: start, endedAt: start.addingTimeInterval(duration), duration: duration,
+                         isMissed: true, recordingEgressId: nil)
+        }
+        let locals = [local("late", 2688, 165), local("middle", 708, 1980), local("early", 0, 633),
+                      local("private", 630, 37, room: "!dm:example.com")]
+        let rows = CallsListScreenViewModel.combinedCallHistory(localCalls: locals, recordings: merged, homeserver: "https://example.com")
+        XCTAssertEqual(rows.count, 2)
+        XCTAssertEqual(try XCTUnwrap(rows.first { $0.contactId == "!r:example.com" }?.duration), try XCTUnwrap(conference.duration), accuracy: 0.01)
+        XCTAssertEqual(rows.first { $0.contactId == "!dm:example.com" }?.duration, 37)
+        XCTAssertNotNil(rows.first { $0.contactId == "!r:example.com" }?.recordingURL)
+    }
+
+    func testMembershipIsTrackedPerDeviceAndExpiredLeaseDoesNotInventDuration() throws {
+        let base = 1_700_000_000_000
+        func event(_ offset: Int, _ key: String, _ user: String, _ join: Bool, expires: Int = 7_200_000) -> [String: Any] {
+            ["origin_server_ts": base + offset, "sender": user, "state_key": key,
+             "content": join ? ["application": "m.call", "device_id": key, "expires": expires] : [:]]
+        }
+        let calls = CallsListScreenViewModel.extractCallSessions([
+            event(0, "phone", "@a:example.com", true), event(1000, "desktop", "@a:example.com", true),
+            event(2000, "phone", "@a:example.com", false), event(1_800_000, "other", "@b:example.com", true),
+            event(1_860_000, "other", "@b:example.com", false), event(1_920_000, "desktop", "@a:example.com", false)
+        ], roomID: "!r:example.com", ownUserID: "@a:example.com", cutoffDate: .distantPast, sessionGapMs: 60000)
+        XCTAssertEqual(calls.count, 1)
+        XCTAssertEqual(calls.first?.duration, 1920)
+        XCTAssertFalse(try XCTUnwrap(calls.first).isMissed)
+        let expired = CallsListScreenViewModel.extractCallSessions([
+            event(0, "old", "@a:example.com", true, expires: 60000),
+            event(120_000, "new", "@b:example.com", true), event(130_000, "new", "@b:example.com", false)
+        ], roomID: "!r:example.com", ownUserID: "@a:example.com", cutoffDate: .distantPast, sessionGapMs: 60000)
+        XCTAssertEqual(expired.count, 2)
+        XCTAssertNil(expired.first?.duration)
+        XCTAssertEqual(expired.last?.duration, 10)
+    }
+
+    func testSeparateCallsAreNeverMatchedByFiveMinuteWindowOrOtherRoomDuration() {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let old = LocalCallHistoryItem(id: "old", roomID: "!r:example.com", roomDisplayName: nil, participantUserIDs: [], participantDisplayNames: [:],
+                                       direction: .outgoing, startedAt: start, endedAt: start.addingTimeInterval(20), duration: 20, isMissed: false, recordingEgressId: nil)
+        let next = CallHistoryItem(id: "next", contactName: "Call", contactId: old.roomID, callType: .incoming,
+                                   timestamp: start.addingTimeInterval(80), duration: 20, isMissed: false, recordingURL: nil)
+        XCTAssertEqual(CallsListScreenViewModel.combinedCallHistory(localCalls: [old], recordings: [next], homeserver: "https://example.com").count, 2)
+        let otherRoom = CallHistoryItem(id: "other", contactName: "Other room", contactId: "!other:example.com", callType: .incoming,
+                                        timestamp: start, duration: 20, isMissed: false, recordingURL: nil)
+        XCTAssertEqual(CallsListScreenViewModel.combinedCallHistory(localCalls: [old], recordings: [otherRoom], homeserver: "https://example.com").count, 2)
+        var anotherLogicalCall = next
+        anotherLogicalCall.callId = "different"
+        var firstLogicalCall = next; firstLogicalCall.callId = "original"
+        XCTAssertFalse(CallsListScreenViewModel.callsOverlap(firstLogicalCall, anotherLogicalCall))
+    }
+
     // MARK: - CallHistoryItem Tests
 
     func testCallHistoryItemHasRecording() {

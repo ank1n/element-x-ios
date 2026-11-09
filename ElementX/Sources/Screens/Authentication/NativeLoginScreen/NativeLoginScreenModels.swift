@@ -18,10 +18,13 @@ enum NativeLoginScreenViewModelAction {
 
 struct NativeLoginScreenViewState: BindableState {
     var isLoading = false
+    var requiresOneTimeCode = false
+    var oneTimeCodeRejected = false
     var bindings = NativeLoginScreenBindings()
 }
 
 struct NativeLoginScreenBindings {
+    var oneTimeCode = ""
     var username = ""
     var password = ""
     var alertInfo: AlertInfo<UUID>?

@@ -1129,8 +1129,9 @@ final class NativeCallSession: ObservableObject {
 
     #if targetEnvironment(simulator)
     /// DEBUG: симулирует смену сети (wifi → cellular) без Mac WiFi toggle.
-    /// Вызывается автоматически через 20s после connect в simulator-сборке.
+    /// Только явный QA-флаг или вызов команды, без автоматического сбоя по умолчанию.
     func debugSimulateNetworkChange() async {
+        DiagLog.write("SimulatorQA", "explicit network-change trigger at \(Date().timeIntervalSince1970)")
         os_log(.info, log: callLog, "DEBUG: simulating network change wifi → cellular (for Quick reconnect test)")
         let previous = lastNetworkInterface
         lastNetworkInterface = "cellular"
@@ -1598,38 +1599,49 @@ final class NativeCallSession: ObservableObject {
     }
 
     private func sendLeaveViaREST() async {
-        // STMOB-211: штатный выход — отменяем серверный отложенный leave и шлём обычный.
+        // STMOB-326: серверную отсрочку отменяем только после того, как leave дошёл.
+        // При обратном порядке сбой этого запроса оставлял запись call.member навсегда:
+        // снять её было уже некому. Heartbeat гасим сразу, иначе он продлевал бы отсрочку.
+        delayedLeaveHeartbeat?.cancel()
+        delayedLeaveHeartbeat = nil
+        guard await putEmptyCallMember() else {
+            DiagLog.write("Call", "REST leave не дошёл — участие снимет серверная отсрочка")
+            return
+        }
         await cancelDelayedLeave()
+    }
 
+    /// Empty content = leave
+    private func putEmptyCallMember(isRetry: Bool = false) async -> Bool {
         let encodedRoom = matrixRoomId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? matrixRoomId
         let stateKey = "_\(userId)_\(deviceId)_m.call"
         let encodedStateKey = stateKey.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? stateKey
+        let eventType = "org.matrix.msc3401.call.member"
+        let encodedType = eventType.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? eventType
+        let url = "\(homeserverURL)/_matrix/client/v3/rooms/\(encodedRoom)/state/\(encodedType)/\(encodedStateKey)"
 
-        for eventType in ["org.matrix.msc3401.call.member"] {
-            let encodedType = eventType.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? eventType
-            let url = "\(homeserverURL)/_matrix/client/v3/rooms/\(encodedRoom)/state/\(encodedType)/\(encodedStateKey)"
+        guard let requestURL = URL(string: url) else {
+            MXLog.error("sTalk NativeCall: invalid leave URL: \(url)")
+            return false
+        }
+        var request = URLRequest(url: requestURL)
+        request.httpMethod = "PUT"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = Data("{}".utf8)
 
-            // Empty content = leave
-            let body: [String: Any] = [:]
-            guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else { continue }
-
-            guard let requestURL = URL(string: url) else {
-                MXLog.error("sTalk NativeCall: invalid leave URL: \(url)")
-                continue
+        do {
+            let (_, response) = try await restSession.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            DiagLog.write("Call", "REST leave → \(status)")
+            if status == 401, !isRetry {
+                await tokenRefresher()
+                return await putEmptyCallMember(isRetry: true)
             }
-            var request = URLRequest(url: requestURL)
-            request.httpMethod = "PUT"
-            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = jsonData
-
-            do {
-                let (_, response) = try await restSession.data(for: request)
-                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-                MXLog.info("sTalk NativeCall: REST leave \(eventType) → \(status)")
-            } catch {
-                MXLog.error("sTalk NativeCall: REST leave failed: \(error)")
-            }
+            return (200..<300).contains(status)
+        } catch {
+            DiagLog.write("Call", "REST leave FAILED: \(error.localizedDescription)")
+            return false
         }
     }
 
@@ -1649,7 +1661,7 @@ final class NativeCallSession: ObservableObject {
     /// after `delayedLeaveMs` — no more stuck memberships re-ringing participants for
     /// hours (phantom "silent" calls). Servers without MSC4140 → graceful skip,
     /// legacy expires-only behavior stays.
-    private func scheduleDelayedLeave() async {
+    private func scheduleDelayedLeave(isRetry: Bool = false) async {
         let encodedRoom = matrixRoomId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? matrixRoomId
         let stateKey = "_\(userId)_\(deviceId)_m.call"
         let encodedStateKey = stateKey.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? stateKey
@@ -1670,6 +1682,13 @@ final class NativeCallSession: ObservableObject {
         do {
             let (data, response) = try await restSession.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            // STMOB-326: без отсрочки запись не снимется, если приложение умрёт.
+            if status == 401, !isRetry {
+                DiagLog.write("Call", "delayed leave schedule → 401 — обновляю токен и повторяю")
+                await tokenRefresher()
+                await scheduleDelayedLeave(isRetry: true)
+                return
+            }
             guard status == 200,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let delayID = json["delay_id"] as? String else {
@@ -1778,7 +1797,9 @@ final class NativeCallSession: ObservableObject {
         // проверки мы бы завели новый серверный таймер и heartbeat уже после выхода.
         guard sessionState == .connected else {
             DiagLog.write("Call", "membership recon: звонок завершился во время join — откатываю")
-            await cancelDelayedLeave()
+            // STMOB-326: join мог дойти до сервера уже после leave из stop(), и тогда
+            // запись осталась бы без отсрочки. Снимаем её явно.
+            await sendLeaveViaREST()
             return
         }
         callMemberEventID = eventID
@@ -2247,9 +2268,12 @@ final class NativeCallSession: ObservableObject {
             #if targetEnvironment(simulator)
             // DEBUG: через 20s после connect триггерим fake network switch
             // чтобы тестировать Quick reconnect на симуляторе без Mac WiFi toggle.
-            Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 20_000_000_000)
-                await self?.debugSimulateNetworkChange()
+            if ProcessInfo.processInfo.environment["STALK_QA_NETWORK_CHANGE_AFTER_20S"] == "1" {
+                Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: 20_000_000_000)
+                    guard !Task.isCancelled, self?.sessionState == .connected else { return }
+                    await self?.debugSimulateNetworkChange()
+                }
             }
             #endif
 
@@ -2275,6 +2299,10 @@ final class NativeCallSession: ObservableObject {
         Task {
             for pub in participant.trackPublications.values {
                 if let remotePub = pub as? RemoteTrackPublication, !remotePub.isSubscribed {
+                    if CallCameraReception.isCamera(kind: remotePub.kind, source: remotePub.source) {
+                        liveKitRoomManager.cameraReception.reconcile()
+                        continue
+                    }
                     try? await remotePub.set(subscribed: true)
                     MXLog.info("sTalk NativeCall: Subscribed \(String(describing: remotePub.kind)) from \(participant.identity?.stringValue ?? "?")")
                 }

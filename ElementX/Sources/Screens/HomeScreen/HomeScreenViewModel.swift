@@ -71,7 +71,9 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
         super.init(initialViewState: .init(userID: userSession.clientProxy.userID,
                                            bindings: .init(filtersState: .init(appSettings: appSettings))),
                    mediaProvider: userSession.mediaProvider)
-        if userSession.clientProxy is ClientProxy {
+        if let client = userSession.clientProxy as? ClientProxy {
+            client.syncStatusPublisher.removeDuplicates().receive(on: DispatchQueue.main)
+                .weakAssign(to: \.state.syncStatus, on: self).store(in: &cancellables)
             let service = StalkChannelService.shared(client: userSession.clientProxy)
             state.channelService = service
             state.meetingSummaryService = StalkMeetingRoomSummaryService(client: userSession.clientProxy)
@@ -515,20 +517,19 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
         var rooms = [HomeScreenRoom]()
         let seenInvites = appSettings.seenInvites
 
-        // STMOB-244: meeting rooms are hidden from the main Chats list and only shown under the
-        // dedicated "Meetings" filter (mirrors the web client). Skip the filtering while searching
-        // so search can still find meeting rooms.
+        // STALK-1151: meeting rooms appear under Meetings only; resetting the
+        // filter hides them again. Search can still find every conversation type.
         let meetingsFilterActive = state.bindings.filtersState.isFilterActive(.meetings)
         // STMOB-263: к списку из meetings-api добавляем комнаты, про которые клиент
         // узнал сам (ensure-room при входе во встречу). Иначе только что созданная
         // с iOS встреча висит в «Чатах» до следующего опроса API — а если сервер не
         // записал matrix_room_id (write-back там fire-and-forget), то и навсегда.
         let knownMeetingRooms = meetingRoomIDs.union(MeetingRoomRegistry.knownRoomIDs)
-        // When the Meetings filter is active always apply it (shows only meeting rooms, possibly
-        // empty). Otherwise only bother filtering when there are meeting rooms to hide.
         let applyMeetingFilter = !state.bindings.isSearchFieldFocused && (meetingsFilterActive || !knownMeetingRooms.isEmpty)
 
         for summary in roomSummaryProvider.roomListPublisher.value {
+            if state.bindings.filtersState.isFilterActive(.mentions), !state.bindings.isSearchFieldFocused,
+               summary.unreadMentionsCount == 0 { continue }
             if applyMeetingFilter {
                 let isMeetingRoom = knownMeetingRooms.contains(summary.id)
                 if meetingsFilterActive {
@@ -600,7 +601,7 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
     private func updatePresencePolling() {
         setupDMPresenceService()
         guard let service = AppCoordinator.sharedPresenceService else { return }
-        service.setInterest(Self.presenceRows(in: state.rooms, visibleRange: visibleRoomRange).compactMap(\.dmUserID),
+        service.setInterest(Self.presenceRows(in: state.visibleRooms, visibleRange: visibleRoomRange).compactMap(\.dmUserID),
                             for: .chats)
     }
 

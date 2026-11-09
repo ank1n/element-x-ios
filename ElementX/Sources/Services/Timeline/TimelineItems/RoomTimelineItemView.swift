@@ -20,11 +20,6 @@ struct RoomTimelineItemView: View {
                 if let source = viewState.type.eventBasedItem?.properties.channelForwardSource, let service = context?.viewState.channelService {
                     StalkChannelLinkCard(url: source, service: service)
                 }
-                if context?.viewState.isChannelMain == true,
-                   let item = viewState.type.eventBasedItem,
-                   item is EventBasedMessageTimelineItemProtocol || item is StickerRoomTimelineItem {
-                    channelActions(item)
-                }
             }
         }
         .animation(.elementDefault, value: viewState.groupStyle)
@@ -35,28 +30,6 @@ struct RoomTimelineItemView: View {
         }
         .onDisappear {
             context?.send(viewAction: .itemDisappeared(itemID: viewState.identifier))
-        }
-    }
-
-    private func channelActions(_ item: EventBasedTimelineItemProtocol) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 18) {
-                Button { context?.send(viewAction: .displayEmojiPicker(itemID: item.id)) } label: { Image(systemName: "face.smiling") }
-                    .disabled(context?.viewState.channelAccess?.archived == true || context?.viewState.channelAccess?.blocked == true)
-                    .accessibilityLabel(StalkChannelStrings.text("react"))
-                if item.isForwardable {
-                    Button { context?.send(viewAction: .handleTimelineItemMenuAction(itemID: item.id, action: .forward(itemID: item.id))) } label: { Image(systemName: "arrowshape.turn.up.right") }
-                        .accessibilityLabel(StalkChannelStrings.text("forward"))
-                }
-                if item.isCopyable {
-                    Button { context?.send(viewAction: .handleTimelineItemMenuAction(itemID: item.id, action: .copy)) } label: { Image(systemName: "doc.on.doc") }
-                        .accessibilityLabel(StalkChannelStrings.text("copy"))
-                }
-                if context?.viewState.channelAccess?.joined == true,
-                   (context?.viewState.channelAccess?.comments == true && context?.viewState.channelAccess?.archived != true) || item.properties.threadSummary != nil {
-                    Button { context?.send(viewAction: .displayThread(itemID: item.id)) } label: { Label(StalkChannelStrings.text("comments"), systemImage: "bubble.left.and.bubble.right") }
-                }
-            }.font(.subheadline).padding(.horizontal, 16).padding(.vertical, 6)
         }
     }
 

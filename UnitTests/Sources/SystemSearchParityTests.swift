@@ -234,8 +234,41 @@ final class SystemSearchParityTests: XCTestCase {
         await fulfillment(of: [completed], timeout: 2)
         XCTAssertEqual(model.conditions.query, "новый запрос")
         XCTAssertNil(model.conditions.topic)
+        XCTAssertFalse(model.smartSearchRunning)
         XCTAssertNil(model.error)
         withExtendedLifetime(subscription) { model.stop() }
+    }
+
+    func testPlannedServerFailureKeepsLexicalResultsAndEndsActivity() async throws {
+        let model = model { original in
+            var result = original
+            result.mode = "smart"; result.topic = "planned-server-failure"
+            return result
+        }
+        defer { model.stop() }
+        model.conditions.query = "Встреча по Россетям"
+        var sawResults = false
+        var clearedResults = false
+        let subscription = model.$hits.sink { hits in
+            if !hits.isEmpty { sawResults = true }
+            else if sawResults { clearedResults = true }
+        }
+        model.search(smart: true)
+        XCTAssertTrue(model.smartSearchRunning)
+        XCTAssertTrue(model.planning)
+        for _ in 0..<100 where model.loading {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertFalse(model.loading)
+        XCTAssertFalse(model.smartSearchRunning)
+        XCTAssertTrue(sawResults)
+        XCTAssertFalse(clearedResults)
+        XCTAssertFalse(model.hits.isEmpty)
+        XCTAssertEqual(model.conditions.query, "Встреча по Россетям")
+        XCTAssertNil(model.conditions.topic)
+        XCTAssertNil(model.error)
+        XCTAssertNotNil(model.notice)
+        withExtendedLifetime(subscription) { }
     }
 
     func testSupportedPlanSearchRetainsUnsupportedWarningAfterResultsArrive() async throws {
@@ -254,6 +287,72 @@ final class SystemSearchParityTests: XCTestCase {
         XCTAssertTrue(try model.notice?.contains(XCTUnwrap(SystemSearchService.unsupportedLabels["owner"])) == true)
         XCTAssertNil(model.error)
         withExtendedLifetime(subscription) { model.stop() }
+    }
+
+    func testHTTP200SemanticFailureKeepsOriginalResultsAndUserFilters() async throws {
+        let model = model { original in
+            var result = original
+            result.mode = "smart"; result.topic = "semantic-cancelled"; result.types = ["meeting"]
+            return result
+        }
+        defer { model.stop() }
+        model.conditions.query = "Встреча по Россетям"; model.conditions.format = "pdf"
+        let original = model.conditions
+        model.search(smart: true)
+        for _ in 0..<100 where model.loading {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertFalse(model.loading)
+        XCTAssertFalse(model.smartSearchRunning)
+        XCTAssertFalse(model.hits.isEmpty)
+        XCTAssertEqual(model.conditions, original)
+        XCTAssertNil(model.error)
+        XCTAssertEqual(model.notice, NSLocalizedString("stalk_search_semantic_kept_original", comment: "Semantic failure fallback"))
+        model.browse("message")
+        for _ in 0..<100 where model.loading {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let items = try XCTUnwrap(URLComponents(string: XCTUnwrap(model.hits.first).text)?.queryItems)
+        XCTAssertEqual(items.first { $0.name == "q" }?.value, original.query)
+        XCTAssertEqual(items.first { $0.name == "format" }?.value, "pdf")
+    }
+
+    func testSuccessfulEmptyPlannedSearchDoesNotPretendOriginalResultsMatch() async throws {
+        let model = model { original in
+            var result = original
+            result.mode = "smart"; result.topic = "empty-planned-success"
+            return result
+        }
+        defer { model.stop() }
+        model.conditions.query = "Встреча по Россетям"
+        model.search(smart: true)
+        for _ in 0..<100 where model.loading {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertFalse(model.loading)
+        XCTAssertTrue(model.hits.isEmpty)
+        XCTAssertEqual(model.conditions.topic, "empty-planned-success")
+        XCTAssertEqual(model.total, 0)
+        XCTAssertNil(model.notice)
+    }
+
+    func testPartialSemanticFailureKeepsValidPlannedResults() async throws {
+        let model = model { original in
+            var result = original
+            result.mode = "smart"; result.topic = "semantic-partial"
+            return result
+        }
+        defer { model.stop() }
+        model.conditions.query = "Встреча по Россетям"
+        model.search(smart: true)
+        for _ in 0..<100 where model.loading {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertFalse(model.loading)
+        XCTAssertEqual(model.conditions.topic, "semantic-partial")
+        XCTAssertEqual(model.hits.first?.entity_id, "planned-result")
+        XCTAssertNotNil(model.notice)
+        XCTAssertNil(model.error)
     }
 
     func testIncompleteOrAmbiguousInferredSenderRequiresExplicitChoice() throws {
@@ -540,11 +639,25 @@ private final class SearchParityURLProtocol: URLProtocol {
         let object: [String: Any]
         switch url.path {
         case "/api/search":
+            if value("q") == "planned-server-failure" {
+                client?.urlProtocol(self, didFailWithError: URLError(.timedOut))
+                return
+            }
             var applied: [String: String] = [:]
             for name in ["sender", "sort", "view_type"] {
                 applied[name] = value(name)
             }
-            if value("q") == "semantic-pagination" {
+            if ["semantic-cancelled", "semantic-partial", "empty-planned-success"].contains(value("q") ?? "") {
+                let partial = value("q") == "semantic-partial"
+                var degraded: [String: Any] = ["used": false, "tail": 0]
+                if value("q") != "empty-planned-success" {
+                    degraded["error"] = "смысловой слой не ответил"
+                    degraded["request_id"] = "7739b5f80ae2"
+                }
+                object = ["total": partial ? 1 : 0,
+                          "results": partial ? [["id": "planned", "entity_type": "message", "entity_id": "planned-result", "snippet": url.absoluteString]] : [],
+                          "semantic": degraded, "applied_filters": applied]
+            } else if value("q") == "semantic-pagination" {
                 let selected = value("view_type") != nil
                 let offset = Int(value("offset") ?? "0") ?? 0
                 let results: [[String: Any]] = offset == 0

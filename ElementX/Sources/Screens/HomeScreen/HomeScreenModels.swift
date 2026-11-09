@@ -139,6 +139,7 @@ struct HomeScreenViewState: BindableState {
 
     /// True while a manual force-refresh (sync restart) is in flight — drives the toolbar spinner.
     var isRefreshing = false
+    var syncStatus: ClientSyncStatus = .synced
 
     /// STMOB-103 build 120: presence для DM-собеседников.
     /// Ключ — userID собеседника DM-комнаты (room.dmUserID).
@@ -150,7 +151,8 @@ struct HomeScreenViewState: BindableState {
             return placeholderRooms
         }
 
-        return rooms
+        // Stable partition: preserve activity order within each section, including search.
+        return rooms.filter(\.isFavourite) + rooms.filter { !$0.isFavourite }
     }
         
     var bindings: HomeScreenViewStateBindings

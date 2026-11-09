@@ -2749,3 +2749,69 @@
 "stalk_update_icon_lightbulb" = "Идея";
 
 "stalk_update_icon_star" = "Звезда";
+
+// Call detail presentation
+"stalk_call_task_proposal" = "Предложение";
+"stalk_call_task_created" = "Заведена в TrackIT";
+"stalk_call_task_number_unavailable" = "Номер задачи недоступен";
+"stalk_call_task_status_backlog" = "Бэклог";
+"stalk_call_task_status_started" = "В работе";
+"stalk_call_task_status_completed" = "Готово";
+"stalk_call_task_status_cancelled" = "Отменена";
+"stalk_call_task_status_unavailable" = "Статус недоступен";
+
+"stalk_search_query_placeholder" = "Сообщения, файлы, встречи, задачи";
+"stalk_search_via_ailock" = "Найти через Айлок";
+"stalk_search_history_empty" = "Здесь появятся ваши предыдущие запросы";
+"stalk_search_saved_conditions" = "Поиск по условиям";
+
+"stalk_roomlist_filter_mentions" = "Упоминания";
+"stalk_roomlist_filter_people" = "Люди";
+"stalk_roomlist_filter_rooms" = "Группы";
+"stalk_roomlist_filter_mentions_empty" = "Нет непрочитанных упоминаний";
+
+"stalk_filters_collapse" = "Свернуть фильтры";
+"stalk_filters_expand" = "Все фильтры";
+
+"stalk_sync_waiting" = "Ожидание сети…";
+"stalk_sync_connecting" = "Подключение…";
+"stalk_sync_updating" = "Обновление…";
+"stalk_sync_login" = "Требуется вход";
+"stalk_search_planning" = "Айлок уточняет запрос…";
+"stalk_search_smart_loading" = "Ищем с помощью Айлока…";
+"stalk_search_loading" = "Ищем…";
+"stalk_channels_discuss_thread" = "Обсудить в треде";
+"stalk_channels_post_menu" = "Публикация";
+"stalk_action_discuss" = "Обсудить";
+"stalk_message_menu" = "Сообщение";
+"stalk_search_semantic_kept_original" = "Смысловой поиск временно недоступен. Сохранены результаты по исходной фразе и ваши фильтры.";
+"stalk_search_history_total" = "Найдено: %lld";
+"stalk_search_history_partial" = "Неполные результаты";
+"stalk_search_history_unknown" = "Счётчики появятся после повторного поиска";
+
+"stalk_roomlist_other_conversations" = "Остальные";
+
+"stalk_share_import_failed" = "Не удалось получить переданный файл. Попробуйте поделиться ещё раз.";
+
+"stalk_search_history_today" = "Сегодня";
+"stalk_search_history_yesterday" = "Вчера";
+"stalk_search_history_this_week" = "На этой неделе";
+"stalk_search_history_last_week" = "На прошлой неделе";
+"stalk_search_history_this_month" = "В этом месяце";
+"stalk_search_history_last_month" = "В прошлом месяце";
+"stalk_search_history_undated" = "Без даты";
+
+"stalk_call_receive_video" = "Получать видео участников";
+"stalk_call_receive_video_hint" = "Отключите при слабом соединении. Звук и демонстрация экрана сохранятся.";
+"stalk_call_receive_video_disabled" = "Видео участников отключено";
+"stalk_call_receive_video_enable" = "Включить";
+"stalk_call_receive_video_retry" = "Повторить";
+"stalk_call_receive_video_enabling" = "Включаем видео участников…";
+"stalk_call_receive_video_disabling" = "Отключаем видео участников…";
+"stalk_call_receive_video_enable_failed" = "Не удалось включить видео участников";
+"stalk_call_receive_video_disable_failed" = "Не удалось отключить видео участников";
+
+// Native two-factor sign-in
+"stalk_auth_otp_prompt" = "Введите код из приложения-аутентификатора";
+"stalk_auth_otp_code" = "Одноразовый код";
+"stalk_auth_otp_retry" = "Код не принят. Проверьте код и попробуйте снова.";

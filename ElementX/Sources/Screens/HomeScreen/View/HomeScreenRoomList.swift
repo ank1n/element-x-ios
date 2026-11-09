@@ -17,10 +17,6 @@ struct SwipeAction {
     let action: () -> Void
 }
 
-private enum GestureAxis {
-    case undecided, horizontal, vertical
-}
-
 struct SwipeActionView<Content: View>: View {
     let leadingActions: [SwipeAction]
     let trailingActions: [SwipeAction]
@@ -29,7 +25,6 @@ struct SwipeActionView<Content: View>: View {
 
     @State private var offset: CGFloat = 0
     @State private var prevOffset: CGFloat = 0
-    @State private var gestureAxis: GestureAxis = .undecided
     private let actionWidth: CGFloat = 74
     private let snapThreshold: CGFloat = 0.4
 
@@ -89,73 +84,38 @@ struct SwipeActionView<Content: View>: View {
             content()
                 .offset(x: offset)
                 .zIndex(1)
-                .highPriorityGesture(DragGesture(minimumDistance: 20, coordinateSpace: .local)
-                    .onChanged { value in
-                        // Определяем ось жеста один раз в начале
-                        if gestureAxis == .undecided {
-                            let h = abs(value.translation.width)
-                            let v = abs(value.translation.height)
-                            if h > 10 || v > 10 {
-                                gestureAxis = h > v ? .horizontal : .vertical
-                            }
-                        }
-
-                        // Вертикальный жест — это скролл, не двигаем карточку
-                        guard gestureAxis == .horizontal else { return }
-
-                        let translation = value.translation.width + prevOffset
+                .gesture(HorizontalPanGesture(shouldBegin: { !leadingActions.isEmpty || !trailingActions.isEmpty }, allowsLeftward: true) { pan in
+                    switch pan.state {
+                    case .began, .changed:
+                        let translation = pan.translation(in: nil).x + prevOffset
                         if translation > 0 {
-                            if leadingActions.isEmpty {
-                                offset = translation * 0.2
-                            } else {
-                                offset = min(translation, maxLeadingOffset)
-                            }
+                            offset = leadingActions.isEmpty ? translation * 0.2 : min(translation, maxLeadingOffset)
                         } else {
-                            if trailingActions.isEmpty {
-                                offset = translation * 0.2
-                            } else {
-                                offset = max(translation, -maxTrailingOffset)
-                            }
+                            offset = trailingActions.isEmpty ? translation * 0.2 : max(translation, -maxTrailingOffset)
                         }
+                    case .ended:
+                        finishSwipe(velocity: pan.velocity(in: nil).x, cancelled: false)
+                    case .cancelled, .failed:
+                        finishSwipe(velocity: 0, cancelled: true)
+                    default: break
                     }
-                    .onEnded { value in
-                        let wasHorizontal = gestureAxis == .horizontal
-                        gestureAxis = .undecided
+                })
+        }
+    }
 
-                        guard wasHorizontal else {
-                            // Вертикальный жест — сбрасываем если случайно сдвинулось
-                            if offset != prevOffset {
-                                withAnimation(.easeOut(duration: 0.2)) {
-                                    offset = prevOffset
-                                }
-                            }
-                            return
-                        }
-
-                        let velocity = value.predictedEndTranslation.width - value.translation.width
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            if offset > 0 {
-                                if offset > maxLeadingOffset * snapThreshold || velocity > 200 {
-                                    offset = maxLeadingOffset
-                                    prevOffset = maxLeadingOffset
-                                } else {
-                                    offset = 0
-                                    prevOffset = 0
-                                }
-                            } else if offset < 0 {
-                                if -offset > maxTrailingOffset * snapThreshold || velocity < -200 {
-                                    offset = -maxTrailingOffset
-                                    prevOffset = -maxTrailingOffset
-                                } else {
-                                    offset = 0
-                                    prevOffset = 0
-                                }
-                            } else {
-                                offset = 0
-                                prevOffset = 0
-                            }
-                        }
-                    })
+    private func finishSwipe(velocity: CGFloat, cancelled: Bool) {
+        withAnimation(.easeOut(duration: 0.2)) {
+            if cancelled {
+                offset = prevOffset
+            } else if offset > 0, !leadingActions.isEmpty,
+                      offset > maxLeadingOffset * snapThreshold || velocity > 200 {
+                offset = maxLeadingOffset; prevOffset = offset
+            } else if offset < 0, !trailingActions.isEmpty,
+                      -offset > maxTrailingOffset * snapThreshold || velocity < -200 {
+                offset = -maxTrailingOffset; prevOffset = offset
+            } else {
+                offset = 0; prevOffset = 0
+            }
         }
     }
 
@@ -212,8 +172,17 @@ struct HomeScreenRoomList: View {
     @ViewBuilder
     private var content: some View {
         let rooms = context.viewState.visibleRooms
+        let favouriteCount = rooms.prefix(while: \.isFavourite).count
         ForEach(Array(rooms.enumerated()), id: \.element.id) { index, room in
             VStack(spacing: 0) {
+                if favouriteCount > 0, index == 0 || index == favouriteCount {
+                    Text(index == 0 ? RoomListFilter.favourites.localizedName : NSLocalizedString("stalk_roomlist_other_conversations", comment: "Non-favourite conversations"))
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 6)
+                        .accessibilityAddTraits(.isHeader)
+                }
                 switch room.type {
                 case .placeholder:
                     HomeScreenRoomCell(room: room, isSelected: false, mediaProvider: context.mediaProvider, action: context.send, presence: nil)
@@ -240,6 +209,13 @@ struct HomeScreenRoomList: View {
                         .fill(Color.secondary.opacity(0.15))
                         .frame(height: 1 / UIScreen.main.scale)
                         .padding(.leading, 76)
+                }
+            }
+            .background {
+                if index == 0 {
+                    GeometryReader { geometry in
+                        Color.clear.preference(key: HomeScreenFirstRoomHeightKey.self, value: geometry.size.height)
+                    }
                 }
             }
         }
@@ -333,5 +309,13 @@ struct HomeScreenRoomList: View {
         } label: {
             Label(L10n.actionLeaveRoom, icon: \.leave)
         }
+    }
+}
+
+/// The first row may be a taller invitation and grows with Dynamic Type.
+struct HomeScreenFirstRoomHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }

@@ -223,6 +223,7 @@ class WidgetsTabFlowCoordinator: FlowCoordinatorProtocol {
         case WidgetItem.searchAppID:
             let coordinator = MessageSearchScreenCoordinator(parameters: .init(clientProxy: userSession.clientProxy,
                                                                                roomSummaryProvider: userSession.clientProxy.alternateRoomSummaryProvider,
+                                                                               mediaProvider: userSession.mediaProvider,
                                                                                isCallActive: { [weak self] in self?.flowParameters.ongoingCallRoomIDPublisher.value != nil }))
             coordinator.actionsPublisher.sink { [weak self] action in
                 guard let self else { return }

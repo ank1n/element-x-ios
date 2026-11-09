@@ -459,6 +459,7 @@ final class NotificationManager: NSObject, NotificationManagerProtocol {
 extension NotificationManager: UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+        if SimulatorQASettings.isSilent { return [.badge, .list] }
         guard appSettings.enableInAppNotifications else {
             return []
         }
