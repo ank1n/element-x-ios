@@ -352,10 +352,12 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
     // MARK: - Lottie Tab Bar (Stalk-style)
 
     @AppStorage("stalk_search_active") private var isSearchActive = false
+    @State private var bottomBarHiddenByScreen = false
+    @State private var bottomBarHeight: CGFloat = 0
 
     /// Whether the tab bar should be hidden (e.g. when viewing a room detail on compact layout, or search is active)
     private var shouldHideTabBar: Bool {
-        if isSearchActive { return true }
+        if isSearchActive || bottomBarHiddenByScreen { return true }
         guard selectedIndex < navigationTabCoordinator.tabModules.count else { return false }
         let details = navigationTabCoordinator.tabModules[selectedIndex].details
         return details.barVisibility(in: horizontalSizeClass) == .hidden
@@ -368,6 +370,11 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
                 ForEach(navigationTabCoordinator.tabModules.indices, id: \.self) { index in
                     let module = navigationTabCoordinator.tabModules[index]
                     module.coordinator?.toPresentable()
+                        .environment(\.stalkBottomBarInset, shouldHideTabBar ? 0 : bottomBarHeight)
+                        .environment(\.setStalkBottomBarHidden) { hidden in
+                            guard selectedIndex == index else { return }
+                            bottomBarHiddenByScreen = hidden
+                        }
                         .id(module.id)
                         .opacity(selectedIndex == index ? 1 : 0)
                         .allowsHitTesting(selectedIndex == index)
@@ -386,6 +393,7 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
                                  badgeCount: module.details.badgeCount)
                 },
                 selectedIndex: $selectedIndex)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bottomBarHeight = $0 }
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -415,6 +423,7 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
             }
         }
         .onChange(of: selectedIndex) { _, newValue in
+            bottomBarHiddenByScreen = false
             guard newValue < navigationTabCoordinator.tabModules.count else { return }
             navigationTabCoordinator.selectedTab = navigationTabCoordinator.tabModules[newValue].details.tag
         }
@@ -509,7 +518,12 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
                         .stroke(Color.white.opacity(0.15), lineWidth: 0.5))
                     .position(x: geometry.size.width - 82 + miniCallOffset.width,
                               y: geometry.size.height - 190 + miniCallOffset.height)
-                    .gesture(DragGesture()
+                    // Перетаскивание меряем в глобальных координатах. Жест стоит
+                    // ПОД .offset, который сам же и двигает: в локальных
+                    // координатах каждый сдвиг окна менял точку отсчёта следующего
+                    // замера, translation скакал взад-вперёд, и окно дёргалось под
+                    // пальцем вместо плавного хода (dp, запись 08.11 13:22).
+                    .gesture(DragGesture(coordinateSpace: .global)
                         .onChanged { value in
                             miniCallDragOffset = value.translation
                         }

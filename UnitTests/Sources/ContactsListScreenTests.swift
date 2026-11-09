@@ -289,6 +289,27 @@ class ContactsListScreenTests: XCTestCase {
         XCTAssertEqual(harness.searches, [""], "и для этого не понадобилось снова идти в сеть")
     }
 
+    /// STALK-126: встреча на двоих (человек + мост встреч) не контакт, и мост в справочнике тоже.
+    func testMeetingRoomWithBridgeIsNotAContact() async throws {
+        let bridge = UserProfileProxy(userID: "@meet-bridge:example.com", displayName: "Встречи")
+        let harness = makeHarness { _, _ in .success(.init(results: [.mockBob, bridge], limited: false)) }
+        let meetingRoom = Self.directRoom(with: bridge, isDirect: false, name: "нновая")
+        harness.roomList.send([meetingRoom, Self.directRoom(with: .mockBob)])
+        try await settle()
+
+        XCTAssertFalse(harness.contacts.contains { $0.id == meetingRoom.id }, "встреча не попадает в контакты")
+        XCTAssertFalse(harness.contacts.contains { $0.matrixUserID == bridge.userID }, "мост не попадает и из справочника")
+        XCTAssertEqual(harness.contacts.filter { $0.matrixUserID == UserProfileProxy.mockBob.userID }.count, 1, "человек остался")
+    }
+
+    func testMeetServiceUserIDs() {
+        XCTAssertTrue(ContactsListScreenViewModel.isMeetServiceUserID("@meet:stalk.implica.ru"))
+        XCTAssertTrue(ContactsListScreenViewModel.isMeetServiceUserID("@meet-bridge:stalk.implica.ru"))
+        XCTAssertTrue(ContactsListScreenViewModel.isMeetServiceUserID("@meet-abc123:stalk.implica.ru"))
+        XCTAssertFalse(ContactsListScreenViewModel.isMeetServiceUserID("@meeting:stalk.implica.ru"))
+        XCTAssertFalse(ContactsListScreenViewModel.isMeetServiceUserID("@ivan:meet-server.org"))
+    }
+
     /// После неудачи повтор приходит сам, даже если в комнатах ничего не меняется —
     /// иначе у нового сотрудника без чатов «Контакты» остались бы пустыми до перезапуска.
     func testFailedFetchIsRetriedWithoutRoomListChanges() async throws {
@@ -439,11 +460,15 @@ class ContactsListScreenTests: XCTestCase {
     }
 
     private static func directRoom(with user: UserProfileProxy) -> RoomSummary {
+        directRoom(with: user, isDirect: true, name: nil)
+    }
+
+    private static func directRoom(with user: UserProfileProxy, isDirect: Bool, name: String?) -> RoomSummary {
         RoomSummary(room: RoomSDKMock(),
                     id: directRoomID(user),
                     joinRequestType: nil,
-                    name: user.displayName ?? user.userID,
-                    isDirect: true,
+                    name: name ?? user.displayName ?? user.userID,
+                    isDirect: isDirect,
                     isSpace: false,
                     avatarURL: nil,
                     heroes: [user],

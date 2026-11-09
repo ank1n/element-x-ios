@@ -77,6 +77,7 @@ actor AilockWebSocket {
 
         os_log(.default, log: ailockWSLog, "WS connect")
         Task { await self.receiveLoop() }
+        Task { await self.pingLoop() }
 
         return stream
     }
@@ -142,6 +143,41 @@ actor AilockWebSocket {
                 continuation = nil
                 return
             }
+        }
+    }
+
+    // MARK: - Проверка связи
+
+    /// Как часто спрашивать сервер, жив ли сокет.
+    private static let pingInterval: UInt64 = 15_000_000_000
+    /// Сколько ждать ответа на проверку.
+    private static let pongTimeout: TimeInterval = 10
+
+    /// Мёртвое соединение без проверки ничем себя не выдаёт: на мобильной сети TCP
+    /// пропадает молча, `receive()` ждёт вечно, и экран навсегда остаётся в режиме
+    /// «работает» с недописанным ответом. Проверка раз в 15 с: нет ответа за 10 с —
+    /// сокет рвём, приём получает ошибку и отдаёт `.disconnected`, а вью-модель
+    /// сверяет статус беседы и либо переподключается, либо дочитывает историю.
+    private func pingLoop() async {
+        while !isClosed {
+            try? await Task.sleep(nanoseconds: Self.pingInterval)
+            guard !isClosed, let task else { return }
+            guard await Self.isAlive(task, timeout: Self.pongTimeout) else {
+                guard !isClosed else { return }
+                os_log(.error, log: ailockWSLog, "WS ping: no pong, dropping socket")
+                task.cancel(with: .abnormalClosure, reason: nil)
+                return
+            }
+        }
+    }
+
+    private static func isAlive(_ task: URLSessionWebSocketTask, timeout: TimeInterval) async -> Bool {
+        await withCheckedContinuation { continuation in
+            // Ответ на ping может не прийти никогда — тогда решает таймер.
+            // Продолжение возобновляется ровно один раз, кто бы ни успел первым.
+            let once = OnceResumer(continuation)
+            task.sendPing { error in once.resume(error == nil) }
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { once.resume(false) }
         }
     }
 
@@ -234,5 +270,23 @@ actor AilockWebSocket {
             // Артефакты, суб-агенты, todo и всё будущее — молча игнорируем.
             break
         }
+    }
+}
+
+/// Возобновляет продолжение один раз; повторные вызовы игнорируются.
+private final class OnceResumer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Bool, Never>?
+
+    init(_ continuation: CheckedContinuation<Bool, Never>) {
+        self.continuation = continuation
+    }
+
+    func resume(_ value: Bool) {
+        lock.lock()
+        let continuation = continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume(returning: value)
     }
 }

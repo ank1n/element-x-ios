@@ -59,6 +59,14 @@ final class CallScreenCoordinator: CoordinatorProtocol {
         viewModel.context.send(viewAction: .restoreFromMinimized)
     }
     
+    /// sTalk: Свернуть звонок в мини-окно тем же путём, что и кнопка «назад».
+    /// Экран звонка обязан узнать о сворачивании сам: иначе окно сжималось, а внутри
+    /// оставались полноэкранные кнопки, без счётчика на плашке и без возврата по тапу.
+    func minimize() {
+        guard !viewModel.context.viewState.isMinimized else { return }
+        viewModel.context.send(viewAction: .navigateBack)
+    }
+
     private var cancellables: Set<AnyCancellable> = .init()
     var actions: AnyPublisher<CallScreenCoordinatorAction, Never> {
         actionsSubject.eraseToAnyPublisher()

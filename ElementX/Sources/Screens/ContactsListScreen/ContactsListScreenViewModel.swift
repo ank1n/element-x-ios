@@ -285,6 +285,18 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
             .store(in: &contactsCancellables)
     }
 
+    /// STALK-126: комната встречи на двоих — человек и мост встреч — проходила как личный чат,
+    /// и встреча показывалась контактом «не в сети». Второй участник в ней служебный.
+    private static func isMeetingRoom(_ summary: RoomSummary, knownMeetingRoomIDs: Set<String>) -> Bool {
+        knownMeetingRoomIDs.contains(summary.id) || summary.heroes.contains { isMeetServiceUserID($0.userID) }
+    }
+
+    /// Служебные учётки встреч, как в вебе: `meet` и `meet-*` (в том числе `meet-bridge`).
+    static func isMeetServiceUserID(_ userID: String) -> Bool {
+        let localpart = userID.dropFirst().split(separator: ":", maxSplits: 1).first ?? ""
+        return localpart == "meet" || localpart.hasPrefix("meet-")
+    }
+
     private func updateContacts(from summaries: [RoomSummary]) {
         var seen = Set<String>() // roomID dedup
         var seenUserIDs = Set<String>() // userID dedup across sources
@@ -292,10 +304,12 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
         var userIDs: [String] = []
         let ownUserID = userSession.clientProxy.userID
         let presenceMap = presenceService?.presenceSubject.value ?? [:]
+        let meetingRoomIDs = MeetingRoomRegistry.knownRoomIDs
 
         // Source 1: DM rooms (isDirect, exactly 2 members = 1-on-1)
         for summary in summaries where summary.isDirect {
             guard summary.activeMembersCount == 2,
+                  !Self.isMeetingRoom(summary, knownMeetingRoomIDs: meetingRoomIDs),
                   !summary.name.hasPrefix("Empty Room"),
                   !summary.name.hasSuffix(" people"),
                   !seen.contains(summary.id) else { continue }
@@ -326,6 +340,7 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
         for summary in summaries where !summary.isDirect {
             guard summary.activeMembersCount == 2,
                   summary.heroes.count == 1,
+                  !Self.isMeetingRoom(summary, knownMeetingRoomIDs: meetingRoomIDs),
                   !summary.name.hasPrefix("Empty Room"),
                   !summary.name.contains(","),
                   !seen.contains(summary.id) else { continue }
@@ -389,7 +404,7 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
                                uniquingKeysWith: { first, _ in first })
 
         let directoryContacts = directoryUsers
-            .filter { $0.userID != ownUserID && !roomUserIDs.contains($0.userID) }
+            .filter { $0.userID != ownUserID && !roomUserIDs.contains($0.userID) && !Self.isMeetServiceUserID($0.userID) }
             .map { user in
                 ContactItem(id: user.userID,
                             displayName: user.displayName ?? user.userID.replacingOccurrences(of: "@", with: "").components(separatedBy: ":").first ?? user.userID,

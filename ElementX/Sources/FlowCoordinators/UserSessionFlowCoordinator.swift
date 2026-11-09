@@ -896,7 +896,13 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         // вызывать не нужно; контроллер обязан лишь существовать, что и проверено выше.
         MXLog.info("Minimizing call overlay; system PiP will start automatically on backgrounding.")
         _ = callScreenPictureInPictureController
-        navigationTabCoordinator.setOverlayPresentationMode(.minimized)
+        // Сворачиваем через экран звонка, а не одним режимом оверлея: прямой
+        // setOverlayPresentationMode(.minimized) сжимал окно, а экран звонка об этом
+        // не знал — в мини-окне оставались полноэкранные кнопки, плашка без счётчика
+        // и тап по окну ничего не возвращал. Экран ответит .minimizeCall, и дальше
+        // идёт общий путь со счётчиком и обработчиком возврата.
+        guard let callScreenCoordinator = navigationTabCoordinator.overlayCoordinator as? CallScreenCoordinator else { return }
+        callScreenCoordinator.minimize()
     }
     
     private func dismissCallScreenIfNeeded() {

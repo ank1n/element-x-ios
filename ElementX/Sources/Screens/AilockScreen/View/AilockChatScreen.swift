@@ -268,7 +268,10 @@ struct AilockChatScreen: View {
                 fileCard(file, isOutgoing: false)
             }
 
-            if message.isStreaming, message.text.isEmpty {
+            // Индикатор держим до конца ответа, а не только до первой дельты:
+            // агент замолкает посреди текста, пока ходит в инструменты, и без
+            // крутилки недописанный ответ неотличим от зависшего (dp, 09.11).
+            if message.isStreaming {
                 workingIndicator
             }
 
@@ -474,20 +477,8 @@ struct AilockChatScreen: View {
 
     /// Поле ввода во всю ширину карточки.
     private var composerField: some View {
-        TextField(composerPlaceholder, text: $context.composerText, axis: .vertical)
-            .lineLimit(1...6)
-            .textFieldStyle(.plain)
-            .disabled(context.viewState.voicePhase == .transcribing)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 9)
-            .background(colorScheme == .dark ? Color(.secondarySystemBackground) : AilockPalette.ice,
-                        in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .overlay {
-                if colorScheme != .dark {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(AilockPalette.iceBorder, lineWidth: 1)
-                }
-            }
+        StalkComposerTextField(placeholder: composerPlaceholder, text: $context.composerText,
+                               isDisabled: context.viewState.voicePhase == .transcribing)
     }
 
     /// Кнопка вложений. Системный файловый пикер убран намеренно (решение dp):
