@@ -1303,6 +1303,87 @@ final class LiveKitRoomManager: ObservableObject {
     private var simulatorQASelfTest = false
     private let simulatorQASource = SimulatorQAToneSource()
 
+    /// STALK-1270: изолированная проверка захвата с опубликованным треком. Отдельная комната LiveKit
+    /// с именем вне Matrix — ни call.member, ни звонка, ни других участников.
+    @MainActor
+    static func runSimulatorLiveKitProbe(clientProxy: ClientProxyProtocol) async {
+        guard simulatorSyntheticMediaEnabled, SimulatorQASettings.isSilent,
+              ProcessInfo.processInfo.environment["STALK_QA_LIVEKIT_PROBE"] == "1" else { return }
+        let roomName = "stalk1270-qa-probe-\(Int(Date().timeIntervalSince1970))"
+        guard let credentials = await simulatorQAProbeCredentials(clientProxy: clientProxy, roomName: roomName) else {
+            DiagLog.write("SimulatorQA", "probe: no LiveKit credentials")
+            return
+        }
+        let manager = LiveKitRoomManager()
+        let meter = SimulatorQAAudioMeter()
+        let processing = SimulatorQAProcessingCounter()
+        let meterTrack = LocalAudioTrack.createTrack(options: .noProcessing)
+        AudioManager.shared.capturePostProcessingDelegate = processing
+        meterTrack.add(audioRenderer: meter)
+        defer {
+            meterTrack.remove(audioRenderer: meter)
+            AudioManager.shared.capturePostProcessingDelegate = nil
+        }
+        func report(_ phase: String) {
+            let published = manager.room.localParticipant.audioTracks.count
+            DiagLog.write("SimulatorQA", "probe \(phase): published=\(published) apm=\(processing.snapshot()) renderer=\(meter.snapshot()) source=\(manager.simulatorQASource.snapshot())")
+        }
+        do {
+            DiagLog.write("SimulatorQA", "probe start room=\(roomName) sfu=\(credentials.url)")
+            try await manager.connect(wsURL: credentials.url, token: credentials.jwt, speakerByDefault: true)
+            try await Task.sleep(for: .seconds(3))
+            report("before-publish")
+            try await manager.setMicrophone(enabled: true)
+            for second in stride(from: 5, through: 20, by: 5) {
+                try await Task.sleep(for: .seconds(5))
+                report("after-publish-\(second)s")
+            }
+            try await manager.setMicrophone(enabled: false)
+            report("after-unpublish")
+        } catch {
+            DiagLog.write("SimulatorQA", "probe failed: \(error.localizedDescription)")
+        }
+        await manager.disconnect()
+        DiagLog.write("SimulatorQA", "probe disconnected state=\(manager.room.connectionState)")
+    }
+
+    private static func simulatorQAProbeCredentials(clientProxy: ClientProxyProtocol, roomName: String) async -> (url: String, jwt: String)? {
+        guard let accessToken = try? clientProxy.matrixAccessToken(), let deviceID = clientProxy.deviceID else { return nil }
+        let homeserver = clientProxy.homeserver.hasSuffix("/") ? String(clientProxy.homeserver.dropLast()) : clientProxy.homeserver
+        let host = URL(string: homeserver)?.host ?? ""
+        var service = "https://jwt.\(host)"
+        if let wellKnown = URL(string: "\(homeserver)/.well-known/matrix/client"),
+           let (data, _) = try? await URLSession.shared.data(from: wellKnown),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let foci = json["org.matrix.msc4143.rtc_foci"] as? [[String: Any]],
+           let url = foci.first(where: { ($0["type"] as? String) == "livekit" })?["livekit_service_url"] as? String {
+            service = url.hasSuffix("/") ? String(url.dropLast()) : url
+        }
+        let user = clientProxy.userID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? clientProxy.userID
+        guard let openIDURL = URL(string: "\(homeserver)/_matrix/client/v3/user/\(user)/openid/request_token"),
+              let sfuURL = URL(string: "\(service)/sfu/get") else { return nil }
+        var openIDRequest = URLRequest(url: openIDURL)
+        openIDRequest.httpMethod = "POST"
+        openIDRequest.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        openIDRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        openIDRequest.httpBody = Data("{}".utf8)
+        guard let (openIDData, _) = try? await URLSession.shared.data(for: openIDRequest),
+              let openID = try? JSONSerialization.jsonObject(with: openIDData) as? [String: Any] else { return nil }
+        var sfuRequest = URLRequest(url: sfuURL)
+        sfuRequest.httpMethod = "POST"
+        sfuRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        sfuRequest.httpBody = try? JSONSerialization.data(withJSONObject: ["room": roomName, "openid_token": openID, "device_id": deviceID])
+        guard let (sfuData, response) = try? await URLSession.shared.data(for: sfuRequest) else { return nil }
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status),
+              let json = try? JSONSerialization.jsonObject(with: sfuData) as? [String: Any],
+              let url = json["url"] as? String, let jwt = json["jwt"] as? String else {
+            DiagLog.write("SimulatorQA", "probe /sfu/get status=\(status) body=\(String(data: sfuData, encoding: .utf8)?.prefix(160) ?? "")")
+            return nil
+        }
+        return (url, jwt)
+    }
+
     static func runSimulatorAudioSelfTest() async {
         guard simulatorSyntheticMediaEnabled,
               ProcessInfo.processInfo.environment["STALK_QA_AUDIO_SELF_TEST"] == "1" else { return }

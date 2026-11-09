@@ -903,6 +903,12 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         // deployments share the same paths and only differ by domain, so recording-api must
         // follow the logged-in server (e.g. stalk.implica.uz) instead of the hardcoded default.
         ServiceLocator.shared.setupRecordingService(homeserver: userSession.clientProxy.homeserver)
+        #if targetEnvironment(simulator)
+        if ProcessInfo.processInfo.environment["STALK_QA_LIVEKIT_PROBE"] == "1" {
+            let clientProxy = userSession.clientProxy
+            Task { await LiveKitRoomManager.runSimulatorLiveKitProbe(clientProxy: clientProxy) }
+        }
+        #endif
         // STMOB-265: клиент транскрибации голосовых — на том же домене, что и сессия.
         ServiceLocator.shared.setupVoiceTranscription(homeserver: userSession.clientProxy.homeserver,
                                                       userID: userSession.clientProxy.userID,
