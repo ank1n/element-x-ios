@@ -579,6 +579,10 @@ final class LiveKitRoomManager: ObservableObject {
         simulatorVideoTimer?.invalidate()
         simulatorVideoTimer = nil
         simulatorBufferCapturer = nil
+        reportSimulatorQARx(reason: "disconnect")
+        simulatorQARxTask?.cancel()
+        simulatorQARxTask = nil
+        simulatorQARxMeters.removeAll()
         #endif
         locallyMutedIdentities = []; previousRemoteVolumes = [:]; orderedHandSIDs = []; raisedHandsSIDs = []
         reconnectURL = nil
@@ -892,6 +896,11 @@ final class LiveKitRoomManager: ObservableObject {
     private static let kMaxRecoveryCycles = 2
     /// Зонды первого кадра на чужих видеотреках — держим ссылки, SDK хранит рендереры слабо.
     private var remoteFrameProbes: [FirstFrameProbe] = []
+    #if targetEnvironment(simulator)
+    /// STALK-1270: счётчики входящего звука на QA-стенде — только скаляры, звук не хранится.
+    private var simulatorQARxMeters: [(label: String, meter: SimulatorQARxMeter, last: (UInt64, Double))] = []
+    private var simulatorQARxTask: Task<Void, Never>?
+    #endif
     /// Перепубликация камеры при мёртвом захвате — одна на звонок.
     private var didRestartDeadCapture = false
     /// Следующую публикацию камеры делать БЕЗ процессора. Ставится только после
@@ -913,6 +922,8 @@ final class LiveKitRoomManager: ObservableObject {
         didRestartDeadCapture = false
         publishCameraWithoutProcessor = false
         remoteFrameProbes.removeAll()
+        // Счётчики входящего звука сбрасываются в disconnect(): при входе в идущий звонок
+        // подписка на чужие треки приходит раньше сторожа и сброс здесь стёр бы их.
         egressWatchdog = MediaEgressWatchdog { [weak self] reason in
             self?.recoverEgress(reason: reason)
         } onCaptureDead: { [weak self] kind in
@@ -1296,6 +1307,36 @@ final class LiveKitRoomManager: ObservableObject {
     // MARK: - Simulator Fake Tracks
 
     #if targetEnvironment(simulator)
+    /// STALK-1270: входящий звук от веба/Android меряем так же, как исходящий —
+    /// сэмплы и энергия раз в 5 с. Окно с энергией ≈ 0 = тишина, по чередованию
+    /// окон получатель отличает тон от тишины без записи звука.
+    private func attachSimulatorQARxMeter(to track: RemoteAudioTrack, label: String) {
+        let meter = SimulatorQARxMeter()
+        track.add(audioRenderer: meter)
+        simulatorQARxMeters.append((label: label, meter: meter, last: (0, 0)))
+        DiagLog.write("Call", "SimulatorQA rx meter attached from=\(label)")
+        guard simulatorQARxTask == nil else { return }
+        simulatorQARxTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled, let self else { return }
+                self.reportSimulatorQARx(reason: "tick")
+            }
+        }
+    }
+
+    private func reportSimulatorQARx(reason: String) {
+        for index in simulatorQARxMeters.indices {
+            let entry = simulatorQARxMeters[index]
+            let (samples, energy, pattern) = entry.meter.snapshot()
+            let windowSamples = samples - entry.last.0
+            let windowEnergy = energy - entry.last.1
+            let rms = windowSamples > 0 ? (windowEnergy / Double(windowSamples)).squareRoot() : 0
+            simulatorQARxMeters[index].last = (samples, energy)
+            DiagLog.write("Call", "SimulatorQA rx \(reason) from=\(entry.label) samples=\(samples) energy=\(energy) window=\(windowSamples) windowRms=\(String(format: "%.4f", rms)) \(pattern)")
+        }
+    }
+
     static let simulatorSyntheticMediaEnabled = ProcessInfo.processInfo.environment["STALK_QA_SYNTHETIC_MEDIA"] == "1"
     private var simulatorQAAudioWanted = false
     private var simulatorQAAudioTimer: Timer?
@@ -1918,6 +1959,11 @@ extension LiveKitRoomManager: RoomDelegate {
                 self.remoteFrameProbes.append(probe)
                 videoTrack.add(videoRenderer: probe)
             }
+            #if targetEnvironment(simulator)
+            if Self.simulatorSyntheticMediaEnabled, let audioTrack = publication.track as? RemoteAudioTrack {
+                self.attachSimulatorQARxMeter(to: audioTrack, label: "\(identity) \(pubSource)")
+            }
+            #endif
         }
     }
 
@@ -1929,6 +1975,9 @@ extension LiveKitRoomManager: RoomDelegate {
             self.updateState()
             self.cameraReception.reconcile(resetApplied: self.cameraReception.isEnabled)
             DiagLog.write("Call", "track unsubscribed name=\(pubName) isScreenShare=\(isScreenShare) from=\(identity)")
+            #if targetEnvironment(simulator)
+            self.reportSimulatorQARx(reason: "unsubscribed")
+            #endif
         }
     }
 
@@ -3130,6 +3179,76 @@ private final class SimulatorQAAudioMeter: AudioRenderer, @unchecked Sendable {
     func snapshot() -> (UInt64, Double) {
         lock.lock(); defer { lock.unlock() }
         return (samples, energy)
+    }
+}
+#endif
+
+#if targetEnvironment(simulator)
+/// STALK-1270: входящий звук на QA-стенде. Кроме энергии ищет рисунок тестового
+/// тона — паузы ≥ 0,5 с между звучащими участками. Пауза раз в ~3 с значит, что
+/// пришёл наш тон, а не шум. Хранит только числа, звук не сохраняется.
+private final class SimulatorQARxMeter: AudioRenderer, @unchecked Sendable {
+    private let lock = NSLock()
+    private var samples: UInt64 = 0
+    private var energy: Double = 0
+    // Блоки по 100 мс: звучит / тишина.
+    private var blockSamples = 0
+    private var blockEnergy: Double = 0
+    private var silentRunBlocks = 0
+    private var heardTone = false
+    private var pauses = 0
+    private var pauseStarts: [UInt64] = []
+    private var sampleRate: Double = 48000
+
+    func render(pcmBuffer: AVAudioPCMBuffer) {
+        let count = Int(pcmBuffer.frameLength)
+        guard count > 0 else { return }
+        lock.lock(); defer { lock.unlock() }
+        sampleRate = pcmBuffer.format.sampleRate > 0 ? pcmBuffer.format.sampleRate : 48000
+        let blockSize = max(1, Int(sampleRate / 10))
+        for index in 0..<count {
+            let value: Double
+            if let channel = pcmBuffer.floatChannelData?[0] {
+                value = Double(channel[index])
+            } else if let channel = pcmBuffer.int16ChannelData?[0] {
+                value = Double(channel[index]) / 32768
+            } else {
+                return
+            }
+            energy += value * value
+            blockEnergy += value * value
+            blockSamples += 1
+            samples += 1
+            if blockSamples >= blockSize {
+                closeBlock()
+            }
+        }
+    }
+
+    private func closeBlock() {
+        let rms = (blockEnergy / Double(blockSamples)).squareRoot()
+        if rms > 0.005 {
+            if heardTone, silentRunBlocks >= 5 {
+                pauses += 1
+                pauseStarts.append(samples - UInt64(silentRunBlocks * blockSamples))
+            }
+            heardTone = true
+            silentRunBlocks = 0
+        } else {
+            silentRunBlocks += 1
+        }
+        blockSamples = 0
+        blockEnergy = 0
+    }
+
+    func snapshot() -> (UInt64, Double, String) {
+        lock.lock(); defer { lock.unlock() }
+        var period = "-"
+        if pauseStarts.count >= 2 {
+            let span = Double(pauseStarts.last! - pauseStarts.first!) / sampleRate
+            period = String(format: "%.2fs", span / Double(pauseStarts.count - 1))
+        }
+        return (samples, energy, "pauses=\(pauses) pausePeriod=\(period) rate=\(Int(sampleRate))")
     }
 }
 #endif
