@@ -259,7 +259,13 @@ struct CallScreen: View {
                 Text(context.viewState.roomDisplayName ?? SL10n.callDefault)
                     .font(.system(size: 26, weight: .bold))
                     .foregroundColor(.white)
-                CallingDotsLabel()
+                if let ringOutcome = context.viewState.ringOutcome {
+                    Text(ringOutcome.text)
+                        .font(.system(size: 16))
+                        .foregroundColor(.white.opacity(0.75))
+                } else {
+                    CallingDotsLabel()
+                }
                 Spacer()
                 Spacer()
             }

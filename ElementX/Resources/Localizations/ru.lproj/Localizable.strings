@@ -1573,6 +1573,8 @@
 "stalk_call_back" = "Назад";
 "stalk_call_calling" = "Вызов...";
 "stalk_call_reconnecting" = "Переподключение...";
+"stalk_call_declined" = "Отклонён";
+"stalk_call_no_answer" = "Нет ответа";
 "stalk_call_voice_call" = "Голосовой вызов";
 "stalk_action_remove_favorite" = "Убрать";
 "stalk_action_add_favorite" = "Избранное";

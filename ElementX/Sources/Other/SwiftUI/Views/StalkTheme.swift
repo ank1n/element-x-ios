@@ -102,6 +102,8 @@ enum SL10n {
     static let callBack = NSLocalizedString("stalk_call_back", tableName: "Localizable", value: "Назад", comment: "Back button on call screen")
     static let callCalling = NSLocalizedString("stalk_call_calling", tableName: "Localizable", value: "Вызов...", comment: "Calling state")
     static let callReconnecting = NSLocalizedString("stalk_call_reconnecting", tableName: "Localizable", value: "Переподключение...", comment: "Reconnecting state")
+    static let callDeclined = NSLocalizedString("stalk_call_declined", tableName: "Localizable", value: "Отклонён", comment: "Outgoing call declined by the callee")
+    static let callNoAnswer = NSLocalizedString("stalk_call_no_answer", tableName: "Localizable", value: "Нет ответа", comment: "Outgoing call not answered in time")
     static let callVoiceCall = NSLocalizedString("stalk_call_voice_call", tableName: "Localizable", value: "Голосовой вызов", comment: "Voice call accessibility")
 
     // MARK: - Chat / Room Actions
