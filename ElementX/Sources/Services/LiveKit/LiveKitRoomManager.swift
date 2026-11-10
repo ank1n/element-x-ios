@@ -528,6 +528,7 @@ final class LiveKitRoomManager: ObservableObject {
         // в тишине) — меньше энкод/радио, на телефоне в сетке незаметно.
         let roomOptions = makeRoomOptions()
 
+        await Self.simulatorQAConnectDelay()
         LiveKitDiagLogBridge.openConnectWindow()
         DiagLog.write("CallPerf", "room.connect start")
         try await room.connect(url: baseURL, token: token, connectOptions: connectOptions, roomOptions: roomOptions)
@@ -560,6 +561,7 @@ final class LiveKitRoomManager: ObservableObject {
         // STMOB-164: см. комментарий в connect() — adaptiveStream/dynacast + 720p/24/2Mbps/DTX для снижения нагрева.
         let roomOptions = makeRoomOptions(encryptionOptions: encryptionOptions)
 
+        await Self.simulatorQAConnectDelay()
         LiveKitDiagLogBridge.openConnectWindow()
         DiagLog.write("CallPerf", "room.connect start")
         try await room.connect(url: baseURL, token: token, connectOptions: connectOptions, roomOptions: roomOptions)
@@ -1353,6 +1355,17 @@ final class LiveKitRoomManager: ObservableObject {
         DiagLog.write("Call", "SimulatorQA tiles \(reason) remote=\(tiles.count) total=\(tiles.count + 1) \(tiles.joined(separator: " "))")
     }
 
+    /// STMOB-329: отладочная пауза перед room.connect — окно «камеру нажали, пока идёт
+    /// подключение», которое на быстрой сети не поймать. Только симулятор и только по
+    /// флагу запуска STALK_QA_CONNECT_DELAY_MS; сеть Mac при этом не трогаем.
+    private static func simulatorQAConnectDelay() async {
+        #if targetEnvironment(simulator)
+        guard let delayMs = ProcessInfo.processInfo.environment["STALK_QA_CONNECT_DELAY_MS"].flatMap(Int.init), delayMs > 0 else { return }
+        DiagLog.write("CallPerf", "QA connect delay \(delayMs)ms")
+        try? await Task.sleep(for: .milliseconds(delayMs))
+        #endif
+    }
+
     static let simulatorSyntheticMediaEnabled = ProcessInfo.processInfo.environment["STALK_QA_SYNTHETIC_MEDIA"] == "1"
     private var simulatorQAAudioWanted = false
     private var simulatorQAAudioTimer: Timer?
@@ -1478,7 +1491,7 @@ final class LiveKitRoomManager: ObservableObject {
                     let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 960)!
                     buffer.frameLength = 960
                     for index in 0..<960 {
-                        buffer.floatChannelData![0][index] = Float(sin(2 * Double.pi * 440 * Double(sample) / 48000) * 0.15)
+                        buffer.floatChannelData![0][index] = Float(sin(2 * Double.pi * SimulatorQAToneSource.frequencyHz * Double(sample) / 48000) * 0.15)
                         sample += 1
                     }
                     AudioManager.shared.mixer.capture(appAudio: buffer)
@@ -1522,7 +1535,7 @@ final class LiveKitRoomManager: ObservableObject {
         }
         simulatorQAAudioTimer = timer
         RunLoop.main.add(timer, forMode: .common)
-        DiagLog.write("SimulatorQA", "tone started: 440Hz 48kHz mono, 2s on / 1s silence")
+        DiagLog.write("SimulatorQA", "tone started: \(Int(SimulatorQAToneSource.frequencyHz))Hz 48kHz mono, 2s on / 1s silence")
     }
 
     private func stopSimulatorQAAudio() {
@@ -3401,6 +3414,9 @@ final class CallAudioDiagnostics: AudioEngineObserver, @unchecked Sendable {
 /// AVAudioSourceNode feeds WebRTC's input directly; no hardware input node is connected.
 private final class SimulatorQAToneSource: AudioEngineObserver, @unchecked Sendable {
     var next: (any AudioEngineObserver)?
+    /// STALK-1270: частота тона по флагу запуска STALK_QA_TONE_HZ (по умолчанию 440 Гц).
+    /// Тон Android тоже 440 Гц, и его эхоподавление принимает наш за эхо и глушит свой.
+    static let frequencyHz = ProcessInfo.processInfo.environment["STALK_QA_TONE_HZ"].flatMap(Double.init) ?? 440
     private final class State: @unchecked Sendable {
         let lock = NSLock()
         var enabled = false
@@ -3423,7 +3439,7 @@ private final class SimulatorQAToneSource: AudioEngineObserver, @unchecked Senda
                 let position = Int(sample % 144_000)
                 let ramp = min(1.0, min(Double(position) / 240, Double(96000 - position) / 240))
                 let value: Float = enabled && position < 96000
-                    ? Float(sin(2 * Double.pi * 440 * Double(sample) / 48000) * 0.15 * max(0, ramp)) : 0
+                    ? Float(sin(2 * Double.pi * SimulatorQAToneSource.frequencyHz * Double(sample) / 48000) * 0.15 * max(0, ramp)) : 0
                 for buffer in buffers {
                     if let output = buffer.mData?.assumingMemoryBound(to: Float.self) { output[index] = value }
                 }
