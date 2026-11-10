@@ -1575,6 +1575,8 @@
 "stalk_call_back" = "Back";
 "stalk_call_calling" = "Calling...";
 "stalk_call_reconnecting" = "Reconnecting...";
+"stalk_call_declined" = "Declined";
+"stalk_call_no_answer" = "No answer";
 "stalk_call_voice_call" = "Voice call";
 "stalk_action_remove_favorite" = "Remove";
 "stalk_action_add_favorite" = "Favorite";

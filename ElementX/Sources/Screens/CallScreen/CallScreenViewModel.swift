@@ -10,6 +10,7 @@ import AVKit
 import CallKit
 import Combine
 import LiveKit
+import MatrixRustSDK
 import os.log
 import SwiftUI
 
@@ -65,6 +66,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     private(set) var isMinimized = false
     /// sTalk: Guard against cascade endCall() — infoPublisher fires multiple times
     private var isEndingCall = false
+    /// STMOB-327: наш вызов звонит у собеседника — ждём отклонения или истечения срока.
+    private var ringDeclineHandle: TaskHandle?
+    private var ringNoAnswerTask: Task<Void, Never>?
 
     /// sTalk: Native call session (replaces WebView when enabled)
     private var nativeCallSession: NativeCallSession?
@@ -155,6 +159,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         var isDirect = false
         var totalMembersCount = 0
         var callParticipantsCount = 0
+        var otherCallParticipantsCount = 0
         if case .roomCall(let roomProxy, _, _, _, _, _) = configuration.kind {
             let roomInfo = roomProxy.infoPublisher.value
             roomDisplayName = roomInfo.displayName
@@ -162,11 +167,16 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             isDirect = roomInfo.isDirect
             totalMembersCount = roomInfo.activeMembersCount
             callParticipantsCount = roomInfo.activeRoomCallParticipants.count
+            otherCallParticipantsCount = roomInfo.activeRoomCallParticipants.filter { $0 != roomProxy.ownUserID }.count
         }
 
         // sTalk: инициатор = в комнате на старте не было активного звонка. Захват
         // ДО super.init/подписок (иначе callParticipantsCount станет 1 = себя).
-        startedAsInitiator = (callParticipantsCount == 0)
+        // STMOB-328: себя не считаем. Своё участие от только что завершённого звонка
+        // снимается с задержкой синхронизации, и повторный звонок через полминуты
+        // считался входом в идущий: без гудков, без ожидания ответа и без отбоя по
+        // отклонению. Так же решают presentCallScreen и проверка перед вызовом в сессии.
+        startedAsInitiator = (otherCallParticipantsCount == 0)
 
         super.init(initialViewState: CallScreenViewState(script: CallScreenJavaScriptMessageName.allCasesInjectionScript,
                                                          isGenericCallLink: isGenericCallLink,
@@ -431,6 +441,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 // Собеседник подключился — гудки исходящего вызова умолкают
                 if realUsersCount > 0 {
                     self.stopRingback()
+                    self.disarmOutgoingRing()
                     // STMOB-261: первый реальный участник в SFU = собеседник ответил.
                     // Это же момент, когда система должна начать считать длительность.
                     self.elementCallService.reportOutgoingCallConnected()
@@ -607,6 +618,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     
     func stop() {
         stopRingback()
+        disarmOutgoingRing()
         callTimerTask = nil
         recordingPollingTask?.cancel()
         recordingPollingTask = nil
@@ -657,6 +669,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     /// Синхронные части stop() (таймеры/стейт) — общие для stop и stopAndWaitCleanup.
     private func stopSyncParts() {
         stopRingback()
+        disarmOutgoingRing()
         callTimerTask = nil
         recordingPollingTask?.cancel()
         recordingPollingTask = nil
@@ -767,6 +780,15 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                     session.$notifiedUserIDs.receive(on: DispatchQueue.main).sink { [weak self] ids in
                         self?.state.invitedParticipantIDs = ids
                     }.store(in: &cancellables)
+
+                    session.$ringNotificationEventID
+                        .compactMap { $0 }
+                        .first()
+                        .receive(on: DispatchQueue.main)
+                        .sink { [weak self] eventID in
+                            self?.observeOutgoingRing(notificationEventID: eventID, roomProxy: roomProxy)
+                        }
+                        .store(in: &cancellables)
 
                     // Observe session state
                     session.$sessionState
@@ -1090,6 +1112,61 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         ringbackPlayer.stop()
     }
 
+    /// STMOB-327: исходящий, на который никто не ответил, должен закончиться сам.
+    /// Раньше отклонение собеседника не слушали вовсе, а своего срока у вызова не
+    /// было: экран «Вызов…» висел, пока человек не положит трубку вручную (W6, A2).
+    /// Срок — тот же, что мы обещали в rtc.notification: дольше у собеседника не звонит.
+    /// Отклонение в группе звонок не закрывает — ответить могут другие участники.
+    private func observeOutgoingRing(notificationEventID: String, roomProxy: JoinedRoomProxyProtocol) {
+        guard startedAsInitiator, state.callStatus == .connecting, !isEndingCall else { return }
+        DiagLog.write("CallUI", "вызов ушёл: ждём ответа \(NativeCallSession.ringLifetimeMs / 1000)с, отклонение \(state.isDirect && !notificationEventID.isEmpty ? "слушаем" : "не слушаем")")
+
+        ringNoAnswerTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(NativeCallSession.ringLifetimeMs))
+            guard !Task.isCancelled else { return }
+            self?.finishUnansweredRing(.noAnswer)
+        }
+
+        guard state.isDirect, !notificationEventID.isEmpty else { return }
+        let ownUserID = roomProxy.ownUserID
+        let listener: CallDeclineListener = SDKListener { [weak self] senderID in
+            Task { @MainActor [weak self] in
+                // Своё отклонение — это входящий на другом нашем устройстве, не ответ собеседника.
+                guard senderID != ownUserID else { return }
+                DiagLog.write("CallUI", "вызов отклонён собеседником")
+                self?.finishUnansweredRing(.declined)
+            }
+        }
+        switch roomProxy.subscribeToCallDeclineEvents(rtcNotificationEventID: notificationEventID, listener: listener) {
+        case .success(let handle):
+            ringDeclineHandle = handle
+        case .failure(let error):
+            DiagLog.write("CallUI", "подписка на отклонение не удалась: \(error) — остаётся только срок вызова")
+        }
+    }
+
+    private func finishUnansweredRing(_ outcome: CallRingOutcome) {
+        // Собеседник успел войти — это уже разговор, итог вызова не показываем.
+        guard state.callStatus == .connecting, state.ringOutcome == nil, !isEndingCall,
+              liveKitRoomManager.displayParticipants.isEmpty else { return }
+        DiagLog.write("CallUI", "вызов без ответа: \(outcome)")
+        disarmOutgoingRing()
+        stopRingback()
+        state.ringOutcome = outcome
+        // Пара секунд, чтобы человек увидел, почему звонок закончился.
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            await self?.endCall()
+        }
+    }
+
+    private func disarmOutgoingRing() {
+        ringNoAnswerTask?.cancel()
+        ringNoAnswerTask = nil
+        ringDeclineHandle?.cancel()
+        ringDeclineHandle = nil
+    }
+
     private func observeLiveKitState() {
         // STMOB-80: sync icon камеры с реальным состоянием LiveKit local video track.
         // Раньше state.isVideoEnabled зависел только от startWithVideoEnabled / widget
@@ -1266,6 +1343,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             return
         }
         isEndingCall = true
+        disarmOutgoingRing()
         // STMOB-297: снимаем взвод системного окна ПЕРВЫМ делом.
         // Гашение по состоянию соединения приходит слишком поздно: пользователь
         // завершает звонок, сворачивает приложение — и система успевает поднять
