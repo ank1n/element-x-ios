@@ -650,9 +650,11 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
             return
         }
 
+        // STALK-1270 (решение dp 10.11): входящий звонит не дольше 30 с на всех
+        // клиентах, даже если звонящий прислал lifetime больше.
         let ringDuration: Duration
         if let expirationDate {
-            ringDuration = .seconds(min(expirationDate.timeIntervalSince1970 - nowDate.timeIntervalSince1970, 90))
+            ringDuration = .seconds(min(expirationDate.timeIntervalSince1970 - nowDate.timeIntervalSince1970, 30))
         } else {
             ringDuration = .seconds(30)
         }
