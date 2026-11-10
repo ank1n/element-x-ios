@@ -822,7 +822,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                                 // Sync UI state and disable if incoming call (startWithVideoEnabled=false)
                                 if self.startWithVideoEnabled {
                                     self.state.isVideoEnabled = true
-                                } else {
+                                } else if !self.state.isVideoEnabled {
+                                    // Камеру, включённую во время подключения, не гасим —
+                                    // её уже опубликовала сессия (setCameraIntentBeforeConnect).
                                     Task {
                                         try? await self.liveKitRoomManager.setCamera(enabled: false)
                                         self.state.isVideoEnabled = false
@@ -1324,6 +1326,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 MXLog.error("sTalk LiveKit: Failed to toggle camera: \(error)")
                 DiagLog.write("CallUI", "  toggleVideo: LiveKit setCamera FAILED: \(error.localizedDescription)")
             }
+        } else {
+            // Звонок ещё подключается: запоминаем выбор, сессия применит его при connect.
+            await nativeCallSession?.setCameraIntentBeforeConnect(newVideoEnabled)
         }
 
         // Also notify Widget API for MatrixRTC state sync

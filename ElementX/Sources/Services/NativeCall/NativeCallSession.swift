@@ -196,7 +196,8 @@ final class NativeCallSession: ObservableObject {
     /// раньше камера включалась безусловно и гасла постфактум в VM — вспышка
     /// индикатора камеры + первые кадры в эфир (тот же баг Molly чинила на web:
     /// enable_video=true по умолчанию у виджета). Вопрос Molly 15.07.
-    private let enableCameraOnConnect: Bool
+    /// Меняется, если человек нажал «камера», пока звонок ещё подключается.
+    private var enableCameraOnConnect: Bool
 
     init(widgetDriver: ElementCallWidgetDriverProtocol,
          liveKitRoomManager: LiveKitRoomManager,
@@ -2295,6 +2296,17 @@ final class NativeCallSession: ObservableObject {
             MXLog.error("sTalk NativeCall: LiveKit connect failed: \(error)")
             sessionState = .failed(error)
         }
+    }
+
+    /// Нажатие «камера» до подключения к LiveKit (STALK-1270, 10.11): экран уже
+    /// показывает новое состояние, а включать камеру ещё не во что — без этого
+    /// нажатие пропадало, и после connect уходил только микрофон. Если connect
+    /// успел пройти раньше, чем экран узнал о комнате, применяем сразу.
+    func setCameraIntentBeforeConnect(_ enabled: Bool) async {
+        enableCameraOnConnect = enabled
+        DiagLog.write("Call", "camera intent before connect → \(enabled ? "on" : "off") (session=\(sessionState))")
+        guard sessionState == .connected else { return }
+        try? await liveKitRoomManager.setCamera(enabled: enabled)
     }
 
     // MARK: - Participant Management
