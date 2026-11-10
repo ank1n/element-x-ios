@@ -41,6 +41,9 @@ struct CallScreenViewState: BindableState {
     /// разруливает картинку комнаты и heroes для DM). nil → инициал-плейсхолдер.
     var roomAvatar: RoomAvatar?
     var callStatus: CallStatus = .connecting
+    /// STMOB-327: чем закончился наш вызов без ответа. Пока задан, экран набора
+    /// вместо «Вызов…» показывает итог, и через пару секунд звонок закрывается.
+    var ringOutcome: CallRingOutcome?
     /// STMOB-262: связь потеряна и идёт восстановление. Отдельно от callStatus:
     /// звонок формально остаётся connected (таймер идёт, участники на месте),
     /// но медиа не доходит — и об этом надо сказать, а не показывать «всё хорошо».
@@ -103,7 +106,7 @@ struct CallScreenViewState: BindableState {
     var callStatusText: String {
         switch callStatus {
         case .connecting:
-            return SL10n.callCalling
+            return ringOutcome?.text ?? SL10n.callCalling
         case .connected:
             let m = Int(callElapsedTime) / 60
             let s = Int(callElapsedTime) % 60
@@ -236,6 +239,18 @@ enum CallStatus: Equatable {
     case connecting
     case connected
     case reconnecting
+}
+
+enum CallRingOutcome: Equatable {
+    case declined
+    case noAnswer
+
+    var text: String {
+        switch self {
+        case .declined: SL10n.callDeclined
+        case .noAnswer: SL10n.callNoAnswer
+        }
+    }
 }
 
 // MARK: - sTalk Call Participant Info

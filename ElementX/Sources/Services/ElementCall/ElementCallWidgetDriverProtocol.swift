@@ -36,6 +36,9 @@ protocol ElementCallWidgetDriverProtocol {
                rageshakeURL: String?,
                analyticsConfiguration: ElementCallAnalyticsConfiguration?) async -> Result<URL, ElementCallWidgetDriverError>
     
+    /// Запуск драйвера для нативного звонка: без адреса веб-вью и без сетевого запроса за ним.
+    func startWithoutWebView(baseURL: URL, clientID: String, colorScheme: ColorScheme) async -> Result<Void, ElementCallWidgetDriverError>
+    
     /// Passes a message from the Widget to the SDK to handle, returning a Bool that represents whether or not the widget driver is still running.
     @discardableResult
     func handleMessage(_ message: String) async -> Result<Bool, ElementCallWidgetDriverError>
@@ -45,4 +48,11 @@ struct ElementCallAnalyticsConfiguration {
     let posthogAPIHost: String
     let posthogAPIKey: String
     let sentryDSN: String
+}
+
+extension ElementCallWidgetDriverProtocol {
+    func startWithoutWebView(baseURL: URL, clientID: String, colorScheme: ColorScheme) async -> Result<Void, ElementCallWidgetDriverError> {
+        await start(baseURL: baseURL, clientID: clientID, colorScheme: colorScheme, rageshakeURL: nil, analyticsConfiguration: nil)
+            .map { _ in () }
+    }
 }

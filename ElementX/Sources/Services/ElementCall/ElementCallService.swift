@@ -330,8 +330,11 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     /// идущий звонок. Снимок состояния комнаты (`hasRoomCall` + список участников)
     /// для этого не годится: на ответе из убитого приложения синк ещё догоняет, и
     /// принятый ВХОДЯЩИЙ попадал в историю как исходящий.
+    /// Вход в идущий звонок вызывающий учитывает сам (`joiningExisting`): пометка
+    /// `nextCallIsIncoming` в нативном режиме не гасилась и делала входящими все
+    /// следующие исходящие (10.11), поэтому здесь её больше не читаем.
     func isIncomingCall(roomID: String) -> Bool {
-        nextCallIsIncoming || incomingCallID?.roomID == roomID || answeredCallKitID != nil && ongoingCallID?.roomID == roomID
+        incomingCallID?.roomID == roomID || answeredCallKitID != nil && ongoingCallID?.roomID == roomID
     }
 
     func markNextCallAsIncoming() {
@@ -392,6 +395,10 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         DiagLog.write("Call", "markNativeCallActive(roomID=\(roomID ?? "nil"))")
         guard let roomID else {
             ongoingCallID = nil
+            // Пометку «вхожу в идущий звонок» в нативном режиме гасил только
+            // setupCallSession, а он здесь не вызывается: после одного входа в чужой
+            // звонок все следующие исходящие попадали в историю как входящие (10.11).
+            nextCallIsIncoming = false
             return
         }
 

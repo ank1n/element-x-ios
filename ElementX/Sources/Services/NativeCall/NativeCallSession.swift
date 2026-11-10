@@ -22,6 +22,11 @@ final class NativeCallSession: ObservableObject {
     // MARK: - Published State
 
     @Published private(set) var notifiedUserIDs: Set<String> = []
+    /// STMOB-327: событие вызова (rtc.notification), с которым мы позвонили первыми.
+    /// По нему экран ловит отклонение собеседника; nil — вызова не было (вход в идущий).
+    @Published private(set) var ringNotificationEventID: String?
+    /// Сколько звонит вызов у собеседника (поле lifetime в rtc.notification).
+    static let ringLifetimeMs = 90000
     @Published private(set) var sessionState: NativeCallSessionState = .starting
     @Published private(set) var roomManager: LiveKitRoomManager?
 
@@ -233,11 +238,11 @@ final class NativeCallSession: ObservableObject {
 
         // Start WidgetDriver in background for E2EE key exchange only
         // WidgetDriver uses different state_key format, won't conflict with our REST join
-        let driverResult = await widgetDriver.start(baseURL: baseURL,
-                                                    clientID: clientID,
-                                                    colorScheme: colorScheme,
-                                                    rageshakeURL: nil,
-                                                    analyticsConfiguration: nil)
+        // STMOB-328: без адреса веб-вью — его построение ходит за профилем на сервер
+        // и при медленной сети задерживало старт звонка на десятки секунд.
+        let driverResult = await widgetDriver.startWithoutWebView(baseURL: baseURL,
+                                                                  clientID: clientID,
+                                                                  colorScheme: colorScheme)
         DiagLog.write("CallPerf", "widgetDriver.start done @\(elapsedMs())ms")
         if case .success = driverResult {
             widgetDriver.messagePublisher
@@ -558,7 +563,7 @@ final class NativeCallSession: ObservableObject {
         // «Ответить» и не мог войти, т.к. уже был в встрече.
         let alreadyInCall = await fetchActiveCallMemberUserIDs()
         if alreadyInCall.isEmpty {
-            await sendCallNotification(callMemberEventID: joinEventID)
+            ringNotificationEventID = await sendCallNotification(callMemberEventID: joinEventID)
         } else {
             MXLog.info("sTalk NativeCall: joining ongoing call (\(alreadyInCall.count) already in) — skip ring")
             DiagLog.write("Call", "join ongoing call: \(alreadyInCall.count) members already in → NO ring (STMOB-200)")
@@ -1358,7 +1363,8 @@ final class NativeCallSession: ObservableObject {
 
     /// Send ring notification with proper user_ids and m.relates_to referencing our call.member event.
     /// Web client requires m.relates_to.rel_type="m.reference" + event_id of call.member to show incoming call toast.
-    @discardableResult private func sendCallNotification(callMemberEventID: String?, recipients: [String]? = nil) async -> Bool {
+    /// Возвращает event_id отправленного вызова, nil — не отправлен.
+    @discardableResult private func sendCallNotification(callMemberEventID: String?, recipients: [String]? = nil) async -> String? {
         let encodedRoom = matrixRoomId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? matrixRoomId
 
         // Collect other room members for m.mentions.user_ids
@@ -1370,7 +1376,7 @@ final class NativeCallSession: ObservableObject {
         }
 
         if let recipients { otherUserIDs = otherUserIDs.filter(recipients.contains) }
-        guard !otherUserIDs.isEmpty else { return false }
+        guard !otherUserIDs.isEmpty else { return nil }
         let timestamp = Int(Date().timeIntervalSince1970 * 1000)
 
         // Build notification body
@@ -1379,7 +1385,7 @@ final class NativeCallSession: ObservableObject {
             "call_id": "",
             "m.mentions": ["user_ids": otherUserIDs],
             "sender_ts": timestamp,
-            "lifetime": 90000,
+            "lifetime": Self.ringLifetimeMs,
             "notification_type": "ring"
         ]
 
@@ -1395,11 +1401,11 @@ final class NativeCallSession: ObservableObject {
         let txnId = UUID().uuidString
         let url = "\(homeserverURL)/_matrix/client/v3/rooms/\(encodedRoom)/send/org.matrix.msc4075.rtc.notification/\(txnId)"
 
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else { return false }
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else { return nil }
 
         guard let requestURL = URL(string: url) else {
             MXLog.error("sTalk NativeCall: invalid notification URL: \(url)")
-            return false
+            return nil
         }
         var request = URLRequest(url: requestURL)
         request.httpMethod = "PUT"
@@ -1410,19 +1416,22 @@ final class NativeCallSession: ObservableObject {
         for attempt in 0...1 {
             do {
                 request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-                let (_, response) = try await restSession.data(for: request)
+                let (data, response) = try await restSession.data(for: request)
                 let status = (response as? HTTPURLResponse)?.statusCode ?? 0
                 if status == 401, attempt == 0 { await tokenRefresher(); continue }
-                if (200...299).contains(status) { notifiedUserIDs.formUnion(otherUserIDs); return true }
-                return false
-            } catch { return false }
+                guard (200...299).contains(status) else { return nil }
+                notifiedUserIDs.formUnion(otherUserIDs)
+                let eventID = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["event_id"] as? String
+                DiagLog.write("Call", "ring sent → \(otherUserIDs.count) recipients, event=\(eventID ?? "nil")")
+                return eventID ?? ""
+            } catch { return nil }
         }
-        return false
+        return nil
     }
 
     func invite(userID: String) async -> Bool {
         guard liveKitRoomManager.connectionState == .connected, callMemberEventID != nil else { return false }
-        return await sendCallNotification(callMemberEventID: callMemberEventID, recipients: [userID])
+        return await sendCallNotification(callMemberEventID: callMemberEventID, recipients: [userID]) != nil
     }
 
     // MARK: - Stop

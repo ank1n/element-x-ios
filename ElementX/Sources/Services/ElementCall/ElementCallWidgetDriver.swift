@@ -75,6 +75,35 @@ final class ElementCallWidgetDriver: WidgetCapabilitiesProvider, ElementCallWidg
                colorScheme: ColorScheme,
                rageshakeURL: String?,
                analyticsConfiguration: ElementCallAnalyticsConfiguration?) async -> Result<URL, ElementCallWidgetDriverError> {
+        await startDriver(baseURL: baseURL,
+                          clientID: clientID,
+                          colorScheme: colorScheme,
+                          rageshakeURL: rageshakeURL,
+                          analyticsConfiguration: analyticsConfiguration,
+                          generatesWebViewURL: true)
+            .flatMap { url in url.map { .success($0) } ?? .failure(.failedParsingCallURL) }
+    }
+    
+    /// STMOB-328: нативному звонку веб-вью не нужен, а построение его адреса — это
+    /// запрос своего профиля на сервер внутри SDK. При медленной сети он висел
+    /// 26 секунд (10.11, A3-e) и до минуты (31.08), и всё это время звонок не
+    /// начинался: ни участия в комнате, ни вызова собеседнику.
+    func startWithoutWebView(baseURL: URL, clientID: String, colorScheme: ColorScheme) async -> Result<Void, ElementCallWidgetDriverError> {
+        await startDriver(baseURL: baseURL,
+                          clientID: clientID,
+                          colorScheme: colorScheme,
+                          rageshakeURL: nil,
+                          analyticsConfiguration: nil,
+                          generatesWebViewURL: false)
+            .map { _ in () }
+    }
+    
+    private func startDriver(baseURL: URL,
+                             clientID: String,
+                             colorScheme: ColorScheme,
+                             rageshakeURL: String?,
+                             analyticsConfiguration: ElementCallAnalyticsConfiguration?,
+                             generatesWebViewURL: Bool) async -> Result<URL?, ElementCallWidgetDriverError> {
         guard let room = room as? Room else {
             return .failure(.roomInvalid)
         }
@@ -102,22 +131,26 @@ final class ElementCallWidgetDriver: WidgetCapabilitiesProvider, ElementCallWidg
             return .failure(.failedBuildingWidgetSettings)
         }
         
-        let languageTag = "\(Locale.current.language.languageCode ?? "en")-\(Locale.current.language.region ?? "US")"
-        let theme = colorScheme == .light ? "light" : "dark"
-        
-        let urlString: String
-        do {
-            urlString = try await generateWebviewUrl(widgetSettings: widgetSettings, room: room,
-                                                     props: .init(clientId: clientID,
-                                                                  languageTag: languageTag,
-                                                                  theme: theme))
-        } catch {
-            MXLog.error("Failed to generate web view URL: \(error)")
-            return .failure(.failedBuildingCallURL)
-        }
-        
-        guard let url = URL(string: urlString) else {
-            return .failure(.failedParsingCallURL)
+        var url: URL?
+        if generatesWebViewURL {
+            let languageTag = "\(Locale.current.language.languageCode ?? "en")-\(Locale.current.language.region ?? "US")"
+            let theme = colorScheme == .light ? "light" : "dark"
+            
+            let urlString: String
+            do {
+                urlString = try await generateWebviewUrl(widgetSettings: widgetSettings, room: room,
+                                                         props: .init(clientId: clientID,
+                                                                      languageTag: languageTag,
+                                                                      theme: theme))
+            } catch {
+                MXLog.error("Failed to generate web view URL: \(error)")
+                return .failure(.failedBuildingCallURL)
+            }
+            
+            guard let parsedURL = URL(string: urlString) else {
+                return .failure(.failedParsingCallURL)
+            }
+            url = parsedURL
         }
         
         let widgetDriver: WidgetDriverAndHandle
