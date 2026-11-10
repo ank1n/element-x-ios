@@ -831,6 +831,10 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                                     }
                                 }
                             case .failed:
+                                // STMOB-330: раньше экран закрывался молча, и человек не понимал,
+                                // что произошло. Сессия к этому моменту уже повторила connect.
+                                ServiceLocator.shared.userIndicatorController.submitIndicator(.init(title: String(localized: "stalk_call_connect_failed",
+                                                                                                                  defaultValue: "Не удалось подключиться к звонку. Повторите попытку.")))
                                 self.actionsSubject.send(.dismiss)
                             case .disconnected:
                                 self.actionsSubject.send(.dismiss)
@@ -1555,6 +1559,16 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                     let memberships = content["memberships"] as? [[String: Any]] ?? []
                     stalkLog("Found call.member: type=\(type) state_key=\(sk) memberships=\(memberships.count)")
 
+                    // STMOB-330: уже снятое участие не трогаем. Сессия очищает свою запись
+                    // пустым {} раньше этого шага, и повторная запись поверх неё
+                    // ({"memberships":[]} в старом формате) выглядела для веба как ещё одно
+                    // событие участия. Активно участие в старом формате (непустой список)
+                    // или в новом (запись на устройство с device_id).
+                    guard !memberships.isEmpty || content["device_id"] != nil else {
+                        stalkLog("  → skipping (already left)")
+                        continue
+                    }
+
                     // Only clear events that have our user ID in the state key or have non-empty memberships for our user
                     if sk.contains(userID) || memberships.contains(where: { ($0["user_id"] as? String) == userID }) {
                         stateKeysToClean.append((eventType: type, stateKey: sk))
@@ -1588,7 +1602,12 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             request.httpMethod = "PUT"
             request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = "{\"memberships\":[]}".data(using: .utf8)
+            // STMOB-330: выход пишется в формате самой записи. Запись на устройство
+            // (state_key «_@user_device_m.call») снимается пустым {}, как это делает
+            // сессия; {"memberships":[]} — только для старого ключа по userID. Иначе
+            // веб видел старый формат поверх нового и считал участие живым.
+            let isPerDevice = item.stateKey.hasPrefix("_")
+            request.httpBody = (isPerDevice ? "{}" : "{\"memberships\":[]}").data(using: .utf8)
 
             stalkLog("REST PUT: \(urlString)")
             do {

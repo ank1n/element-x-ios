@@ -2075,6 +2075,7 @@
 "Яркость" = "Brightness";
 "Закрепить запрос с условиями" = "Pin query with filters";
 "stalk_call_invite_failed" = "Could not invite the participant. Try again.";
+"stalk_call_connect_failed" = "Could not connect to the call. Try again.";
 "stalk_search_failed_code" = "Search is temporarily unavailable (%lld). Try again.";
 "Смысловой поиск временно недоступен. Показаны результаты по словам." = "Semantic search is temporarily unavailable. Keyword results are shown.";
 "stalk_disk_link_unavailable" = "The document was deleted or you no longer have access.";

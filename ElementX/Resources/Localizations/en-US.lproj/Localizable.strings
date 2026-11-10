@@ -1706,6 +1706,7 @@
 "stalk_application_disabled" = "The application is disabled or its availability could not be checked at this time.";
 "stalk_application_availability_error" = "Could not check application availability. Try again.";
 "stalk_call_invite_failed" = "Could not invite the participant. Try again.";
+"stalk_call_connect_failed" = "Could not connect to the call. Try again.";
 "stalk_call_status_participants" = "%1$@ · %2$d of %3$d participants";
 "stalk_call_lower_hand" = "Lower hand";
 "stalk_call_stop_sharing" = "Stop sharing";

@@ -2090,6 +2090,7 @@
 "stalk_application_disabled" = "Приложение отключено или его доступность временно не удалось проверить.";
 "stalk_application_availability_error" = "Не удалось проверить доступность приложений. Повторите попытку.";
 "stalk_call_invite_failed" = "Не удалось позвать участника. Повторите попытку.";
+"stalk_call_connect_failed" = "Не удалось подключиться к звонку. Повторите попытку.";
 "stalk_call_status_participants" = "%1$@ · %2$d из %3$d участников";
 "stalk_call_lower_hand" = "Опустить руку";
 "stalk_call_stop_sharing" = "Остановить шаринг";

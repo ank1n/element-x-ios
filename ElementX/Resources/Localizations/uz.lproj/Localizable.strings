@@ -1727,6 +1727,7 @@
 "stalk_application_disabled" = "Ilova o‘chirilgan yoki hozir uning mavjudligini tekshirib bo‘lmadi.";
 "stalk_application_availability_error" = "Ilovalar mavjudligini tekshirib bo‘lmadi. Qayta urinib ko‘ring.";
 "stalk_call_invite_failed" = "Ishtirokchini taklif qilib bo‘lmadi. Qayta urinib ko‘ring.";
+"stalk_call_connect_failed" = "Qo‘ng‘iroqqa ulanib bo‘lmadi. Qayta urinib ko‘ring.";
 "stalk_call_status_participants" = "%1$@ · %3$d ishtirokchidan %2$d tasi";
 "stalk_call_lower_hand" = "Qo‘lni tushirish";
 "stalk_call_stop_sharing" = "Ulashishni to‘xtatish";

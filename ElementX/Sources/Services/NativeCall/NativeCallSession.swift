@@ -95,7 +95,11 @@ final class NativeCallSession: ObservableObject {
     private var participantKeys: [String: Bool] = [:]
     private var pendingParticipants: [String: RemoteParticipant] = [:]
     private var credentialsReceived = false
+    #if targetEnvironment(simulator)
+    private var qaForcedConnectFailures = 0
+    #endif
     private var hasSeenRemoteParticipant = false
+    private var allRemotesLeftCheck: Task<Void, Never>?
 
     // MARK: - Delayed Leave (STMOB-211)
 
@@ -479,7 +483,11 @@ final class NativeCallSession: ObservableObject {
                     }
                     self.startKeyGapWatchdogIfNeeded()
                     self.knownRemoteIdentities = currentIdentities
-                } else if self.hasSeenRemoteParticipant {
+                } else if self.hasSeenRemoteParticipant, self.sessionState == .connected {
+                    // STMOB-330: до connected «все ушли» не бывает. Неудачный connect
+                    // (SDK уже показал участников из JOIN) опустошает список при
+                    // cleanUp — без этого условия stop() приходил посреди повтора.
+                    //
                     // STMOB-262: пустой список — НЕ всегда «все ушли». Полный реконнект
                     // (наш ремонт доставки или последняя попытка лестницы SDK) делает
                     // cleanUp(isFullReconnect:), который шлёт participantDidDisconnect на
@@ -493,7 +501,14 @@ final class NativeCallSession: ObservableObject {
                         DiagLog.write("Call", "все участники исчезли, но идёт переподключение — звонок НЕ завершаю")
                     } else {
                         MXLog.info("sTalk NativeCall: All remote participants left after being connected — ending session")
-                        Task { [weak self] in await self?.confirmAllRemotesLeftAndStop() }
+                        // Пустой список приходит несколькими снимками подряд: без этой
+                        // проверки каждый заводил свою, и stop() звался до пяти раз.
+                        if self.allRemotesLeftCheck == nil {
+                            self.allRemotesLeftCheck = Task { [weak self] in
+                                await self?.confirmAllRemotesLeftAndStop()
+                                await MainActor.run { self?.allRemotesLeftCheck = nil }
+                            }
+                        }
                     }
                 }
             }
@@ -2253,11 +2268,9 @@ final class NativeCallSession: ObservableObject {
                 let ourIdentity = "\(userId):\(deviceId)"
                 setRawKeyInProvider(keyProvider, key: rawKey, participantId: ourIdentity, index: 0)
                 MXLog.info("sTalk NativeCall E2EE: Our key set for \(ourIdentity)")
-
-                try await liveKitRoomManager.connectWithE2EE(wsURL: url, token: token, keyProvider: keyProvider, speakerByDefault: false)
-            } else {
-                try await liveKitRoomManager.connect(wsURL: url, token: token, speakerByDefault: false)
             }
+
+            try await connectRoomRetryingOnce(url: url, token: token)
 
             sessionState = .connected
             roomManager = liveKitRoomManager
@@ -2295,6 +2308,43 @@ final class NativeCallSession: ObservableObject {
         } catch {
             MXLog.error("sTalk NativeCall: LiveKit connect failed: \(error)")
             sessionState = .failed(error)
+        }
+    }
+
+    private func connectRoom(url: String, token: String) async throws {
+        #if targetEnvironment(simulator)
+        // QA (STMOB-330): первые N попыток падают тайм-аутом. 1 — проверка повтора,
+        // 2 — проверка сообщения, когда не удался и повтор.
+        let qaFailures = ProcessInfo.processInfo.environment["STALK_QA_FAIL_CONNECTS"].flatMap(Int.init) ?? 0
+        if qaForcedConnectFailures < qaFailures {
+            qaForcedConnectFailures += 1
+            throw LiveKitError(.timedOut, message: "QA: forced connect timeout \(qaForcedConnectFailures)/\(qaFailures)")
+        }
+        #endif
+        if isEncrypted {
+            try await liveKitRoomManager.connectWithE2EE(wsURL: url, token: token, keyProvider: keyProvider, speakerByDefault: false)
+        } else {
+            try await liveKitRoomManager.connect(wsURL: url, token: token, speakerByDefault: false)
+        }
+    }
+
+    /// STMOB-330: одиночный сбой подключения к SFU повторяем один раз.
+    ///
+    /// Смоук 369 (11.11): ICE поднялся за 0,75 с, но рукопожатие транспорта
+    /// подписчика за 10 с не завершилось — SDK отдал «Timed out», и экран звонка
+    /// молча закрылся. Через минуту тот же Join подключился за 1,3 с: сбой разовый,
+    /// сеть и сервер в порядке. Токен ещё действует, ключ E2EE тот же, поэтому
+    /// повторяем тот же connect. Повторяем только тайм-аут и сетевую ошибку, и только
+    /// пока человек не положил трубку: stop() во время паузы ставит isLeavingCall.
+    private func connectRoomRetryingOnce(url: String, token: String) async throws {
+        do {
+            try await connectRoom(url: url, token: token)
+        } catch let error as LiveKitError where error.type == .timedOut || error.type == .network {
+            DiagLog.write("Call", "LiveKit connect не удался (\(error.type)) — повторяю один раз")
+            try? await Task.sleep(for: .seconds(1))
+            guard !isLeavingCall, sessionState == .connecting else { throw error }
+            try await connectRoom(url: url, token: token)
+            DiagLog.write("Call", "LiveKit connect: повтор удался")
         }
     }
 
