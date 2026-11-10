@@ -26,7 +26,7 @@ final class NativeCallSession: ObservableObject {
     /// По нему экран ловит отклонение собеседника; nil — вызова не было (вход в идущий).
     @Published private(set) var ringNotificationEventID: String?
     /// Сколько звонит вызов у собеседника (поле lifetime в rtc.notification).
-    static let ringLifetimeMs = 90000
+    static let ringLifetimeMs = 30000
     @Published private(set) var sessionState: NativeCallSessionState = .starting
     @Published private(set) var roomManager: LiveKitRoomManager?
 
