@@ -1335,6 +1335,16 @@ final class LiveKitRoomManager: ObservableObject {
             simulatorQARxMeters[index].last = (samples, energy)
             DiagLog.write("Call", "SimulatorQA rx \(reason) from=\(entry.label) samples=\(samples) energy=\(energy) window=\(windowSamples) windowRms=\(String(format: "%.4f", rms)) \(pattern)")
         }
+        // Плитки на экране = собеседники из displayParticipants + своя. По каждому — что пришло.
+        let tiles = displayParticipants.map { participant -> String in
+            let publications = participant.trackPublications.values.compactMap { $0 as? RemoteTrackPublication }
+            let camera = publications.first { $0.source == .camera }
+            let microphone = publications.first { $0.source == .microphone }
+            let cameraState = camera.map { "\($0.isSubscribed ? "sub" : "nosub")\($0.isMuted ? "/muted" : "")/\($0.dimensions.map { "\($0.width)x\($0.height)" } ?? "-")" } ?? "none"
+            let micState = microphone.map { "\($0.isSubscribed ? "sub" : "nosub")\($0.isMuted ? "/muted" : "")" } ?? "none"
+            return "\(participant.identity?.stringValue ?? "?")[cam=\(cameraState) mic=\(micState)]"
+        }
+        DiagLog.write("Call", "SimulatorQA tiles \(reason) remote=\(tiles.count) total=\(tiles.count + 1) \(tiles.joined(separator: " "))")
     }
 
     static let simulatorSyntheticMediaEnabled = ProcessInfo.processInfo.environment["STALK_QA_SYNTHETIC_MEDIA"] == "1"
