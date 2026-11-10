@@ -528,7 +528,10 @@ final class LiveKitRoomManager: ObservableObject {
         // в тишине) — меньше энкод/радио, на телефоне в сетке незаметно.
         let roomOptions = makeRoomOptions()
 
+        LiveKitDiagLogBridge.openConnectWindow()
+        DiagLog.write("CallPerf", "room.connect start")
         try await room.connect(url: baseURL, token: token, connectOptions: connectOptions, roomOptions: roomOptions)
+        DiagLog.write("CallPerf", "room.connect done")
         MXLog.info("sTalk LiveKit: Connected to room \(room.name ?? "unknown")")
         updateState()
     }
@@ -557,7 +560,10 @@ final class LiveKitRoomManager: ObservableObject {
         // STMOB-164: см. комментарий в connect() — adaptiveStream/dynacast + 720p/24/2Mbps/DTX для снижения нагрева.
         let roomOptions = makeRoomOptions(encryptionOptions: encryptionOptions)
 
+        LiveKitDiagLogBridge.openConnectWindow()
+        DiagLog.write("CallPerf", "room.connect start")
         try await room.connect(url: baseURL, token: token, connectOptions: connectOptions, roomOptions: roomOptions)
+        DiagLog.write("CallPerf", "room.connect done")
         MXLog.info("sTalk LiveKit: Connected with E2EE to room \(room.name ?? "unknown")")
 
         // STMOB-101: diagnose — Molly reports egress sees bondar's tracks без SFrame
@@ -2392,6 +2398,26 @@ struct LiveKitDiagLogBridge: LiveKit.Logger {
         return budgetCount <= budgetLimit
     }
 
+    /// STALK-1311: из чего складываются ~4 с подключения к LiveKit, видно только в
+    /// debug-строках SDK (сигнальный join, ICE обоих транспортов). Пропускаем их
+    /// через тот же белый список и бюджет, но лишь первые 15 с после старта
+    /// подключения и только на симуляторе: на телефоне лог от этого не растёт.
+    private nonisolated(unsafe) static var connectWindowUntil = Date.distantPast
+
+    static func openConnectWindow() {
+        #if targetEnvironment(simulator)
+        lock.lock()
+        connectWindowUntil = Date().addingTimeInterval(15)
+        lock.unlock()
+        #endif
+    }
+
+    private static func isConnectWindowOpen() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return Date() < connectWindowUntil
+    }
+
     private static let lock = NSLock()
     private nonisolated(unsafe) static var lastLine = ""
     private nonisolated(unsafe) static var lastAt = Date.distantPast
@@ -2418,7 +2444,7 @@ struct LiveKitDiagLogBridge: LiveKit.Logger {
         // материализовать сообщение у каждой debug-строки болтливого SDK — ровно та
         // трата, от которой гард и защищает. Сам текст отсеет белый список ниже.
         let isQualityNegotiation = "\(type)" == "RemoteTrackPublication"
-        guard level != LiveKit.LogLevel.debug || isQualityNegotiation, Self.allowBudget() else { return }
+        guard level != LiveKit.LogLevel.debug || isQualityNegotiation || Self.isConnectWindowOpen(), Self.allowBudget() else { return }
         let isProblem = level == LiveKit.LogLevel.error || level == LiveKit.LogLevel.warning
         let text = "\(message())"
         if !isProblem {
