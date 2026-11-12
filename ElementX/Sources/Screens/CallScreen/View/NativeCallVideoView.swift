@@ -511,7 +511,7 @@ private struct ActiveSpeakerMiniView: View {
                let track = screenPub.track as? VideoTrack {
                 let identity = remote.identity?.stringValue ?? ""
                 return SpeakerInfo(identity: identity,
-                                   name: String(format: NSLocalizedString("stalk_call_screen_share_name", tableName: "Localizable", value: "%@ — экран", comment: "Screen share tile name: <participant> — screen"), remote.name ?? "?"),
+                                   name: String(format: NSLocalizedString("stalk_call_screen_share_name", tableName: "Localizable", value: "%@ — экран", comment: "Screen share tile name: <participant> — screen"), resolveSpeakerName(for: remote, identity: identity)),
                                    videoTrack: track,
                                    avatarURL: nil)
             }
@@ -797,7 +797,10 @@ private struct GroupCallLayout: View {
                    identity == localID || identity.hasPrefix("\(localID):") || identity == "\(localID)-screen" {
                     continue
                 }
-                let name = participant.name ?? participant.identity?.stringValue ?? "?"
+                // Веб кладёт в LiveKit пустое имя (""), а не nil, поэтому прямое
+                // `participant.name ?? …` давало подпись «— экран» без имени. Имя
+                // берём так же, как у плитки камеры: из Matrix по identity.
+                let name = resolveDisplayName(for: participant, identity: identity)
                 items.append(ParticipantItem(id: "\(identity)-screen",
                                              videoTrack: track,
                                              displayName: String(format: NSLocalizedString("stalk_call_screen_share_name", tableName: "Localizable", value: "%@ — экран", comment: "Screen share tile name: <participant> — screen"), name),
