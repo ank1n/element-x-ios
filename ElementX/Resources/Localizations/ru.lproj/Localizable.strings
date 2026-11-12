@@ -2818,3 +2818,4 @@
 "stalk_auth_otp_prompt" = "Введите код из приложения-аутентификатора";
 "stalk_auth_otp_code" = "Одноразовый код";
 "stalk_auth_otp_retry" = "Код не принят. Проверьте код и попробуйте снова.";
+"stalk_call_mini_participants" = "Участников в звонке: %d";

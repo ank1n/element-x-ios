@@ -2934,3 +2934,4 @@
 "stalk_auth_otp_prompt" = "Enter the code from your authenticator app";
 "stalk_auth_otp_code" = "One-time code";
 "stalk_auth_otp_retry" = "Code not accepted. Check the code and try again.";
+"stalk_call_mini_participants" = "Participants in the call: %d";

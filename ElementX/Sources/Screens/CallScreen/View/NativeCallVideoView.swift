@@ -43,6 +43,107 @@ struct NativeCallVideoView: UIViewRepresentable {
     }
 }
 
+// MARK: - Zoomable screen share (STMOB-331 / STALK-1255)
+
+/// Демонстрация экрана с приближением, «как в Зуме»: щипок до 5×, сдвиг пальцем,
+/// двойной тап — приблизить к точке или вернуть 1×. Одиночный тап отдаётся наружу
+/// (onTap) только после того, как двойной не случился.
+/// Пока картинка не приближена, свой pan выключен: иначе вложенный UIScrollView
+/// съедает вертикальную прокрутку сетки, в которой лежит плитка.
+struct ZoomableCallVideoView: UIViewRepresentable {
+    let track: VideoTrack
+    var onTap: (() -> Void)?
+
+    static let maximumZoom: CGFloat = 5
+    static let doubleTapZoom: CGFloat = 2.5
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIView(context: Context) -> UIScrollView {
+        let scrollView = UIScrollView()
+        scrollView.minimumZoomScale = 1
+        scrollView.maximumZoomScale = Self.maximumZoom
+        scrollView.bouncesZoom = true
+        scrollView.showsHorizontalScrollIndicator = false
+        scrollView.showsVerticalScrollIndicator = false
+        scrollView.contentInsetAdjustmentBehavior = .never
+        scrollView.backgroundColor = .black
+        scrollView.delegate = context.coordinator
+        scrollView.panGestureRecognizer.isEnabled = false
+
+        let videoView = VideoView()
+        videoView.layoutMode = .fit
+        videoView.backgroundColor = .black
+        videoView.frame = scrollView.bounds
+        videoView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        scrollView.addSubview(videoView)
+        context.coordinator.videoView = videoView
+
+        let doubleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleDoubleTap(_:)))
+        doubleTap.numberOfTapsRequired = 2
+        scrollView.addGestureRecognizer(doubleTap)
+        let singleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleSingleTap(_:)))
+        singleTap.require(toFail: doubleTap)
+        scrollView.addGestureRecognizer(singleTap)
+        return scrollView
+    }
+
+    func updateUIView(_ scrollView: UIScrollView, context: Context) {
+        context.coordinator.onTap = onTap
+        let trackID = track.sid?.stringValue ?? track.name
+        // Новый трек (сменился демонстрирующий или демонстрация перезапущена) —
+        // начинаем с целой картинки, а не с чужого приближения.
+        if context.coordinator.trackID != trackID {
+            context.coordinator.trackID = trackID
+            scrollView.setZoomScale(1, animated: false)
+        }
+        context.coordinator.videoView?.track = track
+    }
+
+    final class Coordinator: NSObject, UIScrollViewDelegate {
+        weak var videoView: VideoView?
+        var trackID: String?
+        var onTap: (() -> Void)?
+
+        func viewForZooming(in scrollView: UIScrollView) -> UIView? {
+            videoView
+        }
+
+        func scrollViewDidZoom(_ scrollView: UIScrollView) {
+            scrollView.panGestureRecognizer.isEnabled = scrollView.zoomScale > 1.01
+        }
+
+        func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
+            scrollView.panGestureRecognizer.isEnabled = scale > 1.01
+            DiagLog.write("CallUI", "zoom демонстрации: \(String(format: "%.2f", scale))× pan=\(scrollView.panGestureRecognizer.isEnabled) content=\(scrollView.contentSize) bounds=\(scrollView.bounds.size)")
+        }
+
+        func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+            DiagLog.write("CallUI", "сдвиг демонстрации: offset=\(scrollView.contentOffset)")
+        }
+
+        @objc func handleDoubleTap(_ recognizer: UITapGestureRecognizer) {
+            guard let scrollView = recognizer.view as? UIScrollView else { return }
+            if scrollView.zoomScale > 1.01 {
+                scrollView.setZoomScale(1, animated: true)
+                return
+            }
+            let point = recognizer.location(in: videoView)
+            let scale = ZoomableCallVideoView.doubleTapZoom
+            let size = CGSize(width: scrollView.bounds.width / scale, height: scrollView.bounds.height / scale)
+            scrollView.zoom(to: CGRect(x: point.x - size.width / 2, y: point.y - size.height / 2,
+                                       width: size.width, height: size.height),
+                            animated: true)
+        }
+
+        @objc func handleSingleTap(_ recognizer: UITapGestureRecognizer) {
+            onTap?()
+        }
+    }
+}
+
 // MARK: - Native Call Grid View (1:1 and group layouts)
 
 /// sTalk: Displays native LiveKit video in either 1:1 spotlight or group grid/speaker layout.
@@ -185,9 +286,14 @@ private struct DirectCallLayout: View {
             ZStack {
                 // Remote video — fullscreen, contentMode по аспекту трека (зум-фикс 1:1)
                 if let remoteTrack = firstRemoteVideoTrack {
-                    AspectAwareRemoteVideoView(track: remoteTrack)
-                        .id(remoteTrack.sid?.stringValue ?? remoteTrack.name)
-                        .ignoresSafeArea()
+                    if isScreenShare(remoteTrack) {
+                        ZoomableCallVideoView(track: remoteTrack)
+                            .ignoresSafeArea()
+                    } else {
+                        AspectAwareRemoteVideoView(track: remoteTrack)
+                            .id(remoteTrack.sid?.stringValue ?? remoteTrack.name)
+                            .ignoresSafeArea()
+                    }
                 } else {
                     // No remote video — show placeholder with name/initials
                     remotePlaceholder
@@ -227,6 +333,12 @@ private struct DirectCallLayout: View {
             }
         }
         return nil
+    }
+
+    private func isScreenShare(_ track: VideoTrack) -> Bool {
+        roomManager.displayParticipants.contains { participant in
+            participant.videoTracks.contains { $0.isScreenShareTrack && $0.track === track }
+        }
     }
 
     private var remoteParticipant: RemoteParticipant? {
@@ -556,7 +668,13 @@ private struct GroupCallLayout: View {
     private func participantTile(_ item: ParticipantItem) -> some View {
         let identity = item.isScreenShare ? String(item.id.dropLast("-screen".count)) : item.id
         let participant = roomManager.displayParticipants.first { ($0.identity?.stringValue ?? $0.sid?.stringValue) == identity }
-        return ParticipantTile(item: item, mediaProvider: mediaProvider)
+        // STMOB-331: тап по чужой демонстрации разворачивает её режимом «Докладчик»
+        // (на весь экран, без полосы) — там уже можно приближать на всей площади.
+        var onTap: (() -> Void)?
+        if item.isScreenShare, !item.isLocal, let sid = participant?.sid?.stringValue, let onPin {
+            onTap = { onPin(sid, .presenter) }
+        }
+        return ParticipantTile(item: item, mediaProvider: mediaProvider, onTap: onTap)
             .modifier(CallParticipantMenu(sid: item.isLocal ? nil : participant?.sid?.stringValue,
                                           identity: item.isLocal ? nil : identity, participants: participants,
                                           pinnedSID: pinnedSID, onPin: onPin, onUnpin: onUnpin, onShowContact: onShowContact, showsPinnedIndicator: true))
@@ -846,6 +964,8 @@ private struct ParticipantItem: Identifiable {
 private struct ParticipantTile: View {
     let item: ParticipantItem
     let mediaProvider: MediaProviderProtocol?
+    /// STMOB-331: тап по чужой демонстрации — развернуть её на весь экран.
+    var onTap: (() -> Void)?
     // STMOB-218: в landscape (verticalSizeClass == .compact) видео рендерим в
     // .fit — .fill переобрезает портретный видеопоток в широкую плитку и даёт
     // «растягивание»/гигантский зум лица. .fit сохраняет нормальные пропорции.
@@ -856,9 +976,13 @@ private struct ParticipantTile: View {
             // Video or avatar placeholder
             if let track = item.videoTrack, !item.isVideoMuted {
                 let isLandscape = verticalSizeClass == .compact
-                NativeCallVideoView(track: track,
-                                    mirror: item.isLocal && !item.isScreenShare,
-                                    contentMode: (item.isScreenShare || isLandscape) ? .fit : .fill)
+                if item.isScreenShare, !item.isLocal {
+                    ZoomableCallVideoView(track: track, onTap: onTap)
+                } else {
+                    NativeCallVideoView(track: track,
+                                        mirror: item.isLocal && !item.isScreenShare,
+                                        contentMode: (item.isScreenShare || isLandscape) ? .fit : .fill)
+                }
             } else {
                 // Camera off — show user's avatar
                 Color(white: 0.1)
@@ -1028,7 +1152,11 @@ private struct SpeakerCallLayout: View {
         ZStack {
             Color.black
             if let track = focusedVideoTrack {
-                NativeCallVideoView(track: track, contentMode: .fit)
+                if focusedScreenShareOwner != nil {
+                    ZoomableCallVideoView(track: track)
+                } else {
+                    NativeCallVideoView(track: track, contentMode: .fit)
+                }
             } else {
                 placeholder
             }
@@ -1363,7 +1491,7 @@ private struct LandscapeScreenShareLayout: View {
 
                 // Шаринг на весь экран.
                 if let shareTrack = screenShareTrack {
-                    NativeCallVideoView(track: shareTrack, contentMode: .fit)
+                    ZoomableCallVideoView(track: shareTrack)
                         .ignoresSafeArea()
                 } else {
                     Color(white: 0.06).ignoresSafeArea()

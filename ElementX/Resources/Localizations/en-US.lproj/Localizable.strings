@@ -2434,3 +2434,4 @@
 "stalk_update_icon_lightbulb" = "Idea";
 
 "stalk_update_icon_star" = "Star";
+"stalk_call_mini_participants" = "Participants in the call: %d";
