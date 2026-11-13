@@ -2893,3 +2893,4 @@
 "stalk_meeting_phone_calendar" = "Встречи в календаре iPhone";
 "stalk_meeting_phone_footer" = "Напоминание у каждой встречи настраивается в её форме («Напоминание»). Календарь «sTalk» появится в приложении «Календарь», при выключении он удаляется.";
 "stalk_meeting_phone_calendar_denied" = "Нет доступа к календарю. Разрешите его: Настройки iPhone → Приложения → sTalk → Календари.";
+"stalk_call_mini_participants" = "Участников в звонке: %d";

@@ -2499,3 +2499,4 @@
 "stalk_meeting_phone_calendar" = "Uchrashuvlar iPhone taqvimida";
 "stalk_meeting_phone_footer" = "Har bir uchrashuv eslatmasi uning shaklida sozlanadi («Eslatma»). «sTalk» taqvimi «Taqvim» ilovasida paydo boʻladi va oʻchirilganda olib tashlanadi.";
 "stalk_meeting_phone_calendar_denied" = "Taqvimga ruxsat yoʻq. iPhone Sozlamalari → Ilovalar → sTalk → Taqvimlar boʻlimida ruxsat bering.";
+"stalk_call_mini_participants" = "Qo‘ng‘iroqdagi ishtirokchilar: %d";

@@ -3009,3 +3009,4 @@
 "stalk_meeting_phone_calendar" = "Meetings in iPhone Calendar";
 "stalk_meeting_phone_footer" = "Each meeting's reminder is set in its form (Reminder). A “sTalk” calendar appears in the Calendar app and is removed when you turn this off.";
 "stalk_meeting_phone_calendar_denied" = "No access to Calendar. Allow it in iPhone Settings → Apps → sTalk → Calendars.";
+"stalk_call_mini_participants" = "Participants in the call: %d";

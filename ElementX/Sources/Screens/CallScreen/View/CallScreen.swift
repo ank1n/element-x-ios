@@ -150,6 +150,35 @@ struct CallScreen: View {
                 .onTapGesture {
                     context.send(viewAction: .restoreFromMinimized)
                 }
+                .overlay(alignment: .topLeading) {
+                    // STMOB-332 (STALK-1260): во время своей демонстрации человек обычно уходит
+                    // из звонка в чат или на Диск, и звонок сворачивается в мини-окно, где виден
+                    // только говорящий. Показываем, сколько людей в звонке; тап по окну, как и
+                    // раньше, возвращает полный экран со всеми плитками.
+                    if context.viewState.isScreenSharing, !context.viewState.isDirect {
+                        HStack(spacing: 3) {
+                            if let roomManager = context.viewState.liveKitRoomManager {
+                                MiniCallParticipantAvatars(roomManager: roomManager,
+                                                           participants: context.viewState.participants,
+                                                           mediaProvider: context.viewState.mediaProvider)
+                            }
+                            Image(systemName: "person.2.fill")
+                                .font(.system(size: 10))
+                            Text("\(context.viewState.callParticipantsCount)")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Color.black.opacity(0.6))
+                        .clipShape(Capsule())
+                        .padding(6)
+                        .allowsHitTesting(false)
+                        .accessibilityLabel(String(format: NSLocalizedString("stalk_call_mini_participants", tableName: "Localizable",
+                                                                             value: "Участников в звонке: %d", comment: "Participant count in minimized call while sharing screen"),
+                                                   context.viewState.callParticipantsCount))
+                    }
+                }
 
             // Bottom control bar
             HStack(spacing: 10) {
@@ -589,6 +618,40 @@ private struct CallControlButton: View {
 /// can open the native audio-route menu (phone / speaker / AirPods / Bluetooth / wired)
 /// in BOTH native (LiveKit) and web call modes. The original picker lived inside
 /// `CallView`, which isn't rendered for native calls, so the long press did nothing there.
+/// STMOB-332: до трёх аватаров тех, кто сейчас в звонке, для мини-окна во время своей
+/// демонстрации. Берём участников LiveKit (кто реально подключён), имя и аватар — из
+/// Matrix; идентификатор веба `@user:server:DEVICE` сопоставляем по префиксу.
+private struct MiniCallParticipantAvatars: View {
+    @ObservedObject var roomManager: LiveKitRoomManager
+    let participants: [CallParticipantInfo]
+    let mediaProvider: MediaProviderProtocol?
+
+    var body: some View {
+        HStack(spacing: -5) {
+            ForEach(connected) { participant in
+                LoadableAvatarImage(url: participant.avatarURL,
+                                    name: participant.displayName,
+                                    contentID: participant.userID,
+                                    avatarSize: .custom(16),
+                                    mediaProvider: mediaProvider)
+                    .overlay(Circle().stroke(Color.black.opacity(0.6), lineWidth: 1))
+            }
+        }
+    }
+
+    private var connected: [CallParticipantInfo] {
+        var seen = Set<String>()
+        return roomManager.displayParticipants.compactMap { remote -> CallParticipantInfo? in
+            guard let identity = remote.identity?.stringValue,
+                  let match = participants.first(where: { $0.userID == identity || identity.hasPrefix($0.userID + ":") }),
+                  seen.insert(match.userID).inserted else { return nil }
+            return match
+        }
+        .prefix(3)
+        .map { $0 }
+    }
+}
+
 private struct CallRoutePickerView: UIViewRepresentable {
     let viewModelContext: CallScreenViewModel.Context
 
