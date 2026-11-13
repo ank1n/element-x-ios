@@ -104,4 +104,23 @@ final class SavedMessagesRoomTasksTests: XCTestCase {
         XCTAssertEqual(row["minutes_before"] as? Int, 60)
         XCTAssertNil(MeetingReminderChoice.custom.body, "настройку с веба не перезаписываем")
     }
+
+    func testEffectiveRemindersUseOverridesOrCalendarDefaults() {
+        let defaults: [String: Any] = ["timed_notifications": [["channel": "app", "minutes_before": 5]]]
+        XCTAssertEqual(MeetingEffectiveReminders.parse(["custom": false, "defaults": defaults])?.minutesBefore, [5])
+        XCTAssertEqual(MeetingEffectiveReminders.parse(["custom": true, "defaults": defaults,
+                                                        "overrides": ["timed_notifications": [["channel": "email", "minutes_before": 60],
+                                                                                              ["channel": "app", "minutes_before": 15],
+                                                                                              ["channel": "app", "minutes_before": 0]]]])?.minutesBefore, [0, 15],
+                       "письмо шлёт сервер, на телефоне — только app")
+        XCTAssertEqual(MeetingEffectiveReminders.parse(["custom": true, "defaults": defaults, "overrides": ["timed_notifications": []]])?.minutesBefore, [])
+        XCTAssertNil(MeetingEffectiveReminders.parse(["all_day": true, "custom": false]))
+    }
+
+    func testDraftTitleAndDescriptionFromSeveralMessages() {
+        let basis: [RoomTaskDraft.BasisMessage] = [.init(eventID: "$a", label: "A: one", line: "A (1): one\nmore", firstLine: "one"),
+                                                   .init(eventID: "$b", label: "B: two", line: "B (2): two", firstLine: "two")]
+        XCTAssertEqual(RoomTaskDraft.title(for: basis), "one")
+        XCTAssertEqual(RoomTaskDraft.description(for: basis), "A (1): one\nmore\nB (2): two")
+    }
 }

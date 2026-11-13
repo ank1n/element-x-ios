@@ -2999,3 +2999,13 @@
 "stalk_saved_removed" = "Removed from Saved messages";
 "stalk_saved_already" = "Already in Saved messages";
 "stalk_saved_remove_failed" = "Couldn't remove. Please try again a bit later.";
+"stalk_room_tasks_pick_messages" = "Choose messages";
+"stalk_room_tasks_pick_limit" = "Up to 20 messages";
+"stalk_meeting_reminder_notification_title" = "Reminder";
+"stalk_meeting_reminder_notification_now" = "The meeting is starting";
+"stalk_meeting_reminder_notification_at" = "Starts at %@";
+"stalk_meeting_phone_section" = "Meetings";
+"stalk_meeting_phone_reminders" = "Meeting reminders";
+"stalk_meeting_phone_calendar" = "Meetings in iPhone Calendar";
+"stalk_meeting_phone_footer" = "Each meeting's reminder is set in its form (Reminder). A “sTalk” calendar appears in the Calendar app and is removed when you turn this off.";
+"stalk_meeting_phone_calendar_denied" = "No access to Calendar. Allow it in iPhone Settings → Apps → sTalk → Calendars.";

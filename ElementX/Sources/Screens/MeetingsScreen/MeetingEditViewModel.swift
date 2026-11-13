@@ -198,6 +198,7 @@ class MeetingEditViewModel: MeetingEditViewModelType {
                     do {
                         try await service.saveReminder(state.bindings.reminder, meetingID: meeting.id)
                         state.initialReminder = state.bindings.reminder
+                        MeetingPhoneSync.shared.invalidate(meetingID: meeting.id)
                     } catch {
                         MXLog.error("sTalk: Save meeting reminder failed: \(error)")
                         // Встреча уже создана: повторное сохранение должно её изменить, а не создать вторую.

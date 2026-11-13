@@ -102,15 +102,33 @@ struct RoomTaskBasisMark: Hashable {
 struct RoomTaskDraft {
     struct BasisMessage: Hashable, Identifiable {
         let eventID: String
+        /// «Имя: текст» — строка в списке оснований.
         let label: String
+        /// «Имя (дата): текст» — строка описания, как на вебе.
+        var line = ""
+        /// Первая строка текста — название задачи по первому сообщению.
+        var firstLine = ""
         var id: String {
             eventID
         }
     }
 
+    /// Не больше 20 сообщений-оснований (ограничение сервера и веба).
+    static let basisLimit = 20
+
     var title = ""
     var description = ""
     var basis: [BasisMessage] = []
+    /// Соседние сообщения чата по порядку — из них можно добрать основания.
+    var candidates: [BasisMessage] = []
+
+    static func title(for basis: [BasisMessage]) -> String {
+        String((basis.first?.firstLine ?? "").prefix(80))
+    }
+
+    static func description(for basis: [BasisMessage]) -> String {
+        basis.map(\.line).joined(separator: "\n")
+    }
 }
 
 enum RoomTasksEntry {
@@ -249,6 +267,7 @@ final class RoomTasksModel: ObservableObject {
         var status: RoomTask.Status = .new
         var projectID: String?
         var basis: [RoomTaskDraft.BasisMessage] = []
+        var candidates: [RoomTaskDraft.BasisMessage] = []
         var allowUnencrypted = false
         let requestID = UUID().uuidString.lowercased()
         /// Срок при открытии редактора: отправляем срок, только если пользователь его изменил.
@@ -387,7 +406,21 @@ final class RoomTasksModel: ObservableObject {
 
     func startCreate(_ draft: RoomTaskDraft = .init()) {
         editorError = nil
-        editor = .init(mode: .create, title: draft.title, description: draft.description, basis: draft.basis)
+        var editor = Editor(mode: .create, title: draft.title, description: draft.description, basis: draft.basis)
+        editor.candidates = draft.candidates
+        self.editor = editor
+    }
+
+    /// Новый набор оснований (в порядке чата). Название и описание пересобираются,
+    /// только если человек их ещё не правил.
+    func setBasis(_ ids: Set<String>) {
+        guard var editor else { return }
+        let pool = editor.candidates.isEmpty ? editor.basis : editor.candidates
+        let basis = Array(pool.filter { ids.contains($0.eventID) }.prefix(RoomTaskDraft.basisLimit))
+        if editor.title == RoomTaskDraft.title(for: editor.basis) { editor.title = RoomTaskDraft.title(for: basis) }
+        if editor.description == RoomTaskDraft.description(for: editor.basis) { editor.description = RoomTaskDraft.description(for: basis) }
+        editor.basis = basis
+        self.editor = editor
     }
 
     func startEdit(_ task: RoomTask) {
@@ -560,6 +593,7 @@ private struct RoomTaskRow: View {
 private struct RoomTaskEditorView: View {
     @ObservedObject var model: RoomTasksModel
     @Environment(\.openURL) private var openURL
+    @State private var showsMessagePicker = false
 
     private var editor: Binding<RoomTasksModel.Editor> {
         Binding { model.editor ?? .init(mode: .create) } set: { value in
@@ -658,6 +692,12 @@ private struct RoomTaskEditorView: View {
                     Section { Text(error).foregroundStyle(.red) }
                 }
             }
+            // Шторка выбора — на уровне окна: вложенная в секцию формы закрывала само окно задачи.
+            .sheet(isPresented: $showsMessagePicker) {
+                if let editor = model.editor {
+                    RoomTaskMessagePicker(candidates: editor.candidates, selected: Set(editor.basis.map(\.eventID))) { model.setBasis($0) }
+                }
+            }
             .navigationTitle(model.editor?.isCreate == true ? SL10n.roomTasksNew : SL10n.roomTasksEditTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -678,12 +718,18 @@ private struct RoomTaskEditorView: View {
 
     @ViewBuilder
     private var basisSection: some View {
-        if let editor = model.editor, editor.isCreate, !editor.basis.isEmpty {
+        if let editor = model.editor, editor.isCreate, !editor.basis.isEmpty || editor.candidates.count > 1 {
             Section(String(format: SL10n.roomTasksBasis, editor.basis.count)) {
                 ForEach(editor.basis) { item in
                     Text(item.label).lineLimit(3).font(.callout)
                 }
-                .onDelete { model.editor?.basis.remove(atOffsets: $0) }
+                .onDelete { offsets in
+                    let removed = Set(offsets.map { editor.basis[$0].eventID })
+                    model.setBasis(Set(editor.basis.map(\.eventID)).subtracting(removed))
+                }
+                if editor.candidates.count > 1 {
+                    Button { showsMessagePicker = true } label: { Label(SL10n.roomTasksPickMessages, systemImage: "checklist") }
+                }
             }
         } else if let task, !task.basis.isEmpty {
             Section(String(format: SL10n.roomTasksBasis, task.basis.count)) {
@@ -696,6 +742,46 @@ private struct RoomTaskEditorView: View {
                             Text(item.quote ?? SL10n.savedMessagesOpenSource).lineLimit(3).font(.callout)
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+/// Выбор нескольких сообщений-оснований (на вебе — режим выбора в ленте).
+private struct RoomTaskMessagePicker: View {
+    let candidates: [RoomTaskDraft.BasisMessage]
+    @State var selected: Set<String>
+    let done: (Set<String>) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List(candidates) { item in
+                let isOn = selected.contains(item.eventID)
+                Button {
+                    if isOn { selected.remove(item.eventID) } else if selected.count < RoomTaskDraft.basisLimit { selected.insert(item.eventID) }
+                } label: {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(isOn ? Color.accentColor : Color.secondary)
+                        Text(item.line).lineLimit(4).font(.callout).foregroundStyle(.primary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .listRowBackground(isOn ? Color.accentColor.opacity(0.08) : nil)
+            }
+            .navigationTitle(String(format: SL10n.roomTasksSelected, selected.count))
+            .navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .bottom) {
+                if selected.count >= RoomTaskDraft.basisLimit {
+                    Text(SL10n.roomTasksPickLimit).font(.footnote).foregroundStyle(.secondary).padding(8)
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button(L10n.actionCancel) { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(L10n.actionDone) { done(selected); dismiss() }.disabled(selected.isEmpty)
                 }
             }
         }

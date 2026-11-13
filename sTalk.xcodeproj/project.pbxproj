@@ -23,6 +23,7 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
+		5D589BF9FC2EE6286DC3F3DE /* MeetingPhoneSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20ED9CADBA7C94AB86FFDFF /* MeetingPhoneSync.swift */; };
 		8D2AD84A924CDAC494264C16 /* SavedMessagesRoomTasksTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42B57CFBB60F289DDDD076CD /* SavedMessagesRoomTasksTests.swift */; };
 		F7334444C544EAECDFC68907 /* RoomTasks.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60A5D513699DDBED861D247 /* RoomTasks.swift */; };
 		10F22AFA9633A016C02115B5 /* StalkSavedMessages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 233C30DBF31DCA834FC2D355 /* StalkSavedMessages.swift */; };
@@ -1760,6 +1761,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		F20ED9CADBA7C94AB86FFDFF /* MeetingPhoneSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingPhoneSync.swift; sourceTree = "<group>"; };
 		42B57CFBB60F289DDDD076CD /* SavedMessagesRoomTasksTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedMessagesRoomTasksTests.swift; sourceTree = "<group>"; };
 		A60A5D513699DDBED861D247 /* RoomTasks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomTasks.swift; sourceTree = "<group>"; };
 		233C30DBF31DCA834FC2D355 /* StalkSavedMessages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StalkSavedMessages.swift; sourceTree = "<group>"; };
@@ -7639,6 +7641,7 @@
 				E8E38360A841AE32C76A28B7 /* MeetingsService.swift */,
 				D53853F697728A78435A0D44 /* MeetingVenue.swift */,
 				4A7A39DE0F3D7D056B1F6417 /* MeetingVenueReminder.swift */,
+				F20ED9CADBA7C94AB86FFDFF /* MeetingPhoneSync.swift */,
 				DDF8080BE5E0BD5F337D4C68 /* StalkMeetingLink.swift */,
 			);
 			path = Meetings;
@@ -9211,6 +9214,7 @@
 				0D2EF66C4C82A1C99AEA4EDD /* MeetingVenuePhoto.swift in Sources */,
 				3AC9FF9AE75C0FD701D34567 /* MeetingVenuePickerView.swift in Sources */,
 				5CBF9339A2FA57BF2D252F85 /* MeetingVenueReminder.swift in Sources */,
+				5D589BF9FC2EE6286DC3F3DE /* MeetingPhoneSync.swift in Sources */,
 				9D53E9B5C3B445312F11FD7B /* MeetingsListScreen.swift in Sources */,
 				C190A543AD3351FB513AA608 /* MeetingsScreenCoordinator.swift in Sources */,
 				39922E2F364F22F74D79F86A /* MeetingsScreenModels.swift in Sources */,

@@ -3,3 +3,4 @@
 "NSLocationWhenInUseUsageDescription" = "Grant location access so that sTalk can share your location.";
 "NSMicrophoneUsageDescription" = "To record and send messages with audio, sTalk needs to access the microphone.";
 "NSPhotoLibraryUsageDescription" = "This lets you save images and videos to your photo library.";
+"NSCalendarsFullAccessUsageDescription" = "sTalk adds your meetings to a separate calendar on this iPhone when you turn this on in settings.";

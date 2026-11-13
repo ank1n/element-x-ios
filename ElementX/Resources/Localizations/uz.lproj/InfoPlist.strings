@@ -3,3 +3,4 @@
 "NSLocationWhenInUseUsageDescription" = "sTalk joylashuvingizni ulashishi uchun joylashuv axborotiga ruxsat bering.";
 "NSMicrophoneUsageDescription" = "Audio xabarlarni yozib olish va yuborish uchun sTalk mikrofondan foydalanishga ruxsat olishi kerak.";
 "NSPhotoLibraryUsageDescription" = "Bu sizga rasm va videolarni fotosuratlar kutubxonangizga saqlash imkonini beradi.";
+"NSCalendarsFullAccessUsageDescription" = "sTalk sozlamalarda yoqilsa, uchrashuvlaringizni ushbu iPhone'dagi alohida taqvimga qoʻshadi.";

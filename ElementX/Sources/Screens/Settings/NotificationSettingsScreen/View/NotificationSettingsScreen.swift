@@ -37,6 +37,8 @@ struct NotificationSettingsScreen: View {
                     if context.viewState.settings?.invitationsEnabled != nil {
                         additionalSettingsSection
                     }
+
+                    MeetingPhoneSettingsSection()
                 }
             }
         }

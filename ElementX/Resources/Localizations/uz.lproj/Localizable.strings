@@ -2489,3 +2489,13 @@
 "stalk_saved_removed" = "Saqlanganlardan olib tashlandi";
 "stalk_saved_already" = "Allaqachon «Saqlanganlar»da";
 "stalk_saved_remove_failed" = "Olib tashlab boʻlmadi. Birozdan soʻng qayta urinib koʻring.";
+"stalk_room_tasks_pick_messages" = "Xabarlarni tanlash";
+"stalk_room_tasks_pick_limit" = "Koʻpi bilan 20 ta xabar";
+"stalk_meeting_reminder_notification_title" = "Eslatma";
+"stalk_meeting_reminder_notification_now" = "Uchrashuv boshlanmoqda";
+"stalk_meeting_reminder_notification_at" = "Boshlanishi %@ da";
+"stalk_meeting_phone_section" = "Uchrashuvlar";
+"stalk_meeting_phone_reminders" = "Uchrashuv eslatmalari";
+"stalk_meeting_phone_calendar" = "Uchrashuvlar iPhone taqvimida";
+"stalk_meeting_phone_footer" = "Har bir uchrashuv eslatmasi uning shaklida sozlanadi («Eslatma»). «sTalk» taqvimi «Taqvim» ilovasida paydo boʻladi va oʻchirilganda olib tashlanadi.";
+"stalk_meeting_phone_calendar_denied" = "Taqvimga ruxsat yoʻq. iPhone Sozlamalari → Ilovalar → sTalk → Taqvimlar boʻlimida ruxsat bering.";

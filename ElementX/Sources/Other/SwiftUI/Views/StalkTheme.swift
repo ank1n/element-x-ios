@@ -471,6 +471,8 @@ enum SL10n {
     static let roomTasksForbidden = NSLocalizedString("stalk_room_tasks_forbidden", tableName: "Localizable", value: "Изменять задачу может её автор или администратор комнаты", comment: "Only the task's author or a room admin can change it")
     static let roomTasksConflict = NSLocalizedString("stalk_room_tasks_conflict", tableName: "Localizable", value: "Задачу уже изменили. Список обновлён, попробуйте ещё раз.", comment: "The task was changed by someone else. The list was refreshed, please try again.")
     static let roomTasksShowCompleted = NSLocalizedString("stalk_room_tasks_show_completed", tableName: "Localizable", value: "Показывать завершённые", comment: "Show completed")
+    static let roomTasksPickMessages = NSLocalizedString("stalk_room_tasks_pick_messages", tableName: "Localizable", value: "Выбрать сообщения", comment: "Choose messages")
+    static let roomTasksPickLimit = NSLocalizedString("stalk_room_tasks_pick_limit", tableName: "Localizable", value: "Не больше 20 сообщений", comment: "Up to 20 messages")
 
     // MARK: - Meeting reminder (SMAIL-46, STMOB-333)
 
@@ -488,6 +490,14 @@ enum SL10n {
     static let meetingReminder1w = NSLocalizedString("stalk_meeting_reminder_1w", tableName: "Localizable", value: "За 1 неделю", comment: "1 week before")
     static let meetingReminderCustom = NSLocalizedString("stalk_meeting_reminder_custom", tableName: "Localizable", value: "Настроено в веб-версии", comment: "Set up on the web")
     static let meetingReminderSaveFailed = NSLocalizedString("stalk_meeting_reminder_save_failed", tableName: "Localizable", value: "Встреча сохранена, но напоминание сохранить не удалось. Повторите сохранение.", comment: "The meeting was saved, but the reminder wasn't. Please save again.")
+    static let meetingReminderNotificationTitle = NSLocalizedString("stalk_meeting_reminder_notification_title", tableName: "Localizable", value: "Напоминание", comment: "Reminder")
+    static let meetingReminderNotificationNow = NSLocalizedString("stalk_meeting_reminder_notification_now", tableName: "Localizable", value: "Встреча начинается", comment: "The meeting is starting")
+    static let meetingReminderNotificationAt = NSLocalizedString("stalk_meeting_reminder_notification_at", tableName: "Localizable", value: "Начало в %@", comment: "Starts at %@")
+    static let meetingPhoneSection = NSLocalizedString("stalk_meeting_phone_section", tableName: "Localizable", value: "Встречи", comment: "Meetings")
+    static let meetingPhoneReminders = NSLocalizedString("stalk_meeting_phone_reminders", tableName: "Localizable", value: "Напоминания о встречах", comment: "Meeting reminders")
+    static let meetingPhoneCalendar = NSLocalizedString("stalk_meeting_phone_calendar", tableName: "Localizable", value: "Встречи в календаре iPhone", comment: "Meetings in iPhone Calendar")
+    static let meetingPhoneFooter = NSLocalizedString("stalk_meeting_phone_footer", tableName: "Localizable", value: "Напоминание у каждой встречи настраивается в её форме («Напоминание»). Календарь «sTalk» появится в приложении «Календарь», при выключении он удаляется.", comment: "Each meeting's reminder is set in its form (Reminder). A sTalk calendar appears in the Calendar app and is removed when you turn this off.")
+    static let meetingPhoneCalendarDenied = NSLocalizedString("stalk_meeting_phone_calendar_denied", tableName: "Localizable", value: "Нет доступа к календарю. Разрешите его: Настройки iPhone → Приложения → sTalk → Календари.", comment: "No access to Calendar. Allow it in iPhone Settings → Apps → sTalk → Calendars.")
 
     // MARK: - User Status
 

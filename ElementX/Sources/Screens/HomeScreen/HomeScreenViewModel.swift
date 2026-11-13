@@ -441,6 +441,10 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in self?.updateRooms() }
             .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: .stalkMeetingPhoneSettingsChanged)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refreshMeetingRoomIDs() }
+            .store(in: &cancellables)
     }
 
     private func refreshMeetingRoomIDs() {
@@ -457,6 +461,8 @@ class HomeScreenViewModel: HomeScreenViewModelType, HomeScreenViewModelProtocol 
             do {
                 let meetings = try await meetingsService.fetchMeetingsList()
                 await notificationManager.scheduleVenueReminders(meetings: meetings, userID: userSession.clientProxy.userID)
+                // STMOB-333: напоминания о встречах и календарь iPhone — по настройкам «Встречи».
+                await MeetingPhoneSync.shared.sync(meetings: meetings, userID: userSession.clientProxy.userID, service: meetingsService)
                 // matrix_room_id is null for meetings whose room hasn't been created yet (lazy on
                 // first join) — skip those, there's nothing to hide.
                 let ids = Set(meetings.compactMap(\.matrixRoomId).filter { !$0.isEmpty })

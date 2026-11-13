@@ -3,3 +3,4 @@
 "NSLocationWhenInUseUsageDescription" = "sTalk необходимо предоставить разрешения для отправки местоположения.";
 "NSMicrophoneUsageDescription" = "Для отправки аудиосообщений sTalk необходимо предоставить доступ к микрофону.";
 "NSPhotoLibraryUsageDescription" = "Это позволяет сохранять изображения и видео в библиотеку фотографий.";
+"NSCalendarsFullAccessUsageDescription" = "sTalk добавляет ваши встречи в отдельный календарь на этом iPhone, если включить это в настройках.";

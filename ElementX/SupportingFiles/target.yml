@@ -105,6 +105,7 @@ targets:
           INStartAudioCallIntent,
           INStartVideoCallIntent,
         ]
+        NSCalendarsFullAccessUsageDescription: $(APP_DISPLAY_NAME) adds your meetings to a separate calendar on this iPhone when you turn this on in settings.
         NSCameraUsageDescription: To take pictures or videos and send them as a message $(APP_DISPLAY_NAME) needs access to the camera.
         NSMicrophoneUsageDescription: To record and send messages with audio, $(APP_DISPLAY_NAME) needs to access the microphone.
         NSPhotoLibraryAddUsageDescription: This lets you save images and videos to your photo library.

@@ -1094,16 +1094,25 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
         }
     }
 
-    /// Черновик как на вебе: название — первая строка (до 80 символов), описание — «Имя (дата): текст».
+    /// Черновик как на вебе: название — первая строка (до 80 символов), описание — «Имя (дата): текст»
+    /// по каждому сообщению. Соседние сообщения ленты можно добавить в основание прямо в окне задачи.
     private func startRoomTask(from itemID: TimelineItemIdentifier) {
-        guard let eventID = itemID.eventID,
-              let item = timelineController.timelineItems.first(where: { $0.id == itemID }) as? EventBasedTimelineItemProtocol else { return }
-        let name = item.sender.displayName ?? item.sender.id
-        let text = item.body.trimmingCharacters(in: .whitespacesAndNewlines)
-        let firstLine = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
-        let date = item.timestamp.formatted(date: .abbreviated, time: .shortened)
-        let draft = RoomTaskDraft(title: String(firstLine.prefix(80)), description: "\(name) (\(date)): \(text)",
-                                  basis: [.init(eventID: eventID, label: "\(name): \(text)")])
+        let items = timelineController.timelineItems.compactMap { $0 as? EventBasedTimelineItemProtocol }.filter { item in
+            item.id.eventID != nil && !item.isRedacted && (item is TextRoomTimelineItem || item is NoticeRoomTimelineItem
+                || item is EmoteRoomTimelineItem || item is FileRoomTimelineItem || item is ImageRoomTimelineItem)
+        }
+        guard let index = items.firstIndex(where: { $0.id == itemID }) else { return }
+        let window = items[max(0, index - 30)...min(items.count - 1, index + 10)]
+        let candidates = window.map { item -> RoomTaskDraft.BasisMessage in
+            let name = item.sender.displayName ?? item.sender.id
+            let text = item.body.trimmingCharacters(in: .whitespacesAndNewlines)
+            let date = item.timestamp.formatted(date: .abbreviated, time: .shortened)
+            return .init(eventID: item.id.eventID ?? "", label: "\(name): \(text)", line: "\(name) (\(date)): \(text)",
+                         firstLine: text.split(whereSeparator: \.isNewline).first.map(String.init) ?? "")
+        }
+        let basis = candidates.filter { $0.eventID == itemID.eventID }
+        let draft = RoomTaskDraft(title: RoomTaskDraft.title(for: basis), description: RoomTaskDraft.description(for: basis),
+                                  basis: basis, candidates: candidates)
         actionsSubject.send(.displayRoomTasks(.create(draft)))
     }
 

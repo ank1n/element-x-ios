@@ -70,6 +70,8 @@
 	</array>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<false/>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>$(APP_DISPLAY_NAME) adds your meetings to a separate calendar on this iPhone when you turn this on in settings.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>To take pictures or videos and send them as a message $(APP_DISPLAY_NAME) needs access to the camera.</string>
 	<key>NSFaceIDUsageDescription</key>

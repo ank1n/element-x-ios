@@ -806,10 +806,14 @@ extension MeetingsService {
         "/api/meetings/calendar/native/reminders/meeting/\(meetingID)"
     }
 
-    func fetchReminder(meetingID: Int) async throws -> MeetingReminderChoice? {
+    func fetchReminderState(meetingID: Int) async throws -> [String: Any] {
         let data = try await apiRequest("GET", path: reminderPath(meetingID))
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw URLError(.cannotParseResponse) }
-        return MeetingReminderChoice.parse(json)
+        return json
+    }
+
+    func fetchReminder(meetingID: Int) async throws -> MeetingReminderChoice? {
+        try await MeetingReminderChoice.parse(fetchReminderState(meetingID: meetingID))
     }
 
     func saveReminder(_ choice: MeetingReminderChoice, meetingID: Int) async throws {

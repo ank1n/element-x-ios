@@ -2883,3 +2883,13 @@
 "stalk_saved_removed" = "Убрано из сохранённых";
 "stalk_saved_already" = "Уже в «Сохранённых»";
 "stalk_saved_remove_failed" = "Не удалось убрать. Попробуйте ещё раз немного позже.";
+"stalk_room_tasks_pick_messages" = "Выбрать сообщения";
+"stalk_room_tasks_pick_limit" = "Не больше 20 сообщений";
+"stalk_meeting_reminder_notification_title" = "Напоминание";
+"stalk_meeting_reminder_notification_now" = "Встреча начинается";
+"stalk_meeting_reminder_notification_at" = "Начало в %@";
+"stalk_meeting_phone_section" = "Встречи";
+"stalk_meeting_phone_reminders" = "Напоминания о встречах";
+"stalk_meeting_phone_calendar" = "Встречи в календаре iPhone";
+"stalk_meeting_phone_footer" = "Напоминание у каждой встречи настраивается в её форме («Напоминание»). Календарь «sTalk» появится в приложении «Календарь», при выключении он удаляется.";
+"stalk_meeting_phone_calendar_denied" = "Нет доступа к календарю. Разрешите его: Настройки iPhone → Приложения → sTalk → Календари.";
