@@ -48,6 +48,12 @@ class MeetingEditViewModel: MeetingEditViewModelType {
         let initialState = MeetingEditViewState(meetingId: meeting?.id, bindings: bindings)
         super.init(initialViewState: initialState, mediaProvider: mediaProvider)
 
+        if let meeting {
+            Task { [weak self] in await self?.loadReminder(meetingID: meeting.id) }
+        } else {
+            state.reminderAvailable = true
+        }
+
         searchQuerySubject
             .debounceTextQueriesAndRemoveDuplicates()
             .sink { [weak self] query in
@@ -101,6 +107,14 @@ class MeetingEditViewModel: MeetingEditViewModelType {
             }
             state.isSearching = false
         }
+    }
+
+    private func loadReminder(meetingID: Int) async {
+        // Не прочитали или встреча на весь день — блок не показываем и настройку не трогаем.
+        guard let choice = try? await service.fetchReminder(meetingID: meetingID) else { return }
+        state.initialReminder = choice
+        state.bindings.reminder = choice
+        state.reminderAvailable = true
     }
 
     private var venueRevision = 0
@@ -178,6 +192,20 @@ class MeetingEditViewModel: MeetingEditViewModelType {
                 } else {
                     meeting = try await service.createMeeting(request)
                     MXLog.info("sTalk: Created meeting \(meeting.id)")
+                }
+                // Напоминание — отдельный запрос после сохранения встречи, как на вебе.
+                if state.reminderAvailable, state.bindings.reminder != state.initialReminder {
+                    do {
+                        try await service.saveReminder(state.bindings.reminder, meetingID: meeting.id)
+                        state.initialReminder = state.bindings.reminder
+                    } catch {
+                        MXLog.error("sTalk: Save meeting reminder failed: \(error)")
+                        // Встреча уже создана: повторное сохранение должно её изменить, а не создать вторую.
+                        state.meetingId = meeting.id
+                        state.errorMessage = SL10n.meetingReminderSaveFailed
+                        state.isLoading = false
+                        return
+                    }
                 }
                 actionsSubject.send(.saved(meeting))
             } catch {

@@ -82,4 +82,26 @@ final class SavedMessagesRoomTasksTests: XCTestCase {
         let date = try XCTUnwrap(RoomTasksAPI.dayFormatter.date(from: "2026-12-31"))
         XCTAssertEqual(RoomTasksAPI.dayFormatter.string(from: date), "2026-12-31")
     }
+
+    // MARK: - Напоминание о встрече (SMAIL-46)
+
+    func testMeetingReminderParsesWebStates() {
+        XCTAssertEqual(MeetingReminderChoice.parse(["custom": false, "all_day": false]), .calendar)
+        XCTAssertEqual(MeetingReminderChoice.parse(["custom": true, "overrides": ["timed_notifications": []]]), MeetingReminderChoice.none)
+        XCTAssertEqual(MeetingReminderChoice.parse(["custom": true, "overrides": ["timed_notifications": [["channel": "app", "minutes_before": 15]]]]), .minutes(15))
+        XCTAssertEqual(MeetingReminderChoice.parse(["custom": true, "overrides": ["timed_notifications": [["channel": "email", "minutes_before": 15]]]]), .custom)
+        XCTAssertEqual(MeetingReminderChoice.parse(["custom": true, "overrides": ["timed_notifications": [["channel": "app", "minutes_before": 15],
+                                                                                                          ["channel": "app", "minutes_before": 60]]]]), .custom)
+        XCTAssertEqual(MeetingReminderChoice.parse(["custom": true, "overrides": ["timed_notifications": [["channel": "app", "minutes_before": 7]]]]), .custom)
+        XCTAssertNil(MeetingReminderChoice.parse(["custom": false, "all_day": true]), "весь день — вариантов на iOS нет")
+    }
+
+    func testMeetingReminderBodiesMatchWeb() throws {
+        XCTAssertEqual(MeetingReminderChoice.calendar.body?["reset"] as? Bool, true)
+        XCTAssertEqual((MeetingReminderChoice.none.body?["timed_notifications"] as? [Any])?.count, 0)
+        let row = try XCTUnwrap((MeetingReminderChoice.minutes(60).body?["timed_notifications"] as? [[String: Any]])?.first)
+        XCTAssertEqual(row["channel"] as? String, "app")
+        XCTAssertEqual(row["minutes_before"] as? Int, 60)
+        XCTAssertNil(MeetingReminderChoice.custom.body, "настройку с веба не перезаписываем")
+    }
 }

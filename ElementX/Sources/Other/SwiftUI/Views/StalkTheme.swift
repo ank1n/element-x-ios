@@ -468,6 +468,23 @@ enum SL10n {
     static let roomTasksConflict = NSLocalizedString("stalk_room_tasks_conflict", tableName: "Localizable", value: "Задачу уже изменили. Список обновлён, попробуйте ещё раз.", comment: "The task was changed by someone else. The list was refreshed, please try again.")
     static let roomTasksShowCompleted = NSLocalizedString("stalk_room_tasks_show_completed", tableName: "Localizable", value: "Показывать завершённые", comment: "Show completed")
 
+    // MARK: - Meeting reminder (SMAIL-46, STMOB-333)
+
+    static let meetingReminderTitle = NSLocalizedString("stalk_meeting_reminder_title", tableName: "Localizable", value: "Напоминание", comment: "Reminder")
+    static let meetingReminderCalendar = NSLocalizedString("stalk_meeting_reminder_calendar", tableName: "Localizable", value: "Как в календаре", comment: "As in calendar")
+    static let meetingReminderNone = NSLocalizedString("stalk_meeting_reminder_none", tableName: "Localizable", value: "Не напоминать", comment: "Don't remind")
+    static let meetingReminderAtStart = NSLocalizedString("stalk_meeting_reminder_at_start", tableName: "Localizable", value: "В момент начала", comment: "At start time")
+    static let meetingReminder5m = NSLocalizedString("stalk_meeting_reminder_5m", tableName: "Localizable", value: "За 5 минут", comment: "5 minutes before")
+    static let meetingReminder15m = NSLocalizedString("stalk_meeting_reminder_15m", tableName: "Localizable", value: "За 15 минут", comment: "15 minutes before")
+    static let meetingReminder30m = NSLocalizedString("stalk_meeting_reminder_30m", tableName: "Localizable", value: "За 30 минут", comment: "30 minutes before")
+    static let meetingReminder1h = NSLocalizedString("stalk_meeting_reminder_1h", tableName: "Localizable", value: "За 1 час", comment: "1 hour before")
+    static let meetingReminder2h = NSLocalizedString("stalk_meeting_reminder_2h", tableName: "Localizable", value: "За 2 часа", comment: "2 hours before")
+    static let meetingReminder12h = NSLocalizedString("stalk_meeting_reminder_12h", tableName: "Localizable", value: "За 12 часов", comment: "12 hours before")
+    static let meetingReminder1d = NSLocalizedString("stalk_meeting_reminder_1d", tableName: "Localizable", value: "За 1 день", comment: "1 day before")
+    static let meetingReminder1w = NSLocalizedString("stalk_meeting_reminder_1w", tableName: "Localizable", value: "За 1 неделю", comment: "1 week before")
+    static let meetingReminderCustom = NSLocalizedString("stalk_meeting_reminder_custom", tableName: "Localizable", value: "Настроено в веб-версии", comment: "Set up on the web")
+    static let meetingReminderSaveFailed = NSLocalizedString("stalk_meeting_reminder_save_failed", tableName: "Localizable", value: "Встреча сохранена, но напоминание сохранить не удалось. Повторите сохранение.", comment: "The meeting was saved, but the reminder wasn't. Please save again.")
+
     // MARK: - User Status
 
     static let statusTitle = NSLocalizedString("stalk_status_title", tableName: "Localizable", value: "Статус", comment: "Status section")

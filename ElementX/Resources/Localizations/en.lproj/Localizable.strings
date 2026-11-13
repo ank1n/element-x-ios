@@ -2981,3 +2981,17 @@
 "stalk_room_tasks_forbidden" = "Only the task's author or a room admin can change it";
 "stalk_room_tasks_conflict" = "The task was changed by someone else. The list was refreshed, please try again.";
 "stalk_room_tasks_show_completed" = "Show completed";
+"stalk_meeting_reminder_title" = "Reminder";
+"stalk_meeting_reminder_calendar" = "As in calendar";
+"stalk_meeting_reminder_none" = "Don't remind";
+"stalk_meeting_reminder_at_start" = "At start time";
+"stalk_meeting_reminder_5m" = "5 minutes before";
+"stalk_meeting_reminder_15m" = "15 minutes before";
+"stalk_meeting_reminder_30m" = "30 minutes before";
+"stalk_meeting_reminder_1h" = "1 hour before";
+"stalk_meeting_reminder_2h" = "2 hours before";
+"stalk_meeting_reminder_12h" = "12 hours before";
+"stalk_meeting_reminder_1d" = "1 day before";
+"stalk_meeting_reminder_1w" = "1 week before";
+"stalk_meeting_reminder_custom" = "Set up on the web";
+"stalk_meeting_reminder_save_failed" = "The meeting was saved, but the reminder wasn't. Please save again.";

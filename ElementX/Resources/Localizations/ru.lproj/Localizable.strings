@@ -2865,3 +2865,17 @@
 "stalk_room_tasks_forbidden" = "Изменять задачу может её автор или администратор комнаты";
 "stalk_room_tasks_conflict" = "Задачу уже изменили. Список обновлён, попробуйте ещё раз.";
 "stalk_room_tasks_show_completed" = "Показывать завершённые";
+"stalk_meeting_reminder_title" = "Напоминание";
+"stalk_meeting_reminder_calendar" = "Как в календаре";
+"stalk_meeting_reminder_none" = "Не напоминать";
+"stalk_meeting_reminder_at_start" = "В момент начала";
+"stalk_meeting_reminder_5m" = "За 5 минут";
+"stalk_meeting_reminder_15m" = "За 15 минут";
+"stalk_meeting_reminder_30m" = "За 30 минут";
+"stalk_meeting_reminder_1h" = "За 1 час";
+"stalk_meeting_reminder_2h" = "За 2 часа";
+"stalk_meeting_reminder_12h" = "За 12 часов";
+"stalk_meeting_reminder_1d" = "За 1 день";
+"stalk_meeting_reminder_1w" = "За 1 неделю";
+"stalk_meeting_reminder_custom" = "Настроено в веб-версии";
+"stalk_meeting_reminder_save_failed" = "Встреча сохранена, но напоминание сохранить не удалось. Повторите сохранение.";

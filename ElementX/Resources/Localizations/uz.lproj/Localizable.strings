@@ -2471,3 +2471,17 @@
 "stalk_room_tasks_forbidden" = "Vazifani faqat muallifi yoki xona administratori oʻzgartira oladi";
 "stalk_room_tasks_conflict" = "Vazifa allaqachon oʻzgartirilgan. Roʻyxat yangilandi, qayta urinib koʻring.";
 "stalk_room_tasks_show_completed" = "Yakunlanganlarni koʻrsatish";
+"stalk_meeting_reminder_title" = "Eslatma";
+"stalk_meeting_reminder_calendar" = "Taqvimdagidek";
+"stalk_meeting_reminder_none" = "Eslatmaslik";
+"stalk_meeting_reminder_at_start" = "Boshlanish vaqtida";
+"stalk_meeting_reminder_5m" = "5 daqiqa oldin";
+"stalk_meeting_reminder_15m" = "15 daqiqa oldin";
+"stalk_meeting_reminder_30m" = "30 daqiqa oldin";
+"stalk_meeting_reminder_1h" = "1 soat oldin";
+"stalk_meeting_reminder_2h" = "2 soat oldin";
+"stalk_meeting_reminder_12h" = "12 soat oldin";
+"stalk_meeting_reminder_1d" = "1 kun oldin";
+"stalk_meeting_reminder_1w" = "1 hafta oldin";
+"stalk_meeting_reminder_custom" = "Veb-versiyada sozlangan";
+"stalk_meeting_reminder_save_failed" = "Uchrashuv saqlandi, lekin eslatmani saqlab boʻlmadi. Qayta saqlang.";

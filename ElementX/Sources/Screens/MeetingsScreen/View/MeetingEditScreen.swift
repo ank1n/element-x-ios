@@ -41,6 +41,10 @@ struct MeetingEditScreen: View {
 
                     MeetingVenuePickerView(context: context)
 
+                    if context.viewState.reminderAvailable {
+                        reminderCard
+                    }
+
                     // Access card
                     accessCard
 
@@ -244,6 +248,39 @@ struct MeetingEditScreen: View {
                 }
             }
         }
+        .background(cardBg)
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
+    }
+
+    // MARK: - Reminder Card
+
+    private var reminderCard: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "bell")
+                .font(.system(size: 15))
+                .foregroundColor(accentBlue)
+                .frame(width: 24)
+
+            Text(SL10n.meetingReminderTitle)
+                .font(.system(size: 15))
+
+            Spacer()
+
+            Picker(SL10n.meetingReminderTitle, selection: $context.reminder) {
+                // Настройку, сделанную на вебе, показываем, но выбрать её заново нельзя.
+                if context.viewState.initialReminder == .custom {
+                    Text(MeetingReminderChoice.custom.title).tag(MeetingReminderChoice.custom)
+                }
+                ForEach(MeetingReminderChoice.pickable, id: \.self) { choice in
+                    Text(choice.title).tag(choice)
+                }
+            }
+            .pickerStyle(.menu)
+            .tint(accentBlue)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
         .background(cardBg)
         .cornerRadius(16)
         .shadow(color: .black.opacity(0.05), radius: 8, y: 2)

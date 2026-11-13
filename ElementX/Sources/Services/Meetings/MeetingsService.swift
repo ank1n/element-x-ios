@@ -737,3 +737,83 @@ private final class MeetingPreviewRedirectDelegate: NSObject, URLSessionTaskDele
         completionHandler(nil)
     }
 }
+
+// MARK: - Напоминание о встрече (SMAIL-46, STMOB-333)
+
+/// Личная настройка участника, хранится отдельно от встречи:
+/// `/api/meetings/calendar/native/reminders/meeting/:id`. Минимум как на вебе — одно напоминание в приложении.
+enum MeetingReminderChoice: Hashable {
+    /// Без своей настройки — как в календаре.
+    case calendar
+    case none
+    case minutes(Int)
+    /// Настроено на вебе иначе (несколько строк, письмо, встреча на весь день) — iOS не перезаписывает.
+    case custom
+
+    static let presets = [0, 5, 15, 30, 60, 120, 720, 1440, 10080]
+    static let pickable: [MeetingReminderChoice] = [.calendar, .none] + presets.map { .minutes($0) }
+
+    var title: String {
+        switch self {
+        case .calendar: SL10n.meetingReminderCalendar
+        case .none: SL10n.meetingReminderNone
+        case .custom: SL10n.meetingReminderCustom
+        case .minutes(let minutes):
+            switch minutes {
+            case 0: SL10n.meetingReminderAtStart
+            case 5: SL10n.meetingReminder5m
+            case 15: SL10n.meetingReminder15m
+            case 30: SL10n.meetingReminder30m
+            case 60: SL10n.meetingReminder1h
+            case 120: SL10n.meetingReminder2h
+            case 720: SL10n.meetingReminder12h
+            case 1440: SL10n.meetingReminder1d
+            case 10080: SL10n.meetingReminder1w
+            default: SL10n.meetingReminderCustom
+            }
+        }
+    }
+
+    /// Разбор ответа GET; `nil` — для встречи на весь день (там другие варианты, их на iOS нет).
+    static func parse(_ json: [String: Any]) -> MeetingReminderChoice? {
+        guard json["custom"] as? Bool == true else { return json["all_day"] as? Bool == true ? nil : .calendar }
+        let overrides = json["overrides"] as? [String: Any] ?? [:]
+        if json["all_day"] as? Bool == true {
+            return (overrides["all_day_notifications"] as? [Any])?.isEmpty == true ? MeetingReminderChoice.none : .custom
+        }
+        let rows = overrides["timed_notifications"] as? [[String: Any]] ?? []
+        if rows.isEmpty { return MeetingReminderChoice.none }
+        if rows.count == 1, rows[0]["channel"] as? String == "app", let minutes = (rows[0]["minutes_before"] as? NSNumber)?.intValue,
+           presets.contains(minutes) {
+            return .minutes(minutes)
+        }
+        return .custom
+    }
+
+    /// Тело PUT; для `.custom` ничего не отправляем.
+    var body: [String: Any]? {
+        switch self {
+        case .calendar: ["reset": true]
+        case .none: ["timed_notifications": [Any]()]
+        case .minutes(let minutes): ["timed_notifications": [["channel": "app", "minutes_before": minutes]]]
+        case .custom: nil
+        }
+    }
+}
+
+extension MeetingsService {
+    private func reminderPath(_ meetingID: Int) -> String {
+        "/api/meetings/calendar/native/reminders/meeting/\(meetingID)"
+    }
+
+    func fetchReminder(meetingID: Int) async throws -> MeetingReminderChoice? {
+        let data = try await apiRequest("GET", path: reminderPath(meetingID))
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw URLError(.cannotParseResponse) }
+        return MeetingReminderChoice.parse(json)
+    }
+
+    func saveReminder(_ choice: MeetingReminderChoice, meetingID: Int) async throws {
+        guard let body = choice.body else { return }
+        _ = try await apiRequest("PUT", path: reminderPath(meetingID), body: JSONSerialization.data(withJSONObject: body))
+    }
+}

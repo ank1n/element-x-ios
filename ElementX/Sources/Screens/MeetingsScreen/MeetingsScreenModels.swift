@@ -155,6 +155,9 @@ struct MeetingEditViewState: BindableState {
     var venuesDisabled = false
     var venuesLoading = false
     var venueError: String?
+    /// SMAIL-46: выбор напоминания показываем, только когда знаем текущую настройку (иначе можно её затереть).
+    var reminderAvailable = false
+    var initialReminder: MeetingReminderChoice = .calendar
 
     var isEditing: Bool {
         meetingId != nil
@@ -181,4 +184,5 @@ struct MeetingEditViewStateBindings {
     var venueOfficeID: Int?
     var venueQuery = ""
     var venueRecent = true
+    var reminder: MeetingReminderChoice = .calendar
 }
