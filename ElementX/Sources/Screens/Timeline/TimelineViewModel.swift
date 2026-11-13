@@ -571,6 +571,8 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
                     self.state.bindings.showTranslation = true
                 case .saveToSavedMessages(let itemID):
                     Task { await self.saveToSavedMessages(itemID: itemID) }
+                case .removeFromSavedMessages(let itemID):
+                    Task { await self.removeFromSavedMessages(itemID: itemID) }
                 case .createRoomTask(let itemID):
                     startRoomTask(from: itemID)
                 }
@@ -1056,8 +1058,16 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
         state.isSavedMessagesRoom = saved.isSavedRoom(roomProxy.id)
         let kind = timelineController.timelineKind
         guard kind == .live || kind == .detached else { return }
+        let prefix = StalkSavedMessagesService.sourceKey(roomID: roomProxy.id, eventID: "")
+        saved.$savedSources
+            .map { Set($0.filter { $0.hasPrefix(prefix) }.map { String($0.dropFirst(prefix.count)) }) }
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] ids in self?.state.savedEventIDs = ids }
+            .store(in: &cancellables)
         Task { [weak self] in
             await saved.refresh()
+            await saved.startTracking()
             guard let self else { return }
             state.isSavedMessagesRoom = saved.isSavedRoom(roomProxy.id)
             guard !state.isSavedMessagesRoom, !roomProxy.infoPublisher.value.isSpace,
@@ -1097,6 +1107,17 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
         actionsSubject.send(.displayRoomTasks(.create(draft)))
     }
 
+    private func removeFromSavedMessages(itemID: TimelineItemIdentifier) async {
+        guard let saved = savedMessagesService, let eventID = itemID.eventID else { return }
+        do {
+            try await saved.removeCopy(roomID: roomProxy.id, eventID: eventID)
+            userIndicatorController.submitIndicator(.init(title: SL10n.savedMessagesRemoved, iconName: "bookmark.slash"))
+        } catch {
+            MXLog.error("Saved messages: remove failed \(error)")
+            displayErrorToast(SL10n.savedMessagesRemoveFailed)
+        }
+    }
+
     private func savedSource(for itemID: TimelineItemIdentifier) -> StalkSavedFrom? {
         guard let eventID = itemID.eventID,
               let item = timelineController.timelineItems.first(where: { $0.id == itemID }) as? EventBasedTimelineItemProtocol else { return nil }
@@ -1107,6 +1128,11 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
 
     private func saveToSavedMessages(itemID: TimelineItemIdentifier, confirmed: Bool = false) async {
         guard let saved = savedMessagesService, itemID.eventID != nil else { return }
+        if let eventID = itemID.eventID, saved.savedCopyID(roomID: roomProxy.id, eventID: eventID) != nil {
+            // Второе нажатие не создаёт вторую копию — как на вебе.
+            userIndicatorController.submitIndicator(.init(title: SL10n.savedMessagesAlready, iconName: "bookmark.fill"))
+            return
+        }
         do {
             let target = try await saved.ensureRoom()
             // Комнату мог создать веб без шифрования (если шифрование на сервере выключено) — спрашиваем, как веб.

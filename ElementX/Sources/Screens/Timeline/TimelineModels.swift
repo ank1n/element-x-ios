@@ -112,6 +112,8 @@ struct TimelineViewState: BindableState {
     var callSummaryService: CallTimelineSummaryService?
     /// STMOB-333: личная комната «Сохранённые» (в ней нет «Сохранить» и задач).
     var isSavedMessagesRoom = false
+    /// События этой комнаты, сохранённые в «Сохранённые» (для «Убрать из сохранённых»).
+    var savedEventIDs = Set<String>()
     /// STMOB-333: задачи комнаты включены на сервере и доступны в этой комнате.
     var roomTasksAvailable = false
     /// Сообщения-основания задач: идентификатор события → отметка «Задача».

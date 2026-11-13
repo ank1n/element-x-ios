@@ -2495,3 +2495,7 @@
 "stalk_meeting_reminder_1w" = "1 week before";
 "stalk_meeting_reminder_custom" = "Set up on the web";
 "stalk_meeting_reminder_save_failed" = "The meeting was saved, but the reminder wasn't. Please save again.";
+"stalk_saved_remove" = "Remove from Saved messages";
+"stalk_saved_removed" = "Removed from Saved messages";
+"stalk_saved_already" = "Already in Saved messages";
+"stalk_saved_remove_failed" = "Couldn't remove. Please try again a bit later.";

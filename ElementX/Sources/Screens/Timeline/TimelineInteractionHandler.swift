@@ -28,6 +28,7 @@ enum TimelineInteractionHandlerAction {
     case displayThread(itemID: TimelineItemIdentifier)
     case showTranslation(text: String)
     case saveToSavedMessages(itemID: TimelineItemIdentifier)
+    case removeFromSavedMessages(itemID: TimelineItemIdentifier)
     case createRoomTask(itemID: TimelineItemIdentifier)
 }
 
@@ -226,6 +227,8 @@ class TimelineInteractionHandler {
             ServiceLocator.shared.bookmarkService?.removeBookmark(eventID: eventID)
         case .saveToSavedMessages:
             actionsSubject.send(.saveToSavedMessages(itemID: itemID))
+        case .removeFromSavedMessages:
+            actionsSubject.send(.removeFromSavedMessages(itemID: itemID))
         case .createRoomTask:
             actionsSubject.send(.createRoomTask(itemID: itemID))
         }

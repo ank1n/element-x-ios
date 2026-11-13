@@ -82,6 +82,7 @@ enum TimelineItemMenuAction: Identifiable, Hashable {
     case bookmark
     case removeBookmark
     case saveToSavedMessages
+    case removeFromSavedMessages
     case createRoomTask
     
     var id: Self {
@@ -212,6 +213,8 @@ enum TimelineItemMenuAction: Identifiable, Hashable {
             Label(SL10n.bookmarkRemove, icon: \.favourite)
         case .saveToSavedMessages:
             Label(SL10n.savedMessagesSave, systemImage: "bookmark")
+        case .removeFromSavedMessages:
+            Label(SL10n.savedMessagesRemove, systemImage: "bookmark.slash")
         case .createRoomTask:
             Label(SL10n.roomTasksCreateFromMessage, systemImage: "checklist")
         }

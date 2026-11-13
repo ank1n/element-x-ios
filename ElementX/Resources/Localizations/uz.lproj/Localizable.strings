@@ -2485,3 +2485,7 @@
 "stalk_meeting_reminder_1w" = "1 hafta oldin";
 "stalk_meeting_reminder_custom" = "Veb-versiyada sozlangan";
 "stalk_meeting_reminder_save_failed" = "Uchrashuv saqlandi, lekin eslatmani saqlab boʻlmadi. Qayta saqlang.";
+"stalk_saved_remove" = "Saqlanganlardan olib tashlash";
+"stalk_saved_removed" = "Saqlanganlardan olib tashlandi";
+"stalk_saved_already" = "Allaqachon «Saqlanganlar»da";
+"stalk_saved_remove_failed" = "Olib tashlab boʻlmadi. Birozdan soʻng qayta urinib koʻring.";

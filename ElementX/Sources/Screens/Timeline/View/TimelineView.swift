@@ -44,6 +44,7 @@ struct TimelineView: View {
                                                              timelineKind: timelineContext.viewState.timelineKind,
                                                              emojiProvider: timelineContext.viewState.emojiProvider, channel: timelineContext.viewState.channelAccess,
                                                              canSaveToSavedMessages: !timelineContext.viewState.isSavedMessagesRoom,
+                                                             savedEventIDs: timelineContext.viewState.savedEventIDs,
                                                              canCreateRoomTask: timelineContext.viewState.roomTasksAvailable)
                     .makeActions()
                 if let actions {

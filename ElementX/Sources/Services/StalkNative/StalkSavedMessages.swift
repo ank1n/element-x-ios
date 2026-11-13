@@ -1,4 +1,5 @@
 // Copyright 2026 ООО «Имплика». SPDX-License-Identifier: AGPL-3.0-only
+import Combine
 import MatrixRustSDK
 import SwiftUI
 import UIKit
@@ -56,7 +57,7 @@ enum StalkSavedMessagesError: Error {
 /// Личная комната «Сохранённые» — общая с вебом (STALK-1383).
 /// Комната ищется по account data `ru.stalk.saved_messages` и создаётся лениво при первом «Сохранить».
 @MainActor
-final class StalkSavedMessagesService {
+final class StalkSavedMessagesService: ObservableObject {
     // Сильная ссылка по учётке: сервис держит единственную попытку создания комнаты
     // и признак сверки за сессию; новый клиент той же учётки получает новый сервис.
     private static var stores: [String: StalkSavedMessagesService] = [:]
@@ -73,6 +74,16 @@ final class StalkSavedMessagesService {
     private let api: StalkNativeAPI
     private let cacheKey: String
     private var ensureTask: Task<JoinedRoomProxyProtocol, Error>?
+    /// Лента «Сохранённых», по которой строится индекс копий (как на вебе — то, что загружено).
+    private var trackedRoom: JoinedRoomProxyProtocol?
+    private var trackingCancellable: AnyCancellable?
+    private var copies: [String: String] = [:]
+    /// Сохранённые исходные сообщения: ключ «комната|событие».
+    @Published private(set) var savedSources = Set<String>()
+
+    static func sourceKey(roomID: String, eventID: String) -> String {
+        roomID + "|" + eventID
+    }
 
     /// Последний известный идентификатор комнаты (кэш между запусками).
     private(set) var roomID: String? {
@@ -112,6 +123,49 @@ final class StalkSavedMessagesService {
         return try await task.value
     }
 
+    /// Начать следить за копиями, если комната уже есть (сама комната здесь не создаётся).
+    func startTracking() async {
+        guard trackedRoom == nil, let roomID, client.roomMembership(roomID: roomID) == .joined,
+              case let .joined(room) = await client.roomForIdentifier(roomID) else { return }
+        await track(room)
+        // Чуть глубже загруженного по умолчанию, чтобы «Сохранено» узнавалось и у недавних копий.
+        _ = await room.timeline.paginateBackwards(requestSize: 50)
+    }
+
+    func savedCopyID(roomID: String, eventID: String) -> String? {
+        copies[Self.sourceKey(roomID: roomID, eventID: eventID)]
+    }
+
+    /// «Убрать из сохранённых»: отзывается только копия, исходный чат не трогаем (как на вебе).
+    func removeCopy(roomID: String, eventID: String) async throws {
+        guard let room = trackedRoom, let copy = savedCopyID(roomID: roomID, eventID: eventID) else { throw StalkSavedMessagesError.unavailable }
+        if case .failure(let error) = await room.timeline.redact(.eventID(copy), reason: nil) { throw error }
+    }
+
+    private func track(_ room: JoinedRoomProxyProtocol) async {
+        trackedRoom = room
+        // Без подписки у ленты ещё нет поставщика элементов (обращение к нему — падение).
+        await room.subscribeForUpdates()
+        guard trackedRoom?.id == room.id else { return }
+        trackingCancellable = room.timeline.timelineItemProvider.updatePublisher
+            .map(\.0)
+            .prepend(room.timeline.timelineItemProvider.itemProxies)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] items in self?.rebuildIndex(items) }
+    }
+
+    private func rebuildIndex(_ items: [TimelineItemProxy]) {
+        var copies: [String: String] = [:]
+        for case let .event(item) in items {
+            guard let copyID = item.id.eventID, let from = StalkSavedFrom.parse(originalJSON: item.debugInfo.originalJSON),
+                  let source = from.eventID else { continue }
+            copies[Self.sourceKey(roomID: from.roomID, eventID: source)] = copyID
+        }
+        self.copies = copies
+        let keys = Set(copies.keys)
+        if keys != savedSources { savedSources = keys }
+    }
+
     // MARK: - Private
 
     private func resolveRoom() async throws -> JoinedRoomProxyProtocol {
@@ -123,6 +177,7 @@ final class StalkSavedMessagesService {
                 // а не новая комната: иначе сохранённое осиротеет.
                 guard let room = await joinedRoom(known) else { throw StalkSavedMessagesError.unavailable }
                 roomID = known
+                if trackedRoom?.id != room.id { await track(room) }
                 return room
             }
         }
@@ -135,9 +190,11 @@ final class StalkSavedMessagesService {
         if let winner = try? await readAccountData(), winner != created, let room = await joinedRoom(winner) {
             roomID = winner
             if case let .joined(own) = await client.roomForIdentifier(created) { _ = await own.leaveRoom() }
+            await track(room)
             return room
         }
         guard let room = await joinedRoom(created) else { throw StalkSavedMessagesError.unavailable }
+        await track(room)
         return room
     }
 

@@ -261,6 +261,14 @@ final class StalkNativeUpdatesTests: XCTestCase {
         XCTAssertFalse(chat.actions.contains(.bookmark))
         XCTAssertTrue(chat.actions.contains(.saveToSavedMessages))
         XCTAssertTrue(chat.actions.contains(.createRoomTask))
+        let eventID = try XCTUnwrap(item.id.eventID)
+        let savedChat = try XCTUnwrap(TimelineItemMenuActionProvider(timelineItem: item, canCurrentUserSendMessage: true,
+                                                                     canCurrentUserRedactSelf: false, canCurrentUserRedactOthers: false, canCurrentUserPin: false,
+                                                                     pinnedEventIDs: [], isDM: false, isViewSourceEnabled: false, areThreadsEnabled: true,
+                                                                     timelineKind: .live, emojiProvider: EmojiProvider(appSettings: AppSettings()), bookmarkService: bookmarks,
+                                                                     canSaveToSavedMessages: true, savedEventIDs: [eventID]).makeActions())
+        XCTAssertTrue(savedChat.actions.contains(.removeFromSavedMessages))
+        XCTAssertFalse(savedChat.actions.contains(.saveToSavedMessages))
         XCTAssertFalse(chat.actions.contains(.translate))
         XCTAssertFalse(chat.secondaryActions.contains(.report))
         let channel = try menu(.init(verified: true, isChannel: true, joined: true, comments: true, capability: true))

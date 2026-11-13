@@ -2879,3 +2879,7 @@
 "stalk_meeting_reminder_1w" = "За 1 неделю";
 "stalk_meeting_reminder_custom" = "Настроено в веб-версии";
 "stalk_meeting_reminder_save_failed" = "Встреча сохранена, но напоминание сохранить не удалось. Повторите сохранение.";
+"stalk_saved_remove" = "Убрать из сохранённых";
+"stalk_saved_removed" = "Убрано из сохранённых";
+"stalk_saved_already" = "Уже в «Сохранённых»";
+"stalk_saved_remove_failed" = "Не удалось убрать. Попробуйте ещё раз немного позже.";

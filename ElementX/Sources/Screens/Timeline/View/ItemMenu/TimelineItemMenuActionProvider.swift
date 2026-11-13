@@ -25,6 +25,8 @@ struct TimelineItemMenuActionProvider {
     var channel: StalkChannelSnapshot?
     /// STMOB-333: показывать «Сохранить» (копия в «Сохранённые», общая с вебом).
     var canSaveToSavedMessages = false
+    /// События этой комнаты, у которых есть копия в «Сохранённых».
+    var savedEventIDs: Set<String> = []
     /// STMOB-333: показывать «Создать задачу из сообщения».
     var canCreateRoomTask = false
     
@@ -112,8 +114,8 @@ struct TimelineItemMenuActionProvider {
         if channel?.isChannel != true, let eventID = item.id.eventID, let bookmarkService, bookmarkService.isBookmarked(eventID: eventID) {
             actions.append(.removeBookmark)
         }
-        if canSaveToSavedMessages, channel?.isChannel != true, item.isForwardable, item.id.eventID != nil {
-            actions.append(.saveToSavedMessages)
+        if canSaveToSavedMessages, channel?.isChannel != true, item.isForwardable, let eventID = item.id.eventID {
+            actions.append(savedEventIDs.contains(eventID) ? .removeFromSavedMessages : .saveToSavedMessages)
         }
         // Как на вебе: текст, уведомление, действие, файл и картинка.
         let canBeTaskBasis = item is TextRoomTimelineItem || item is NoticeRoomTimelineItem || item is EmoteRoomTimelineItem
