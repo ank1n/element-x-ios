@@ -734,6 +734,8 @@ class RoomFlowCoordinator: FlowCoordinatorProtocol {
                     stateMachine.tryEvent(.startChildFlow(roomID: roomID,
                                                           via: via,
                                                           entryPoint: .room))
+                case .presentRoomTasks(let entry):
+                    presentRoomTasks(entry)
                 }
             }
             .store(in: &cancellables)
@@ -741,6 +743,16 @@ class RoomFlowCoordinator: FlowCoordinatorProtocol {
         return coordinator
     }
     
+    /// STMOB-333: задачи комнаты — шторкой поверх комнаты; основание открывается в ленте комнаты.
+    private func presentRoomTasks(_ entry: RoomTasksEntry) {
+        let coordinator = RoomTasksCoordinator(roomProxy: roomProxy, clientProxy: userSession.clientProxy, entry: entry) { [weak self] eventID in
+            guard let self else { return }
+            navigationStackCoordinator.setSheetCoordinator(nil)
+            roomScreenCoordinator?.focusOnEvent(.init(eventID: eventID, shouldSetPin: false))
+        }
+        navigationStackCoordinator.setSheetCoordinator(coordinator)
+    }
+
     private func presentThreadList() {
         guard flowParameters.appSettings.threadsEnabled, !roomProxy.isDirectOneToOneRoom, !roomProxy.infoPublisher.value.isSpace,
               let service = roomProxy.threadListService() else { return }
@@ -1002,6 +1014,10 @@ class RoomFlowCoordinator: FlowCoordinatorProtocol {
                 navigationStackCoordinator.pop()
                 stateMachine.tryEvent(.dismissRoomDetails)
                 presentThreadList()
+            case .presentRoomTasks:
+                navigationStackCoordinator.pop()
+                stateMachine.tryEvent(.dismissRoomDetails)
+                presentRoomTasks(.list)
             case .presentRoomSearch:
                 // Pop room details and activate search in the room screen
                 navigationStackCoordinator.pop()

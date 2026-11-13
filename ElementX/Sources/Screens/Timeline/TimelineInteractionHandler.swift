@@ -27,6 +27,8 @@ enum TimelineInteractionHandlerAction {
     case viewInRoomTimeline(eventID: String)
     case displayThread(itemID: TimelineItemIdentifier)
     case showTranslation(text: String)
+    case saveToSavedMessages(itemID: TimelineItemIdentifier)
+    case createRoomTask(itemID: TimelineItemIdentifier)
 }
 
 /// The interaction handler groups logic for dealing with various actions the user can take on a timeline's
@@ -222,6 +224,10 @@ class TimelineInteractionHandler {
         case .removeBookmark:
             guard let eventID = eventTimelineItem.id.eventID else { return }
             ServiceLocator.shared.bookmarkService?.removeBookmark(eventID: eventID)
+        case .saveToSavedMessages:
+            actionsSubject.send(.saveToSavedMessages(itemID: itemID))
+        case .createRoomTask:
+            actionsSubject.send(.createRoomTask(itemID: itemID))
         }
         
         if action.switchToDefaultComposer {

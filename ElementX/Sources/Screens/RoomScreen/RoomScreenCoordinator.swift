@@ -50,6 +50,7 @@ enum RoomScreenCoordinatorAction {
     case presentThreadList
     case presentThread(threadRootEventID: String, focussedEventID: String?)
     case presentRoom(roomID: String, via: [String])
+    case presentRoomTasks(RoomTasksEntry)
 }
 
 final class RoomScreenCoordinator: CoordinatorProtocol {
@@ -157,6 +158,8 @@ final class RoomScreenCoordinator: CoordinatorProtocol {
                     roomViewModel.timelineHasScrolled(direction: direction)
                 case .displayRoom(let roomID, let via):
                     actionsSubject.send(.presentRoom(roomID: roomID, via: via))
+                case .displayRoomTasks(let entry):
+                    actionsSubject.send(.presentRoomTasks(entry))
                 case .viewInRoomTimeline, .displayMediaDetails:
                     fatalError("The action: \(action) should not be sent to this coordinator")
                 }

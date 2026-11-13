@@ -130,6 +130,12 @@ class JoinedRoomProxy: JoinedRoomProxyProtocol {
         try await room.sendRaw(eventType: "m.room.message", content: json)
     }
 
+    /// STMOB-333: копия сообщения со служебными полями (например, `ru.stalk.saved_from`),
+    /// которые типизированное содержимое SDK отбрасывает.
+    func sendRawMessage(_ json: String) async throws {
+        try await room.sendRaw(eventType: "m.room.message", content: json)
+    }
+
     func sendSticker(_ sticker: SharedSticker, threadRoot: String?) async throws {
         guard await authorization(root: threadRoot)() else { throw StalkChannelError.readOnly }
         guard sticker.isValid else { throw RoomProxyError.invalidMedia }

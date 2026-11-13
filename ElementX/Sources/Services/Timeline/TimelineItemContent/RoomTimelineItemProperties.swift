@@ -29,4 +29,6 @@ struct RoomTimelineItemProperties: Hashable {
     /// Information about the forwarder of the keys used to decrypt this message.
     var encryptionForwarder: TimelineItemKeyForwarder?
     var channelForwardSource: URL?
+    /// STMOB-333: откуда сохранено сообщение (только в комнате «Сохранённые»).
+    var savedFrom: StalkSavedFrom?
 }

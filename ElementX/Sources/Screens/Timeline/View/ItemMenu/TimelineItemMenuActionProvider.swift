@@ -23,6 +23,10 @@ struct TimelineItemMenuActionProvider {
     let emojiProvider: EmojiProviderProtocol
     var bookmarkService: BookmarkServiceProtocol? = ServiceLocator.shared.bookmarkService
     var channel: StalkChannelSnapshot?
+    /// STMOB-333: показывать «Сохранить» (копия в «Сохранённые», общая с вебом).
+    var canSaveToSavedMessages = false
+    /// STMOB-333: показывать «Создать задачу из сообщения».
+    var canCreateRoomTask = false
     
     // swiftlint:disable:next cyclomatic_complexity
     func makeActions() -> TimelineItemMenuActions? {
@@ -103,13 +107,19 @@ struct TimelineItemMenuActionProvider {
             actions.append(.removeCaption)
         }
 
-        // Bookmark action — available for all event-based items with an eventID
-        if channel?.isChannel != true, let eventID = item.id.eventID, let bookmarkService {
-            if bookmarkService.isBookmarked(eventID: eventID) {
-                actions.append(.removeBookmark)
-            } else {
-                actions.append(.bookmark)
-            }
+        // STMOB-333: локальное «Избранное» заменено «Сохранёнными» (общими с вебом);
+        // снять старую отметку по-прежнему можно.
+        if channel?.isChannel != true, let eventID = item.id.eventID, let bookmarkService, bookmarkService.isBookmarked(eventID: eventID) {
+            actions.append(.removeBookmark)
+        }
+        if canSaveToSavedMessages, channel?.isChannel != true, item.isForwardable, item.id.eventID != nil {
+            actions.append(.saveToSavedMessages)
+        }
+        // Как на вебе: текст, уведомление, действие, файл и картинка.
+        let canBeTaskBasis = item is TextRoomTimelineItem || item is NoticeRoomTimelineItem || item is EmoteRoomTimelineItem
+            || item is FileRoomTimelineItem || item is ImageRoomTimelineItem
+        if canCreateRoomTask, channel?.isChannel != true, canBeTaskBasis, item.id.eventID != nil {
+            actions.append(.createRoomTask)
         }
 
         if canRedactItem(item) {

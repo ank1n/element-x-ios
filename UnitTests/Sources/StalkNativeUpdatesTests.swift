@@ -252,12 +252,15 @@ final class StalkNativeUpdatesTests: XCTestCase {
                                                          canCurrentUserRedactSelf: false, canCurrentUserRedactOthers: false, canCurrentUserPin: false,
                                                          pinnedEventIDs: [], isDM: dm, isViewSourceEnabled: false, areThreadsEnabled: true,
                                                          timelineKind: .live, emojiProvider: EmojiProvider(appSettings: AppSettings()), bookmarkService: bookmarks,
-                                                         channel: channel).makeActions())
+                                                         channel: channel, canSaveToSavedMessages: true, canCreateRoomTask: true).makeActions())
         }
         let chat = try menu(nil)
         XCTAssertTrue(chat.actions.contains(.reply(isThread: false)))
         XCTAssertTrue(chat.actions.contains(.replyInThread))
-        XCTAssertTrue(chat.actions.contains(.bookmark))
+        // STMOB-333: локальное «В избранное» заменено «Сохранить» (общие с вебом «Сохранённые»).
+        XCTAssertFalse(chat.actions.contains(.bookmark))
+        XCTAssertTrue(chat.actions.contains(.saveToSavedMessages))
+        XCTAssertTrue(chat.actions.contains(.createRoomTask))
         XCTAssertFalse(chat.actions.contains(.translate))
         XCTAssertFalse(chat.secondaryActions.contains(.report))
         let channel = try menu(.init(verified: true, isChannel: true, joined: true, comments: true, capability: true))
@@ -265,6 +268,8 @@ final class StalkNativeUpdatesTests: XCTestCase {
         XCTAssertFalse(channel.actions.contains(.reply(isThread: false)))
         XCTAssertFalse(channel.actions.contains(.bookmark))
         XCTAssertFalse(channel.actions.contains(.removeBookmark))
+        XCTAssertFalse(channel.actions.contains(.saveToSavedMessages))
+        XCTAssertFalse(channel.actions.contains(.createRoomTask))
         XCTAssertFalse(channel.actions.contains(.translate))
         XCTAssertFalse(channel.secondaryActions.contains(.report))
         let noMainReply = TextRoomTimelineItem(id: .randomEvent, timestamp: Date(), isOutgoing: false, isEditable: false,

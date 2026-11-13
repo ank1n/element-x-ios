@@ -5,6 +5,8 @@ struct StalkNativeHTTPError: LocalizedError {
     let status: Int
     var code: String?
     var retryAfter: TimeInterval?
+    /// Текст для человека из тела ответа (`message`), если сервер его прислал.
+    var message: String?
 }
 
 /// Requests stay on this account's origin. Never follow an authenticated redirect.
@@ -50,7 +52,7 @@ final class StalkNativeAPI {
                 let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
                 let retry = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init)
                     ?? (json?["retry_after_ms"] as? Double).map { $0 / 1000 }
-                throw StalkNativeHTTPError(status: status, code: json?["errcode"] as? String, retryAfter: retry)
+                throw StalkNativeHTTPError(status: status, code: json?["errcode"] as? String, retryAfter: retry, message: json?["message"] as? String)
             }
             return data
         }

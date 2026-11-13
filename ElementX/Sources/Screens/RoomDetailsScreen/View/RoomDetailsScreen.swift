@@ -186,6 +186,12 @@ struct RoomDetailsScreen: View {
                 })
             }
 
+            if context.viewState.canShowRoomTasks {
+                ListRow(label: .plain(title: SL10n.roomTasksTitle), kind: .navigationLink {
+                    context.send(viewAction: .processTapRoomTasks)
+                })
+            }
+
             ListRow(label: .default(title: L10n.screenRoomDetailsPinnedEventsRowTitle, icon: \.pin),
                     details: context.viewState.pinnedEventsActionState.isLoading ? .isWaiting(true) : .title(context.viewState.pinnedEventsActionState.count),
                     kind: context.viewState.pinnedEventsActionState.isLoading ? .label : .navigationLink {

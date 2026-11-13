@@ -86,6 +86,12 @@ class RoomDetailsScreenViewModel: RoomDetailsScreenViewModelType, RoomDetailsScr
         Task {
             state.reportRoomEnabled = await userSession.clientProxy.isReportRoomSupported
         }
+        // STMOB-333: как на вебе — не в каналах, пространствах и «Сохранённых».
+        if userSession.clientProxy is ClientProxy, !roomProxy.infoPublisher.value.isSpace,
+           !StalkSavedMessagesService.shared(client: userSession.clientProxy).isSavedRoom(roomProxy.id),
+           StalkChannelService.shared(client: userSession.clientProxy).snapshots[roomProxy.id]?.isChannel != true {
+            Task { state.canShowRoomTasks = await RoomTasksAPI.isEnabled(client: userSession.clientProxy) }
+        }
         
         userSession.clientProxy.homeserverReachabilityPublisher
             .filter { $0 == .reachable }
@@ -176,6 +182,9 @@ class RoomDetailsScreenViewModel: RoomDetailsScreenViewModelType, RoomDetailsScr
             actionsSubject.send(.displayReportRoom)
         case .processTapWidgets:
             actionsSubject.send(.displayWidgets)
+        case .processTapRoomTasks:
+            guard state.canShowRoomTasks else { return }
+            actionsSubject.send(.displayRoomTasks)
         case .processTapThreads:
             guard appSettings.threadsEnabled, !roomProxy.isDirectOneToOneRoom, state.canShowThreads else { return }
             actionsSubject.send(.displayThreadList)

@@ -124,6 +124,21 @@ class MessageForwardingScreenViewModel: MessageForwardingScreenViewModelType, Me
             return
         }
         
+        // STMOB-333: в «Сохранённые» — с отметкой, откуда сообщение (как на вебе).
+        if let json = forwardingItem.savedContentJSON, let target = targetRoomProxy as? JoinedRoomProxy, clientProxy is ClientProxy,
+           StalkSavedMessagesService.shared(client: clientProxy).isSavedRoom(roomID) {
+            // Из шифрованного чата в нешифрованные «Сохранённые» молча не копируем:
+            // подтверждение есть только у пункта «Сохранить» в меню сообщения.
+            if case let .joined(source) = await clientProxy.roomForIdentifier(forwardingItem.roomID), source.infoPublisher.value.isEncrypted,
+               await !target.encryptionStateForCall() {
+                userIndicatorController.submitIndicator(UserIndicator(title: SL10n.savedMessagesUnencryptedTitle))
+                return
+            }
+            do { try await target.sendRawMessage(json) }
+            catch { userIndicatorController.submitIndicator(UserIndicator(title: L10n.errorUnknown)); return }
+            actionsSubject.send(.sent(roomID: roomID))
+            return
+        }
         if let json = forwardingItem.channelContentJSON, let target = targetRoomProxy as? JoinedRoomProxy {
             do { try await target.sendForwardedChannelContent(json) }
             catch { userIndicatorController.submitIndicator(UserIndicator(title: error.localizedDescription)); return }

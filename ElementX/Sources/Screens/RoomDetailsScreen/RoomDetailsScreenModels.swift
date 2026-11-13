@@ -31,6 +31,7 @@ enum RoomDetailsScreenViewModelAction: Equatable {
     case transferOwnership
     case displayWidgets
     case displayThreadList
+    case displayRoomTasks
     case displayRoomSearch
 }
 
@@ -43,6 +44,8 @@ struct DMRecipientInfo {
 
 struct RoomDetailsScreenViewState: BindableState {
     var canShowThreads = false
+    /// STMOB-333: задачи комнаты включены на сервере и доступны в этой комнате.
+    var canShowRoomTasks = false
     var details: RoomDetails
 
     var isEncrypted: Bool
@@ -242,6 +245,7 @@ enum RoomDetailsScreenViewAction {
     case processTapReport
     case processTapWidgets
     case processTapThreads
+    case processTapRoomTasks
     case processTapSearch
 }
 

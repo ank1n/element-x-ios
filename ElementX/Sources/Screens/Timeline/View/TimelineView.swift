@@ -42,7 +42,9 @@ struct TimelineView: View {
                                                              isViewSourceEnabled: timelineContext.viewState.isViewSourceEnabled,
                                                              areThreadsEnabled: timelineContext.viewState.areThreadsEnabled,
                                                              timelineKind: timelineContext.viewState.timelineKind,
-                                                             emojiProvider: timelineContext.viewState.emojiProvider, channel: timelineContext.viewState.channelAccess)
+                                                             emojiProvider: timelineContext.viewState.emojiProvider, channel: timelineContext.viewState.channelAccess,
+                                                             canSaveToSavedMessages: !timelineContext.viewState.isSavedMessagesRoom,
+                                                             canCreateRoomTask: timelineContext.viewState.roomTasksAvailable)
                     .makeActions()
                 if let actions {
                     TimelineItemMenu(item: info.item, actions: actions, compact: info.compact)

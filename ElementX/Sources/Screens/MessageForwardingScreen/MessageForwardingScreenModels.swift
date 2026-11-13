@@ -46,6 +46,8 @@ struct MessageForwardingItem: Hashable {
     let roomID: String
     /// The item's content to be forwarded.
     var channelContentJSON: String?
+    /// STMOB-333: копия для «Сохранённых» с отметкой источника `ru.stalk.saved_from`.
+    var savedContentJSON: String?
     let content: RoomMessageEventContentWithoutRelation
     
     static func == (lhs: MessageForwardingItem, rhs: MessageForwardingItem) -> Bool {

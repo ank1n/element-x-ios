@@ -125,6 +125,8 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
             }.store(in: &cancellables)
         }
 
+        setupSavedMessagesAndRoomTasks()
+
         if focussedEventID != nil {
             // The timeline controller will start loading a detached timeline.
             showFocusLoadingIndicator()
@@ -183,6 +185,8 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
         case .stalkDiskLinkTapped(let url):
             actionsSubject.send(.composer(action: .removeFocus))
             appMediator.open(url)
+        case .roomTaskBadgeTapped(let taskID):
+            actionsSubject.send(.displayRoomTasks(.task(id: taskID)))
         case .stalkDiskReferenceTapped(let id):
             Task { await openDiskDocumentReference(id: id, name: "") }
         case .stalkFileShareTapped(let id):
@@ -316,6 +320,10 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
             let info = timelineController.debugInfo(for: itemID)
             item.channelContentJSON = StalkChannelForwarding.content(originalJSON: info.originalJSON, latestEditJSON: info.latestEditJSON,
                                                                      roomID: roomProxy.id, eventID: id)
+        }
+        if let source = savedSource(for: itemID) {
+            let info = timelineController.debugInfo(for: itemID)
+            item.savedContentJSON = StalkSavedMessagesService.savedContent(originalJSON: info.originalJSON, latestEditJSON: info.latestEditJSON, source: source)
         }
         return item
     }
@@ -561,6 +569,10 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
                 case .showTranslation(let text):
                     self.state.bindings.textToBeTranslated = text
                     self.state.bindings.showTranslation = true
+                case .saveToSavedMessages(let itemID):
+                    Task { await self.saveToSavedMessages(itemID: itemID) }
+                case .createRoomTask(let itemID):
+                    startRoomTask(from: itemID)
                 }
             }
             .store(in: &cancellables)
@@ -1033,6 +1045,99 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
         state.bindings.readReceiptsSummaryInfo = .init(orderedReceipts: eventTimelineItem.properties.orderedReadReceipts, id: eventTimelineItem.id)
     }
         
+    // MARK: - Saved messages and room tasks (STMOB-333)
+
+    private var savedMessagesService: StalkSavedMessagesService? {
+        userSession.clientProxy is ClientProxy ? StalkSavedMessagesService.shared(client: userSession.clientProxy) : nil
+    }
+
+    private func setupSavedMessagesAndRoomTasks() {
+        guard let saved = savedMessagesService else { return }
+        state.isSavedMessagesRoom = saved.isSavedRoom(roomProxy.id)
+        let kind = timelineController.timelineKind
+        guard kind == .live || kind == .detached else { return }
+        Task { [weak self] in
+            await saved.refresh()
+            guard let self else { return }
+            state.isSavedMessagesRoom = saved.isSavedRoom(roomProxy.id)
+            guard !state.isSavedMessagesRoom, !roomProxy.infoPublisher.value.isSpace,
+                  await RoomTasksAPI.isEnabled(client: userSession.clientProxy) else { return }
+            state.roomTasksAvailable = true
+            await loadRoomTaskBasis()
+        }
+        NotificationCenter.default.publisher(for: .stalkRoomTasksChanged)
+            .compactMap { $0.object as? String }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] roomID in
+                guard let self, roomID == roomProxy.id else { return }
+                Task { await self.loadRoomTaskBasis() }
+            }
+            .store(in: &cancellables)
+    }
+
+    private func loadRoomTaskBasis() async {
+        guard state.roomTasksAvailable else { return }
+        do {
+            state.roomTaskBasis.marks = try await RoomTasksAPI(client: userSession.clientProxy).basis(roomID: roomProxy.id)
+        } catch {
+            MXLog.warning("Room tasks: basis unavailable (\((error as? StalkNativeHTTPError)?.status ?? 0))")
+        }
+    }
+
+    /// Черновик как на вебе: название — первая строка (до 80 символов), описание — «Имя (дата): текст».
+    private func startRoomTask(from itemID: TimelineItemIdentifier) {
+        guard let eventID = itemID.eventID,
+              let item = timelineController.timelineItems.first(where: { $0.id == itemID }) as? EventBasedTimelineItemProtocol else { return }
+        let name = item.sender.displayName ?? item.sender.id
+        let text = item.body.trimmingCharacters(in: .whitespacesAndNewlines)
+        let firstLine = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+        let date = item.timestamp.formatted(date: .abbreviated, time: .shortened)
+        let draft = RoomTaskDraft(title: String(firstLine.prefix(80)), description: "\(name) (\(date)): \(text)",
+                                  basis: [.init(eventID: eventID, label: "\(name): \(text)")])
+        actionsSubject.send(.displayRoomTasks(.create(draft)))
+    }
+
+    private func savedSource(for itemID: TimelineItemIdentifier) -> StalkSavedFrom? {
+        guard let eventID = itemID.eventID,
+              let item = timelineController.timelineItems.first(where: { $0.id == itemID }) as? EventBasedTimelineItemProtocol else { return nil }
+        return StalkSavedFrom(sender: item.sender.id, senderName: item.sender.displayName, roomID: roomProxy.id,
+                              roomName: roomProxy.infoPublisher.value.displayName, eventID: eventID,
+                              ts: Int64(item.timestamp.timeIntervalSince1970 * 1000))
+    }
+
+    private func saveToSavedMessages(itemID: TimelineItemIdentifier, confirmed: Bool = false) async {
+        guard let saved = savedMessagesService, itemID.eventID != nil else { return }
+        do {
+            let target = try await saved.ensureRoom()
+            // Комнату мог создать веб без шифрования (если шифрование на сервере выключено) — спрашиваем, как веб.
+            if !confirmed, roomProxy.infoPublisher.value.isEncrypted, let joined = target as? JoinedRoomProxy, await !joined.encryptionStateForCall() {
+                state.bindings.alertInfo = .init(id: .saveUnencrypted,
+                                                 title: SL10n.savedMessagesUnencryptedTitle,
+                                                 message: SL10n.savedMessagesUnencryptedMessage,
+                                                 primaryButton: .init(title: L10n.actionCancel, role: .cancel, action: nil),
+                                                 secondaryButton: .init(title: SL10n.savedMessagesSave) { [weak self] in
+                                                     Task { await self?.saveToSavedMessages(itemID: itemID, confirmed: true) }
+                                                 })
+                return
+            }
+            let info = timelineController.debugInfo(for: itemID)
+            if let source = savedSource(for: itemID),
+               let json = StalkSavedMessagesService.savedContent(originalJSON: info.originalJSON, latestEditJSON: info.latestEditJSON, source: source),
+               let joined = target as? JoinedRoomProxy {
+                try await joined.sendRawMessage(json)
+            } else if let content = await timelineController.messageEventContent(for: itemID) {
+                // Запасной путь без отметки источника: сохраняем хотя бы само сообщение.
+                guard case .success = await target.timeline.sendMessageEventContent(content) else { throw StalkSavedMessagesError.unavailable }
+            } else {
+                throw StalkSavedMessagesError.unavailable
+            }
+            userIndicatorController.submitIndicator(.init(title: SL10n.savedMessagesDone, iconName: "checkmark"))
+        } catch {
+            MXLog.error("Saved messages: save failed \(error)")
+            displayErrorToast(SL10n.savedMessagesFailed)
+        }
+    }
+
     // MARK: - Message forwarding
     
     private func forwardMessage(itemID: TimelineItemIdentifier) async {
@@ -1117,6 +1222,8 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
             state.bindings.alertInfo = .init(id: type,
                                              title: message,
                                              primaryButton: .init(title: L10n.actionOk, action: nil))
+        case .saveUnencrypted:
+            break // Показывается напрямую из saveToSavedMessages: нужен идентификатор сообщения.
         case .encryptionForwarder(let message):
             state.bindings.alertInfo = .init(id: type,
                                              title: message,

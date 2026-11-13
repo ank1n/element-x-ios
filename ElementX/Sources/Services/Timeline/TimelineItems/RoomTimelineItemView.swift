@@ -16,9 +16,21 @@ struct RoomTimelineItemView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if !hideChannelServiceItem {
+                if context?.viewState.isSavedMessagesRoom == true, let item = viewState.type.eventBasedItem, let savedFrom = item.properties.savedFrom {
+                    SavedFromHeader(savedFrom: savedFrom)
+                        .padding(.horizontal, 16)
+                        .frame(maxWidth: .infinity, alignment: item.isOutgoing ? .trailing : .leading)
+                }
                 timelineView
                 if let source = viewState.type.eventBasedItem?.properties.channelForwardSource, let service = context?.viewState.channelService {
                     StalkChannelLinkCard(url: source, service: service)
+                }
+                if let eventID = viewState.identifier.eventID, let store = context?.viewState.roomTaskBasis {
+                    RoomTaskBasisBadgeHost(store: store, eventID: eventID) { taskID in
+                        context?.send(viewAction: .roomTaskBadgeTapped(taskID: taskID))
+                    }
+                    .padding(.horizontal, 16)
+                    .frame(maxWidth: .infinity, alignment: viewState.type.eventBasedItem?.isOutgoing == true ? .trailing : .leading)
                 }
             }
         }

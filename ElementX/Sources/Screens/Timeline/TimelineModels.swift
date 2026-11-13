@@ -31,6 +31,7 @@ enum TimelineViewModelAction {
     case viewInRoomTimeline(eventID: String, threadRootEventID: String?)
     case displayRoom(roomID: String, via: [String])
     case displayMediaDetails(item: EventBasedMessageTimelineItemProtocol)
+    case displayRoomTasks(RoomTasksEntry)
 }
 
 enum TimelineViewPollAction {
@@ -60,6 +61,7 @@ enum TimelineViewAction {
     case stalkFileShareTapped(itemID: TimelineItemIdentifier)
     case stalkDiskReferenceTapped(blobID: String)
     case stalkDiskLinkTapped(URL)
+    case roomTaskBadgeTapped(taskID: Int)
     case itemSendInfoTapped(itemID: TimelineItemIdentifier)
     case toggleReaction(key: String, itemID: TimelineItemIdentifier)
     case sendReadReceiptIfNeeded(TimelineItemIdentifier)
@@ -108,6 +110,12 @@ struct TimelineViewState: BindableState {
     var channelService: StalkChannelService?
     var channelAccess: StalkChannelSnapshot?
     var callSummaryService: CallTimelineSummaryService?
+    /// STMOB-333: личная комната «Сохранённые» (в ней нет «Сохранить» и задач).
+    var isSavedMessagesRoom = false
+    /// STMOB-333: задачи комнаты включены на сервере и доступны в этой комнате.
+    var roomTasksAvailable = false
+    /// Сообщения-основания задач: идентификатор события → отметка «Задача».
+    let roomTaskBasis = RoomTaskBasisStore()
     var isChannelMain: Bool {
         channelAccess?.isChannel == true && timelineKind.threadRootEventID == nil
     }
@@ -237,6 +245,7 @@ enum TimelineAlertInfoType: Hashable {
     case sendingFailed
     case encryptionAuthenticity(String)
     case encryptionForwarder(String)
+    case saveUnencrypted
 }
 
 struct RoomMemberState {

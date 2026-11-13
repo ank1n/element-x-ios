@@ -37,6 +37,7 @@ enum RoomDetailsScreenCoordinatorAction {
     case transferOwnership
     case presentWidgets
     case presentThreadList
+    case presentRoomTasks
     case presentRoomSearch
 }
 
@@ -104,6 +105,8 @@ final class RoomDetailsScreenCoordinator: CoordinatorProtocol {
                     actionsSubject.send(.presentWidgets)
                 case .displayThreadList:
                     actionsSubject.send(.presentThreadList)
+                case .displayRoomTasks:
+                    actionsSubject.send(.presentRoomTasks)
                 case .displayRoomSearch:
                     actionsSubject.send(.presentRoomSearch)
                 }

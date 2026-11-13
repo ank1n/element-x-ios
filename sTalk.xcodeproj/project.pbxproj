@@ -23,6 +23,9 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
+		8D2AD84A924CDAC494264C16 /* SavedMessagesRoomTasksTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42B57CFBB60F289DDDD076CD /* SavedMessagesRoomTasksTests.swift */; };
+		F7334444C544EAECDFC68907 /* RoomTasks.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60A5D513699DDBED861D247 /* RoomTasks.swift */; };
+		10F22AFA9633A016C02115B5 /* StalkSavedMessages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 233C30DBF31DCA834FC2D355 /* StalkSavedMessages.swift */; };
 		00068D01C62A7415CAB467AE /* AudioRoomTimelineItemContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B702D03F6407F6C81515AE /* AudioRoomTimelineItemContent.swift */; };
 		004D39A0039A0A289D544C9C /* ContactsListScreenCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D32B6F32EA7E7CC70F551DF4 /* ContactsListScreenCoordinator.swift */; };
 		006B1CB21F64C4C6E468CE87 /* ArchiveScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4829720DD30D57A9D135C052 /* ArchiveScreen.swift */; };
@@ -1757,6 +1760,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		42B57CFBB60F289DDDD076CD /* SavedMessagesRoomTasksTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedMessagesRoomTasksTests.swift; sourceTree = "<group>"; };
+		A60A5D513699DDBED861D247 /* RoomTasks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomTasks.swift; sourceTree = "<group>"; };
+		233C30DBF31DCA834FC2D355 /* StalkSavedMessages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StalkSavedMessages.swift; sourceTree = "<group>"; };
 		002F24F410A833D9007532A3 /* ResolveVerifiedUserSendFailureScreenCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResolveVerifiedUserSendFailureScreenCoordinator.swift; sourceTree = "<group>"; };
 		006D042A60125027D9219504 /* RoomMembersFlowCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomMembersFlowCoordinatorTests.swift; sourceTree = "<group>"; };
 		009C6DA752C96B96A2903F50 /* AccessibilityTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = AccessibilityTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -4180,6 +4186,7 @@
 			children = (
 				C2ED11B60091F9BFB91578D0 /* RoomDetailsScreenCoordinator.swift */,
 				251D91E117F72F7C54A18C5A /* RoomDetailsScreenModels.swift */,
+				A60A5D513699DDBED861D247 /* RoomTasks.swift */,
 				1659D2D7B82AECD521C09C0E /* RoomDetailsScreenViewModel.swift */,
 				8C2609841BF612F997AFC5E7 /* RoomDetailsScreenViewModelProtocol.swift */,
 				250029146C481663FA84E1B2 /* View */,
@@ -4467,6 +4474,7 @@
 				DAAB334FA4ADFA7C4AD14A35 /* StalkChannelAdministration.swift */,
 				D3364BB0A04C987198905229 /* StalkChannelCreation.swift */,
 				5C2BED1F2AA06915720220D7 /* StalkChannelForwarding.swift */,
+				233C30DBF31DCA834FC2D355 /* StalkSavedMessages.swift */,
 				314657AFECD40FFFF6AD9749 /* StalkChannelInsights.swift */,
 				7D196B5A8ABB5C460804CD74 /* StalkChannelService.swift */,
 				A756DA4A6C0F1D1BF7761602 /* StalkMeetingRoomSummary.swift */,
@@ -6602,6 +6610,7 @@
 				3C3B29247428AA4DD2972E25 /* StalkCompatibilityTests.swift */,
 				29AD2138856D1146E8B85CE3 /* StalkDiskCardTests.swift */,
 				6F8F53F7A294BC6F72A2DEBA /* StalkNativeUpdatesTests.swift */,
+				42B57CFBB60F289DDDD076CD /* SavedMessagesRoomTasksTests.swift */,
 				98BCF4B9972AD94E45C5C3B7 /* StalkThemeTests.swift */,
 				99752DC175663B51C9390F12 /* StalkUpdateContentTests.swift */,
 				561108F5741CAF7A6ED62D14 /* StalkUpdatePhotoTests.swift */,
@@ -8627,6 +8636,7 @@
 				8D9A3F471DC20472C11565B2 /* StalkCompatibilityTests.swift in Sources */,
 				2E3D9FB29E280A7EAA1C92B8 /* StalkDiskCardTests.swift in Sources */,
 				7F66AD360F123FD552AF1871 /* StalkNativeUpdatesTests.swift in Sources */,
+				8D2AD84A924CDAC494264C16 /* SavedMessagesRoomTasksTests.swift in Sources */,
 				5EDB7BA3035ACEA6C3EC8B5A /* StalkThemeTests.swift in Sources */,
 				4F4AB39A5F5DF5C154091FDB /* StalkUpdateContentTests.swift in Sources */,
 				FC9E992A3BF1A68D69C65A8F /* StalkUpdatePhotoTests.swift in Sources */,
@@ -9397,6 +9407,7 @@
 				1A88177213C02F9CD187A9A2 /* RoomDetailsScreen.swift in Sources */,
 				01868700D132B931366C48C0 /* RoomDetailsScreenCoordinator.swift in Sources */,
 				ABC1DA42C13DC921D914A4C8 /* RoomDetailsScreenModels.swift in Sources */,
+				F7334444C544EAECDFC68907 /* RoomTasks.swift in Sources */,
 				EF5AD3B0EF2210DCB4DD75CF /* RoomDetailsScreenViewModel.swift in Sources */,
 				FD551DE2BE866E4CC7F86AA8 /* RoomDetailsScreenViewModelProtocol.swift in Sources */,
 				89EF0F6585F17822764D61AA /* RoomDirectoryCell.swift in Sources */,
@@ -9627,6 +9638,7 @@
 				CD45B468BBB8D598182D5CCE /* StalkChannelCreation.swift in Sources */,
 				95E7C30229121A4957F09089 /* StalkChannelCreationView.swift in Sources */,
 				EB80753E9072937A7692DA1D /* StalkChannelForwarding.swift in Sources */,
+				10F22AFA9633A016C02115B5 /* StalkSavedMessages.swift in Sources */,
 				AC7D67233B10AEE93C3E2005 /* StalkChannelInsights.swift in Sources */,
 				4907123D112A3149BEE5E48C /* StalkChannelInsightsView.swift in Sources */,
 				0AD004189D99110F17BE4E62 /* StalkChannelLinkCard.swift in Sources */,

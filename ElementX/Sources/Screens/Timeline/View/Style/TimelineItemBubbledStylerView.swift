@@ -170,7 +170,9 @@ struct TimelineItemBubbledStylerView<Content: View>: View {
                                                               isViewSourceEnabled: context.viewState.isViewSourceEnabled,
                                                               areThreadsEnabled: context.viewState.areThreadsEnabled,
                                                               timelineKind: context.viewState.timelineKind,
-                                                              emojiProvider: context.viewState.emojiProvider, channel: context.viewState.channelAccess)
+                                                              emojiProvider: context.viewState.emojiProvider, channel: context.viewState.channelAccess,
+                                                              canSaveToSavedMessages: !context.viewState.isSavedMessagesRoom,
+                                                              canCreateRoomTask: context.viewState.roomTasksAvailable)
                 TimelineItemMacContextMenu(item: timelineItem, actionProvider: provider) { action in
                     context.send(viewAction: .handleTimelineItemMenuAction(itemID: timelineItem.id, action: action))
                 }

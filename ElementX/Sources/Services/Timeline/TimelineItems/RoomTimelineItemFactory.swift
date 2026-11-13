@@ -143,7 +143,8 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
                                                orderedReadReceipts: buildOrderedReadReceipts(eventItemProxy.readReceipts),
                                                encryptionAuthenticity: buildEncryptionAuthenticity(eventItemProxy.shieldState),
                                                encryptionForwarder: eventItemProxy.forwarder,
-                                               channelForwardSource: StalkChannelForwarding.sourceURL(from: eventItemProxy.debugInfo.originalJSON)))
+                                               channelForwardSource: StalkChannelForwarding.sourceURL(from: eventItemProxy.debugInfo.originalJSON),
+                                               savedFrom: StalkSavedFrom.parse(originalJSON: eventItemProxy.debugInfo.originalJSON)))
     }
     
     private func buildImageTimelineItem(for eventItemProxy: EventTimelineItemProxy,
@@ -168,7 +169,8 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
                                                 orderedReadReceipts: buildOrderedReadReceipts(eventItemProxy.readReceipts),
                                                 encryptionAuthenticity: buildEncryptionAuthenticity(eventItemProxy.shieldState),
                                                 encryptionForwarder: eventItemProxy.forwarder,
-                                                channelForwardSource: StalkChannelForwarding.sourceURL(from: eventItemProxy.debugInfo.originalJSON)))
+                                                channelForwardSource: StalkChannelForwarding.sourceURL(from: eventItemProxy.debugInfo.originalJSON),
+                                                savedFrom: StalkSavedFrom.parse(originalJSON: eventItemProxy.debugInfo.originalJSON)))
     }
     
     private func buildVideoTimelineItem(for eventItemProxy: EventTimelineItemProxy,
@@ -193,7 +195,8 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
                                                 orderedReadReceipts: buildOrderedReadReceipts(eventItemProxy.readReceipts),
                                                 encryptionAuthenticity: buildEncryptionAuthenticity(eventItemProxy.shieldState),
                                                 encryptionForwarder: eventItemProxy.forwarder,
-                                                channelForwardSource: StalkChannelForwarding.sourceURL(from: eventItemProxy.debugInfo.originalJSON)))
+                                                channelForwardSource: StalkChannelForwarding.sourceURL(from: eventItemProxy.debugInfo.originalJSON),
+                                                savedFrom: StalkSavedFrom.parse(originalJSON: eventItemProxy.debugInfo.originalJSON)))
     }
     
     private func buildAudioTimelineItem(for eventItemProxy: EventTimelineItemProxy,
@@ -218,7 +221,8 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
                                                 orderedReadReceipts: buildOrderedReadReceipts(eventItemProxy.readReceipts),
                                                 encryptionAuthenticity: buildEncryptionAuthenticity(eventItemProxy.shieldState),
                                                 encryptionForwarder: eventItemProxy.forwarder,
-                                                channelForwardSource: StalkChannelForwarding.sourceURL(from: eventItemProxy.debugInfo.originalJSON)))
+                                                channelForwardSource: StalkChannelForwarding.sourceURL(from: eventItemProxy.debugInfo.originalJSON),
+                                                savedFrom: StalkSavedFrom.parse(originalJSON: eventItemProxy.debugInfo.originalJSON)))
     }
     
     private func buildVoiceTimelineItem(for eventItemProxy: EventTimelineItemProxy,
@@ -242,7 +246,8 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
                                                        orderedReadReceipts: buildOrderedReadReceipts(eventItemProxy.readReceipts),
                                                        encryptionAuthenticity: buildEncryptionAuthenticity(eventItemProxy.shieldState),
                                                        encryptionForwarder: eventItemProxy.forwarder,
-                                                       channelForwardSource: StalkChannelForwarding.sourceURL(from: eventItemProxy.debugInfo.originalJSON)))
+                                                       channelForwardSource: StalkChannelForwarding.sourceURL(from: eventItemProxy.debugInfo.originalJSON),
+                                                       savedFrom: StalkSavedFrom.parse(originalJSON: eventItemProxy.debugInfo.originalJSON)))
     }
     
     private func buildFileTimelineItem(for eventItemProxy: EventTimelineItemProxy,
@@ -267,7 +272,8 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
                                                orderedReadReceipts: buildOrderedReadReceipts(eventItemProxy.readReceipts),
                                                encryptionAuthenticity: buildEncryptionAuthenticity(eventItemProxy.shieldState),
                                                encryptionForwarder: eventItemProxy.forwarder,
-                                               channelForwardSource: StalkChannelForwarding.sourceURL(from: eventItemProxy.debugInfo.originalJSON)))
+                                               channelForwardSource: StalkChannelForwarding.sourceURL(from: eventItemProxy.debugInfo.originalJSON),
+                                               savedFrom: StalkSavedFrom.parse(originalJSON: eventItemProxy.debugInfo.originalJSON)))
     }
     
     private func buildNoticeTimelineItem(for eventItemProxy: EventTimelineItemProxy,
@@ -295,7 +301,8 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
                                                  orderedReadReceipts: buildOrderedReadReceipts(eventItemProxy.readReceipts),
                                                  encryptionAuthenticity: buildEncryptionAuthenticity(eventItemProxy.shieldState),
                                                  encryptionForwarder: eventItemProxy.forwarder,
-                                                 channelForwardSource: StalkChannelForwarding.sourceURL(from: eventItemProxy.debugInfo.originalJSON)))
+                                                 channelForwardSource: StalkChannelForwarding.sourceURL(from: eventItemProxy.debugInfo.originalJSON),
+                                                 savedFrom: StalkSavedFrom.parse(originalJSON: eventItemProxy.debugInfo.originalJSON)))
     }
     
     private func buildEmoteTimelineItem(for eventItemProxy: EventTimelineItemProxy,
@@ -319,7 +326,8 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
                                                 orderedReadReceipts: buildOrderedReadReceipts(eventItemProxy.readReceipts),
                                                 encryptionAuthenticity: buildEncryptionAuthenticity(eventItemProxy.shieldState),
                                                 encryptionForwarder: eventItemProxy.forwarder,
-                                                channelForwardSource: StalkChannelForwarding.sourceURL(from: eventItemProxy.debugInfo.originalJSON)))
+                                                channelForwardSource: StalkChannelForwarding.sourceURL(from: eventItemProxy.debugInfo.originalJSON),
+                                                savedFrom: StalkSavedFrom.parse(originalJSON: eventItemProxy.debugInfo.originalJSON)))
     }
     
     private func buildLocationTimelineItem(for eventItemProxy: EventTimelineItemProxy,
@@ -343,7 +351,8 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
                                                    orderedReadReceipts: buildOrderedReadReceipts(eventItemProxy.readReceipts),
                                                    encryptionAuthenticity: buildEncryptionAuthenticity(eventItemProxy.shieldState),
                                                    encryptionForwarder: eventItemProxy.forwarder,
-                                                   channelForwardSource: StalkChannelForwarding.sourceURL(from: eventItemProxy.debugInfo.originalJSON)))
+                                                   channelForwardSource: StalkChannelForwarding.sourceURL(from: eventItemProxy.debugInfo.originalJSON),
+                                                   savedFrom: StalkSavedFrom.parse(originalJSON: eventItemProxy.debugInfo.originalJSON)))
     }
     
     private func buildGalleryTimelineItem(for eventItemProxy: EventTimelineItemProxy,
@@ -368,7 +377,8 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
                                                orderedReadReceipts: buildOrderedReadReceipts(eventItemProxy.readReceipts),
                                                encryptionAuthenticity: buildEncryptionAuthenticity(eventItemProxy.shieldState),
                                                encryptionForwarder: eventItemProxy.forwarder,
-                                               channelForwardSource: StalkChannelForwarding.sourceURL(from: eventItemProxy.debugInfo.originalJSON)))
+                                               channelForwardSource: StalkChannelForwarding.sourceURL(from: eventItemProxy.debugInfo.originalJSON),
+                                               savedFrom: StalkSavedFrom.parse(originalJSON: eventItemProxy.debugInfo.originalJSON)))
     }
     
     private func buildStickerTimelineItem(_ eventItemProxy: EventTimelineItemProxy,
@@ -398,7 +408,8 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
                                                          orderedReadReceipts: buildOrderedReadReceipts(eventItemProxy.readReceipts),
                                                          encryptionAuthenticity: buildEncryptionAuthenticity(eventItemProxy.shieldState),
                                                          encryptionForwarder: eventItemProxy.forwarder,
-                                                         channelForwardSource: StalkChannelForwarding.sourceURL(from: eventItemProxy.debugInfo.originalJSON)))
+                                                         channelForwardSource: StalkChannelForwarding.sourceURL(from: eventItemProxy.debugInfo.originalJSON),
+                                                         savedFrom: StalkSavedFrom.parse(originalJSON: eventItemProxy.debugInfo.originalJSON)))
     }
     
     private func buildPollTimelineItem(_ eventItemProxy: EventTimelineItemProxy,
@@ -460,7 +471,8 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
                                                       orderedReadReceipts: buildOrderedReadReceipts(eventItemProxy.readReceipts),
                                                       encryptionAuthenticity: buildEncryptionAuthenticity(eventItemProxy.shieldState),
                                                       encryptionForwarder: eventItemProxy.forwarder,
-                                                      channelForwardSource: StalkChannelForwarding.sourceURL(from: eventItemProxy.debugInfo.originalJSON)))
+                                                      channelForwardSource: StalkChannelForwarding.sourceURL(from: eventItemProxy.debugInfo.originalJSON),
+                                                      savedFrom: StalkSavedFrom.parse(originalJSON: eventItemProxy.debugInfo.originalJSON)))
     }
     
     private func buildRedactedTimelineItem(_ eventItemProxy: EventTimelineItemProxy,
