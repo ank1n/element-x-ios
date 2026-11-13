@@ -278,6 +278,8 @@ struct MeetingEditScreen: View {
             }
             .pickerStyle(.menu)
             .tint(accentBlue)
+            .lineLimit(1)
+            .fixedSize()
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
