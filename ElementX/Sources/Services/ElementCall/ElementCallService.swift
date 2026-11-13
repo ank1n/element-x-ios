@@ -1415,6 +1415,9 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
                 guard let self else { return }
                 
                 let participants: [String] = activeRoomCallParticipants
+                // STMOB-334: что видит фаза «звонит» — без этой строки «звонит после ответа
+                // на другом устройстве» по логу не разобрать.
+                DiagLog.write("Call", "ring watcher room=\(incomingCallID.roomID) hasCall=\(hasOngoingCall) participants=\(participants.count) own=\(participants.contains(roomProxy.ownUserID))")
                 
                 if !hasOngoingCall {
                     MXLog.info("Call cancelled by remote")
@@ -1466,6 +1469,13 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
     private func reportEndedCall(incomingCallID: CallID, reason: CXCallEndedReason) {
         disarmIncomingRingWatchers()
         callProvider.reportCall(with: incomingCallID.callKitID, endedAt: nil, reason: reason)
+        DiagLog.write("Call", "ring ended room=\(incomingCallID.roomID) reason=\(reason.rawValue)")
+        // STMOB-334: звонок здесь закончен — пометка «звонит» снимается сразу. Раньше она
+        // жила до 90 с: новый вызов в ту же комнату (перезвон после ответа в вебе)
+        // глушился как дубль, а позже пометка ложно давала «пропущенный».
+        if self.incomingCallID?.callKitID == incomingCallID.callKitID {
+            self.incomingCallID = nil
+        }
 
         // Notify about missed call for unanswered scenarios
         if reason == .remoteEnded || reason == .unanswered {

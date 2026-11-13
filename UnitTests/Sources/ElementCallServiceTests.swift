@@ -6,6 +6,7 @@
 //
 
 import Clocks
+import Combine
 @testable import ElementX
 import PushKit
 import XCTest
@@ -203,6 +204,49 @@ class ElementCallServiceTests: XCTestCase {
         service.pushRegistry(pushRegistry, didReceiveIncomingPushWith: второй, for: .voIP) { }
         
         XCTAssertEqual(пропущенных, 1, "вчерашний неотвеченный обязан попасть в историю")
+    }
+    
+    /// STMOB-334 (прод, 13.11): ответил в вебе — iPhone обязан смолкнуть. Узнать об
+    /// ответе телефон может только по своему участию в звонке комнаты: отбоя пушем нет.
+    /// И перезвон в ту же комнату сразу после этого — новый вызов, а не «повтор».
+    func testОтветНаДругомУстройствеГаситЗвонокИНеГлушитПерезвон() async {
+        setupService()
+        
+        let room = JoinedRoomProxyMock(.init(id: "!room:example.com", hasOngoingCall: true))
+        room.subscribeToCallDeclineEventsRtcNotificationEventIDListenerReturnValue = .failure(.eventNotFound)
+        let info = RoomInfoProxyMock(.init(id: "!room:example.com", hasOngoingCall: true))
+        info.activeRoomCallParticipants = ["@caller:example.com"]
+        let infoSubject = CurrentValueSubject<RoomInfoProxyProtocol, Never>(info)
+        room.infoPublisher = infoSubject.asCurrentValuePublisher()
+        let client = ClientProxyMock(.init())
+        client.roomForIdentifierClosure = { _ in .joined(room) }
+        service.setClientProxy(client)
+        
+        let ended = XCTestExpectation(description: "answered elsewhere")
+        callProvider.reportCallWithEndedAtReasonClosure = { _, _, reason in
+            if reason == .answeredElsewhere { ended.fulfill() }
+        }
+        
+        let первый = PKPushPayloadMock().updatingExpiration(currentDate, lifetime: 30)
+        service.pushRegistry(pushRegistry, didReceiveIncomingPushWith: первый, for: .voIP) { }
+        XCTAssertEqual(показаноЧеловеку, 1)
+        
+        // Дать наблюдателю фазы «звонит» подняться и увидеть комнату.
+        for _ in 0..<20 where room.subscribeToCallDeclineEventsRtcNotificationEventIDListenerCallsCount == 0 {
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        
+        let answered = RoomInfoProxyMock(.init(id: "!room:example.com", hasOngoingCall: true))
+        answered.activeRoomCallParticipants = ["@caller:example.com", room.ownUserID]
+        infoSubject.send(answered)
+        await fulfillment(of: [ended], timeout: 1)
+        
+        currentDate = currentDate.addingTimeInterval(14)
+        let перезвон = PKPushPayloadMock().updatingExpiration(currentDate, lifetime: 30)
+        service.pushRegistry(pushRegistry, didReceiveIncomingPushWith: перезвон, for: .voIP) { }
+        XCTAssertEqual(показаноЧеловеку, 2, "звонок, уже погашенный здесь, не должен глушить новый вызов в ту же комнату")
+        withExtendedLifetime(client) { }
     }
     
     // MARK: - Helpers
