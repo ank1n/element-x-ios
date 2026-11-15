@@ -5,6 +5,7 @@
 // Please see LICENSE files in the repository root for full details.
 //
 
+import CallKit
 import Clocks
 import Combine
 @testable import ElementX
@@ -246,6 +247,48 @@ class ElementCallServiceTests: XCTestCase {
         let перезвон = PKPushPayloadMock().updatingExpiration(currentDate, lifetime: 30)
         service.pushRegistry(pushRegistry, didReceiveIncomingPushWith: перезвон, for: .voIP) { }
         XCTAssertEqual(показаноЧеловеку, 2, "звонок, уже погашенный здесь, не должен глушить новый вызов в ту же комнату")
+        withExtendedLifetime(client) { }
+    }
+    
+    /// STMOB-334, прогон 3 (15.11): приложение убито, VoIP-пуш поднял его заново, и вызов
+    /// гас через 0,7 с как «ответили на другом устройстве». В хранилище от прошлого процесса
+    /// остался наш call.member из прошлого звонка. Снимок из хранилища — не ответ; ответ —
+    /// только то, что пришло синком после показа вызова.
+    func testСвойУчастникИзКэшаНеГаситЗвонокПослеХолодногоСтарта() async {
+        setupService()
+        
+        let room = JoinedRoomProxyMock(.init(id: "!room:example.com", hasOngoingCall: true))
+        room.subscribeToCallDeclineEventsRtcNotificationEventIDListenerReturnValue = .failure(.eventNotFound)
+        let cached = RoomInfoProxyMock(.init(id: "!room:example.com", hasOngoingCall: true))
+        cached.activeRoomCallParticipants = ["@caller:example.com", room.ownUserID]
+        let infoSubject = CurrentValueSubject<RoomInfoProxyProtocol, Never>(cached)
+        room.infoPublisher = infoSubject.asCurrentValuePublisher()
+        let client = ClientProxyMock(.init())
+        client.roomForIdentifierClosure = { _ in .joined(room) }
+        service.setClientProxy(client)
+        
+        var reasons: [CXCallEndedReason] = []
+        callProvider.reportCallWithEndedAtReasonClosure = { _, _, reason in reasons.append(reason) }
+        
+        let пуш = PKPushPayloadMock().updatingExpiration(currentDate, lifetime: 30)
+        service.pushRegistry(pushRegistry, didReceiveIncomingPushWith: пуш, for: .voIP) { }
+        
+        for _ in 0..<20 where room.subscribeToCallDeclineEventsRtcNotificationEventIDListenerCallsCount == 0 {
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(room.subscribeToCallDeclineEventsRtcNotificationEventIDListenerCallsCount, 1, "наблюдатель должен подняться")
+        XCTAssertFalse(reasons.contains(.answeredElsewhere), "снимок из хранилища — не ответ на другом устройстве")
+        
+        // Синк подтвердил: мы действительно в звонке с другого устройства.
+        let synced = RoomInfoProxyMock(.init(id: "!room:example.com", hasOngoingCall: true))
+        synced.activeRoomCallParticipants = ["@caller:example.com", room.ownUserID]
+        infoSubject.send(synced)
+        for _ in 0..<20 where !reasons.contains(.answeredElsewhere) {
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(reasons, [.answeredElsewhere], "подтверждённое синком участие гасит вызов")
         withExtendedLifetime(client) { }
     }
     

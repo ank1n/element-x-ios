@@ -1402,27 +1402,36 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
 
         roomProxy.subscribeToRoomInfoUpdates()
         
+        // STMOB-334: первое значение — снимок из хранилища, а не с сервера. После холодного
+        // старта (приложение убито, его поднял VoIP-пуш) там лежит состояние, сохранённое
+        // прошлым процессом, вместе с нашим же call.member из прошлого звонка. По такому
+        // снимку вызов гас через 0,7 с как «ответили на другом устройстве», хотя никто не
+        // отвечал (прогон 3, 15.11). Своё участие засчитываем только по обновлению,
+        // пришедшему после подписки, то есть уже с синком.
         incomingCallRoomInfoCancellable = roomProxy
             .infoPublisher
-            .compactMap { ($0.hasRoomCall, $0.activeRoomCallParticipants) }
+            .scan((isFresh: false, hasRoomCall: false, participants: [String](), index: -1)) { previous, info in
+                (previous.index >= 0, info.hasRoomCall, info.activeRoomCallParticipants, previous.index + 1)
+            }
+            .map { ($0.isFresh, $0.hasRoomCall, $0.participants) }
             .removeDuplicates { $0 == $1 }
-            .drop { hasRoomCall, _ in
+            .drop { _, hasRoomCall, _ in
                 // Filter all updates before hasRoomCall becomes `true`. Then we can correctly
                 // detect its change to `false` to stop ringing when the caller hangs up.
                 !hasRoomCall
             }
-            .sink { [weak self] hasOngoingCall, activeRoomCallParticipants in
+            .sink { [weak self] isFresh, hasOngoingCall, participants in
                 guard let self else { return }
                 
-                let participants: [String] = activeRoomCallParticipants
+                let isOwnInCall = participants.contains(roomProxy.ownUserID)
                 // STMOB-334: что видит фаза «звонит» — без этой строки «звонит после ответа
                 // на другом устройстве» по логу не разобрать.
-                DiagLog.write("Call", "ring watcher room=\(incomingCallID.roomID) hasCall=\(hasOngoingCall) participants=\(participants.count) own=\(participants.contains(roomProxy.ownUserID))")
+                DiagLog.write("Call", "ring watcher room=\(incomingCallID.roomID) fresh=\(isFresh) hasCall=\(hasOngoingCall) participants=\(participants.count) own=\(isOwnInCall)")
                 
                 if !hasOngoingCall {
                     MXLog.info("Call cancelled by remote")
                     reportEndedCall(incomingCallID: incomingCallID, reason: .remoteEnded)
-                } else if participants.contains(roomProxy.ownUserID) {
+                } else if isOwnInCall, isFresh {
                     MXLog.info("Call answered elsewhere")
                     reportEndedCall(incomingCallID: incomingCallID, reason: .answeredElsewhere)
                 }
