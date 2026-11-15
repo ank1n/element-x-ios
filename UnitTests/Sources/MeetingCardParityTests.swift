@@ -35,6 +35,30 @@ final class MeetingCardParityTests: XCTestCase {
         return try JSONSerialization.data(withJSONObject: value)
     }
 
+    /// 15.11: с выката STALK-1397 у отменённых встреч rsvp = "cancelled", а personal-rsvp
+    /// отдаёт "tentative". Строгий разбор ронял весь список — у dp пустой календарь,
+    /// в том числе без регулярной встречи на сегодня. Плохая запись не должна прятать
+    /// остальные.
+    func testMeetingsListSurvivesUnknownRSVPAndBrokenRow() async throws {
+        MeetingCardParityURLProtocol.handler = { _ in
+            let body = #"""
+            {"meetings":[
+              {"id":1,"title":"Отменённая","start_time":"2026-11-14T10:00:00.000Z","end_time":"2026-11-14T11:00:00.000Z",
+               "status":"cancelled","participants":[{"user_id":"@me:test","rsvp":"cancelled"}]},
+              {"id":497,"title":"Регулярная","start_time":"2026-11-15T14:00:00.000Z","end_time":"2026-11-15T14:45:00.000Z",
+               "status":"scheduled","recurring_group_id":"760362fb","occurrence_index":228,
+               "participants":[{"user_id":"@me:test","rsvp":"tentative"}]},
+              {"id":2,"title":"Без даты"}
+            ]}
+            """#
+            return (200, Data(body.utf8))
+        }
+        let meetings = try await service().fetchMeetingsList()
+        XCTAssertEqual(meetings.map(\.id), [1, 497], "запись без start_time пропущена, остальные на месте")
+        XCTAssertEqual(meetings[0].participants.first?.rsvp, .declined)
+        XCTAssertEqual(meetings[1].participants.first?.rsvp, .pending)
+    }
+
     func testHostIsolationAndSupportedLinkForms() {
         for href in ["/meet/s/a-2", "https://meeting.invalid:8443/meet/s/a-2?from=chat#join", "vector://vector/meet/s/a-2/"] {
             let link = StalkMeetingLink.link(href, homeserver: origin)

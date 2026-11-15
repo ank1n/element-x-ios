@@ -96,6 +96,17 @@ enum RSVPStatus: String, Codable, Equatable {
     case accepted
     case declined
     case pending
+
+    /// Сервер расширяет список значений без предупреждения: с 13.11 (STALK-1397) у отменённых
+    /// встреч приходит "cancelled", personal-rsvp отдаёт "tentative". Строгий разбор ронял
+    /// весь календарь — у dp пропали все встречи. Незнакомое значение не ошибка.
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        switch raw {
+        case "cancelled": self = .declined
+        default: self = RSVPStatus(rawValue: raw) ?? .pending
+        }
+    }
 }
 
 struct Meeting: Identifiable, Equatable, Codable {
@@ -238,6 +249,25 @@ struct MeetingAttachment: Identifiable, Equatable, Codable {
 
 struct MeetingsListResponse: Codable {
     let meetings: [Meeting]
+
+    /// Встречи разбираются по одной: запись в незнакомом формате пропускается, а не
+    /// оставляет человека с пустым календарём.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        var items = try c.nestedUnkeyedContainer(forKey: .meetings)
+        var meetings: [Meeting] = []
+        while !items.isAtEnd {
+            do {
+                try meetings.append(items.decode(Meeting.self))
+            } catch {
+                MXLog.error("Meetings: skipped undecodable meeting: \(error)")
+                _ = try? items.decode(SkippedItem.self)
+            }
+        }
+        self.meetings = meetings
+    }
+
+    private struct SkippedItem: Decodable { }
 }
 
 struct HolidaysResponse: Codable {
