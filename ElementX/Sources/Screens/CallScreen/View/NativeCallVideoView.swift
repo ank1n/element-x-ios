@@ -606,6 +606,7 @@ private struct GroupCallLayout: View {
     // «1 крупный сверху») в широкой-низкой геометрии ломается и переобрезает
     // видео. В landscape используем ровный grid с .fit-тайлами.
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.callControlsInset) private var controlsInset
 
     var body: some View {
         GeometryReader { geometry in
@@ -649,6 +650,8 @@ private struct GroupCallLayout: View {
                     }
                 }
                 .padding(spacing)
+                // Landscape: сетка заканчивается над панелью кнопок, а не под ней.
+                .padding(.bottom, isLandscape ? controlsInset : 0)
             }
             // Landscape: аспект тайлов считается из геометрии → ряды всегда влезают,
             // скролл не нужен (он и давал «уехавшую вниз» сетку)
@@ -700,7 +703,7 @@ private struct GroupCallLayout: View {
             let rows = max(1, Int(ceil(Double(max(count, 1)) / Double(cols))))
             let spacing: CGFloat = 4
             let colWidth = (geometry.size.width - CGFloat(cols + 1) * spacing) / CGFloat(cols)
-            let rowHeight = (geometry.size.height - CGFloat(rows + 1) * spacing) / CGFloat(rows)
+            let rowHeight = (geometry.size.height - controlsInset - CGFloat(rows + 1) * spacing) / CGFloat(rows)
             guard rowHeight > 0, colWidth > 0 else { return 4.0 / 3.0 }
             return colWidth / rowHeight
         }

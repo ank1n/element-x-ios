@@ -20,6 +20,11 @@ struct CallScreen: View {
     @State private var showRecordingConsent = false
     @State private var showParticipants = false
 
+    // Высота нижней панели кнопок вместе с отступом: сетка участников в landscape
+    // оставляет под неё место, иначе кнопки ложатся поверх плиток (dp, 15.11).
+    @State private var controlsHeight: CGFloat = 0
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+
     private var isMinimized: Bool {
         context.viewState.isMinimized
     }
@@ -30,6 +35,7 @@ struct CallScreen: View {
                 content
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .ignoresSafeArea(.container, edges: .bottom)
+                    .environment(\.callControlsInset, isMinimized ? 0 : controlsHeight)
 
                 if !isMinimized, context.viewState.isRecoveringConnection {
                     // STMOB-262: медиа перестало доходить до сервера. Раньше в этой
@@ -89,7 +95,9 @@ struct CallScreen: View {
                                 .allowsHitTesting(false)
 
                             callControlButtons
-                                .padding(.bottom, 48)
+                                // В landscape индикатор «домой» низкий — прежние 48 pt съедали треть высоты.
+                                .padding(.bottom, verticalSizeClass == .compact ? 16 : 48)
+                                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { controlsHeight = $0 }
                         }
                     }
                     .ignoresSafeArea(.container, edges: .bottom)
@@ -1023,4 +1031,9 @@ private struct CallParticipantProfile: View {
                 if case .dismiss = action { dismiss() }
             }
     }
+}
+
+extension EnvironmentValues {
+    /// Сколько снизу занимает панель кнопок звонка поверх видео.
+    @Entry var callControlsInset: CGFloat = 0
 }
