@@ -344,7 +344,13 @@ struct CallDetailScreenViewState: BindableState {
         let createdKeys = Set(createdTasks.filter {
             $0.egressId == source && !($0.trackitIssueId ?? "").isEmpty
         }.map { "\($0.topicIndex)-\($0.taskIndex)" })
-        return allSuggestedTasks.filter { !createdKeys.contains($0.id) }
+        /// LLM повторяет одно и то же поручение в нескольких темах: одинаковый текст
+        /// и исполнитель — одна карточка; заведённое по любой из копий скрывает все.
+        func sameTaskKey(_ task: SuggestedTask) -> String {
+            "\(task.assignee?.matrixID ?? "")|\(task.text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())"
+        }
+        var seen = Set(allSuggestedTasks.filter { createdKeys.contains($0.id) }.map(sameTaskKey))
+        return allSuggestedTasks.filter { seen.insert(sameTaskKey($0)).inserted }
     }
 
     var hasTasks: Bool {
