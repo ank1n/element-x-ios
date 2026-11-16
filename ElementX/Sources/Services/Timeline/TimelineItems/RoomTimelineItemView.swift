@@ -127,6 +127,8 @@ struct RoomTimelineItemView: View {
                 if let eventID = item.id.eventID, let service = context?.viewState.callSummaryService {
                     CallTimelineSummaryView(marker: CallInitiateMarker(eventID: eventID, timestamp: item.timestamp, video: true),
                                             service: service)
+                } else {
+                    let _ = MXLog.info("Call card: not attached to \(item.id) hasEventID=\(item.id.eventID != nil) hasService=\(context?.viewState.callSummaryService != nil)")
                 }
             }
         }
