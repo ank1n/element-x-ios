@@ -181,6 +181,9 @@ struct HomeScreenContent: View {
             }
             .onAppear {
                 isRoomListVisible = true
+                // Поиск мог закрыться, пока список был за открытым чатом, — onChange выше
+                // тогда не срабатывает, и флаг оставлял нижнюю панель скрытой.
+                UserDefaults.standard.set(context.isSearchFieldFocused, forKey: "stalk_search_active")
                 revealPendingInvitation()
             }
             .onDisappear {
