@@ -1828,7 +1828,7 @@
 "stalk_calldetail_dur_minutes" = "%dm";
 "stalk_calldetail_dur_seconds" = "%ds";
 "stalk_calldetail_key_points" = "Key points";
-"stalk_calldetail_llm_suggestions" = "Suggestions";
+"stalk_calldetail_llm_suggestions" = "AiLock suggestions";
 "stalk_calldetail_loading" = "Loading...";
 "stalk_calldetail_no_suggested_tasks" = "No suggested tasks";
 "stalk_calldetail_participants_count" = "%d participants";
