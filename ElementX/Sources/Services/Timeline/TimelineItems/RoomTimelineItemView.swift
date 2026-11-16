@@ -119,7 +119,16 @@ struct RoomTimelineItemView: View {
         case .callInvite(let item):
             CallInviteRoomTimelineView(timelineItem: item)
         case .callNotification(let item):
-            CallNotificationRoomTimelineView(timelineItem: item)
+            VStack(spacing: 0) {
+                CallNotificationRoomTimelineView(timelineItem: item)
+                // Карточка итогов звонка — и под стандартной плашкой «Звонок начат»: в комнатах,
+                // где нет нашего io.stalk.call.initiate, иначе её не было совсем. Две карточки на
+                // один звонок не появятся: сервис показывает итоги только у самого раннего маркера.
+                if let eventID = item.id.eventID, let service = context?.viewState.callSummaryService {
+                    CallTimelineSummaryView(marker: CallInitiateMarker(eventID: eventID, timestamp: item.timestamp, video: true),
+                                            service: service)
+                }
+            }
         }
     }
     
