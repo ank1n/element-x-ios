@@ -412,7 +412,7 @@ struct CallDetailScreen: View {
             }
 
             if !pending.isEmpty {
-                sectionHeader(NSLocalizedString("stalk_calldetail_llm_suggestions", tableName: "Localizable", value: "Предложения", comment: "Section header: LLM suggestions"))
+                sectionHeader(NSLocalizedString("stalk_calldetail_llm_suggestions", tableName: "Localizable", value: "Предложения AiLock", comment: "Section header: LLM suggestions"))
                 ForEach(pending) { task in
                     suggestedTaskCard(task)
                 }
