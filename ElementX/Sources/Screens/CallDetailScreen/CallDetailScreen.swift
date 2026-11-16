@@ -412,7 +412,14 @@ struct CallDetailScreen: View {
             }
 
             if !pending.isEmpty {
-                sectionHeader(NSLocalizedString("stalk_calldetail_llm_suggestions", tableName: "Localizable", value: "Предложения AiLock", comment: "Section header: LLM suggestions"))
+                HStack(spacing: 6) {
+                    Image("images/ailock-logo")
+                        .resizable()
+                        .frame(width: 18, height: 18)
+                        .padding(.top, 8)
+                        .accessibilityHidden(true)
+                    sectionHeader(NSLocalizedString("stalk_calldetail_llm_suggestions", tableName: "Localizable", value: "Предложения AiLock", comment: "Section header: LLM suggestions"))
+                }
                 ForEach(pending) { task in
                     suggestedTaskCard(task)
                 }
