@@ -14,6 +14,8 @@ enum ElementCallServiceAction {
     case endCall(roomID: String)
     case missedCall(roomID: String)
     case setAudioEnabled(_ enabled: Bool, roomID: String)
+    /// STMOB-336: система поставила звонок на удержание (ответ на сотовый «Удержать и ответить») или сняла с него.
+    case setHeld(_ held: Bool, roomID: String)
 }
 
 // sourcery: AutoMockable

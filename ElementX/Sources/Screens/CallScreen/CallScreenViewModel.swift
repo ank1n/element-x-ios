@@ -58,6 +58,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     /// sTalk: Native LiveKit room manager
     private let liveKitRoomManager = LiveKitRoomManager()
     private var pendingParticipantInvites = Set<String>()
+    /// STMOB-336: звонок на удержании CallKit и состояние микрофона до него.
+    private var isHeld = false
+    private var microphoneEnabledBeforeHold = false
 
     /// sTalk: LiveKit room name extracted from JWT token (for recording-api)
     private var interceptedLiveKitRoomName: String?
@@ -249,6 +252,9 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                         self.state.isMuted = !enabled
                         await self.setAudioEnabled(enabled)
                     }
+                case let .setHeld(held, roomID):
+                    guard roomID == configuration.callRoomID else { return }
+                    Task { await self.setHeld(held) }
                 default:
                     break
                 }
@@ -943,6 +949,28 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         actionsSubject.send(.minimizeCall)
     }
     
+    /// STMOB-336: удержание на время сотового разговора. Из звонка не выходим —
+    /// глушим микрофон (остальные видят «микрофон выключен») и останавливаем движок,
+    /// чтобы звук звонка не шёл поверх сотового. Звук после снятия включит система:
+    /// CallKit заново активирует сессию (didActivate), и движок поднимется штатно.
+    /// Микрофон возвращаем, только если он был включён до удержания.
+    private func setHeld(_ held: Bool) async {
+        guard held != isHeld else { return }
+        isHeld = held
+        if held {
+            microphoneEnabledBeforeHold = !state.isMuted
+            if microphoneEnabledBeforeHold {
+                try? await liveKitRoomManager.setMicrophone(enabled: false)
+                state.isMuted = true
+            }
+            liveKitRoomManager.handleCallKitAudioDeactivated()
+        } else if microphoneEnabledBeforeHold {
+            try? await liveKitRoomManager.setMicrophone(enabled: true)
+            state.isMuted = false
+        }
+        DiagLog.write("Call", "удержание=\(held) микрофон до удержания=\(microphoneEnabledBeforeHold)")
+    }
+
     private func setAudioEnabled(_ enabled: Bool) async {
         let message = ElementCallWidgetMessage(direction: .toWidget,
                                                action: .mediaState,
