@@ -85,7 +85,7 @@ class CallHistoryCoordinator {
             // Пропущенный входящий звонок
             handleMissedCall(roomID: roomID)
 
-        case .setAudioEnabled:
+        case .setAudioEnabled, .setHeld:
             // Игнорируем изменения аудио
             break
         }

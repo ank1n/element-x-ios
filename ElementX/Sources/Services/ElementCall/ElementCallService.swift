@@ -703,6 +703,8 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
 
         let update = CXCallUpdate()
         update.hasVideo = true
+        // STMOB-336: при входящем сотовом система предлагает «Удержать и ответить».
+        update.supportsHolding = true
         update.localizedCallerName = callerName
         // https://stackoverflow.com/a/41230020/730924
         // В handle — то, по чему потом сработает перезвон из «Недавних»
@@ -1091,6 +1093,20 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         action.fulfill()
     }
     
+    // STMOB-336: без обработчика «Удержать и ответить» на сотовый не выполнялось —
+    // действие проваливалось, а звонок sTalk продолжал держать микрофон и звук.
+    // Удержание — не выход: участие в звонке сохраняется, после снятия звонок продолжается.
+    func provider(_ provider: CXProvider, perform action: CXSetHeldCallAction) {
+        guard let ongoingCallID, ongoingCallID.callKitID == action.callUUID else {
+            DiagLog.write("Call", "CallKit setHeld=\(action.isOnHold) — не наш текущий звонок, отказ")
+            action.fail()
+            return
+        }
+        DiagLog.write("Call", "CallKit setHeld=\(action.isOnHold) room=\(ongoingCallID.roomID)")
+        actionsSubject.send(.setHeld(action.isOnHold, roomID: ongoingCallID.roomID))
+        action.fulfill()
+    }
+
     func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
         #if targetEnvironment(simulator)
         // This gets called for no reason on simulators, where CallKit

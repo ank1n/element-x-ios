@@ -45,6 +45,23 @@ class ElementCallServiceTests: XCTestCase {
         XCTAssertTrue(callProvider.reportNewIncomingCallWithUpdateCompletionCalled)
     }
     
+    /// STMOB-336: без признака удержания iOS не может поставить звонок sTalk на паузу
+    /// при ответе на сотовый.
+    func testВходящийЗвонокРазрешаетУдержание() async {
+        setupService()
+        var reportedUpdate: CXCallUpdate?
+        callProvider.reportNewIncomingCallWithUpdateCompletionClosure = { _, update, completion in
+            reportedUpdate = update
+            completion(nil)
+        }
+        let expectation = XCTestExpectation(description: "Call reported")
+        service.pushRegistry(pushRegistry, didReceiveIncomingPushWith: PKPushPayloadMock().updatingExpiration(currentDate, lifetime: 30), for: .voIP) {
+            expectation.fulfill()
+        }
+        await fulfillment(of: [expectation], timeout: 1)
+        XCTAssertEqual(reportedUpdate?.supportsHolding, true)
+    }
+
     func disabled_testCallIsTimingOut() async {
         setupService()
         
