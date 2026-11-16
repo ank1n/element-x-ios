@@ -399,6 +399,9 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
         }
         .animation(.easeInOut(duration: 0.25), value: shouldHideTabBar)
         .onAppear {
+            // Флаг поиска лежит в UserDefaults и переживает перезапуск: если приложение
+            // выгрузили с открытым поиском, панель пропадала до следующего тапа в поиск.
+            isSearchActive = false
             // sTalk: sync initial selectedIndex с selectedTab. Иначе @State default = 0
             // показывает первый tab (Contacts) даже если NavigationTabCoordinator
             // явно установил selectedTab = .chats — onChange срабатывает только
