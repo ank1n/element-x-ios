@@ -92,6 +92,13 @@ struct SuggestedTask: Codable, Identifiable, Equatable {
         }
     }
 
+    init(topicIndex: Int, taskIndex: Int, text: String, assignee: CallSummaryAssignee? = nil) {
+        self.topicIndex = topicIndex
+        self.taskIndex = taskIndex
+        self.text = text
+        self.assignee = assignee
+    }
+
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: DynKey.self)
         func int(_ keys: String...) -> Int {
@@ -334,7 +341,15 @@ struct CallDetailScreenViewState: BindableState {
     /// список — UI tab "Задачи" показывает их как flat list карточек.
     var allSuggestedTasks: [SuggestedTask] {
         guard let topics = transcriptionData?.summary?.topics else { return [] }
-        return topics.compactMap(\.suggestedTasks).flatMap(\.self)
+        let tasks = topics.compactMap(\.suggestedTasks).flatMap(\.self)
+        // Без topicIndex/taskIndex в ответе у всех задач id "0-0": ForEach рисует первую
+        // карточку на месте каждой. Тогда нумеруем по положению — так их считает сервер.
+        guard Set(tasks.map(\.id)).count < tasks.count else { return tasks }
+        return topics.enumerated().flatMap { topicIndex, topic in
+            (topic.suggestedTasks ?? []).enumerated().map { taskIndex, task in
+                SuggestedTask(topicIndex: topicIndex, taskIndex: taskIndex, text: task.text, assignee: task.assignee)
+            }
+        }
     }
 
     /// Status/card deduplication may select another session's snapshot of the same issue.
