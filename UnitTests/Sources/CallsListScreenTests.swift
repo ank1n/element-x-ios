@@ -169,6 +169,39 @@ class CallsListScreenTests: XCTestCase {
         await cache.save(snapshot, forKey: key, ttl: 300)
     }
 
+    func testRoomCachedByOlderBuildGetsItsIconWithoutServerRefresh() async throws {
+        let fixture = makeHistoryFixture()
+        let (session, local, cache) = fixture
+        let roomID = "!group:example.com"
+        let roomAvatar = try XCTUnwrap(URL(string: "mxc://example.com/room-icon"))
+        let call = CallHistoryItem(id: UUID().uuidString, contactName: "Group", contactId: roomID, callType: .incoming,
+                                   timestamp: Date(), duration: 60, isMissed: false, recordingURL: nil, participantCount: 3)
+        let date = Date()
+        var snapshot = CallHistoryCacheSnapshot()
+        snapshot.recordings = [call]
+        snapshot.recordingsFetchedAt = date
+        snapshot.roomEventsFetchedAt = date
+        snapshot.localRevision = CallHistoryCacheSnapshot.revision(local.getAllCalls())
+        snapshot.rooms[roomID] = CallHistoryRoomInfo(contactName: "Group", isDirect: false, avatarsByUserID: [:])
+        await cache.save(snapshot, forKey: CallHistoryCacheSnapshot.key(userID: session.clientProxy.userID,
+                                                                        homeserver: session.clientProxy.homeserver), ttl: 300)
+        let client = try XCTUnwrap(session.clientProxy as? ClientProxyMock)
+        client.staticRoomSummaryProvider = RoomSummaryProviderMock(.init(state: .loaded([])))
+        client.roomMembershipRoomIDReturnValue = .joined
+        let room = JoinedRoomProxyMock(.init(id: roomID, name: "Group", avatarURL: roomAvatar))
+        client.roomForIdentifierClosure = { _ in .joined(room) }
+        let service = CallsHistoryTestService()
+        service.recordings = [call]
+        let model = CallsListScreenViewModel(userSession: session, localCallHistoryService: local, callHistoryService: service,
+                                             cacheService: cache, now: { date }, applicationIsActive: { true })
+        defer { model.stop() }
+
+        let resolved = deferFulfillment(model.context.$viewState.map(\.callHistory)) { $0.first?.avatarURL == roomAvatar }
+        try await resolved.fulfill()
+        XCTAssertEqual(service.requests, 0, "The icon comes from the local room, not from a history refresh")
+        XCTAssertFalse(try XCTUnwrap(model.context.viewState.callHistory.first).showsParticipantAvatars)
+    }
+
     func testLocalHistoryIsVisibleWhileFirstRequestIsBlocked() async {
         let (session, local, cache) = makeHistoryFixture()
         let id = local.startCall(roomID: "!local:example.com", direction: .outgoing)

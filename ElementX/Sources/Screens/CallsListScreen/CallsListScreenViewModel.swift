@@ -545,21 +545,23 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
         }
         state.isLoading = calls.isEmpty && (!cacheLoaded || (state.isRefreshingHistory && snapshot.recordingsFetchedAt == nil && snapshot.roomCalls.isEmpty))
 
-        // Resolve avatars for rooms not yet cached
-        let unresolvedRoomIDs = Set(calls.map(\.contactId)).subtracting(resolvedRoomData.keys)
-        if resolveMetadata, !unresolvedRoomIDs.isEmpty {
+        // Resolve avatars for rooms not yet cached — including entries cached by an older build
+        // without the room icon, otherwise they keep letters until the next server refresh.
+        if resolveMetadata, calls.contains(where: { needsMetadata(resolvedRoomData[$0.contactId]) }) {
             resolveAvatars()
         }
+    }
+
+    private func needsMetadata(_ cached: CallHistoryRoomInfo?) -> Bool {
+        guard let cached else { return true }
+        return cached.isDirect == nil || (cached.isDirect == false && (cached.avatarsByUserID == nil || cached.roomAvatarChecked == nil))
     }
 
     /// Resolves avatar URLs and participant info for call history items from Matrix room data
     private func resolveAvatars(force: Bool = false) {
         guard isActive, applicationIsActive(), !stopped, avatarTask == nil,
               userSession.clientProxy.staticRoomSummaryProvider.statePublisher.value.isLoaded else { return }
-        let ids = Set(state.callHistory.map(\.contactId)).filter {
-            guard !force, let cached = resolvedRoomData[$0] else { return true }
-            return cached.isDirect == nil || (cached.isDirect == false && (cached.avatarsByUserID == nil || cached.roomAvatarChecked == nil))
-        }
+        let ids = Set(state.callHistory.map(\.contactId)).filter { force || needsMetadata(resolvedRoomData[$0]) }
         guard !ids.isEmpty else { return }
         let ownUserID = userSession.clientProxy.userID
         avatarTask = Task { [weak self] in
