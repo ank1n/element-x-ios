@@ -558,7 +558,7 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
               userSession.clientProxy.staticRoomSummaryProvider.statePublisher.value.isLoaded else { return }
         let ids = Set(state.callHistory.map(\.contactId)).filter {
             guard !force, let cached = resolvedRoomData[$0] else { return true }
-            return cached.isDirect == nil || (cached.isDirect == false && cached.avatarsByUserID == nil)
+            return cached.isDirect == nil || (cached.isDirect == false && (cached.avatarsByUserID == nil || cached.roomAvatarChecked == nil))
         }
         guard !ids.isEmpty else { return }
         let ownUserID = userSession.clientProxy.userID
@@ -575,14 +575,15 @@ class CallsListScreenViewModel: CallsListScreenViewModelType, CallsListScreenVie
                     let otherMembers = members.filter { $0.userID != ownUserID }
                     metadata.participantAvatarURLs = otherMembers.compactMap(\.avatarURL)
                     metadata.avatarsByUserID = Dictionary(otherMembers.compactMap { member in member.avatarURL.map { (member.userID, $0) } }, uniquingKeysWith: { first, _ in first })
-                } else {
-                    metadata.avatarURL = switch info.avatar {
-                    case .heroes(let heroes) where heroes.count == 1: heroes[0].avatarURL
-                    case .room(_, _, let url): url
-                    case .space(_, _, let url): url
-                    default: nil
-                    }
                 }
+                // Иконка комнаты и для групп: без своей картинки — буквы названия, как в списке чатов.
+                metadata.avatarURL = switch info.avatar {
+                case .heroes(let heroes) where heroes.count == 1: heroes[0].avatarURL
+                case .room(_, _, let url): url
+                case .space(_, _, let url): url
+                default: nil
+                }
+                metadata.roomAvatarChecked = true
                 guard !Task.isCancelled, !stopped else { break }
                 resolvedRoomData[roomID] = metadata
             }

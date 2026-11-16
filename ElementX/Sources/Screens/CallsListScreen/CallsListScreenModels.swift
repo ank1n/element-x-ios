@@ -47,6 +47,8 @@ struct CallHistoryRoomInfo: Codable {
     var participantAvatarURLs: [URL]?
     var isDirect: Bool?
     var avatarsByUserID: [String: URL]?
+    /// Иконку групповой комнаты начали читать в 375; записи старого кэша перечитываются один раз.
+    var roomAvatarChecked: Bool?
 }
 
 enum CallsListScreenViewAction {
@@ -204,6 +206,11 @@ struct CallHistoryItem: Identifiable, Equatable, Codable {
 
     var isGroupCall: Bool {
         isGroupRoom ?? (participantCount > 2)
+    }
+
+    /// Наложенные лица участников — только когда комната неизвестна; у групповой комнаты — её иконка, как в чатах.
+    var showsParticipantAvatars: Bool {
+        isGroupCall && isGroupRoom == nil
     }
 
     enum CallType: String, Codable {

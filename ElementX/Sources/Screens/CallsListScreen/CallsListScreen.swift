@@ -288,7 +288,7 @@ struct CallsListScreen: View {
         VStack(spacing: 0) {
             HStack(spacing: 16) {
                 // Avatar
-                if call.isGroupCall {
+                if call.showsParticipantAvatars {
                     groupCallAvatars(call)
                 } else {
                     LoadableAvatarImage(url: call.avatarURL,
@@ -677,7 +677,7 @@ struct CallsListScreen: View {
             HStack(spacing: 14) {
                 // Avatar with direction badge
                 ZStack(alignment: .bottomTrailing) {
-                    if call.isGroupCall {
+                    if call.showsParticipantAvatars {
                         groupCallAvatars(call)
                     } else {
                         LoadableAvatarImage(url: call.avatarURL,
