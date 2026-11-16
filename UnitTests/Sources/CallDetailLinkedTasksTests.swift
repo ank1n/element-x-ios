@@ -87,6 +87,20 @@ final class CallDetailLinkedTasksTests: XCTestCase {
         XCTAssertEqual(state.pendingSuggestedTasks, [other])
     }
 
+    func testSuggestionsWithoutServerIndicesKeepDistinctIdentities() throws {
+        let topicsJSON = #"[{"title":"A","suggestedTasks":[{"text":"Send the estimate"},{"text":"Book a room"}]},{"title":"B","suggestedTasks":[{"text":"Review the contract"}]}]"#
+        let topics = try JSONDecoder().decode([SummaryTopic].self, from: Data(topicsJSON.utf8))
+        let call = CallHistoryItem(id: UUID().uuidString, contactName: "Call", contactId: "!room:example.invalid",
+                                   callType: .incoming, timestamp: Date(timeIntervalSince1970: 1_700_000_000),
+                                   duration: 60, isMissed: false, recordingURL: nil)
+        var state = CallDetailScreenViewState(call: call)
+        state.transcriptionData = TranscriptionData(available: true, status: .completed, transcription: nil,
+                                                    summary: TranscriptionSummary(text: nil, keyPoints: nil, actionItems: nil,
+                                                                                  topics: topics), error: nil)
+        XCTAssertEqual(state.pendingSuggestedTasks.map(\.id), ["0-0", "0-1", "1-0"])
+        XCTAssertEqual(state.pendingSuggestedTasks.map(\.text), ["Send the estimate", "Book a room", "Review the contract"])
+    }
+
     func testHeaderAggregatesAllSessionsAndUsesNewestStatusForSharedIssue() async throws {
         let recent = try task(id: 1, session: "primary", issue: "shared", group: "completed", synced: "2026-10-18T10:00:00Z")
         let older = try task(id: 2, session: "reconnected", issue: "shared", group: "started", synced: "2026-10-18T09:00:00Z")
