@@ -13,6 +13,8 @@ struct CallDetailScreen: View {
     @State private var showsParticipants = false
     @State private var participantToOpen: String?
     @AppStorage("stalk_design_theme") private var designTheme = "cosmos"
+    /// Панель вкладок лежит поверх экрана: без отступа последняя карточка уходит под неё.
+    @Environment(\.stalkBottomBarInset) private var bottomBarInset
 
     private var isCosmos: Bool {
         designTheme == "cosmos"
@@ -37,6 +39,7 @@ struct CallDetailScreen: View {
 
                 transcriptionContent
             }
+            .padding(.bottom, bottomBarInset)
         }
         .background(isCosmos ? Color(.systemGroupedBackground) : Color(.systemBackground))
         .navigationTitle(NSLocalizedString("stalk_calldetail_title", tableName: "Localizable", value: "Детали звонка", comment: "Call detail screen title"))
@@ -408,6 +411,13 @@ struct CallDetailScreen: View {
                     .padding(.vertical, 24)
             }
 
+            if !pending.isEmpty {
+                sectionHeader(NSLocalizedString("stalk_calldetail_llm_suggestions", tableName: "Localizable", value: "Предложения", comment: "Section header: LLM suggestions"))
+                ForEach(pending) { task in
+                    suggestedTaskCard(task)
+                }
+            }
+
             if !created.isEmpty {
                 HStack {
                     sectionHeader(NSLocalizedString("stalk_calldetail_created_tasks", tableName: "Localizable", value: "Созданные задачи", comment: "Section header: created tasks"))
@@ -422,13 +432,6 @@ struct CallDetailScreen: View {
                 }
                 ForEach(created) { task in
                     createdTaskCard(task)
-                }
-            }
-
-            if !pending.isEmpty {
-                sectionHeader(NSLocalizedString("stalk_calldetail_llm_suggestions", tableName: "Localizable", value: "Предложения LLM", comment: "Section header: LLM suggestions"))
-                ForEach(pending) { task in
-                    suggestedTaskCard(task)
                 }
             }
 
@@ -457,11 +460,8 @@ struct CallDetailScreen: View {
 
     private func suggestedTaskCard(_ task: SuggestedTask) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(NSLocalizedString("stalk_call_task_proposal", value: "Suggestion", comment: "Unconverted call task suggestion"))
-                .font(.caption.weight(.medium)).foregroundStyle(.secondary)
+            // Раздел «Предложения» уже говорит, что это за карточка, а лицо со ссылкой — кто исполнитель.
             if let assignee = task.assignee, CallSummaryPeople.isUserID(assignee.matrixID) {
-                Text(NSLocalizedString("stalk_call_assignee", comment: "Assignee"))
-                    .font(.caption).foregroundStyle(.secondary)
                 participantButton(assignee.matrixID, fallbackName: assignee.displayName)
             }
             Text(task.text)
@@ -493,8 +493,6 @@ struct CallDetailScreen: View {
             }
         } label: {
             VStack(alignment: .leading, spacing: 8) {
-                Label(NSLocalizedString("stalk_call_task_created", value: "Created in TrackIT", comment: "Created call task"), systemImage: "checkmark.circle.fill")
-                    .font(.caption).foregroundStyle(.secondary)
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .firstTextBaseline) {
                         taskIdentifier(task)

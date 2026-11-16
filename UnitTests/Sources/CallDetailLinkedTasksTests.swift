@@ -61,6 +61,32 @@ final class CallDetailLinkedTasksTests: XCTestCase {
                        "A row without a linked issue is not a successful creation and must leave the suggestion actionable")
     }
 
+    func testRepeatedSuggestionAcrossTopicsShowsOnceAndCreatingAnyCopyHidesAll() throws {
+        func suggestion(_ topic: Int, _ text: String) throws -> SuggestedTask {
+            try JSONDecoder().decode(SuggestedTask.self, from: Data(#"{"topicIndex":\#(topic),"taskIndex":0,"text":"\#(text)"}"#.utf8))
+        }
+        let first = try suggestion(0, "Review the report")
+        let repeated = try suggestion(1, " review the report ")
+        let other = try suggestion(2, "Book a room")
+        let call = CallHistoryItem(id: UUID().uuidString, contactName: "Call", contactId: "!room:example.invalid",
+                                   callType: .incoming, timestamp: Date(timeIntervalSince1970: 1_700_000_000),
+                                   duration: 60, isMissed: false,
+                                   recordingURL: URL(string: "https://example.invalid/recording-api/api/recording/play/session-A"),
+                                   recordingSessionIDs: ["session-A"])
+        var state = CallDetailScreenViewState(call: call)
+        let topics = [first, repeated, other].map {
+            SummaryTopic(title: "Topic", discussed: nil, agreed: nil, timestamp: nil, suggestedTasks: [$0])
+        }
+        state.transcriptionData = TranscriptionData(available: true, status: .completed, transcription: nil,
+                                                    summary: TranscriptionSummary(text: nil, keyPoints: nil, actionItems: nil,
+                                                                                  topics: topics), error: nil)
+        XCTAssertEqual(state.pendingSuggestedTasks, [first, other])
+
+        let createdFromCopy = try JSONDecoder().decode(CreatedTask.self, from: Data(#"{"id":1,"egress_id":"session-A","topic_index":1,"task_index":0,"task_text":"review the report","trackit_issue_id":"issue"}"#.utf8))
+        state.createdTasks = [createdFromCopy]
+        XCTAssertEqual(state.pendingSuggestedTasks, [other])
+    }
+
     func testHeaderAggregatesAllSessionsAndUsesNewestStatusForSharedIssue() async throws {
         let recent = try task(id: 1, session: "primary", issue: "shared", group: "completed", synced: "2026-10-18T10:00:00Z")
         let older = try task(id: 2, session: "reconnected", issue: "shared", group: "started", synced: "2026-10-18T09:00:00Z")
