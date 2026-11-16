@@ -23,6 +23,11 @@ final class TimelineProxy: TimelineProxyProtocol {
     // one extra back pagination.
     private let backPaginationStatusSubject = CurrentValueSubject<PaginationStatus, Never>(.idle)
     private let forwardPaginationStatusSubject = CurrentValueSubject<PaginationStatus, Never>(.timelineEndReached)
+    /// Статус пишут поток SDK-слушателя и поток, где закончилась подгрузка. `send` у Combine доставляет
+    /// подписчикам вне своей блокировки, поэтому одновременные «paginating» и «idle» могли дойти до ленты
+    /// в обратном порядке — последним оставался «paginating», и лента больше не просила историю
+    /// (лог «Пресейла» 17.11, сборка 379). Все записи статуса идут через одну очередь.
+    private let paginationStatusQueue = DispatchQueue(label: "ru.implica.stalk.timeline_pagination_status")
     
     private let kind: TimelineKind
    
@@ -138,23 +143,21 @@ final class TimelineProxy: TimelineProxyProtocol {
         return await focussedPaginate(.forwards, requestSize: requestSize)
     }
     
-    /// Paginate backwards using the subscription from Rust to drive the pagination state.
+    /// Paginate backwards; the request itself drives the indicator, the Rust subscription only reports completion.
     private func paginateBackwardsOnLive(requestSize: UInt16) async -> Result<Void, TimelineProxyError> {
         MXLog.info("Paginating backwards")
+        paginationStatusQueue.sync { backPaginationStatusSubject.send(.paginating) }
         
         do {
             let hitStart = try await timeline.paginateBackwards(numEvents: requestSize)
             MXLog.info("Finished paginating backwards hitStart=\(hitStart) status=\(backPaginationStatusSubject.value)")
-            // Подгрузка завершилась, а подписка SDK так и не вернула «idle» (лог «Пресейла»
-            // 17.11: SDK дочитал чанк с диска, а лента осталась с индикатором и больше не
-            // просила историю). Наш запрос закончен — снимаем «paginating» сами.
-            if backPaginationStatusSubject.value == .paginating {
-                MXLog.warning("Back pagination finished but SDK status is still paginating — resetting")
-                backPaginationStatusSubject.send(hitStart ? .timelineEndReached : .idle)
-            }
+            // Индикатор ведёт сам запрос: SDK-подписка могла оставить «paginating» последним
+            // (лог «Пресейла» 17.11, сборки 378–379), и лента больше не просила историю.
+            paginationStatusQueue.sync { backPaginationStatusSubject.send(hitStart ? .timelineEndReached : .idle) }
 
             return .success(())
         } catch {
+            paginationStatusQueue.sync { backPaginationStatusSubject.send(.idle) }
             if Self.isAlreadyPaginatingError(error) {
                 MXLog.info("Ignoring benign 'already paginating' error (backwards)")
                 return .success(())
@@ -673,11 +676,12 @@ final class TimelineProxy: TimelineProxyProtocol {
                 }
                 
                 MXLog.info("SDK back pagination status: \(status)")
-                switch status {
-                case .idle(let hitStartOfTimeline):
-                    backPaginationStatusSubject.send(hitStartOfTimeline ? .timelineEndReached : .idle)
-                case .paginating:
-                    backPaginationStatusSubject.send(.paginating)
+                // «paginating» от подписки не берём: его ставит сам запрос в paginateBackwardsOnLive.
+                // Отсюда — только завершение и достижение начала комнаты.
+                guard case .idle(let hitStartOfTimeline) = status else { return }
+                paginationStatusQueue.sync {
+                    guard self.backPaginationStatusSubject.value != .timelineEndReached || hitStartOfTimeline else { return }
+                    self.backPaginationStatusSubject.send(hitStartOfTimeline ? .timelineEndReached : .idle)
                 }
             }
             
