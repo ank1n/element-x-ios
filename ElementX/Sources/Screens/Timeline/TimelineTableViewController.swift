@@ -78,6 +78,7 @@ class TimelineTableViewController: UIViewController {
     
     /// There are pending items in `timelineItemsDictionary` that haven't been applied to the data source.
     private var hasPendingItems = false
+    private var lastPaginationBlockReason: String?
     
     /// The scroll view is scrolling either directly with a drag or indirectly with inertia.
     private var scrollViewIsScrolling = false {
@@ -419,10 +420,19 @@ class TimelineTableViewController: UIViewController {
     ///
     /// **Note:** Prefer not to call this directly, instead using ``paginatePublisher`` to throttle requests.
     private func paginateIfNeeded() {
+        let nearTop = tableView.contentOffset.y > tableView.contentSize.height - tableView.visibleSize.height * 2.0
+        // Диагностика зависшей подгрузки истории («Пресейл» 17.11): у верха ленты, а запроса нет.
+        // Пишем только при смене причины, чтобы не забивать лог прокруткой.
+        let blockReason = !nearTop ? nil : hasPendingItems ? "pendingItems" : paginationState.backward != .idle ? "backward=\(paginationState.backward)" : nil
+        if blockReason != lastPaginationBlockReason {
+            lastPaginationBlockReason = blockReason
+            if let blockReason {
+                MXLog.info("Timeline at top but back pagination blocked: \(blockReason) isLive=\(isLive) dragging=\(isDraggingScrollView) items=\(timelineItemsDictionary.count)")
+            }
+        }
         guard !hasPendingItems else { return }
         
-        if paginationState.backward == .idle,
-           tableView.contentOffset.y > tableView.contentSize.height - tableView.visibleSize.height * 2.0 {
+        if paginationState.backward == .idle, nearTop {
             coordinator.send(viewAction: .paginateBackwards)
         }
         if !isLive,
