@@ -412,8 +412,11 @@ class TimelineController: TimelineControllerProtocol {
                 (activeTimelineItemProvider.itemProxies, activeTimelineItemProvider.paginationState)
             })
             
-            for await (items, paginationState) in timelineUpdates.values {
-                await self?.updateTimelineItems(itemProxies: items, paginationState: paginationState)
+            for await (items, _) in timelineUpdates.values {
+                // Статус пагинации и элементы приходят из разных потоков: склейка (элементы, «paginating»)
+                // могла дойти последней уже после «idle», и лента навсегда оставалась с индикатором
+                // («Пресейл», сборки 378–381). Берём статус на момент обработки — он всегда свежий.
+                await self?.updateTimelineItems(itemProxies: items, paginationState: activeTimelineItemProvider.paginationState)
             }
         }.asCancellable()
     }
