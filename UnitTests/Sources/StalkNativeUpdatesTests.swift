@@ -303,7 +303,7 @@ final class StalkNativeUpdatesTests: XCTestCase {
             if path.contains("/api/recording/calls") {
                 return (200, ["call_key": "key", "room_id": "!room", "status": "ended", "started_at": end - 120,
                               "ended_at": end, "duration_s": 120, "participants": ["guest-1"], "recording": ["present": true],
-                              "transcription": ["state": "ready"], "tasks": ["total": 7, "by_group": ["backlog": 6, "started": 1]]])
+                              "transcription": ["state": "ready"], "tasks": ["total": 7, "by_group": ["backlog": 2, "unstarted": 2, "started": 1, "completed": 1, "cancelled": 1]]])
             }
             if path.contains("/state/m.room.create") { return (200, ["type": "io.stalk.channel"]) }
             if path.hasSuffix("/state") { return (200, state) }

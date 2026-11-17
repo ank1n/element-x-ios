@@ -29,8 +29,13 @@ struct CallTimelineSummaryView: View {
                                 detail = result
                             } catch { if !Task.isCancelled { self.error = L10n.commonSomethingWentWrong } }
                         }
-                    } label: { Label(StalkChannelStrings.text("open_call"), systemImage: "info.circle") }
-                        .disabled(loading)
+                    } label: {
+                        Label(StalkChannelStrings.text("open_call"), systemImage: "info.circle")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .disabled(loading)
                     if loading { ProgressView() }
                     if let error { Text(error).font(.caption).foregroundStyle(.secondary) }
                 }
@@ -101,19 +106,68 @@ struct CallTimelineRecordFields: View {
             if let tasks = record.tasks, let total = tasks.total, total >= 0 {
                 Label(String(format: StalkCallCardStrings.tasks, total), systemImage: "checklist")
                 let groups = tasks.by_group ?? [:]
-                ForEach(["backlog", "unstarted", "started", "completed", "cancelled", "unknown"], id: \.self) { group in
-                    if let count = groups[group], count > 0 {
-                        HStack(spacing: 6) {
-                            Circle().fill(StalkCallCardStrings.color(group)).overlay(Circle().stroke(Color.secondary, lineWidth: 1)).frame(width: 9, height: 9)
-                            Text(StalkCallCardStrings.group(group) + ": " + String(count)).foregroundStyle(.secondary)
+                let present = ["backlog", "unstarted", "started", "completed", "cancelled", "unknown"].filter { (groups[$0] ?? 0) > 0 }
+                if !present.isEmpty {
+                    // Статусы заведённых задач — цветными плашками в ряд, как на вебе.
+                    CallStatusFlowLayout(spacing: 6) {
+                        ForEach(present, id: \.self) { group in
+                            let color = StalkCallCardStrings.color(group)
+                            HStack(spacing: 5) {
+                                Circle().fill(color).frame(width: 8, height: 8)
+                                Text(StalkCallCardStrings.group(group) + " " + String(groups[group] ?? 0))
+                            }
+                            .font(.footnote.weight(.medium))
+                            .foregroundStyle(color)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(color.opacity(0.15), in: Capsule())
                         }
                     }
+                    .accessibilityElement(children: .combine)
                 }
             }
         }
         .alert(StalkCallCardStrings.people, isPresented: $showingPeople) {
             Button(L10n.actionClose, role: .cancel) { }
         } message: { Text(selectedPeople) }
+    }
+}
+
+/// Плашки статусов задач: в ряд, лишние переносятся на следующую строку.
+private struct CallStatusFlowLayout: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = rows(width: proposal.width ?? .infinity, subviews: subviews)
+        let width = rows.map(\.width).max() ?? 0
+        let height = rows.map(\.height).reduce(0, +) + spacing * CGFloat(max(0, rows.count - 1))
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in rows(width: bounds.width, subviews: subviews) {
+            var x = bounds.minX
+            for index in row.indices {
+                let size = subviews[index].sizeThatFits(.unspecified)
+                subviews[index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+            y += row.height + spacing
+        }
+    }
+
+    private func rows(width: CGFloat, subviews: Subviews) -> [(indices: [Int], width: CGFloat, height: CGFloat)] {
+        var rows: [(indices: [Int], width: CGFloat, height: CGFloat)] = []
+        for (index, subview) in subviews.enumerated() {
+            let size = subview.sizeThatFits(.unspecified)
+            if let last = rows.last, last.width + spacing + size.width <= width {
+                rows[rows.count - 1] = (last.indices + [index], last.width + spacing + size.width, max(last.height, size.height))
+            } else {
+                rows.append(([index], size.width, size.height))
+            }
+        }
+        return rows
     }
 }
 
@@ -124,10 +178,11 @@ enum StalkCallCardStrings {
 
     static func color(_ group: String) -> Color {
         switch group {
-        case "backlog", "unstarted": .white
-        case "started": .yellow
+        case "backlog": .gray
+        case "unstarted": .blue
+        case "started": .orange
         case "completed": .green
-        case "cancelled": .gray
+        case "cancelled": .red
         default: .secondary
         }
     }
