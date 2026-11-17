@@ -336,8 +336,9 @@ final class StalkNativeUpdatesTests: XCTestCase {
         let marker = CallInitiateMarker(eventID: "$shown", timestamp: Date().addingTimeInterval(-12100), video: true)
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
         let window = UIWindow(windowScene: scene)
-        window.rootViewController = UIHostingController(rootView: CallTimelineSummaryView(marker: marker, service: call)
-            .environment(\.scenePhase, .active))
+        // Как в ленте: ячейка UITableView с UIHostingConfiguration, без подставленного scenePhase.
+        let host = SingleHostingCellTable { AnyView(CallTimelineSummaryView(marker: marker, service: call)) }
+        window.rootViewController = host
         window.frame = CGRect(x: 0, y: 0, width: 320, height: 400)
         window.makeKeyAndVisible()
         defer { window.isHidden = true; window.rootViewController = nil }
@@ -1348,5 +1349,27 @@ private final class SubscriptionCheckingTimelineProvider: TimelineItemProviderMo
             return []
         }
         set { }
+    }
+}
+
+private final class SingleHostingCellTable: UITableViewController {
+    private let content: () -> AnyView
+    init(_ content: @escaping () -> AnyView) {
+        self.content = content; super.init(style: .plain)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError()
+    }
+
+    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        1
+    }
+
+    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = UITableViewCell()
+        cell.contentConfiguration = UIHostingConfiguration { content() }
+        return cell
     }
 }

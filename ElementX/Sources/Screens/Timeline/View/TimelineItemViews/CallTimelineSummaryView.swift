@@ -10,7 +10,9 @@ struct CallTimelineSummaryView: View {
     @State private var error: String?
     let marker: CallInitiateMarker
     @ObservedObject var service: CallTimelineSummaryService
-    @Environment(\.scenePhase) private var scenePhase
+    /// Не `scenePhase`: в ячейке ленты (UIHostingConfiguration) он не приходит и всегда не `.active` —
+    /// запрос итогов не уходил ни разу, карточки не было. Берём состояние самого приложения.
+    @State private var appActive = UIApplication.shared.applicationState == .active
     var body: some View {
         Group {
             if let record = service.summary(for: marker) {
@@ -43,8 +45,10 @@ struct CallTimelineSummaryView: View {
         .onChange(of: service.accessRevision) { detailTask?.cancel(); detail = nil; loading = false }
         .onChange(of: marker) { detailTask?.cancel(); detailTask = nil; detail = nil; loading = false }
         .sheet(item: $detail) { record in CallTimelineDetailSheet(record: record, service: service, video: marker.video) }
-        .task(id: "\(scenePhase)-\(service.reconnectRevision)") {
-            if scenePhase == .active { await service.observe(marker) }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in appActive = true }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in appActive = false }
+        .task(id: "\(appActive)-\(service.reconnectRevision)") {
+            if appActive { await service.observe(marker) }
         }
     }
 }
