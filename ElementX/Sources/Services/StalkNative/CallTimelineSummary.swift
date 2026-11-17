@@ -120,12 +120,8 @@ final class CallTimelineSummaryService: ObservableObject {
     }
 
     func observe(_ marker: CallInitiateMarker) async {
-        MXLog.info("Call card: observe \(marker.eventID) at=\(Int64(marker.timestamp.timeIntervalSince1970 * 1000))")
         guard membershipAllowed, !forbidden.contains(marker.eventID), Date().timeIntervalSince(marker.timestamp) < 30 * 86400,
-              marker.timestamp.timeIntervalSinceNow < 300 else {
-            MXLog.info("Call card: skip \(marker.eventID) member=\(membershipAllowed) forbidden=\(forbidden.contains(marker.eventID))")
-            return
-        }
+              marker.timestamp.timeIntervalSinceNow < 300 else { return }
         let revision = accessRevision
         var failures = 0
         // A view owns the polling task. SwiftUI cancels it when hidden/backgrounded.
@@ -138,12 +134,7 @@ final class CallTimelineSummaryService: ObservableObject {
                     .init(name: "room_id", value: roomID),
                     .init(name: "at", value: String(Int64(marker.timestamp.timeIntervalSince1970 * 1000)))
                 ])
-                let record: CallTimelineRecord
-                do { record = try JSONDecoder().decode(CallTimelineRecord.self, from: data) } catch {
-                    MXLog.error("Call card: undecodable /calls response for \(marker.eventID): \(error)")
-                    throw error
-                }
-                MXLog.info("Call card: \(marker.eventID) at=\(Int64(marker.timestamp.timeIntervalSince1970 * 1000)) → call=\(record.call_key) ended=\(record.ended) started=\(record.started_at.date != nil)")
+                let record = try JSONDecoder().decode(CallTimelineRecord.self, from: data)
                 guard membershipAllowed, revision == accessRevision, record.room_id == roomID, !record.call_key.isEmpty, record.started_at.date != nil, !Task.isCancelled else { return }
                 failures = 0
                 if records.count > 256 { records.removeAll(); owners.removeAll() }
@@ -153,10 +144,7 @@ final class CallTimelineSummaryService: ObservableObject {
                         owners[record.call_key] = marker
                     }
                 } else { owners[record.call_key] = marker }
-                if owners[record.call_key] != marker {
-                    MXLog.info("Call card: \(marker.eventID) is not the earliest marker of call \(record.call_key)")
-                    return
-                }
+                if owners[record.call_key] != marker { return }
                 for id in record.uniqueParticipants.prefix(24) where names[id] == nil && CallSummaryPeople.isUserID(id) {
                     guard !Task.isCancelled else { return }
                     if case .success(let profile) = await api.client.profile(for: id), membershipAllowed, revision == accessRevision {
@@ -164,12 +152,10 @@ final class CallTimelineSummaryService: ObservableObject {
                     }
                 }
             } catch let error as StalkNativeHTTPError where error.status == 401 || error.status == 403 {
-                MXLog.warning("Call card: /calls → \(error.status) for \(marker.eventID)")
                 if error.status == 403 { forbidden.formUnion(records.keys); forbidden.insert(marker.eventID) }
                 accessRevision += 1
                 records.removeAll(); owners.removeAll(); names.removeAll(); profiles.removeAll(); return
             } catch let error as StalkNativeHTTPError where error.status == 404 {
-                MXLog.info("Call card: no call for \(marker.eventID) at=\(Int64(marker.timestamp.timeIntervalSince1970 * 1000)) (404)")
                 guard result == nil else { records[marker.eventID] = nil; return }
             } catch let error as StalkNativeHTTPError where [400, 405, 410, 501].contains(error.status) {
                 records[marker.eventID] = nil; return

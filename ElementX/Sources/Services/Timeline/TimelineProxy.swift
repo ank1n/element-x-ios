@@ -150,7 +150,7 @@ final class TimelineProxy: TimelineProxyProtocol {
         
         do {
             let hitStart = try await timeline.paginateBackwards(numEvents: requestSize)
-            MXLog.info("Finished paginating backwards hitStart=\(hitStart) status=\(backPaginationStatusSubject.value)")
+            MXLog.info("Finished paginating backwards")
             // Индикатор ведёт сам запрос: SDK-подписка могла оставить «paginating» последним
             // (лог «Пресейла» 17.11, сборки 378–379), и лента больше не просила историю.
             paginationStatusQueue.sync { backPaginationStatusSubject.send(hitStart ? .timelineEndReached : .idle) }
@@ -675,7 +675,6 @@ final class TimelineProxy: TimelineProxyProtocol {
                     return
                 }
                 
-                MXLog.info("SDK back pagination status: \(status)")
                 // «paginating» от подписки не берём: его ставит сам запрос в paginateBackwardsOnLive.
                 // Отсюда — только завершение и достижение начала комнаты.
                 guard case .idle(let hitStartOfTimeline) = status else { return }
