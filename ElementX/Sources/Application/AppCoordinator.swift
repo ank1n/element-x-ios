@@ -88,6 +88,7 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
                 AppCoordinator.sharedPresenceService = nil
                 badgeCancellable?.cancel()
                 badgeCancellable = nil
+                appBadgeCount = nil
             }
         }
     }
@@ -112,6 +113,10 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
     private var clientProxyObserver: AnyCancellable?
     /// STMOB-108: app icon badge sync с RoomSummaryProvider.unreadNotificationsCount.
     private var badgeCancellable: AnyCancellable?
+    /// Последнее число, которое насчитало приложение. Пуш с сервера пишет на иконку своё
+    /// (aps.badge, полный формат пушера), и sink его не перебьёт, пока наше число не
+    /// изменится, — поэтому ставим его заново при каждом открытии и сворачивании.
+    private var appBadgeCount: Int?
     private var cancellables = Set<AnyCancellable>()
     
     let windowManager: SecureWindowManagerProtocol
@@ -1457,6 +1462,7 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
     @objc
     private func applicationWillResignActive() {
         MXLog.info("Application will resign active")
+        reassertBadgeCount()
 
         // STMOB-133 build 158: diag для 0xDEAD10CC crash. Логируем resources
         // которые могут держать sqlite/file lock при background suspend.
@@ -1573,9 +1579,15 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
         // или recompute SDK после sync). Сам badge актуализируется через
         // badgeCancellable sink на roomListPublisher.
         cleanupReadDeliveredNotifications()
+        reassertBadgeCount()
     }
 
     // MARK: - STMOB-108: app icon badge sync
+
+    private func reassertBadgeCount() {
+        guard let appBadgeCount else { return }
+        UNUserNotificationCenter.current().setBadgeCount(appBadgeCount)
+    }
 
     private func setupBadgeUpdates(clientProxy: ClientProxyProtocol) {
         let provider = clientProxy.roomSummaryProvider
@@ -1613,7 +1625,8 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
             }
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
-            .sink { count in
+            .sink { [weak self] count in
+                self?.appBadgeCount = count
                 MXLog.info("STMOB-108 badge sync → \(count)")
                 DiagLog.write("Badge", "STMOB-108 setBadgeCount(\(count))")
                 UNUserNotificationCenter.current().setBadgeCount(count)
