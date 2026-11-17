@@ -1112,6 +1112,22 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         // This gets called for no reason on simulators, where CallKit
         // isn't even supported, ignore it.
         #else
+        // Второй входящий поверх идущего разговора: «Отклонить» в CallKit приходит
+        // сюда с UUID именно этого входящего. Раньше UUID не смотрели и гасили всё —
+        // вместе с отклонённым обрывался и разговор (dp 17.11, Тымбай в звонке).
+        if let incomingCallID, action.callUUID == incomingCallID.callKitID,
+           let ongoingCallID, ongoingCallID.callKitID != incomingCallID.callKitID {
+            DiagLog.write("Call", "CallKit: отклонён второй входящий room=\(incomingCallID.roomID), идущий room=\(ongoingCallID.roomID) не трогаем")
+            Task {
+                await sendDeclineCallEvent(incomingCallID)
+            }
+            endUnansweredCallTask?.cancel()
+            endUnansweredCallTask = nil
+            self.incomingCallID = nil
+            action.fulfill()
+            return
+        }
+
         if let ongoingCallID {
             actionsSubject.send(.endCall(roomID: ongoingCallID.roomID))
         }
