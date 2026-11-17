@@ -39,6 +39,10 @@ struct CallTimelineSummaryView: View {
                 .padding(12)
                 .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
                 .padding(.horizontal, 16)
+            } else {
+                // Пустой Group внутри VStack под плашкой звонка не даёт SwiftUI ни одного вида, и .task
+                // ниже не запускается: итоги не запрашивались, карточка не появлялась никогда.
+                Color.clear.frame(height: 0)
             }
         }
         .onDisappear { detailTask?.cancel(); detailTask = nil }

@@ -349,6 +349,48 @@ final class StalkNativeUpdatesTests: XCTestCase {
         XCTAssertNotNil(call.summary(for: marker))
     }
 
+    func testStandardCallStartedRowInTimelineCellRequestsSummary() async throws {
+        let end = Date().addingTimeInterval(-12000).timeIntervalSince1970
+        var requested = false
+        NativeUpdatesProtocol.handler = { request in
+            guard request.url!.path.contains("/api/recording/calls") else { return (200, [:]) }
+            requested = true
+            return (200, ["call_key": "key", "room_id": "!room", "status": "ended", "started_at": end - 120, "ended_at": end])
+        }
+        let viewModel = TimelineViewModel(roomProxy: JoinedRoomProxyMock(.init(id: "!room", name: "")),
+                                          timelineController: MockTimelineController(),
+                                          userSession: UserSessionMock(.init()),
+                                          mediaPlayerProvider: MediaPlayerProviderMock(),
+                                          userIndicatorController: UserIndicatorControllerMock(),
+                                          appMediator: AppMediatorMock.default,
+                                          appSettings: ServiceLocator.shared.settings,
+                                          analyticsService: ServiceLocator.shared.analytics,
+                                          emojiProvider: EmojiProvider(appSettings: ServiceLocator.shared.settings),
+                                          linkMetadataProvider: LinkMetadataProvider(),
+                                          timelineControllerFactory: TimelineControllerFactoryMock(.init()))
+        let call = CallTimelineSummaryService(roomID: "!room", client: client(), session: session())
+        viewModel.state.callSummaryService = call
+        let stamp = Date().addingTimeInterval(-12100)
+        let item = CallNotificationRoomTimelineItem(id: .event(uniqueID: .init("row"), eventOrTransactionID: .eventID("$started")),
+                                                    timestamp: stamp, isEditable: false, canBeRepliedTo: false,
+                                                    sender: .init(id: "@caller:example.invalid"))
+        let state = RoomTimelineItemViewState(item: item, groupStyle: .single)
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let window = UIWindow(windowScene: scene)
+        // Как в TimelineTableViewController: RoomTimelineItemView в ячейке, контекст через окружение.
+        let host = SingleHostingCellTable { AnyView(RoomTimelineItemView(viewState: state).environment(\.timelineContext, viewModel.context)) }
+        window.rootViewController = host
+        window.frame = CGRect(x: 0, y: 0, width: 320, height: 400)
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true; window.rootViewController = nil }
+        let marker = CallInitiateMarker(eventID: "$started", timestamp: stamp, video: true)
+        for _ in 0..<40 where call.summary(for: marker) == nil {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        XCTAssertTrue(requested, "The standard «Звонок начат» row must ask for its call summary")
+        XCTAssertNotNil(call.summary(for: marker))
+    }
+
     func testProductionCallPayloadShapeDecodesAsEndedCall() throws {
         let json = #"{"v":1,"call_key":"k439","room_id":"!aSRCTTqCTleWnFkLPD:stalk.implica.ru","title":null,"status":"ended","started_at":1794835811000,"ended_at":1794838088000,"duration_s":2277,"participants":["@a:stalk.implica.ru"],"egress_ids":["EG_1"],"meeting_code":null,"card_event_id":null,"recording":{"present":true},"transcription":{"state":"ready"},"tasks":{"total":1,"by_group":{"unstarted":1}}}"#
         let record = try JSONDecoder().decode(CallTimelineRecord.self, from: Data(json.utf8))
