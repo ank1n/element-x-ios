@@ -361,14 +361,20 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
             .store(in: &cancellables)
 
         // Unread badge count on Chats tab
-        userSession.clientProxy.alternateRoomSummaryProvider.roomListPublisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] rooms in
-                guard let self else { return }
-                let totalUnread = rooms.reduce(0) { sum, room in
-                    sum + Int(room.unreadNotificationsCount)
+        // STALK-1602: раньше считали по alternateRoomSummaryProvider, а на нём экран чатов
+        // держит фильтр архива (и экраны пересылки — поиск) — кружок видел только архивные
+        // чаты и в обычной переписке не появлялся. Теперь — тот же список без фильтров
+        // и то же правило, что у числа на иконке.
+        userSession.clientProxy.staticRoomSummaryProvider.roomListPublisher
+            .map { rooms in
+                rooms.reduce(0) { sum, room in
+                    room.countsTowardUnreadBadge ? sum + Int(room.unreadNotificationsCount) : sum
                 }
-                chatsTabDetails.badgeCount = totalUnread
+            }
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] totalUnread in
+                self?.chatsTabDetails.badgeCount = totalUnread
             }
             .store(in: &cancellables)
 

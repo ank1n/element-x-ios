@@ -77,6 +77,13 @@ struct RoomSummary {
         unreadNotificationsCount > 0
     }
 
+    /// STMOB-108: идёт ли комната в число непрочитанных на иконке и на вкладке «Сообщения» —
+    /// только чаты, где непрочитанное видно в списке: вступили, не пространство,
+    /// не надгробие, не заглушена. Одно правило на оба места (STALK-1602).
+    var countsTowardUnreadBadge: Bool {
+        joinRequestType == nil && !isSpace && !isTombstoned && !isMuted
+    }
+
     var isMuted: Bool {
         notificationMode == .mute
     }

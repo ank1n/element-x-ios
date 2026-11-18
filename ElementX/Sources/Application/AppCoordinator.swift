@@ -1590,7 +1590,9 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
     }
 
     private func setupBadgeUpdates(clientProxy: ClientProxyProtocol) {
-        let provider = clientProxy.roomSummaryProvider
+        // STALK-1602: считаем по списку без фильтров. roomSummaryProvider — это список
+        // экрана чатов: поиск и фильтры («Непрочитанные», «Люди»…) меняли число на иконке.
+        let provider = clientProxy.staticRoomSummaryProvider
         badgeCancellable = provider.roomListPublisher
             .combineLatest(provider.statePublisher)
             .filter { _, state in state.isLoaded }
@@ -1607,10 +1609,7 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
                 var roomNames: [String: String] = [:]
                 for room in rooms {
                     if !room.name.isEmpty { roomNames[room.id] = room.name }
-                    guard room.joinRequestType == nil,
-                          !room.isSpace,
-                          !room.isTombstoned,
-                          !room.isMuted else { continue }
+                    guard room.countsTowardUnreadBadge else { continue }
                     let unread = Int(room.unreadNotificationsCount)
                     if unread > 0 {
                         total += unread
