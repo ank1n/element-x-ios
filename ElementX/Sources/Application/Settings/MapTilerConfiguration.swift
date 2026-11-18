@@ -8,21 +8,22 @@
 
 import Foundation
 
-/// All of the configuration necessary to use MapTiler maps.
-///
-/// The style IDs need to be generated with the account that the API key belongs to. For more information read
-/// [FORKING.md](https://github.com/element-hq/element-x-ios/blob/develop/docs/FORKING.md#setup-the-location-sharing)
+/// Конфигурация карт — карты OpenFreeMap (решение dp 18.11): стили MapLibre без ключа,
+/// MapTiler больше не используется, поэтому отправка и показ локаций доступны всегда.
 struct MapTilerConfiguration {
-    let baseURL: URL
-    /// The API key for fetching map tiles. When not set, location sharing will be disabled and
-    /// any received locations will be shown in the timeline with a generic blurred map image.
-    let apiKey: String?
-    /// A MapLibre style ID for a light-mode map.
-    let lightStyleID: String
-    /// A MapLibre style ID for a dark-mode map.
-    let darkStyleID: String
+    /// Стиль MapLibre для светлой темы.
+    let lightStyleURL: URL
+    /// Стиль MapLibre для тёмной темы.
+    let darkStyleURL: URL
     
-    var isEnabled: Bool {
-        apiKey != nil
+    /// Карты OpenFreeMap (решение dp 18.11): стили по умолчанию, пока сервер не задал свой.
+    static let openFreeMap = MapTilerConfiguration(lightStyleURL: "https://tiles.openfreemap.org/styles/liberty",
+                                                   darkStyleURL: "https://tiles.openfreemap.org/styles/dark")
+    
+    /// Стиль из `/.well-known/matrix/client` (`m.tile_server.map_style_url`) приоритетнее констант
+    /// и идёт на обе темы; без него — стили OpenFreeMap.
+    static func withServerStyleURL(_ styleURL: URL?) -> MapTilerConfiguration {
+        guard let styleURL else { return openFreeMap }
+        return MapTilerConfiguration(lightStyleURL: styleURL, darkStyleURL: styleURL)
     }
 }

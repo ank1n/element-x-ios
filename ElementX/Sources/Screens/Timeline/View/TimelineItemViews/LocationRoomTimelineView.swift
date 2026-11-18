@@ -18,7 +18,6 @@ struct LocationRoomTimelineView: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(accessibilityLabel)
                 .onTapGesture {
-                    guard context.viewState.mapTilerConfiguration.isEnabled else { return }
                     context.send(viewAction: .mediaTapped(itemID: timelineItem.id))
                 }
         }

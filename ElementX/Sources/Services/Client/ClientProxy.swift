@@ -329,6 +329,13 @@ class ClientProxy: ClientProxyProtocol {
         Task {
             mediaPreviewConfigListenerTaskHandle = await createMediaPreviewConfigObserver()
         }
+
+        // Карты OpenFreeMap (решение dp 18.11): стиль из well-known сервера
+        // (m.tile_server.map_style_url) приоритетнее констант — меняется без новой сборки.
+        Task { @MainActor [client, appSettings] in
+            let styleURL = await (client.tileServer()?.mapStyleUrl).flatMap { URL(string: $0) }
+            appSettings.applyServerMapStyleURL(styleURL?.scheme == "https" ? styleURL : nil)
+        }
     }
     
     var userID: String {

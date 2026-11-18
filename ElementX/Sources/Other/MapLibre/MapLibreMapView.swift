@@ -93,7 +93,24 @@ struct MapLibreMapView: UIViewRepresentable {
         mapView.tintColor = .black
         mapView.allowsRotating = false
         mapView.allowsTilting = false
+        addAttributionLabel(to: mapView)
         return mapView
+    }
+
+    /// Карты OpenFreeMap (решение dp 18.11): подпись источников видна на карте постоянно.
+    private func addAttributionLabel(to mapView: MLNMapView) {
+        let label = UILabel()
+        label.text = MapAttributionLabel.text
+        label.font = .systemFont(ofSize: 9)
+        label.textColor = .black
+        label.backgroundColor = UIColor.white.withAlphaComponent(0.7)
+        label.isAccessibilityElement = false
+        label.translatesAutoresizingMaskIntoConstraints = false
+        mapView.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: mapView.safeAreaLayoutGuide.leadingAnchor, constant: 8),
+            label.bottomAnchor.constraint(equalTo: mapView.safeAreaLayoutGuide.bottomAnchor, constant: -8)
+        ])
     }
     
     private func showUserLocation(in mapView: MLNMapView) {

@@ -488,11 +488,13 @@ final class AppSettings {
     
     // MARK: - Maps
     
-    /// maptiler base url
-    private(set) var mapTilerConfiguration = MapTilerConfiguration(baseURL: "https://api.maptiler.com/maps",
-                                                                   apiKey: Secrets.mapLibreAPIKey,
-                                                                   lightStyleID: "9bc819c8-e627-474a-a348-ec144fe3d810",
-                                                                   darkStyleID: "dea61faf-292b-4774-9660-58fcef89a7f3")
+    /// Карты OpenFreeMap (решение dp 18.11): без ключа; стиль из well-known сервера, если он его задаёт.
+    private(set) var mapTilerConfiguration = MapTilerConfiguration.openFreeMap
+    
+    /// `m.tile_server.map_style_url` сервера текущей сессии; `nil` — стили OpenFreeMap по умолчанию.
+    func applyServerMapStyleURL(_ styleURL: URL?) {
+        mapTilerConfiguration = .withServerStyleURL(styleURL)
+    }
     
     // MARK: - Presence
     
