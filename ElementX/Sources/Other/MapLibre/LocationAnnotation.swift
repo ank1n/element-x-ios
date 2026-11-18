@@ -7,10 +7,11 @@
 //
 
 import Foundation
-import MapLibre
+import MapKit
 import SwiftUI
 
-final class LocationAnnotation: NSObject, MLNAnnotation {
+/// Карты Apple MapKit на iOS (решение dp 18.11).
+final class LocationAnnotation: NSObject, MKAnnotation {
     let coordinate: CLLocationCoordinate2D
     let anchorPoint: CGPoint
     let view: AnyView
@@ -27,10 +28,10 @@ final class LocationAnnotation: NSObject, MLNAnnotation {
     }
 }
 
-final class LocationAnnotationView: MLNUserLocationAnnotationView {
+final class LocationAnnotationView: MKAnnotationView {
     // MARK: - Setup
     
-    override init(annotation: MLNAnnotation?, reuseIdentifier: String?) {
+    override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
         super.init(annotation: annotation, reuseIdentifier:
             reuseIdentifier)
     }
@@ -39,9 +40,12 @@ final class LocationAnnotationView: MLNUserLocationAnnotationView {
         self.init(annotation: annotation, reuseIdentifier: "\(Self.self)")
         let view: UIView = UIHostingController(rootView: annotation.view).view
         view.backgroundColor = .clear
-        view.anchorPoint = annotation.anchorPoint
         addSubview(view)
-        view.bounds.size = view.intrinsicContentSize
+        view.frame.size = view.intrinsicContentSize
+        frame.size = view.frame.size
+        // MapKit ставит центр вью в координату — сдвигаем, чтобы в координате была точка привязки
+        centerOffset = CGPoint(x: (0.5 - annotation.anchorPoint.x) * frame.width,
+                               y: (0.5 - annotation.anchorPoint.y) * frame.height)
     }
     
     @available(*, unavailable)

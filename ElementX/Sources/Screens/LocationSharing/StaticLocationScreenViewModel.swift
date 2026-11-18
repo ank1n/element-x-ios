@@ -22,7 +22,6 @@ class StaticLocationScreenViewModel: StaticLocationScreenViewModelType, StaticLo
     }
     
     init(interactionMode: StaticLocationInteractionMode,
-         mapURLBuilder: MapTilerURLBuilderProtocol,
          timelineController: TimelineControllerProtocol,
          analytics: AnalyticsService,
          userIndicatorController: UserIndicatorControllerProtocol) {
@@ -30,7 +29,7 @@ class StaticLocationScreenViewModel: StaticLocationScreenViewModelType, StaticLo
         self.analytics = analytics
         self.userIndicatorController = userIndicatorController
         
-        super.init(initialViewState: .init(interactionMode: interactionMode, mapURLBuilder: mapURLBuilder))
+        super.init(initialViewState: .init(interactionMode: interactionMode))
     }
     
     override func process(viewAction: StaticLocationScreenViewAction) {

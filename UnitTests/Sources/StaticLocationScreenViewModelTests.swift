@@ -24,7 +24,6 @@ class StaticLocationScreenViewModelTests: XCTestCase {
     override func setUpWithError() throws {
         cancellables.removeAll()
         let viewModel = StaticLocationScreenViewModel(interactionMode: .picker,
-                                                      mapURLBuilder: ServiceLocator.shared.settings.mapTilerConfiguration,
                                                       timelineController: MockTimelineController(timelineProxy: timelineProxy),
                                                       analytics: ServiceLocator.shared.analytics,
                                                       userIndicatorController: UserIndicatorControllerMock())

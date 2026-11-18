@@ -1217,7 +1217,6 @@ class RoomFlowCoordinator: FlowCoordinatorProtocol {
         let stackCoordinator = NavigationStackCoordinator()
         
         let params = StaticLocationScreenCoordinatorParameters(interactionMode: interactionMode,
-                                                               mapURLBuilder: flowParameters.appSettings.mapTilerConfiguration,
                                                                timelineController: timelineController,
                                                                appMediator: flowParameters.appMediator,
                                                                analytics: flowParameters.analytics,

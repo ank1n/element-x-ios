@@ -179,8 +179,6 @@ struct TimelineViewState: BindableState {
     
     var linkMetadataProvider: LinkMetadataProviderProtocol?
     
-    var mapTilerConfiguration: MapTilerConfiguration
-
     var enableKeyShareOnInvite: Bool
     
     var bindings: TimelineViewStateBindings
