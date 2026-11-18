@@ -31,6 +31,13 @@ protocol RecordingServiceProtocol: AnyObject {
     /// Check if there's an active recording in the given Matrix room via /api/recording/active
     func hasActiveRecordingInRoom(matrixRoomId: String) async -> Bool
 
+    /// STALK-1586: идущая запись комнаты целиком (egressId, startedAt, initiatedBy) — nil, если записи нет
+    func activeRecordingInRoom(matrixRoomId: String) async -> ActiveRecordingResponse?
+
+    /// STALK-1586: остановить чужую запись по egressId. Своё состояние записи не трогает —
+    /// запись принадлежит другому участнику, её видно только через опрос /active.
+    func stopRemoteRecording(egressId: String) async throws
+
     /// Принудительный сброс состояния записи (при входе в новый звонок)
     func forceReset()
 }
@@ -230,13 +237,17 @@ class RecordingService: RecordingServiceProtocol {
 
     /// Check if there's an active recording in the given Matrix room via /api/recording/active
     func hasActiveRecordingInRoom(matrixRoomId: String) async -> Bool {
+        await activeRecordingInRoom(matrixRoomId: matrixRoomId) != nil
+    }
+
+    func activeRecordingInRoom(matrixRoomId: String) async -> ActiveRecordingResponse? {
         do {
             guard let encoded = matrixRoomId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
-                return false
+                return nil
             }
             // Build URL directly (appendingPathComponent would encode the query string)
             guard let url = URL(string: "\(baseURL.absoluteString)/api/recording/active?matrixRoomId=\(encoded)") else {
-                return false
+                return nil
             }
             var request = URLRequest(url: url)
             request.httpMethod = "GET"
@@ -247,15 +258,32 @@ class RecordingService: RecordingServiceProtocol {
 
             let (data, response) = try await urlSession.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                return false
+                return nil
             }
             let result = try JSONDecoder().decode(ActiveRecordingResponse.self, from: data)
             MXLog.info("sTalk hasActiveRecording: matrixRoomId=\(matrixRoomId.prefix(30)), recording=\(result.recording)")
-            return result.recording
+            return result.recording ? result : nil
         } catch {
             MXLog.info("sTalk hasActiveRecording: ERROR \(error)")
-            return false
+            return nil
         }
+    }
+
+    func stopRemoteRecording(egressId: String) async throws {
+        let request = RecordingStopRequest(egressId: egressId)
+        let response: RecordingStopResponse = try await withTimeout(seconds: requestTimeout) {
+            try await self.post(endpoint: "/recording-api/stop", body: request)
+        }
+        guard response.success else {
+            let errorMessage = response.error ?? "Unknown error"
+            // Запись уже закончилась (её остановил кто-то раньше нас) — это не ошибка.
+            if errorMessage.contains("EGRESS_COMPLETE") || errorMessage.contains("cannot be stopped") {
+                MXLog.info("Remote recording already completed: \(egressId)")
+                return
+            }
+            throw RecordingError.serverError(errorMessage)
+        }
+        MXLog.info("Remote recording stopped: \(egressId)")
     }
 
     /// Принудительный сброс состояния записи (при входе в новый звонок)
@@ -442,6 +470,16 @@ class RecordingServiceMock: RecordingServiceProtocol {
 
     func hasActiveRecordingInRoom(matrixRoomId: String) async -> Bool {
         false
+    }
+
+    func activeRecordingInRoom(matrixRoomId: String) async -> ActiveRecordingResponse? {
+        nil
+    }
+
+    func stopRemoteRecording(egressId: String) async throws {
+        if case .failure(let error) = stopRecordingResult {
+            throw error
+        }
     }
 
     func forceReset() {

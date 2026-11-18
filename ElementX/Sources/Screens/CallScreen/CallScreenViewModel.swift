@@ -93,6 +93,16 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
 
     /// sTalk: Polling task for remote recording detection
     private var recordingPollingTask: Task<Void, Never>?
+    /// STALK-1586: идущая чужая запись (из опроса /api/recording/active)
+    private var remoteRecording: ActiveRecordingResponse?
+    /// Запись, которую остановили мы: сервер ещё пару секунд может отдавать её в /active,
+    /// и без этой метки опрос «нашёл» бы её заново — с повторным предупреждением о записи.
+    private var stoppedRemoteEgressId: String?
+    /// STALK-1586: включает «Остановить» чужой записи через `remoteRecordingStopDelay`
+    @CancellableTask
+    private var remoteRecordingStopUnlockTask: Task<Void, Never>?
+    /// STALK-1586 (dp 18.11): одинаково на iOS, Android и вебе
+    private static let remoteRecordingStopDelay: TimeInterval = 5
 
     /// Гудки исходящего вызова: играют, пока МЫ инициатор (в комнате никого не
     /// было на старте) и ни один участник ещё не подключился.
@@ -528,6 +538,8 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
             Task { await handleWidgetAction(message: message) }
         case .toggleRecording:
             handleToggleRecording()
+        case .stopRemoteRecording:
+            Task { await stopRemoteRecording() }
         case .confirmStartRecording:
             Task { await startRecording() }
         case .toggleMute:
@@ -1786,6 +1798,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         do {
             try await recordingService.stopRecording()
             MXLog.info("Recording stopped")
+            await sendRecordingStoppedNotice()
         } catch {
             MXLog.error("Failed to stop recording: \(error)")
             state.bindings.alertInfo = .init(id: UUID(),
@@ -1793,6 +1806,101 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                                              message: error.localizedDescription,
                                              primaryButton: .init(title: L10n.actionOk, action: nil))
         }
+    }
+
+    /// STALK-1586: любой участник может остановить чужую запись — после разблокировки кнопки.
+    private func stopRemoteRecording() async {
+        guard let recordingService, let egressId = remoteRecording?.egressId, state.canStopRemoteRecording else { return }
+
+        // Повторное нажатие, пока идёт запрос, не должно слать второй /stop и вторую строку в чат.
+        state.canStopRemoteRecording = false
+        do {
+            try await recordingService.stopRemoteRecording(egressId: egressId)
+            MXLog.info("Remote recording stopped by us: \(egressId)")
+            stoppedRemoteEgressId = egressId
+            remoteRecordingDidEnd()
+            await sendRecordingStoppedNotice()
+        } catch {
+            MXLog.error("Failed to stop remote recording: \(error)")
+            state.canStopRemoteRecording = remoteRecording?.egressId == egressId
+            state.bindings.alertInfo = .init(id: UUID(),
+                                             title: L10n.commonError,
+                                             message: error.localizedDescription,
+                                             primaryButton: .init(title: L10n.actionOk, action: nil))
+        }
+    }
+
+    /// STALK-1586 (dp 18.11): в чат пишем только об остановке кнопкой — кто остановил.
+    /// Ни о начале записи, ни об автоостановке (конец звонка, все вышли) сообщений нет.
+    /// Текст совпадает с вебом и Android.
+    private func sendRecordingStoppedNotice() async {
+        guard case .roomCall(let roomProxy, let clientProxy, _, _, _, _) = configuration.kind else { return }
+
+        let name = clientProxy.userDisplayNamePublisher.value ?? clientProxy.userID
+        let body = "⏹ \(name) остановил(а) запись звонка"
+        let content: RoomMessageEventContentWithoutRelation
+        do {
+            content = try contentWithoutRelationFromMessage(message: MessageContent(msgType: .notice(content: NoticeMessageContent(body: body, formatted: nil)),
+                                                                                    body: body,
+                                                                                    isEdited: false,
+                                                                                    mentions: nil))
+        } catch {
+            MXLog.error("Failed to build recording stopped notice: \(error)")
+            return
+        }
+
+        switch await roomProxy.timeline.sendMessageEventContent(content) {
+        case .success:
+            MXLog.info("Recording stopped notice sent to room")
+        case .failure(let error):
+            MXLog.error("Failed to send recording stopped notice: \(error)")
+        }
+    }
+
+    /// Чужая запись закончилась (остановили мы, кто-то другой или сервер).
+    private func remoteRecordingDidEnd() {
+        remoteRecording = nil
+        remoteRecordingStopUnlockTask = nil
+        state.canStopRemoteRecording = false
+        state.isRemoteRecording = false
+    }
+
+    /// Кнопка «Остановить» чужой записи включается через 5 с от startedAt (сервер),
+    /// а без него — от момента, когда мы запись увидели. Свою запись (initiatedBy — мы,
+    /// например начатую с другого устройства) останавливать можно сразу.
+    private func scheduleRemoteRecordingStopUnlock(_ recording: ActiveRecordingResponse) {
+        var ownUserID: String?
+        if case .roomCall(_, let clientProxy, _, _, _, _) = configuration.kind {
+            ownUserID = clientProxy.userID
+        }
+
+        let delay: TimeInterval
+        if let ownUserID, recording.initiatedBy == ownUserID {
+            delay = 0
+        } else if let startedAt = recording.startedAt.flatMap(Self.parseRecordingDate) {
+            delay = max(0, min(Self.remoteRecordingStopDelay, startedAt.addingTimeInterval(Self.remoteRecordingStopDelay).timeIntervalSinceNow))
+        } else {
+            delay = Self.remoteRecordingStopDelay
+        }
+
+        let egressId = recording.egressId
+        remoteRecordingStopUnlockTask = Task { [weak self] in
+            if delay > 0 {
+                try? await Task.sleep(for: .seconds(delay))
+            }
+            guard !Task.isCancelled, let self, self.remoteRecording?.egressId == egressId else { return }
+            self.state.canStopRemoteRecording = true
+        }
+    }
+
+    private static func parseRecordingDate(_ string: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: string) {
+            return date
+        }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: string)
     }
 
     // MARK: - Participants
@@ -1855,9 +1963,19 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 guard let recordingService = self.recordingService else { continue }
 
                 let matrixRoomId = self.configuration.callRoomID
-                let hasRemote = await recordingService.hasActiveRecordingInRoom(matrixRoomId: matrixRoomId)
+                let activeRecording = await recordingService.activeRecordingInRoom(matrixRoomId: matrixRoomId)
+                    .flatMap { $0.egressId != nil && $0.egressId == self.stoppedRemoteEgressId ? nil : $0 }
+                let hasRemote = activeRecording != nil
                 stalkLog("recordingPoll: matrixRoomId=\(matrixRoomId.prefix(30)), hasRemote=\(hasRemote)")
                 await MainActor.run {
+                    // Новая чужая запись (или сменился egress) — заново отсчитываем 5 с до «Остановить».
+                    if let activeRecording, self.remoteRecording == nil || activeRecording.egressId != self.remoteRecording?.egressId {
+                        self.remoteRecording = activeRecording
+                        self.state.canStopRemoteRecording = false
+                        self.scheduleRemoteRecordingStopUnlock(activeRecording)
+                    } else if !hasRemote, self.remoteRecording != nil {
+                        self.remoteRecordingDidEnd()
+                    }
                     if self.state.isRemoteRecording != hasRemote {
                         self.state.isRemoteRecording = hasRemote
                         if hasRemote {

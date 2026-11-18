@@ -34,6 +34,9 @@ struct CallScreenViewState: BindableState {
     var isRecordingEnabled = true
     /// sTalk: Remote recording detected (started by another participant)
     var isRemoteRecording = false
+    /// STALK-1586: чужую запись может остановить любой участник, но не сразу — кнопка
+    /// включается через 5 с после старта записи, чтобы двое не жали «старт»/«стоп» наперегонки.
+    var canStopRemoteRecording = false
 
     // sTalk: call participant info
     var roomDisplayName: String?
@@ -156,6 +159,7 @@ enum CallScreenViewAction {
     case widgetAction(message: String)
     // Recording actions
     case toggleRecording
+    case stopRemoteRecording // STALK-1586: остановить запись, которую начал другой участник
     case confirmStartRecording
     /// Native call control actions
     case toggleMute

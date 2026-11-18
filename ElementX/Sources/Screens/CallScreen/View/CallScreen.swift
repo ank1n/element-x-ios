@@ -519,9 +519,12 @@ struct CallScreen: View {
             ToolbarItem(placement: .topBarTrailing) {
                 HStack(spacing: 6) {
                     if context.viewState.isRemoteRecording, !context.viewState.recordingState.isRecording {
-                        // Remote recording — show red indicator, no action
-                        RecordingButton(recordingState: .recording(egressId: "remote", duration: 0)) { }
-                            .disabled(true)
+                        // STALK-1586: чужую запись может остановить любой участник,
+                        // но кнопка оживает только через 5 с после старта записи.
+                        RecordingButton(recordingState: .recording(egressId: "remote", duration: 0)) {
+                            context.send(viewAction: .stopRemoteRecording)
+                        }
+                        .disabled(!context.viewState.canStopRemoteRecording)
                     } else {
                         RecordingButton(recordingState: context.viewState.recordingState) {
                             if context.viewState.recordingState.isRecording {
