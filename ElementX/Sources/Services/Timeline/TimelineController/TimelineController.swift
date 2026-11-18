@@ -308,6 +308,10 @@ class TimelineController: TimelineControllerProtocol {
     func sendAttachment(_ media: MediaInfo, caption: MediaUploadCaption?, requestHandle: @MainActor (SendAttachmentJoinHandleProtocol) -> Void) async -> Result<Void, TimelineControllerError> {
         await activeTimeline.sendAttachment(media, caption: caption, requestHandle: requestHandle).mapError(TimelineControllerError.timelineProxyError)
     }
+    
+    func sendGallery(_ media: [MediaInfo], caption: MediaUploadCaption?, requestHandle: @MainActor (SendGalleryJoinHandleProtocol) -> Void) async -> Result<Void, TimelineControllerError> {
+        await activeTimeline.sendGallery(media, caption: caption, requestHandle: requestHandle).mapError(TimelineControllerError.timelineProxyError)
+    }
 
     func sendAudio(url: URL,
                    audioInfo: MatrixRustSDK.AudioInfo,

@@ -32,7 +32,9 @@ class TimelineMediaPreviewViewModel: TimelineMediaPreviewViewModelType {
          mediaProvider: MediaProviderProtocol,
          photoLibraryManager: PhotoLibraryManagerProtocol,
          userIndicatorController: UserIndicatorControllerProtocol,
-         appMediator: AppMediatorProtocol) {
+         appMediator: AppMediatorProtocol,
+         albumItems: [EventBasedMessageTimelineItemProtocol] = [],
+         albumInitialIndex: Int = 0) {
         self.timelineViewModel = timelineViewModel
         self.mediaProvider = mediaProvider
         self.photoLibraryManager = photoLibraryManager
@@ -41,9 +43,16 @@ class TimelineMediaPreviewViewModel: TimelineMediaPreviewViewModelType {
         
         let timelineState = timelineViewModel.context.viewState.timelineState
         
-        super.init(initialViewState: TimelineMediaPreviewViewState(dataSource: .init(itemViewStates: timelineState.itemViewStates,
-                                                                                     initialItem: initialItem,
-                                                                                     paginationState: timelineState.paginationState)),
+        // STALK-1601: тап по вложению альбома листает только его вложения.
+        let dataSource: TimelineMediaPreviewDataSource = if albumItems.indices.contains(albumInitialIndex) {
+            .init(albumItems: albumItems, initialIndex: albumInitialIndex)
+        } else {
+            .init(itemViewStates: timelineState.itemViewStates,
+                  initialItem: initialItem,
+                  paginationState: timelineState.paginationState)
+        }
+        
+        super.init(initialViewState: TimelineMediaPreviewViewState(dataSource: dataSource),
                    mediaProvider: mediaProvider)
         
         rebuildCurrentItemActions()

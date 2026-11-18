@@ -47,6 +47,16 @@ extension TimelineControllerProtocol {
         case let .audio(url, info): await sendAudio(url: url, audioInfo: info, caption: caption?.text, requestHandle: requestHandle)
         }
     }
+
+    /// STALK-1601: превью и тесты отправляют вложения альбома по одному, подпись — с первым.
+    func sendGallery(_ media: [MediaInfo], caption: MediaUploadCaption?, requestHandle: @MainActor (SendGalleryJoinHandleProtocol) -> Void) async -> Result<Void, TimelineControllerError> {
+        var caption = caption
+        for item in media {
+            if case .failure(let error) = await sendAttachment(item, caption: caption, requestHandle: { _ in }) { return .failure(error) }
+            caption = nil
+        }
+        return .success(())
+    }
 }
 
 extension TimelineProxyProtocol {
@@ -56,6 +66,34 @@ extension TimelineProxyProtocol {
         case let .image(url, thumbnail, info): await sendImage(url: url, thumbnailURL: thumbnail, imageInfo: info, caption: caption?.text, requestHandle: requestHandle)
         case let .video(url, thumbnail, info): await sendVideo(url: url, thumbnailURL: thumbnail, videoInfo: info, caption: caption?.text, requestHandle: requestHandle)
         case let .audio(url, info): await sendAudio(url: url, audioInfo: info, caption: caption?.text, requestHandle: requestHandle)
+        }
+    }
+
+    /// STALK-1601: превью и тесты отправляют вложения альбома по одному, подпись — с первым.
+    func sendGallery(_ media: [MediaInfo], caption: MediaUploadCaption?, requestHandle: @MainActor (SendGalleryJoinHandleProtocol) -> Void) async -> Result<Void, TimelineProxyError> {
+        var caption = caption
+        for item in media {
+            if case .failure(let error) = await sendAttachment(item, caption: caption, requestHandle: { _ in }) { return .failure(error) }
+            caption = nil
+        }
+        return .success(())
+    }
+}
+
+extension MediaInfo {
+    /// STALK-1601: вложение альбома — те же сведения (размеры, миниатюра, тип), что и у одиночной отправки.
+    var galleryItemInfo: GalleryItemInfo {
+        switch self {
+        case let .image(url, thumbnail, info):
+            .image(imageInfo: info, source: .file(filename: url.path(percentEncoded: false)), caption: nil, formattedCaption: nil,
+                   thumbnailSource: .file(filename: thumbnail.path(percentEncoded: false)))
+        case let .video(url, thumbnail, info):
+            .video(videoInfo: info, source: .file(filename: url.path(percentEncoded: false)), caption: nil, formattedCaption: nil,
+                   thumbnailSource: .file(filename: thumbnail.path(percentEncoded: false)))
+        case let .audio(url, info):
+            .audio(audioInfo: info, source: .file(filename: url.path(percentEncoded: false)), caption: nil, formattedCaption: nil)
+        case let .file(url, info):
+            .file(fileInfo: info, source: .file(filename: url.path(percentEncoded: false)), caption: nil, formattedCaption: nil)
         }
     }
 }

@@ -68,6 +68,8 @@ struct RoomTimelineItemView: View {
             SeparatorRoomTimelineView(timelineItem: item)
         case .image(let item):
             ImageRoomTimelineView(timelineItem: item)
+        case .gallery(let item):
+            GalleryRoomTimelineView(timelineItem: item)
         case .video(let item):
             VideoRoomTimelineView(timelineItem: item)
         case .audio(let item):

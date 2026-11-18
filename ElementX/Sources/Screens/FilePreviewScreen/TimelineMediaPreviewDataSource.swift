@@ -35,6 +35,9 @@ class TimelineMediaPreviewDataSource: NSObject, QLPreviewControllerDataSource {
     
     var paginationState: PaginationState
     
+    /// STALK-1601: просмотр альбома — фиксированный список его вложений, лента не подгружается.
+    private var isAlbum = false
+    
     init(itemViewStates: [RoomTimelineItemViewState],
          initialItem: EventBasedMessageTimelineItemProtocol,
          initialPadding: Int = 100,
@@ -59,11 +62,26 @@ class TimelineMediaPreviewDataSource: NSObject, QLPreviewControllerDataSource {
         self.paginationState = paginationState
     }
     
+    /// STALK-1601: листание внутри одного альбома. Вложения делят идентификатор события,
+    /// поэтому начальный элемент задаётся индексом, а обновления ленты игнорируются.
+    init(albumItems: [EventBasedMessageTimelineItemProtocol], initialIndex: Int) {
+        previewItems = albumItems.map(TimelineMediaPreviewItem.Media.init(timelineItem:))
+        initialItem = albumItems[initialIndex]
+        initialItemIndex = initialIndex
+        currentItem = .media(previewItems[initialIndex])
+        backwardPadding = 0
+        forwardPadding = 0
+        paginationState = .initial
+        isAlbum = true
+    }
+    
     func updateCurrentItem(_ item: TimelineMediaPreviewItem) {
         currentItem = item
     }
     
     func updatePreviewItems(itemViewStates: [RoomTimelineItemViewState]) {
+        guard !isAlbum else { return }
+        
         let newItems: [TimelineMediaPreviewItem.Media] = itemViewStates.compactMap { itemViewState in
             guard let newItem = TimelineMediaPreviewItem.Media(roomTimelineItemViewState: itemViewState) else { return nil }
             

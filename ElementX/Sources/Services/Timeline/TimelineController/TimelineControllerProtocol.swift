@@ -101,6 +101,9 @@ protocol TimelineControllerProtocol {
                      intentionalMentions: IntentionalMentions) async
     
     func sendAttachment(_ media: MediaInfo, caption: MediaUploadCaption?, requestHandle: @MainActor (SendAttachmentJoinHandleProtocol) -> Void) async -> Result<Void, TimelineControllerError>
+    
+    /// STALK-1601: несколько вложений одним событием-альбомом (MSC4274).
+    func sendGallery(_ media: [MediaInfo], caption: MediaUploadCaption?, requestHandle: @MainActor (SendGalleryJoinHandleProtocol) -> Void) async -> Result<Void, TimelineControllerError>
 
     func sendAudio(url: URL,
                    audioInfo: AudioInfo,

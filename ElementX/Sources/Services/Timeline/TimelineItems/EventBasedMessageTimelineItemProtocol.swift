@@ -18,6 +18,8 @@ enum EventBasedMessageTimelineItemContentType: Hashable {
     case video(VideoRoomTimelineItemContent)
     case location(LocationRoomTimelineItemContent)
     case voice(AudioRoomTimelineItemContent)
+    /// STALK-1601: альбом (MSC4274).
+    case gallery(GalleryRoomTimelineItemContent)
 }
 
 protocol EventBasedMessageTimelineItemProtocol: EventBasedTimelineItemProtocol {
@@ -29,7 +31,7 @@ extension EventBasedMessageTimelineItemProtocol {
         switch contentType {
         case .audio, .file, .image, .video:
             true
-        case .emote, .notice, .text, .location, .voice:
+        case .emote, .notice, .text, .location, .voice, .gallery:
             false
         }
     }
@@ -43,6 +45,8 @@ extension EventBasedMessageTimelineItemProtocol {
         case .image(let content):
             content.caption
         case .video(let content):
+            content.caption
+        case .gallery(let content):
             content.caption
         case .emote, .notice, .text, .location, .voice:
             nil

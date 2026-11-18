@@ -256,6 +256,9 @@ private extension EventBasedTimelineItemProtocol {
         case is ImageRoomTimelineItem, is VideoRoomTimelineItem:
             // In case a reply detail or a thread decorator is present we render the color and the padding
             return properties.replyDetails != nil || properties.isThreaded || hasMediaCaption ? defaultColor : nil
+        case let gallery as GalleryRoomTimelineItem:
+            // STALK-1601: альбом из одних медиа без подписи — без пузыря, как картинка.
+            return gallery.hasBubbleChrome ? defaultColor : nil
         case is StickerRoomTimelineItem:
             return nil
         default:
@@ -276,6 +279,8 @@ private extension EventBasedTimelineItemProtocol {
         // In case a reply detail or a thread decorator is present we render the color and the padding
         case is ImageRoomTimelineItem, is VideoRoomTimelineItem:
             return properties.replyDetails != nil || properties.isThreaded || hasMediaCaption ? defaultInsets : .zero
+        case let gallery as GalleryRoomTimelineItem:
+            return gallery.hasBubbleChrome ? defaultInsets : .zero
         case let locationTimelineItem as LocationRoomTimelineItem:
             return locationTimelineItem.content.geoURI == nil ||
                 properties.replyDetails != nil ||
@@ -287,7 +292,7 @@ private extension EventBasedTimelineItemProtocol {
     
     var contentCornerRadius: CGFloat {
         switch self {
-        case is ImageRoomTimelineItem, is VideoRoomTimelineItem, is LocationRoomTimelineItem:
+        case is ImageRoomTimelineItem, is VideoRoomTimelineItem, is LocationRoomTimelineItem, is GalleryRoomTimelineItem:
             return properties.replyDetails != nil || properties.isThreaded ? 8 : .zero
         default:
             return .zero

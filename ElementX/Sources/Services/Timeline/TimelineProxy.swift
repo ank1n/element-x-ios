@@ -300,6 +300,31 @@ final class TimelineProxy: TimelineProxyProtocol {
         } catch { return .failure(.sdkError(error)) }
     }
 
+    /// STALK-1601: альбом — одно событие MSC4274. Шифрование, очередь отправки, прогресс
+    /// и повтор берёт на себя SDK, как и для одиночного вложения.
+    func sendGallery(_ media: [MediaInfo], caption: MediaUploadCaption?, requestHandle: @MainActor (SendGalleryJoinHandleProtocol) -> Void) async -> Result<Void, TimelineProxyError> {
+        guard await authorizeSend?() != false else { return .failure(.sdkError(StalkChannelError.readOnly)) }
+        MXLog.info("Sending gallery of \(media.count) items")
+        
+        do {
+            let params = GalleryUploadParameters(caption: caption?.text,
+                                                 formattedCaption: caption?.html.map { FormattedBody(format: .html, body: $0) },
+                                                 mentions: caption?.mentions.toRustMentions(),
+                                                 inReplyTo: nil)
+            let handle = try timeline.sendGallery(params: params, itemInfos: media.map(\.galleryItemInfo))
+            
+            await requestHandle(handle)
+            
+            try await handle.join()
+            MXLog.info("Finished sending gallery")
+        } catch {
+            MXLog.error("Failed sending gallery with error: \(error)")
+            return .failure(.sdkError(error))
+        }
+        
+        return .success(())
+    }
+    
     func sendAudio(url: URL,
                    audioInfo: AudioInfo,
                    caption: String?,

@@ -64,6 +64,8 @@ enum RoomTimelineItemType: Equatable {
     case voice(VoiceMessageRoomTimelineItem)
     case callInvite(CallInviteRoomTimelineItem)
     case callNotification(CallNotificationRoomTimelineItem)
+    /// STALK-1601: альбом.
+    case gallery(GalleryRoomTimelineItem)
 
     init(item: RoomTimelineItemProtocol) {
         switch item {
@@ -111,6 +113,8 @@ enum RoomTimelineItemType: Equatable {
             self = .callInvite(item)
         case let item as CallNotificationRoomTimelineItem:
             self = .callNotification(item)
+        case let item as GalleryRoomTimelineItem:
+            self = .gallery(item)
         default:
             fatalError("Unknown timeline item")
         }
@@ -134,6 +138,7 @@ enum RoomTimelineItemType: Equatable {
         case .poll(let item): item
         case .voice(let item): item
         case .state(let item): item
+        case .gallery(let item): item
         default: nil
         }
     }
@@ -161,7 +166,8 @@ enum RoomTimelineItemType: Equatable {
              .poll(let item as RoomTimelineItemProtocol),
              .voice(let item as RoomTimelineItemProtocol),
              .callInvite(let item as RoomTimelineItemProtocol),
-             .callNotification(let item as RoomTimelineItemProtocol):
+             .callNotification(let item as RoomTimelineItemProtocol),
+             .gallery(let item as RoomTimelineItemProtocol):
             return item.id
         }
     }

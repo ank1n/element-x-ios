@@ -38,6 +38,8 @@ enum SL10n {
     static let attachGallery = NSLocalizedString("stalk_attach_gallery", tableName: "Localizable", value: "Галерея", comment: "Gallery attachment option")
     static let attachFile = NSLocalizedString("stalk_attach_file", tableName: "Localizable", value: "Файл", comment: "File attachment option")
     static let attachLocation = NSLocalizedString("stalk_attach_location", tableName: "Localizable", value: "Локация", comment: "Location attachment option")
+    /// STALK-1601: альбом без подписи — в списке чатов, ответах и тредах.
+    static let galleryAlbum = NSLocalizedString("stalk_gallery_album", tableName: "Localizable", value: "Альбом", comment: "Gallery (album) message without caption")
     static let attachPoll = NSLocalizedString("stalk_attach_poll", tableName: "Localizable", value: "Опрос", comment: "Poll attachment option")
     static let attachFormat = NSLocalizedString("stalk_attach_format", tableName: "Localizable", value: "Формат", comment: "Text formatting attachment option")
 
