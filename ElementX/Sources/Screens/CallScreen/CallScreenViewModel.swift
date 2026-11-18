@@ -658,7 +658,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         }
 
         // Teardown immediately (как upstream — вне Task)
-        elementCallService.tearDownCallSession()
+        elementCallService.tearDownCallSession(roomID: configuration.callRoomID)
         UIDevice.current.isProximityMonitoringEnabled = false
     }
 
@@ -667,7 +667,7 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
     /// зомби-аудио, драка за аудио-сессию, SFU кикает дубль identity (лог dp 128).
     func stopAndWaitCleanup() async {
         stopSyncParts()
-        elementCallService.tearDownCallSession()
+        elementCallService.tearDownCallSession(roomID: configuration.callRoomID)
         UIDevice.current.isProximityMonitoringEnabled = false
         await withTaskGroup(of: Bool.self) { group in
             group.addTask { await self.performStopCleanup(); return true }
@@ -1453,10 +1453,10 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         // (network/SDK deadlock), переходим дальше. Финальный teardown через defer.
         defer {
             DiagLog.write("CallUI", "endCall: cleanup done — teardown")
-            elementCallService.tearDownCallSession()
+            elementCallService.tearDownCallSession(roomID: configuration.callRoomID)
             // STMOB-130: очистить native call marker (для native path tearDown
             // не выставляет ongoingCallID=nil, нужно отдельно).
-            elementCallService.markNativeCallActive(roomID: nil)
+            elementCallService.markNativeCallInactive(roomID: configuration.callRoomID)
         }
 
         // 1. Остановить запись (до закрытия звонка, иначе ABORTED)

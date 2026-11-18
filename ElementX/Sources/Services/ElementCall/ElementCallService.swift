@@ -387,6 +387,57 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
         tearDownCallSession(sendEndCallAction: true)
     }
 
+    func tearDownCallSession(roomID: String) {
+        if let ongoingCallID, ongoingCallID.roomID == roomID {
+            if let incomingCallID, incomingCallID.callKitID != ongoingCallID.callKitID {
+                // Пока идёт наш звонок, звонит второй: закрываем только наш.
+                tearDownOngoingCallOnly(sendEndCallAction: true)
+            } else {
+                tearDownCallSession(sendEndCallAction: true)
+            }
+        } else if ongoingCallID == nil, incomingCallID == nil || incomingCallID?.roomID == roomID {
+            tearDownCallSession(sendEndCallAction: true)
+        } else {
+            // Наш звонок уже закрыт («Завершить и ответить»), а живой сейчас — другой:
+            // его не трогаем. Раньше эта поздняя очистка гасила только что принятый звонок.
+            DiagLog.write("Call", "tearDown room=\(roomID): звонок уже закрыт, живой ongoing=\(ongoingCallID?.roomID ?? "nil") incoming=\(incomingCallID?.roomID ?? "nil") не трогаю")
+        }
+    }
+
+    func markNativeCallInactive(roomID: String) {
+        guard ongoingCallID == nil || ongoingCallID?.roomID == roomID else {
+            DiagLog.write("Call", "markNativeCallInactive room=\(roomID): активен другой звонок room=\(ongoingCallID?.roomID ?? "nil") — не трогаю")
+            return
+        }
+        markNativeCallActive(roomID: nil)
+    }
+
+    /// STMOB-338: «Завершить и ответить» — закрыть идущий звонок, оставив второй входящий
+    /// звонить (или уже принятым): его отвечает CXAnswerCallAction следом за этим.
+    private func tearDownOngoingCallOnly(sendEndCallAction: Bool) {
+        guard let endedCallID = ongoingCallID else { return }
+        actionsSubject.send(.endCall(roomID: endedCallID.roomID))
+        if sendEndCallAction {
+            let transaction = CXTransaction(action: CXEndCallAction(call: endedCallID.callKitID))
+            callController.request(transaction) { [weak self] error in
+                guard let error else { return }
+                MXLog.error("Failed transaction with error: \(error)")
+                self?.callProvider.reportCall(with: endedCallID.callKitID, endedAt: Date(), reason: .remoteEnded)
+            }
+        }
+        DiagLog.write("Call", "tearDown только идущего room=\(endedCallID.roomID), второй входящий room=\(incomingCallID?.roomID ?? "nil") оставляю")
+        Task { [weak self] in
+            await self?.clearCallMemberStateEvents(roomID: endedCallID.roomID)
+        }
+        if answeredCallKitID == endedCallID.callKitID {
+            answeredCallKitID = nil
+        }
+        ongoingCallID = nil
+        reportedHasVideo = nil
+        didReportOutgoingConnecting = false
+        pendingOutgoingConnectedAt = nil
+    }
+
     /// STMOB-130 build 153: native LiveKit path. Публикует roomID в
     /// ongoingCallRoomIDPublisher БЕЗ полного CallKit setup, чтобы
     /// RoomScreen знал что юзер в звонке (для скрытия «Присоединиться»
@@ -1124,6 +1175,17 @@ class ElementCallService: NSObject, ElementCallServiceProtocol, PKPushRegistryDe
             endUnansweredCallTask?.cancel()
             endUnansweredCallTask = nil
             self.incomingCallID = nil
+            action.fulfill()
+            return
+        }
+
+        // «Завершить и ответить»: система завершает ИДУЩИЙ звонок (UUID его), а второй
+        // входящий отвечает следующим CXAnswerCallAction. Раньше здесь входящему уходил
+        // отказ и общий teardown стирал его — звонящий видел «отклонено», ответ не проходил.
+        if let ongoingCallID, action.callUUID == ongoingCallID.callKitID,
+           let incomingCallID, incomingCallID.callKitID != ongoingCallID.callKitID {
+            DiagLog.write("Call", "CallKit: завершён идущий room=\(ongoingCallID.roomID), второй входящий room=\(incomingCallID.roomID) оставляю для ответа")
+            tearDownOngoingCallOnly(sendEndCallAction: false)
             action.fulfill()
             return
         }

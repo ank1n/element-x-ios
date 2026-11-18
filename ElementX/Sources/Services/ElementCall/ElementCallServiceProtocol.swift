@@ -56,6 +56,13 @@ protocol ElementCallServiceProtocol {
 
     /// STMOB-261: собеседник ответил — система начинает отсчёт длительности.
     func reportOutgoingCallConnected()
+
+    /// STMOB-338: экран звонка закрывает ТОЛЬКО свой звонок. После «Завершить и ответить»
+    /// очистка старого экрана доигрывает в фоне и не должна задеть второй звонок.
+    func tearDownCallSession(roomID: String)
+
+    /// STMOB-338: снять отметку нативного звонка, только если она принадлежит этой комнате.
+    func markNativeCallInactive(roomID: String)
 }
 
 /// STMOB-130 build 153: default no-op чтобы старые Sourcery-generated mocks
@@ -63,4 +70,11 @@ protocol ElementCallServiceProtocol {
 extension ElementCallServiceProtocol {
     func markNativeCallActive(roomID: String?, displayName: String? = nil, directPeerID: String? = nil) { }
     func reportOutgoingCallConnected() { }
+    func tearDownCallSession(roomID: String) {
+        tearDownCallSession()
+    }
+
+    func markNativeCallInactive(roomID: String) {
+        markNativeCallActive(roomID: nil)
+    }
 }
