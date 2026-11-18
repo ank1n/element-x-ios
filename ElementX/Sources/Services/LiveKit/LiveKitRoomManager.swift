@@ -121,6 +121,12 @@ final class LiveKitRoomManager: ObservableObject {
     /// на первом по JOIN order участнике.
     @Published private(set) var activeSpeakers: [Participant] = []
 
+    /// STMOB-340: чужой трек подписан (в т.ч. повторно — адаптивная подписка
+    /// возобновила поток). Окно «картинка в картинке» по этому сигналу заново
+    /// выбирает, что показывать: иначе до следующего события участников в окне
+    /// оставалась заглушка, хотя видео уже пришло.
+    let remoteTrackDidSubscribe = PassthroughSubject<Void, Never>()
+
     /// STMOB-120: множество SID'ов participants поднявших руку.
     /// Источник — `participant.metadata` JSON с полем `hand_raised: true`.
     /// Делегат `didUpdateMetadata` обновляет state, SwiftUI views рендерят
@@ -1793,6 +1799,7 @@ extension LiveKitRoomManager: RoomDelegate {
         Task { @MainActor in
             self.updateState()
             self.cameraReception.reconcile()
+            self.remoteTrackDidSubscribe.send()
             MXLog.info("sTalk LiveKit: Subscribed to track: \(pubKind) from \(identity)")
             // STMOB-114: видим в nse-events.log реально ли пришёл screen share track.
             DiagLog.write("Call", "track subscribed kind=\(pubKind) name=\(pubName) source=\(pubSource) isScreenShare=\(isScreenShare) muted=\(publication.isMuted) from=\(identity)")

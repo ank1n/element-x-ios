@@ -502,70 +502,27 @@ private struct ActiveSpeakerMiniView: View {
     }
 
     private var activeSpeaker: SpeakerInfo? {
-        let remotes = roomManager.displayParticipants
-
-        // Priority 1: anyone sharing screen
-        for remote in remotes {
-            if let screenPub = remote.videoTracks.first(where: { $0.isScreenShareTrack }),
-               !screenPub.isMuted,
-               let track = screenPub.track as? VideoTrack {
-                let identity = remote.identity?.stringValue ?? ""
-                return SpeakerInfo(identity: identity,
-                                   name: String(format: NSLocalizedString("stalk_call_screen_share_name", tableName: "Localizable", value: "%@ — экран", comment: "Screen share tile name: <participant> — screen"), resolveSpeakerName(for: remote, identity: identity)),
-                                   videoTrack: track,
-                                   avatarURL: nil)
-            }
+        // STMOB-340: выбор общий с системным окном «картинка в картинке».
+        switch roomManager.spotlightParticipant {
+        case .none:
+            return nil
+        case .screenShare(let remote, let track):
+            let identity = remote.identity?.stringValue ?? ""
+            return SpeakerInfo(identity: identity,
+                               name: String(format: NSLocalizedString("stalk_call_screen_share_name", tableName: "Localizable", value: "%@ — экран", comment: "Screen share tile name: <participant> — screen"), resolveSpeakerName(for: remote, identity: identity)),
+                               videoTrack: track,
+                               avatarURL: nil)
+        case .participant(let speaker, let track):
+            let identity = speaker.identity?.stringValue ?? ""
+            return SpeakerInfo(identity: identity,
+                               name: resolveSpeakerName(for: speaker, identity: identity),
+                               videoTrack: track,
+                               avatarURL: findAvatarURL(for: identity))
         }
-
-        // STMOB-100 v2: использовать `roomManager.activeSpeakers` (auto-maintained
-        // LiveKit SDK через RoomDelegate `didUpdateSpeakingParticipants`,
-        // sorted by audioLevel desc). Раньше пытались sort по audioLevel
-        // локально, но `audioLevel` не @Published — SwiftUI не пересчитывал
-        // computed property. Теперь @Published activeSpeakers триггерит
-        // re-render когда SDK сообщает об изменении speakers.
-        //
-        // Filter remote-only (исключаем local participant — себя в PiP не показываем),
-        // exclude muted (echo/false-positive defense), fallback на первого remote.
-        let speakingRemoteIDs = Set(roomManager.activeSpeakers
-            .compactMap { ($0 as? RemoteParticipant)?.identity?.stringValue })
-        let speakingRemotes = remotes
-            .filter { speakingRemoteIDs.contains($0.identity?.stringValue ?? "") }
-            .filter { !($0.firstAudioPublication?.isMuted ?? false) }
-        let speaker = speakingRemotes.first ?? remotes.first
-        guard let speaker else { return nil }
-
-        let identity = speaker.identity?.stringValue ?? ""
-        let avatarURL = findAvatarURL(for: identity)
-        let cameraPub = speaker.videoTracks.first(where: { !$0.isScreenShareTrack })
-        let videoMuted = cameraPub?.isMuted ?? true
-        let track = videoMuted ? nil : roomManager.remoteCameraVideoTrack(for: speaker)
-
-        return SpeakerInfo(identity: identity,
-                           name: resolveSpeakerName(for: speaker, identity: identity),
-                           videoTrack: track,
-                           avatarURL: avatarURL)
     }
 
-    /// STMOB: same fuzzy lookup as resolveDisplayName в GroupCallLayout.
-    /// Доступ к Matrix participants array → красивое отображаемое имя
-    /// вместо сырого identity вида `@user:server:DEVICEID`.
     private func resolveSpeakerName(for participant: RemoteParticipant, identity: String) -> String {
-        let raw: String = {
-            // STMOB-232: JWT-name берём ТОЛЬКО если это не сырой Matrix ID.
-            // Сервер для юзеров без profile display name кладёт в JWT name=userID,
-            // и он раньше затенял настоящее имя из Matrix-массива (регрессия имён).
-            if let name = participant.name, !name.isEmpty, !name.hasPrefix("@") { return name }
-            if let match = participants.first(where: { $0.userID == identity }),
-               let name = match.displayName, !name.isEmpty { return name }
-            if let match = participants.first(where: { identity.hasPrefix($0.userID) }),
-               let name = match.displayName, !name.isEmpty { return name }
-            if let match = participants.first(where: { $0.userID.hasPrefix(identity) }),
-               let name = match.displayName, !name.isEmpty { return name }
-            if let name = participant.name, !name.isEmpty { return name }
-            return identity
-        }()
-        // STMOB-232: если всё равно сырой Matrix ID → localpart.
-        return prettifyParticipantName(raw)
+        resolveCallParticipantName(for: participant, identity: identity, participants: participants)
     }
 
     private func findAvatarURL(for identity: String) -> URL? {
@@ -1665,6 +1622,75 @@ private struct LandscapeScreenShareLayout: View {
 
 // MARK: - Helpers
 
+/// STMOB-340: кого показывать в мини-окне на экране и в системном окне
+/// «картинка в картинке». Один выбор на оба места — иначе при сворачивании и
+/// возврате картинка «прыгает» между разными участниками.
+enum CallSpotlightParticipant {
+    /// Чужая демонстрация экрана — важнее всех.
+    case screenShare(RemoteParticipant, VideoTrack)
+    /// Участник и его камера (`nil` — камера выключена или ещё не пришла).
+    case participant(RemoteParticipant, camera: VideoTrack?)
+}
+
+extension LiveKitRoomManager {
+    /// Порядок: демонстрация экрана → говорящий собеседник → первый собеседник.
+    /// `nil` — собеседников в звонке нет.
+    var spotlightParticipant: CallSpotlightParticipant? {
+        let remotes = displayParticipants
+
+        // Priority 1: anyone sharing screen
+        for remote in remotes {
+            if let screenPub = remote.videoTracks.first(where: { $0.isScreenShareTrack }),
+               !screenPub.isMuted,
+               let track = screenPub.track as? VideoTrack {
+                return .screenShare(remote, track)
+            }
+        }
+
+        // STMOB-100 v2: использовать `activeSpeakers` (auto-maintained
+        // LiveKit SDK через RoomDelegate `didUpdateSpeakingParticipants`,
+        // sorted by audioLevel desc). Раньше пытались sort по audioLevel
+        // локально, но `audioLevel` не @Published — SwiftUI не пересчитывал
+        // computed property. Теперь @Published activeSpeakers триггерит
+        // re-render когда SDK сообщает об изменении speakers.
+        //
+        // Filter remote-only (исключаем local participant — себя в PiP не показываем),
+        // exclude muted (echo/false-positive defense), fallback на первого remote.
+        let speakingRemoteIDs = Set(activeSpeakers
+            .compactMap { ($0 as? RemoteParticipant)?.identity?.stringValue })
+        let speakingRemotes = remotes
+            .filter { speakingRemoteIDs.contains($0.identity?.stringValue ?? "") }
+            .filter { !($0.firstAudioPublication?.isMuted ?? false) }
+        guard let speaker = speakingRemotes.first ?? remotes.first else { return nil }
+
+        let cameraPub = speaker.videoTracks.first(where: { !$0.isScreenShareTrack })
+        let videoMuted = cameraPub?.isMuted ?? true
+        return .participant(speaker, camera: videoMuted ? nil : remoteCameraVideoTrack(for: speaker))
+    }
+}
+
+/// STMOB: same fuzzy lookup as resolveDisplayName в GroupCallLayout.
+/// Доступ к Matrix participants array → красивое отображаемое имя
+/// вместо сырого identity вида `@user:server:DEVICEID`.
+private func resolveCallParticipantName(for participant: RemoteParticipant, identity: String, participants: [CallParticipantInfo]) -> String {
+    let raw: String = {
+        // STMOB-232: JWT-name берём ТОЛЬКО если это не сырой Matrix ID.
+        // Сервер для юзеров без profile display name кладёт в JWT name=userID,
+        // и он раньше затенял настоящее имя из Matrix-массива (регрессия имён).
+        if let name = participant.name, !name.isEmpty, !name.hasPrefix("@") { return name }
+        if let match = participants.first(where: { $0.userID == identity }),
+           let name = match.displayName, !name.isEmpty { return name }
+        if let match = participants.first(where: { identity.hasPrefix($0.userID) }),
+           let name = match.displayName, !name.isEmpty { return name }
+        if let match = participants.first(where: { $0.userID.hasPrefix(identity) }),
+           let name = match.displayName, !name.isEmpty { return name }
+        if let name = participant.name, !name.isEmpty { return name }
+        return identity
+    }()
+    // STMOB-232: если всё равно сырой Matrix ID → localpart.
+    return prettifyParticipantName(raw)
+}
+
 /// STMOB-232: если имя — сырой Matrix ID (`@localpart:server[:device]`), показываем
 /// `localpart`. Юзеры без выставленного profile display name (dp.bondar, Троцкий)
 /// приходят в LiveKit JWT с `name = @user:server` и отображались у собеседников как
@@ -1699,6 +1725,10 @@ final class CallPictureInPictureViewController: AVPictureInPictureVideoCallViewC
     /// пропадало совсем, и в окне оставался только собеседник.
     private let selfView = VideoView()
     private let placeholder = UILabel()
+    /// STMOB-340: кружок с инициалами собеседника, у которого камера выключена.
+    /// Раньше в этом случае окно показывало название встречи на чёрном.
+    private let initialsCircle = UIView()
+    private let initialsLabel = UILabel()
     /// Пропорция, под которую уже подогнано окно. Нужна, чтобы не дёргать его
     /// на каждом переключении слоя адаптивной подписки.
     private var appliedAspect: CGFloat?
@@ -1746,6 +1776,19 @@ final class CallPictureInPictureViewController: AVPictureInPictureVideoCallViewC
         placeholder.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(placeholder)
 
+        initialsCircle.backgroundColor = UIColor(white: 0.25, alpha: 1)
+        initialsCircle.layer.cornerRadius = 24
+        initialsCircle.clipsToBounds = true
+        initialsCircle.isHidden = true
+        initialsCircle.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(initialsCircle)
+
+        initialsLabel.textAlignment = .center
+        initialsLabel.textColor = .white
+        initialsLabel.font = .systemFont(ofSize: 18, weight: .semibold)
+        initialsLabel.translatesAutoresizingMaskIntoConstraints = false
+        initialsCircle.addSubview(initialsLabel)
+
         NSLayoutConstraint.activate([
             videoView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             videoView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -1755,6 +1798,13 @@ final class CallPictureInPictureViewController: AVPictureInPictureVideoCallViewC
             placeholder.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             placeholder.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 8),
             placeholder.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -8),
+
+            initialsCircle.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            initialsCircle.bottomAnchor.constraint(equalTo: placeholder.topAnchor, constant: -8),
+            initialsCircle.widthAnchor.constraint(equalToConstant: 48),
+            initialsCircle.heightAnchor.constraint(equalToConstant: 48),
+            initialsLabel.centerXAnchor.constraint(equalTo: initialsCircle.centerXAnchor),
+            initialsLabel.centerYAnchor.constraint(equalTo: initialsCircle.centerYAnchor),
 
             selfView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -6),
             selfView.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -6),
@@ -1772,12 +1822,16 @@ final class CallPictureInPictureViewController: AVPictureInPictureVideoCallViewC
 
     /// Показать поток собеседника. `nil` — камера выключена или собеседник вышел:
     /// окно НЕ закрываем, звонок продолжается, показываем подпись.
-    func update(track: VideoTrack?, title: String) {
+    /// STMOB-340: `initials` — подпись это имя собеседника без камеры, над ней кружок
+    /// с инициалами. `nil` — подпись это название встречи (собеседников нет).
+    func update(track: VideoTrack?, title: String, initials: String? = nil) {
         loadViewIfNeeded()
         videoView.track = track
         videoView.isHidden = track == nil
         placeholder.isHidden = track != nil
         placeholder.text = track == nil ? title : nil
+        initialsLabel.text = initials
+        initialsCircle.isHidden = track != nil || initials == nil
 
         applyContentSize(for: track?.dimensions)
     }
@@ -1809,6 +1863,8 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
     private weak var roomManager: LiveKitRoomManager?
     private(set) var controller: AVPictureInPictureController?
     fileprivate var fallbackTitle = ""
+    /// STMOB-340: участники из Matrix — по ним имя собеседника в окне, как в мини-окне.
+    fileprivate var participants: [CallParticipantInfo] = []
     /// Окно открыто — только в этом состоянии держим в нём трек.
     private var isWindowVisible = false
     /// STMOB-277: система запросила восстановление интерфейса — значит закрытие
@@ -1933,6 +1989,17 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
                 updateAutomaticStart()
                 guard isWindowVisible else { return }
                 refreshTrack(fallbackTitle: self.fallbackTitle)
+            }
+            .store(in: &cancellables)
+
+        // STMOB-340: трек подписан — в т.ч. адаптивная подписка вернула поток.
+        // Без этого в окне оставалась заглушка, пока не придёт другое событие.
+        roomManager.remoteTrackDidSubscribe
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in
+                guard let self else { return }
+                updateAutomaticStart()
+                if isWindowVisible { refreshTrack(fallbackTitle: self.fallbackTitle) }
             }
             .store(in: &cancellables)
 
@@ -2114,36 +2181,37 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
 
     private func refreshTrack(fallbackTitle: String) {
         guard let roomManager else { return }
-        let participants = roomManager.displayParticipants
 
         // STMOB-277: своё видео тайлом. `displayParticipants` для этого не годится —
         // локального участника там нет никогда, берём трек напрямую у менеджера.
         contentViewController.update(localTrack: roomManager.localVideoTrack)
 
-        // 1. Демонстрация экрана
-        for participant in participants {
-            if let publication = participant.videoTracks.first(where: { $0.isScreenShareTrack }),
-               publication.isSubscribed, !publication.isMuted,
-               let track = publication.track as? VideoTrack {
-                contentViewController.update(track: track, title: fallbackTitle)
-                return
-            }
-        }
-        // 2. Говорящий
-        if let speakerSID = roomManager.activeSpeakers.first?.sid?.stringValue,
-           let speaker = participants.first(where: { $0.sid?.stringValue == speakerSID }),
-           let track = roomManager.remoteCameraVideoTrack(for: speaker) {
+        // STMOB-340: тот же выбор, что и в мини-окне на экране: демонстрация экрана →
+        // говорящий собеседник (себя не берём) → первый собеседник. Раньше окно брало
+        // только живую камеру, а без неё — название встречи на чёрном: так выглядел
+        // уход собеседника, у которого была включена камера.
+        switch roomManager.spotlightParticipant {
+        case .none:
+            // Собеседников нет вовсе — подпись с названием встречи.
+            contentViewController.update(track: nil, title: fallbackTitle)
+        case .screenShare(_, let track):
             contentViewController.update(track: track, title: fallbackTitle)
-            return
-        }
-        // 3. Первый с включённой камерой
-        for participant in participants {
-            if let track = roomManager.remoteCameraVideoTrack(for: participant) {
-                contentViewController.update(track: track, title: fallbackTitle)
-                return
+        case .participant(_, let camera?):
+            contentViewController.update(track: camera, title: fallbackTitle)
+        case .participant(let participant, nil):
+            // Видео в окне важнее инициалов: у выбранного камеры нет — берём
+            // первого собеседника с живой камерой.
+            for other in roomManager.displayParticipants {
+                if let track = roomManager.remoteCameraVideoTrack(for: other) {
+                    contentViewController.update(track: track, title: fallbackTitle)
+                    return
+                }
             }
+            // Видео нет ни у кого — имя выбранного собеседника и инициалы.
+            let identity = participant.identity?.stringValue ?? ""
+            let name = resolveCallParticipantName(for: participant, identity: identity, participants: participants)
+            contentViewController.update(track: nil, title: name, initials: initials(from: name))
         }
-        contentViewController.update(track: nil, title: fallbackTitle)
     }
 
     // MARK: AVPictureInPictureControllerDelegate
@@ -2213,6 +2281,8 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
 struct CallPictureInPictureSource: UIViewRepresentable {
     let roomManager: LiveKitRoomManager
     let title: String
+    /// STMOB-340: участники из Matrix — для имени собеседника в окне.
+    var participants: [CallParticipantInfo] = []
     let onReady: (AVPictureInPictureController) -> Void
     /// STMOB-277: окно открылось — звонок больше не полноэкранный.
     var onWindowOpened: (() -> Void)?
@@ -2235,6 +2305,7 @@ struct CallPictureInPictureSource: UIViewRepresentable {
         manager.onWindowOpened = onWindowOpened
         manager.onWindowClosed = onWindowClosed
         manager.fallbackTitle = title
+        manager.participants = participants
 
         guard manager.controller == nil else { return }
         if let controller = manager.start(sourceView: uiView,
