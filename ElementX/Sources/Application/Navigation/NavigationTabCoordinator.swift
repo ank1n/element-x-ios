@@ -513,14 +513,15 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
         if minimized {
             // Mini floating video окно — banner отдельно в CallBannerWindow.
             GeometryReader { geometry in
+                let center = miniCallCenter(in: geometry.size)
                 coordinator.toPresentable()
-                    .frame(width: 140, height: 200)
+                    .frame(width: Self.miniCallSize.width, height: Self.miniCallSize.height)
                     .clipShape(RoundedRectangle(cornerRadius: 14))
                     .shadow(color: .black.opacity(0.4), radius: 10, x: 0, y: 4)
                     .overlay(RoundedRectangle(cornerRadius: 14)
                         .stroke(Color.white.opacity(0.15), lineWidth: 0.5))
-                    .position(x: geometry.size.width - 82 + miniCallOffset.width,
-                              y: geometry.size.height - 190 + miniCallOffset.height)
+                    .overlay { miniCallHiddenTab }
+                    .position(center)
                     // Перетаскивание меряем в глобальных координатах. Жест стоит
                     // ПОД .offset, который сам же и двигает: в локальных
                     // координатах каждый сдвиг окна менял точку отсчёта следующего
@@ -531,9 +532,12 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
                             miniCallDragOffset = value.translation
                         }
                         .onEnded { value in
-                            miniCallOffset.width += value.translation.width
-                            miniCallOffset.height += value.translation.height
-                            miniCallDragOffset = .zero
+                            let proposed = CGPoint(x: center.x + value.translation.width,
+                                                   y: center.y + value.translation.height)
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                                settleMiniCall(at: proposed, in: geometry.size)
+                                miniCallDragOffset = .zero
+                            }
                         })
                     .offset(miniCallDragOffset)
             }
@@ -544,8 +548,97 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
         }
     }
 
-    @State private var miniCallOffset: CGSize = .zero
     @State private var miniCallDragOffset: CGSize = .zero
+    /// STMOB-341: центр мини-окна после отпускания; nil — место по умолчанию (справа внизу).
+    @State private var miniCallSettledCenter: CGPoint?
+    /// STMOB-341: окно спрятано за левый или правый край — торчит только «язычок» со стрелкой.
+    @State private var miniCallHiddenEdge: HorizontalEdge?
+
+    /// STMOB-341 (ЮГК SUP-40): окно уезжало за любой край и под верхнюю панель беседы,
+    /// после чего его было не найти. Теперь вверх и вниз оно не выходит за safe area и панели
+    /// (навигации сверху, вкладок снизу), по горизонтали прилипает к ближнему краю, а если
+    /// его утащили за боковой край больше чем наполовину — прячется, оставляя «язычок».
+    private static var miniCallSize: CGSize {
+        MiniCallWindowMetrics.size
+    }
+
+    private static var miniCallMargin: CGFloat {
+        MiniCallWindowMetrics.margin
+    }
+
+    private static var miniCallTopBarHeight: CGFloat {
+        MiniCallWindowMetrics.topBarHeight
+    }
+
+    private static var miniCallBottomBarHeight: CGFloat {
+        MiniCallWindowMetrics.bottomBarHeight
+    }
+
+    private static var miniCallTabWidth: CGFloat {
+        MiniCallWindowMetrics.tabWidth
+    }
+
+    private func miniCallCenter(in size: CGSize) -> CGPoint {
+        let docked = miniCallSettledCenter ?? CGPoint(x: size.width - Self.miniCallSize.width / 2 - 12,
+                                                      y: size.height - 190)
+        let y = clampedMiniCallY(docked.y, in: size)
+        switch miniCallHiddenEdge {
+        case .leading:
+            return CGPoint(x: Self.miniCallTabWidth - Self.miniCallSize.width / 2, y: y)
+        case .trailing:
+            return CGPoint(x: size.width - Self.miniCallTabWidth + Self.miniCallSize.width / 2, y: y)
+        case nil:
+            return CGPoint(x: min(max(docked.x, Self.miniCallSize.width / 2 + Self.miniCallMargin),
+                                  size.width - Self.miniCallSize.width / 2 - Self.miniCallMargin),
+                           y: y)
+        }
+    }
+
+    private func clampedMiniCallY(_ y: CGFloat, in size: CGSize) -> CGFloat {
+        let minY = Self.miniCallTopBarHeight + Self.miniCallSize.height / 2 + Self.miniCallMargin
+        let maxY = size.height - Self.miniCallBottomBarHeight - Self.miniCallSize.height / 2 - Self.miniCallMargin
+        return maxY > minY ? min(max(y, minY), maxY) : minY
+    }
+
+    private func settleMiniCall(at proposed: CGPoint, in size: CGSize) {
+        let halfWidth = Self.miniCallSize.width / 2
+        let y = clampedMiniCallY(proposed.y, in: size)
+        // За край больше чем наполовину — прячем к этому краю, иначе прилипаем к ближнему.
+        if proposed.x < 0 {
+            miniCallHiddenEdge = .leading
+            miniCallSettledCenter = CGPoint(x: halfWidth + Self.miniCallMargin, y: y)
+        } else if proposed.x > size.width {
+            miniCallHiddenEdge = .trailing
+            miniCallSettledCenter = CGPoint(x: size.width - halfWidth - Self.miniCallMargin, y: y)
+        } else {
+            miniCallHiddenEdge = nil
+            let x = proposed.x < size.width / 2 ? halfWidth + Self.miniCallMargin : size.width - halfWidth - Self.miniCallMargin
+            miniCallSettledCenter = CGPoint(x: x, y: y)
+        }
+    }
+
+    /// «Язычок» спрятанного окна: тап возвращает окно на место у того же края.
+    @ViewBuilder
+    private var miniCallHiddenTab: some View {
+        if let edge = miniCallHiddenEdge {
+            ZStack(alignment: edge == .leading ? .trailing : .leading) {
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(.black.opacity(0.55))
+                Image(systemName: edge == .leading ? "chevron.right" : "chevron.left")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: Self.miniCallTabWidth)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                    miniCallHiddenEdge = nil
+                }
+            }
+            .accessibilityLabel(NSLocalizedString("stalk_mini_call_show", tableName: "Localizable", value: "Показать окно звонка", comment: "Show the hidden mini call window"))
+            .accessibilityAddTraits(.isButton)
+        }
+    }
 
     private func configureAppearance(_ tabBarController: UITabBarController) {
         standardAppearance.configureWithDefaultBackground()
@@ -558,3 +651,12 @@ private struct NavigationTabCoordinatorView<Tag: Hashable>: View {
 
 // STMOB-102 Phase 3: ActiveCallBanner перенесён в CallBannerWindow.swift —
 // теперь рисуется в отдельном UIWindow поверх status bar (Telegram/WhatsApp pattern).
+
+/// STMOB-341: размеры мини-окна звонка (в обобщённом View статические константы держать нельзя).
+private enum MiniCallWindowMetrics {
+    static let size = CGSize(width: 140, height: 200)
+    static let margin: CGFloat = 8
+    static let topBarHeight: CGFloat = 56
+    static let bottomBarHeight: CGFloat = 56
+    static let tabWidth: CGFloat = 28
+}
