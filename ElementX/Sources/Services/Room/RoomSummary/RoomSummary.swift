@@ -84,6 +84,18 @@ struct RoomSummary {
         joinRequestType == nil && !isSpace && !isTombstoned && !isMuted
     }
 
+    /// STMOB-337: вклад комнаты в число на иконке — тем же способом, что у сервера.
+    /// Пока приложение закрыто, число ставит пуш (aps.badge = get_badge_count Synapse,
+    /// group_unread_count_by_room по умолчанию true на проде и у ЮГК): ЧАТЫ с непрочитанными
+    /// уведомлениями плюс приглашения. Приложение считало СООБЩЕНИЯ и без приглашений —
+    /// число на иконке скакало между открытым и закрытым приложением («2» у dp 17.11).
+    var unreadBadgeContribution: Int {
+        if joinRequestType?.isInvite == true {
+            return isSpace ? 0 : 1
+        }
+        return countsTowardUnreadBadge && hasUnreadNotifications ? 1 : 0
+    }
+
     var isMuted: Bool {
         notificationMode == .mute
     }

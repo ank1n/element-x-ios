@@ -1609,11 +1609,10 @@ class AppCoordinator: AppCoordinatorProtocol, AuthenticationFlowCoordinatorDeleg
                 var roomNames: [String: String] = [:]
                 for room in rooms {
                     if !room.name.isEmpty { roomNames[room.id] = room.name }
-                    guard room.countsTowardUnreadBadge else { continue }
-                    let unread = Int(room.unreadNotificationsCount)
-                    if unread > 0 {
-                        total += unread
-                        sources.append("\(room.id)=\(unread)")
+                    let contribution = room.unreadBadgeContribution
+                    if contribution > 0 {
+                        total += contribution
+                        sources.append(room.joinRequestType?.isInvite == true ? "\(room.id)=invite" : "\(room.id)=\(room.unreadNotificationsCount)")
                     }
                 }
                 if total > 0 {

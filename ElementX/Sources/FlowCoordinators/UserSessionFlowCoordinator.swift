@@ -367,9 +367,8 @@ class UserSessionFlowCoordinator: FlowCoordinatorProtocol {
         // и то же правило, что у числа на иконке.
         userSession.clientProxy.staticRoomSummaryProvider.roomListPublisher
             .map { rooms in
-                rooms.reduce(0) { sum, room in
-                    room.countsTowardUnreadBadge ? sum + Int(room.unreadNotificationsCount) : sum
-                }
+                // STMOB-337: как на иконке и на сервере — чаты с непрочитанными плюс приглашения.
+                rooms.reduce(0) { $0 + $1.unreadBadgeContribution }
             }
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
