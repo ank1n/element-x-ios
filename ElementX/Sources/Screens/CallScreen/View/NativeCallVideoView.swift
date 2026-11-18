@@ -2196,10 +2196,21 @@ final class CallPictureInPictureManager: NSObject, AVPictureInPictureControllerD
             contentViewController.update(track: nil, title: fallbackTitle)
         case .screenShare(_, let track):
             contentViewController.update(track: track, title: fallbackTitle)
-        case .participant(let participant, let camera):
+        case .participant(_, let camera?):
+            contentViewController.update(track: camera, title: fallbackTitle)
+        case .participant(let participant, nil):
+            // Видео в окне важнее инициалов: у выбранного камеры нет — берём
+            // первого собеседника с живой камерой.
+            for other in roomManager.displayParticipants {
+                if let track = roomManager.remoteCameraVideoTrack(for: other) {
+                    contentViewController.update(track: track, title: fallbackTitle)
+                    return
+                }
+            }
+            // Видео нет ни у кого — имя выбранного собеседника и инициалы.
             let identity = participant.identity?.stringValue ?? ""
             let name = resolveCallParticipantName(for: participant, identity: identity, participants: participants)
-            contentViewController.update(track: camera, title: name, initials: initials(from: name))
+            contentViewController.update(track: nil, title: name, initials: initials(from: name))
         }
     }
 
