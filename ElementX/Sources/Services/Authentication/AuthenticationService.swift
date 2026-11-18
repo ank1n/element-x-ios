@@ -305,8 +305,10 @@ class AuthenticationService: AuthenticationServiceProtocol {
         }
         
         Task {
+            var scanningClient: ClientProtocol?
             do {
                 let client = try await makeClient(homeserverAddress: scannedServerName)
+                scanningClient = client
                 let qrCodeHandler = client.newLoginWithQrCodeHandler(oauthConfiguration: appSettings.oidcConfiguration(for: scannedServerName).rustValue)
                 try await qrCodeHandler.scan(qrCodeData: qrData, progressListener: listener)
                 
@@ -318,11 +320,13 @@ class AuthenticationService: AuthenticationServiceProtocol {
                 }
             } catch let error as HumanQrLoginError {
                 MXLog.error("QRCode login error: \(error)")
+                await revokeAbandonedQRLoginSession(of: scanningClient)
                 progressSubject.send(completion: .failure(error.serviceError))
             } catch RemoteSettingsError.elementProRequired(let serverName) {
                 progressSubject.send(completion: .failure(.elementProRequired(serverName: serverName)))
             } catch {
                 MXLog.error("QRCode login unknown error: \(error)")
+                await revokeAbandonedQRLoginSession(of: scanningClient)
                 progressSubject.send(completion: .failure(.qrCodeError(.unknown)))
             }
         }
@@ -337,6 +341,20 @@ class AuthenticationService: AuthenticationServiceProtocol {
     }
     
     // MARK: - Private
+    
+    /// STALK-1591: канал входа по QR (rendezvous Synapse) живёт 60 с, а подтверждение в MAS
+    /// может занять дольше. Тогда SDK успевает получить токен и только потом узнаёт, что канал
+    /// закрыт, — вход падает, а в MAS остаётся активная сессия без клиента. Если сессия
+    /// у клиента уже есть, выходим из неё: SDK отзывает OAuth-токен в MAS.
+    private func revokeAbandonedQRLoginSession(of client: ClientProtocol?) async {
+        guard let client, (try? client.session()) != nil else { return }
+        MXLog.warning("QRCode login failed after the token was issued, revoking the session")
+        do {
+            try await client.logout()
+        } catch {
+            MXLog.error("Failed revoking the abandoned QR login session: \(error)")
+        }
+    }
     
     private func makeClient(homeserverAddress: String) async throws -> ClientProtocol {
         // Use a fresh session directory each time the user enters a different server
@@ -380,13 +398,15 @@ private extension HumanQrLoginError {
             .qrCodeError(.declined)
         case .LinkingNotSupported:
             .qrCodeError(.linkingNotSupported)
-        case .Expired:
+        case .Expired, .NotFound:
+            // STALK-1591: NotFound — канал уже закрыт сервером по истечении срока,
+            // для человека это то же «время истекло, отсканируйте новый код».
             .qrCodeError(.expired)
         case .SlidingSyncNotAvailable:
             .qrCodeError(.deviceNotSupported)
         case .OtherDeviceNotSignedIn:
             .qrCodeError(.deviceNotSignedIn)
-        case .Unknown, .NotFound, .OAuthMetadataInvalid, .CheckCodeAlreadySent, .CheckCodeCannotBeSent, .UnsupportedQrCodeType:
+        case .Unknown, .OAuthMetadataInvalid, .CheckCodeAlreadySent, .CheckCodeCannotBeSent, .UnsupportedQrCodeType:
             .qrCodeError(.unknown)
         }
     }
