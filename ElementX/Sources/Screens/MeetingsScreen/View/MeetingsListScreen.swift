@@ -148,22 +148,24 @@ struct MeetingsListScreen: View {
 
     // MARK: - Header (day number + weekday + month)
 
-    private let today = Date()
-
+    /// STMOB-342 (ЮГК SUP-41): шапка показывает ВЫБРАННЫЙ день, а не всегда сегодняшний —
+    /// иначе при перелистывании крупная дата слева не менялась. Тап по шапке, как и раньше,
+    /// возвращает к сегодняшнему дню (Date() в момент тапа, а не при создании экрана).
     private var headerView: some View {
-        Button {
-            context.send(viewAction: .selectDate(today))
+        let shownDate = context.viewState.selectedDate
+        return Button {
+            context.send(viewAction: .selectDate(Date()))
         } label: {
             HStack(alignment: .center, spacing: 10) {
-                Text(dayNumberFormatter.string(from: today))
+                Text(dayNumberFormatter.string(from: shownDate))
                     .font(.system(size: 38, weight: .bold))
                     .foregroundColor(.primary)
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(weekdayFormatter.string(from: today).capitalized)
+                    Text(weekdayFormatter.string(from: shownDate).capitalized)
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(.secondary)
-                    Text(monthYearFormatter.string(from: today).capitalized)
+                    Text(monthYearFormatter.string(from: shownDate).capitalized)
                         .font(.system(size: 13))
                         .foregroundColor(.secondary)
                 }
