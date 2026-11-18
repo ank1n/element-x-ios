@@ -48,6 +48,7 @@ struct ContactsListScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbar { toolbar }
+        .onAppear { context.send(viewAction: .screenAppeared) }
     }
 
     @ToolbarContentBuilder
@@ -93,8 +94,10 @@ struct ContactsListScreen: View {
 
         // Apply search
         if !context.searchQuery.isEmpty {
+            // STMOB-339: ищем и по Matrix ID — человека находят, даже если имя ещё не освежилось.
             contacts = contacts.filter {
-                $0.displayName.localizedCaseInsensitiveContains(context.searchQuery)
+                $0.displayName.localizedCaseInsensitiveContains(context.searchQuery) ||
+                    ($0.matrixUserID?.localizedCaseInsensitiveContains(context.searchQuery) ?? false)
             }
         }
 

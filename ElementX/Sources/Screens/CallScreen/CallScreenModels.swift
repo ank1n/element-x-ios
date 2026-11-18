@@ -233,6 +233,40 @@ enum CallParticipantSelection {
     }
 }
 
+/// STMOB-339: единый источник имени участника для всех раскладок звонка (сетка, спикер,
+/// лента, мини-окно, демонстрация, 1:1). Раньше одни раскладки брали имя из LiveKit JWT,
+/// другие — из Matrix-участника комнаты, и гость встречи выглядел по-разному.
+enum CallParticipantName {
+    /// Matrix-участник по LiveKit identity (`@user:server` или `@user:server:DEVICE`) — строго,
+    /// как в `CallParticipantSelection.contact`, без двустороннего hasPrefix.
+    static func member(identity: String, participants: [CallParticipantInfo]) -> CallParticipantInfo? {
+        participants.first { identity == $0.userID || identity.hasPrefix($0.userID + ":") }
+    }
+
+    /// Гость встречи (`@meet-…`) — всегда имя, введённое в браузере (JWT name).
+    /// Остальные — JWT name, если это не сырой Matrix ID; иначе displayname из комнаты;
+    /// иначе localpart сырого ID (STMOB-232).
+    static func resolve(identity: String, liveKitName: String?, participants: [CallParticipantInfo]) -> String {
+        let jwtName = liveKitName?.isEmpty == false ? liveKitName : nil
+        if identity.hasPrefix("@meet-"), let jwtName { return prettify(jwtName) }
+        if let jwtName, !jwtName.hasPrefix("@") { return jwtName }
+        if let name = member(identity: identity, participants: participants)?.displayName, !name.isEmpty {
+            return prettify(name)
+        }
+        return prettify(jwtName ?? identity)
+    }
+
+    /// STMOB-232: если имя — сырой Matrix ID (`@localpart:server[:device]`), показываем
+    /// `localpart`. Юзеры без выставленного profile display name (dp.bondar, Троцкий)
+    /// приходят в LiveKit JWT с `name = @user:server` и отображались у собеседников как
+    /// `@dp.bondar:stalk.implica.ru`. Прячем сырой ID и из JWT-name, и из Matrix displayName.
+    static func prettify(_ name: String) -> String {
+        guard name.hasPrefix("@"), let colon = name.firstIndex(of: ":") else { return name }
+        let localpart = name[name.index(after: name.startIndex)..<colon]
+        return localpart.isEmpty ? name : String(localpart)
+    }
+}
+
 enum CallScreenError: Error {
     case pictureInPictureNotAvailable
 }
