@@ -67,6 +67,13 @@ struct TimelineReplyView: View {
                                   plainBody: L10n.commonSharedLocation,
                                   formattedBody: nil,
                                   icon: .init(kind: .icon(\.locationPin), cornerRadii: iconCornerRadii))
+                    case .gallery(let content):
+                        // STALK-1601: альбом — подпись и миниатюра первого медиа.
+                        ReplyView(sender: sender,
+                                  plainBody: content.caption ?? SL10n.galleryAlbum,
+                                  formattedBody: content.formattedCaption,
+                                  icon: .init(kind: content.items.lazy.compactMap(\.thumbnailInfo).first.map { ReplyView.Icon.Kind.mediaSource($0.source) } ?? .icon(\.attachment),
+                                              cornerRadii: iconCornerRadii))
                     }
                 case .poll(let question):
                     ReplyView(sender: sender,

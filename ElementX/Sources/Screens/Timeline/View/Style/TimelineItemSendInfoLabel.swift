@@ -240,6 +240,14 @@ private extension TimelineItemSendInfo {
                 message.hasMediaCaption ? .overlay(capsuleStyle: false) : .horizontal(spacing: 0) // No spacing as the content already contains it.
             case let locationTimelineItem as LocationRoomTimelineItem:
                 .overlay(capsuleStyle: locationTimelineItem.content.geoURI != nil)
+            case let gallery as GalleryRoomTimelineItem:
+                // STALK-1601: без подписи — время поверх сетки, как у картинки (с файлами — под ними);
+                // с подписью — как у текста.
+                if message.hasMediaCaption {
+                    .overlay(capsuleStyle: false)
+                } else {
+                    gallery.content.isMediaOnly ? .overlay(capsuleStyle: true) : .vertical()
+                }
             default:
                 .horizontal()
             }

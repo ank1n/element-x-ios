@@ -360,25 +360,27 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
                                           _ messageContent: MessageContent,
                                           _ galleryMessageContent: GalleryMessageContent,
                                           _ isOutgoing: Bool) -> RoomTimelineItemProtocol {
-        TextRoomTimelineItem(id: eventItemProxy.id,
-                             timestamp: eventItemProxy.timestamp,
-                             isOutgoing: isOutgoing,
-                             isEditable: eventItemProxy.isEditable,
-                             canBeRepliedTo: eventItemProxy.canBeRepliedTo,
-                             shouldBoost: eventItemProxy.shouldBoost,
-                             sender: eventItemProxy.sender,
-                             content: .init(body: galleryMessageContent.body),
-                             properties: .init(replyDetails: buildTimelineItemReplyDetails(messageLikeContent.inReplyTo),
-                                               isThreaded: messageLikeContent.threadRoot != nil,
-                                               threadSummary: buildTimelineItemThreadSummary(messageLikeContent.threadSummary),
-                                               isEdited: messageContent.isEdited,
-                                               reactions: buildAggregatedReactions(messageLikeContent.reactions),
-                                               deliveryStatus: eventItemProxy.deliveryStatus,
-                                               orderedReadReceipts: buildOrderedReadReceipts(eventItemProxy.readReceipts),
-                                               encryptionAuthenticity: buildEncryptionAuthenticity(eventItemProxy.shieldState),
-                                               encryptionForwarder: eventItemProxy.forwarder,
-                                               channelForwardSource: StalkChannelForwarding.sourceURL(from: eventItemProxy.debugInfo.originalJSON),
-                                               savedFrom: StalkSavedFrom.parse(originalJSON: eventItemProxy.debugInfo.originalJSON)))
+        // STALK-1601: альбом рисуется сеткой. Правку подписи альбома не предлагаем —
+        // редактор умеет только текст и подпись одиночного вложения.
+        GalleryRoomTimelineItem(id: eventItemProxy.id,
+                                timestamp: eventItemProxy.timestamp,
+                                isOutgoing: isOutgoing,
+                                isEditable: false,
+                                canBeRepliedTo: eventItemProxy.canBeRepliedTo,
+                                shouldBoost: eventItemProxy.shouldBoost,
+                                sender: eventItemProxy.sender,
+                                content: buildGalleryTimelineItemContent(galleryMessageContent),
+                                properties: .init(replyDetails: buildTimelineItemReplyDetails(messageLikeContent.inReplyTo),
+                                                  isThreaded: messageLikeContent.threadRoot != nil,
+                                                  threadSummary: buildTimelineItemThreadSummary(messageLikeContent.threadSummary),
+                                                  isEdited: messageContent.isEdited,
+                                                  reactions: buildAggregatedReactions(messageLikeContent.reactions),
+                                                  deliveryStatus: eventItemProxy.deliveryStatus,
+                                                  orderedReadReceipts: buildOrderedReadReceipts(eventItemProxy.readReceipts),
+                                                  encryptionAuthenticity: buildEncryptionAuthenticity(eventItemProxy.shieldState),
+                                                  encryptionForwarder: eventItemProxy.forwarder,
+                                                  channelForwardSource: StalkChannelForwarding.sourceURL(from: eventItemProxy.debugInfo.originalJSON),
+                                                  savedFrom: StalkSavedFrom.parse(originalJSON: eventItemProxy.debugInfo.originalJSON)))
     }
     
     private func buildStickerTimelineItem(_ eventItemProxy: EventTimelineItemProxy,
@@ -632,6 +634,29 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
                      contentType: UTType(mimeType: messageContent.info?.mimetype, fallbackFilename: messageContent.filename))
     }
 
+    /// STALK-1601: вложения альбома собираются теми же сборщиками, что и одиночные сообщения.
+    /// Неизвестные типы (`other`) пропускаются.
+    func buildGalleryTimelineItemContent(_ messageContent: GalleryMessageContent) -> GalleryRoomTimelineItemContent {
+        let htmlCaption = messageContent.formatted?.format == .html ? messageContent.formatted?.body : nil
+        let caption = messageContent.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : messageContent.body
+        let formattedCaption = htmlCaption != nil ? attributedStringBuilder.fromHTML(htmlCaption) : attributedStringBuilder.fromPlain(caption, detectMarkdown: false)
+        
+        let items: [GalleryRoomTimelineItemContent.Item] = messageContent.itemtypes.compactMap { itemType in
+            switch itemType {
+            case .image(let content): .image(buildImageTimelineItemContent(content))
+            case .video(let content): .video(buildVideoTimelineItemContent(content))
+            case .audio(let content): .audio(buildAudioTimelineItemContent(content))
+            case .file(let content): .file(buildFileTimelineItemContent(content))
+            case .other: nil
+            }
+        }
+        
+        return .init(caption: caption,
+                     formattedCaption: caption == nil ? nil : formattedCaption,
+                     formattedCaptionHTMLString: caption == nil ? nil : htmlCaption,
+                     items: items)
+    }
+    
     private func buildLocationTimelineItemContent(_ locationContent: LocationContent) -> LocationRoomTimelineItemContent {
         LocationRoomTimelineItemContent(body: locationContent.body,
                                         geoURI: .init(string: locationContent.geoUri),
@@ -941,7 +966,7 @@ struct RoomTimelineItemFactory: RoomTimelineItemFactoryProtocol {
         case .location(let content):
             .location(buildLocationTimelineItemContent(content))
         case .gallery(let content):
-            .text(.init(body: content.body))
+            .gallery(buildGalleryTimelineItemContent(content))
         case .other(_, let body):
             .text(.init(body: body))
         case .none:

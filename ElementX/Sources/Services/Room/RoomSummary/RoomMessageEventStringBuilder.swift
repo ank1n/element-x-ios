@@ -66,7 +66,8 @@ struct RoomMessageEventStringBuilder {
                 message = AttributedString(content.body)
             }
         case .gallery(let content):
-            message = AttributedString(content.body)
+            // STALK-1601: альбом без подписи — «Альбом», а не пустая строка.
+            message = AttributedString(content.body.isBlank ? NSLocalizedString("stalk_gallery_album", value: "Альбом", comment: "") : content.body)
         case .other(_, let body):
             message = AttributedString(body)
         }

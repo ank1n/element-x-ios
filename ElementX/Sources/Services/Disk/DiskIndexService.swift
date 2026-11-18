@@ -224,7 +224,7 @@ extension DiskIndexService {
                 fileSize = content.fileSize
                 contentType = content.contentType
                 msgtype = "m.audio"
-            case .emote, .notice, .text, .location:
+            case .emote, .notice, .text, .location, .gallery:
                 return nil
             }
 

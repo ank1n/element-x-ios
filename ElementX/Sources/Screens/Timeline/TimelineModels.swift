@@ -55,6 +55,8 @@ enum TimelineViewAction {
     case itemDisappeared(itemID: TimelineItemIdentifier)
     
     case mediaTapped(itemID: TimelineItemIdentifier)
+    /// STALK-1601: тап по вложению альбома (индекс в `GalleryRoomTimelineItemContent.items`).
+    case galleryItemTapped(itemID: TimelineItemIdentifier, index: Int)
     case downloadFile(itemID: TimelineItemIdentifier)
     /// STMOB-275: тап по карточке «поделился файлом» — содержимое лежит не в
     /// Matrix-медиа, а в блоб-хранилище Диска, поэтому путь свой.

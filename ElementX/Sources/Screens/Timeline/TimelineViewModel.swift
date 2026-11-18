@@ -182,6 +182,8 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
             Task { await downloadFile(id) }
         case .mediaTapped(let id):
             Task { await handleMediaTapped(with: id) }
+        case .galleryItemTapped(let id, let index):
+            displayGalleryPreview(itemID: id, index: index)
         case .stalkDiskLinkTapped(let url):
             actionsSubject.send(.composer(action: .removeFocus))
             appMediator.open(url)
@@ -876,6 +878,24 @@ class TimelineViewModel: TimelineViewModelType, TimelineViewModelProtocol {
         }
         
         analyticsService.trackComposer(inThread: false, isEditing: isEdit, isReply: isReply, startsThread: nil)
+    }
+    
+    /// STALK-1601: просмотрщик открывается на выбранном вложении и листает только альбом.
+    private func displayGalleryPreview(itemID: TimelineItemIdentifier, index: Int) {
+        guard let item = timelineController.timelineItems.firstUsingStableID(itemID) as? GalleryRoomTimelineItem else { return }
+        let albumItems = item.previewItems
+        guard albumItems.indices.contains(index) else { return }
+        
+        actionsSubject.send(.composer(action: .removeFocus))
+        let mediaPreviewViewModel = TimelineMediaPreviewViewModel(initialItem: albumItems[index],
+                                                                  timelineViewModel: self,
+                                                                  mediaProvider: userSession.mediaProvider,
+                                                                  photoLibraryManager: PhotoLibraryManager(),
+                                                                  userIndicatorController: userIndicatorController,
+                                                                  appMediator: appMediator,
+                                                                  albumItems: albumItems,
+                                                                  albumInitialIndex: index)
+        actionsSubject.send(.displayMediaPreview(mediaPreviewViewModel))
     }
     
     private func makeMediaPreviewViewModel(item: EventBasedMessageTimelineItemProtocol,

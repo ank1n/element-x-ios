@@ -216,10 +216,12 @@ class MediaUploadPreviewScreenViewModelTests: XCTestCase {
         XCTAssertEqual(userIndicatorController.submitIndicatorDelayCallsCount, 1) // Loading indicator
         
         // Then the screen should be dismissed so the user can see which files made it into the timeline.
+        // STALK-1601: несколько файлов уходят одним альбомом, поэтому сбой один на весь альбом
+        // (мок отправляет вложения альбома по одному и останавливается на первой ошибке).
         try await deferredDismiss.fulfill()
-        XCTAssertEqual(timelineProxy.sendImageUrlThumbnailURLImageInfoCaptionRequestHandleCallsCount, 2)
-        XCTAssertEqual(timelineProxy.sendFileUrlFileInfoCaptionRequestHandleCallsCount, 2)
-        XCTAssertEqual(userIndicatorController.submitIndicatorDelayCallsCount, 3, "Error indicators for each failure should be shown.")
+        XCTAssertEqual(timelineProxy.sendImageUrlThumbnailURLImageInfoCaptionRequestHandleCallsCount, 1)
+        XCTAssertEqual(timelineProxy.sendFileUrlFileInfoCaptionRequestHandleCallsCount, 1)
+        XCTAssertEqual(userIndicatorController.submitIndicatorDelayCallsCount, 2, "A single error indicator should be shown for the album.")
     }
     
     // MARK: - Helpers

@@ -21,6 +21,7 @@ class MediaUploadPreviewScreenViewModel: MediaUploadPreviewScreenViewModelType, 
     
     private var processingTask: Task<Result<[MediaInfo], MediaUploadingPreprocessorError>, Never>
     private var requestHandle: SendAttachmentJoinHandleProtocol?
+    private var galleryRequestHandle: SendGalleryJoinHandleProtocol?
     private let roomProxy: JoinedRoomProxyProtocol?
     private var suggestionService: CompletionSuggestionService?
     private let clientProxy: ClientProxyProtocol
@@ -82,8 +83,15 @@ class MediaUploadPreviewScreenViewModel: MediaUploadPreviewScreenViewModelType, 
                 
                 switch await processingTask.value {
                 case .success(let mediaInfos):
-                    for mediaInfo in mediaInfos {
-                        switch await sendAttachment(mediaInfo: mediaInfo, caption: caption) {
+                    // STALK-1601: несколько вложений уходят альбомом — одним событием, не больше
+                    // 10 вложений в каждом. Одиночное вложение — прежним путём.
+                    for chunk in Self.galleryChunks(mediaInfos) {
+                        let result = if chunk.count > 1 {
+                            await sendGallery(mediaInfos: chunk, caption: caption)
+                        } else {
+                            await sendAttachment(mediaInfo: chunk[0], caption: caption)
+                        }
+                        switch result {
                         case .success:
                             caption = nil // Set the caption only on the first uploaded file.
                         case .failure(let error):
@@ -104,6 +112,7 @@ class MediaUploadPreviewScreenViewModel: MediaUploadPreviewScreenViewModelType, 
             }
         case .cancel:
             requestHandle?.cancel()
+            galleryRequestHandle?.cancel()
             actionsSubject.send(.dismiss)
         }
     }
@@ -124,14 +133,27 @@ class MediaUploadPreviewScreenViewModel: MediaUploadPreviewScreenViewModelType, 
     }
     
     private func sendAttachment(mediaInfo: MediaInfo, caption: MediaUploadCaption?) async -> Result<Void, TimelineControllerError> {
-        let current = caption.map { value -> MediaUploadCaption in
+        await timelineController.sendAttachment(mediaInfo, caption: allowedCaption(caption)) { [weak self] in self?.requestHandle = $0 }
+    }
+    
+    private func sendGallery(mediaInfos: [MediaInfo], caption: MediaUploadCaption?) async -> Result<Void, TimelineControllerError> {
+        await timelineController.sendGallery(mediaInfos, caption: allowedCaption(caption)) { [weak self] in self?.galleryRequestHandle = $0 }
+    }
+    
+    private func allowedCaption(_ caption: MediaUploadCaption?) -> MediaUploadCaption? {
+        caption.map { value -> MediaUploadCaption in
             var value = value
             if roomProxy?.infoPublisher.value.powerLevels?.canOwnUserTriggerRoomNotification() != true {
                 value.mentions = .init(userIDs: value.mentions.userIDs, atRoom: false)
             }
             return value
         }
-        return await timelineController.sendAttachment(mediaInfo, caption: current) { [weak self] in self?.requestHandle = $0 }
+    }
+    
+    /// STALK-1601: в альбоме не больше 10 вложений (как на вебе и Android) — больше выбранного
+    /// уходит несколькими альбомами по порядку.
+    static func galleryChunks(_ mediaInfos: [MediaInfo], limit: Int = 10) -> [[MediaInfo]] {
+        stride(from: 0, to: mediaInfos.count, by: limit).map { Array(mediaInfos[$0..<min($0 + limit, mediaInfos.count)]) }
     }
 
     private func selectSuggestion(_ suggestion: SuggestionItem) {
@@ -169,6 +191,7 @@ class MediaUploadPreviewScreenViewModel: MediaUploadPreviewScreenViewModelType, 
         userIndicatorController.retractIndicatorWithId(Self.loadingIndicatorIdentifier)
         state.shouldDisableInteraction = false
         requestHandle = nil
+        galleryRequestHandle = nil
     }
     
     private func showError(label: String) {

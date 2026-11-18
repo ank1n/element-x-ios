@@ -84,6 +84,9 @@ protocol TimelineProxyProtocol {
     // MARK: - Sending
     
     func sendAttachment(_ media: MediaInfo, caption: MediaUploadCaption?, requestHandle: @MainActor (SendAttachmentJoinHandleProtocol) -> Void) async -> Result<Void, TimelineProxyError>
+    
+    /// STALK-1601: несколько вложений одним событием-альбомом (MSC4274).
+    func sendGallery(_ media: [MediaInfo], caption: MediaUploadCaption?, requestHandle: @MainActor (SendGalleryJoinHandleProtocol) -> Void) async -> Result<Void, TimelineProxyError>
 
     func sendAudio(url: URL,
                    audioInfo: AudioInfo,
