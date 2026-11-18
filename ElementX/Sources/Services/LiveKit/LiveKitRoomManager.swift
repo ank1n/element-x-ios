@@ -791,6 +791,11 @@ final class LiveKitRoomManager: ObservableObject {
         #endif
     }
 
+    /// STMOB-343: включён ли микрофон на самом деле — по опубликованному треку, а не по значку.
+    var isMicrophonePublishedEnabled: Bool {
+        room.localParticipant.isMicrophoneEnabled()
+    }
+
     func setMicrophone(enabled: Bool) async throws {
         #if targetEnvironment(simulator)
         if Self.simulatorSyntheticMediaEnabled {

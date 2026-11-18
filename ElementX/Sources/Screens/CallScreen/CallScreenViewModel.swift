@@ -258,8 +258,12 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                         // STMOB-261: в нативном режиме WebView нет, и сообщение виджету
                         // уходило в никуда — системная кнопка «Без звука» показывала
                         // выключённый микрофон, а звук продолжал идти.
-                        try? await self.liveKitRoomManager.setMicrophone(enabled: enabled)
+                        // STMOB-343: сначала выбор, потом трек и сверка — как у своей кнопки.
                         self.state.isMuted = !enabled
+                        if self.state.liveKitRoomManager != nil {
+                            try? await self.liveKitRoomManager.setMicrophone(enabled: enabled)
+                            await self.reconcileMicrophone(context: "callkit")
+                        }
                         await self.setAudioEnabled(enabled)
                     }
                 case let .setHeld(held, roomID):
@@ -1096,12 +1100,16 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
         try? await Task.sleep(for: .milliseconds(200))
 
         // Step 2: Enable microphone (non-fatal — may fail on simulator)
+        // STMOB-343 (ЮГК SUP-42): «выключить микрофон», нажатое пока звонок подключался,
+        // меняло только значок — здесь трек всё равно публиковался включённым, и звук шёл
+        // собеседникам при перечёркнутом значке. Публикуем по выбранному на кнопке.
         do {
-            try await liveKitRoomManager.setMicrophone(enabled: true)
-            MXLog.info("sTalk LiveKit: Microphone enabled")
+            try await liveKitRoomManager.setMicrophone(enabled: !state.isMuted)
+            MXLog.info("sTalk LiveKit: Microphone published, enabled=\(!state.isMuted)")
         } catch {
             MXLog.error("sTalk LiveKit: Microphone enable failed (non-fatal): \(error)")
         }
+        await reconcileMicrophone(context: "publish")
 
         // Step 3: Enable camera
         // On simulator: ALWAYS publish fake video to verify pipeline (color-cycling track)
@@ -1331,10 +1339,36 @@ class CallScreenViewModel: CallScreenViewModelType, CallScreenViewModelProtocol 
                 MXLog.error("sTalk LiveKit: Failed to toggle microphone: \(error)")
                 DiagLog.write("CallUI", "  toggleMute: LiveKit setMicrophone FAILED: \(error.localizedDescription)")
             }
+            await reconcileMicrophone(context: "toggle")
         }
 
         // Also notify Widget API for MatrixRTC state sync
         await setAudioEnabled(!newMuted)
+    }
+
+    /// STMOB-343: трек микрофона обязан совпадать со значком. Включение и выключение —
+    /// асинхронные операции SDK; при быстрых нажатиях (или нажатии во время публикации)
+    /// они могли завершиться в обратном порядке, и значок «выключен» соседствовал с идущим
+    /// звуком. После каждой операции доводим трек до ПОСЛЕДНЕГО выбора на кнопке.
+    private func reconcileMicrophone(context: String) async {
+        guard state.liveKitRoomManager != nil else { return }
+        for _ in 0..<3 {
+            let wanted = !state.isMuted
+            let actual = liveKitRoomManager.isMicrophonePublishedEnabled
+            guard actual != wanted else { return }
+            DiagLog.write("CallUI", "STMOB-343 сверка микрофона [\(context)]: трек=\(actual), выбрано=\(wanted) — привожу")
+            do {
+                try await liveKitRoomManager.setMicrophone(enabled: wanted)
+            } catch {
+                MXLog.error("sTalk LiveKit: microphone reconcile failed: \(error)")
+                return
+            }
+        }
+        if liveKitRoomManager.isMicrophonePublishedEnabled, state.isMuted {
+            // Привести не удалось — честно показываем, что микрофон включён.
+            MXLog.error("sTalk LiveKit: microphone stays enabled despite mute, updating the icon")
+            state.isMuted = false
+        }
     }
 
     /// Resigns the app-wide first responder. Used when the call returns to fullscreen: a keyboard
