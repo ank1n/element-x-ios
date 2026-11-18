@@ -338,6 +338,7 @@ struct CallScreen: View {
     private func pictureInPictureSource(roomManager: LiveKitRoomManager) -> some View {
         CallPictureInPictureSource(roomManager: roomManager,
                                    title: context.viewState.roomDisplayName ?? SL10n.callDefault,
+                                   participants: context.viewState.participants,
                                    onReady: { controller in
                                        context.send(viewAction: .pictureInPictureIsAvailable(controller))
                                    },
