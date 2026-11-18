@@ -125,6 +125,24 @@ class CallScreenViewModelTests: XCTestCase {
         XCTAssertNil(CallParticipantSelection.contact(identity: "@unknown:test", participants: [known]))
     }
 
+    // STMOB-339: одно имя участника во всех раскладках.
+    func testParticipantNameGuestUsesBrowserNameOverRoomMember() {
+        let guest = CallParticipantInfo(userID: "@meet-abc:test", displayName: "Гость", avatarURL: nil)
+        XCTAssertEqual(CallParticipantName.resolve(identity: "@meet-abc:test:DEV", liveKitName: "Иван", participants: [guest]), "Иван")
+        XCTAssertEqual(CallParticipantName.resolve(identity: "@meet-abc:test:DEV", liveKitName: nil, participants: [guest]), "Гость")
+    }
+
+    func testParticipantNameMemberRules() {
+        let alice = CallParticipantInfo(userID: "@alice:test", displayName: "Alice", avatarURL: nil)
+        // JWT-имя, не сырой ID, — главнее.
+        XCTAssertEqual(CallParticipantName.resolve(identity: "@alice:test:DEV", liveKitName: "Алиса", participants: [alice]), "Алиса")
+        // Сырой ID в JWT → displayname из комнаты.
+        XCTAssertEqual(CallParticipantName.resolve(identity: "@alice:test:DEV", liveKitName: "@alice:test", participants: [alice]), "Alice")
+        // Нестрогое совпадение не принимается → localpart.
+        XCTAssertEqual(CallParticipantName.resolve(identity: "@alice:test.other:DEV", liveKitName: nil, participants: [alice]), "alice")
+        XCTAssertNil(CallParticipantName.member(identity: "@alice:test.other", participants: [alice]))
+    }
+
     func testLayoutChoicesOnlyForMoreThanTwoParticipants() {
         var state = makeState()
         state.layoutOverride = .presenter
