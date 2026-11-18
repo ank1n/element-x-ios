@@ -96,6 +96,22 @@ class ContactsListScreenTests: XCTestCase {
         XCTAssertTrue(gate.tryBegin(now: t0.addingTimeInterval(gate.refreshInterval)))
     }
 
+    /// STMOB-339: открытие «Контактов» не ждёт десяти минут после удачи, но не обходит
+    /// ни незаконченный поход, ни отступ после отказа.
+    func testGateScreenAppearSkipsRefreshIntervalButNotBackoff() {
+        var gate = UserDirectoryFetchGate()
+        XCTAssertTrue(gate.tryBegin(now: t0))
+        XCTAssertFalse(gate.tryBegin(now: t0, isScreenAppear: true), "поход ещё идёт")
+        gate.finish(.success, now: t0)
+
+        XCTAssertFalse(gate.tryBegin(now: t0.addingTimeInterval(gate.screenAppearInterval - 1), isScreenAppear: true))
+        XCTAssertTrue(gate.tryBegin(now: t0.addingTimeInterval(gate.screenAppearInterval), isScreenAppear: true))
+        gate.finish(.rateLimited(retryAfter: 60), now: t0.addingTimeInterval(gate.screenAppearInterval))
+
+        XCTAssertFalse(gate.tryBegin(now: t0.addingTimeInterval(gate.screenAppearInterval * 2 + 1), isScreenAppear: true),
+                       "после отказа ждём отступ и при открытии экрана")
+    }
+
     func testGateHonoursServerRetryAfter() {
         var gate = UserDirectoryFetchGate()
         XCTAssertTrue(gate.tryBegin(now: t0))
@@ -287,6 +303,29 @@ class ContactsListScreenTests: XCTestCase {
         XCTAssertEqual(harness.contacts.filter { $0.matrixUserID == bob.userID }.map(\.id), [bob.userID],
                        "человек остался — справочной записью")
         XCTAssertEqual(harness.searches, [""], "и для этого не понадобилось снова идти в сеть")
+    }
+
+    /// STMOB-339: человек сменил имя в вебе. Строка личного чата берёт имя из справочника,
+    /// а открытие «Контактов» освежает справочник, не дожидаясь десяти минут.
+    func testDirectRoomContactTakesFreshDirectoryNameOnScreenAppear() async throws {
+        let bob = UserProfileProxy.mockBob
+        var directoryName = "Старое имя"
+        let harness = makeHarness { _, _ in
+            .success(.init(results: [UserProfileProxy(userID: bob.userID, displayName: directoryName)], limited: false))
+        }
+        harness.roomList.send([Self.directRoom(with: bob, isDirect: true, name: "Старое имя")])
+        try await settle()
+        XCTAssertEqual(harness.contacts.first { $0.matrixUserID == bob.userID }?.displayName, "Старое имя")
+
+        directoryName = "Новое имя"
+        harness.clock.now = t0.addingTimeInterval(60)
+        harness.viewModel.context.send(viewAction: .screenAppeared)
+        try await settle()
+
+        XCTAssertEqual(harness.searches, ["", ""], "открытие экрана сходило в справочник раньше десяти минут")
+        let row = harness.contacts.filter { $0.matrixUserID == bob.userID }
+        XCTAssertEqual(row.map(\.id), [Self.directRoomID(bob)], "дубля из справочника нет")
+        XCTAssertEqual(row.first?.displayName, "Новое имя")
     }
 
     /// STALK-126: встреча на двоих (человек + мост встреч) не контакт, и мост в справочнике тоже.

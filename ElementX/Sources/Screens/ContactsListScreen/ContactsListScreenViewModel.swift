@@ -97,6 +97,10 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
                 visibleRowCounts[id] = count > 1 ? count - 1 : nil
             }
             updatePresenceInterest()
+        case .screenAppeared:
+            // STMOB-339: открыли «Контакты» — освежаем справочник, не дожидаясь десяти минут
+            // и изменений в комнатах: иначе новое имя человека не видно, а поиск по нему пуст.
+            requestDirectoryFetch(isScreenAppear: true)
         }
     }
 
@@ -402,6 +406,8 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
         // даже если свежих данных ещё нет — например, сразу после загрузки из кэша.
         let known = Dictionary(state.contacts.compactMap { contact in contact.matrixUserID.map { ($0, contact) } },
                                uniquingKeysWith: { first, _ in first })
+        // STMOB-339: профиль из справочника — свежее имени личного чата (summary.name) и кэша.
+        let directoryProfiles = Dictionary(directoryUsers.map { ($0.userID, $0) }, uniquingKeysWith: { first, _ in first })
 
         let directoryContacts = directoryUsers
             .filter { $0.userID != ownUserID && !roomUserIDs.contains($0.userID) && !Self.isMeetServiceUserID($0.userID) }
@@ -419,6 +425,17 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
             var contact = contact
             contact.isFavorite = favoriteRoomIDs.contains(contact.id)
             guard let userID = contact.matrixUserID else { return contact }
+
+            // STMOB-339: человек сменил имя в вебе — показываем имя из его профиля,
+            // а не старое название личного чата. Аватар берём, только если своего нет.
+            if let profile = directoryProfiles[userID] {
+                if let name = profile.displayName, !name.isEmpty {
+                    contact.displayName = name
+                }
+                if contact.avatarURL == nil {
+                    contact.avatarURL = profile.avatarURL
+                }
+            }
 
             if let presence = presenceMap[userID] {
                 contact.serverOnline = presence.serverOnline
@@ -455,8 +472,8 @@ class ContactsListScreenViewModel: ContactsListScreenViewModelType, ContactsList
     /// в справочник, и на проде это давало до 1422 запросов в минуту. Теперь решает сторож:
     /// чаще раза в `refreshInterval` не ходим, одновременно — не больше одного похода,
     /// после отказа ждём.
-    private func requestDirectoryFetch() {
-        guard directoryGate.tryBegin(now: now()) else { return }
+    private func requestDirectoryFetch(isScreenAppear: Bool = false) {
+        guard directoryGate.tryBegin(now: now(), isScreenAppear: isScreenAppear) else { return }
 
         Task { [weak self] in
             guard let self else { return }
@@ -606,16 +623,26 @@ struct UserDirectoryFetchGate {
     }
 
     var refreshInterval: TimeInterval = 10 * 60
+    /// STMOB-339: при открытии «Контактов» после удачи ждём только это, а не `refreshInterval`.
+    /// Короткий порог — от частых переключений вкладок; отступ после отказа не обходится.
+    var screenAppearInterval: TimeInterval = 30
     var initialBackoff: TimeInterval = 1
     var maxBackoff: TimeInterval = 10 * 60
 
     private(set) var isInFlight = false
     private(set) var nextAllowed = Date.distantPast
     private(set) var consecutiveFailures = 0
+    private(set) var lastSuccess: Date?
 
     /// Можно ли идти сейчас. Если да — поход считается начатым до вызова `finish`.
-    mutating func tryBegin(now: Date) -> Bool {
-        guard !isInFlight, now >= nextAllowed else { return false }
+    /// `isScreenAppear` (STMOB-339): после удачи хватает `screenAppearInterval`.
+    mutating func tryBegin(now: Date, isScreenAppear: Bool = false) -> Bool {
+        guard !isInFlight else { return false }
+        if isScreenAppear, consecutiveFailures == 0, let lastSuccess {
+            guard now >= lastSuccess.addingTimeInterval(screenAppearInterval) else { return false }
+        } else {
+            guard now >= nextAllowed else { return false }
+        }
         isInFlight = true
         return true
     }
@@ -626,6 +653,7 @@ struct UserDirectoryFetchGate {
         switch outcome {
         case .success:
             consecutiveFailures = 0
+            lastSuccess = now
             nextAllowed = now.addingTimeInterval(refreshInterval)
         case .rateLimited(let retryAfter):
             consecutiveFailures += 1

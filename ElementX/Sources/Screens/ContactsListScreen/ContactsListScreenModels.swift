@@ -29,6 +29,8 @@ enum ContactsListScreenViewAction {
     /// STMOB-304: строка появилась на экране / ушла с него — присутствие опрашиваем только для видимых.
     case contactRowAppeared(ContactItem.ID)
     case contactRowDisappeared(ContactItem.ID)
+    /// STMOB-339: вкладка «Контакты» открыта — повод освежить справочник.
+    case screenAppeared
 }
 
 enum ContactsListScreenViewModelAction {
@@ -71,8 +73,8 @@ struct ContactsListScreenViewStateBindings {
 /// Contact item
 struct ContactItem: Identifiable, Equatable, Codable {
     let id: String
-    let displayName: String
-    let avatarURL: URL?
+    var displayName: String
+    var avatarURL: URL?
     let matrixUserID: String?
     /// Вердикт сервера на момент последнего ответа — как в `UserPresence`.
     var serverOnline: Bool
