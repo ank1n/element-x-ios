@@ -58,6 +58,49 @@ class BugReportScreenViewModel: BugReportScreenViewModelType, BugReportScreenVie
             state.screenshot = nil
         case let .attachScreenshot(image):
             state.screenshot = image
+        case .loadMyRequests:
+            Task { await loadMyRequests() }
+        case .openRequest(let id):
+            Task { await openRequest(id: id) }
+        }
+    }
+
+    /// STALK-1603: обращения уходят на сервер, к которому подключён пользователь.
+    private var feedbackServer: FeedbackServer? {
+        guard let clientProxy else { return nil }
+        return FeedbackServer(homeserver: clientProxy.homeserver, accessToken: try? clientProxy.matrixAccessToken())
+    }
+
+    private func loadMyRequests() async {
+        guard let server = feedbackServer else {
+            state.myRequestsError = NSLocalizedString("stalk_feedback_requires_session", tableName: "Localizable",
+                                                      value: "Чтобы отправить обращение, войдите в аккаунт",
+                                                      comment: "Feedback cannot be sent without a signed-in account")
+            return
+        }
+        state.isLoadingMyRequests = true
+        defer { state.isLoadingMyRequests = false }
+        do {
+            state.myRequests = try await FeedbackRequestsService(server: server).myRequests()
+            state.myRequestsError = nil
+        } catch {
+            MXLog.error("Failed loading my feedback requests: \(error)")
+            state.myRequestsError = NSLocalizedString("stalk_feedback_load_failed", tableName: "Localizable",
+                                                      value: "Не удалось загрузить заявки",
+                                                      comment: "My feedback requests failed to load")
+        }
+    }
+
+    private func openRequest(id: String) async {
+        guard let server = feedbackServer else { return }
+        do {
+            state.selectedRequest = try await FeedbackRequestsService(server: server).request(id: id)
+            state.bindings.isShowingRequestDetail = true
+        } catch {
+            MXLog.error("Failed loading feedback request \(id): \(error)")
+            state.myRequestsError = NSLocalizedString("stalk_feedback_load_failed", tableName: "Localizable",
+                                                      value: "Не удалось загрузить заявки",
+                                                      comment: "My feedback requests failed to load")
         }
     }
     
@@ -107,7 +150,9 @@ class BugReportScreenViewModel: BugReportScreenViewModelType, BugReportScreenVie
                                         logFiles: context.sendingLogsEnabled ? logFiles : nil,
                                         canContact: context.canContact,
                                         githubLabels: [],
-                                        files: files)
+                                        files: files,
+                                        kind: context.selectedTab == .feature ? .feature : .bug,
+                                        server: feedbackServer)
         
         switch await bugReportService.submitBugReport(bugReport,
                                                       progressListener: progressSubject) {

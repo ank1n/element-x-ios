@@ -23,12 +23,26 @@ struct BugReportScreenViewState: BindableState {
     var bindings: BugReportScreenViewStateBindings
     let isModallyPresented: Bool
     var shouldDisableInteraction = false
+    /// STALK-1603: «Мои заявки» — обращения пользователя на его сервере
+    var myRequests: [FeedbackRequestsService.Item]?
+    var isLoadingMyRequests = false
+    var myRequestsError: String?
+    var selectedRequest: FeedbackRequestsService.Detail?
+}
+
+/// STALK-1603: вкладки как в «Обратной связи» веба
+enum BugReportScreenTab: Hashable {
+    case bug
+    case feature
+    case myRequests
 }
 
 struct BugReportScreenViewStateBindings {
     var reportText: String
     var sendingLogsEnabled: Bool
     var canContact: Bool
+    var selectedTab: BugReportScreenTab = .bug
+    var isShowingRequestDetail = false
 }
 
 enum BugReportScreenViewAction {
@@ -37,4 +51,6 @@ enum BugReportScreenViewAction {
     case removeScreenshot
     case attachScreenshot(UIImage)
     case viewLogs
+    case loadMyRequests
+    case openRequest(id: String)
 }

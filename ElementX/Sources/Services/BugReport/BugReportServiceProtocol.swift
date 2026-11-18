@@ -20,6 +20,31 @@ struct BugReport: Equatable {
     let canContact: Bool
     var githubLabels: [String]
     let files: [URL]
+    /// STALK-1603: «Ошибка» или «Предложение» — как вкладки обратной связи в вебе
+    var kind: FeedbackKind = .bug
+    /// STALK-1603: сервер пользователя, куда уходит обращение. nil — входа нет, отправить некуда.
+    var server: FeedbackServer?
+}
+
+enum FeedbackKind: String, Equatable {
+    case bug
+    case feature
+}
+
+/// Сервер «Обратной связи» (meetings-api того же домена, что homeserver) и токен Matrix.
+struct FeedbackServer: Equatable {
+    let baseURL: URL
+    let accessToken: String
+
+    /// Как остальные сервисы sTalk: домен — от homeserver сессии, путь одинаковый на всех серверах.
+    init?(homeserver: String, accessToken: String?) {
+        guard let accessToken,
+              let url = URL(string: homeserver.hasPrefix("http") ? homeserver : "https://\(homeserver)"),
+              let scheme = url.scheme, let host = url.host,
+              let baseURL = URL(string: "\(scheme)://\(host)") else { return nil }
+        self.baseURL = baseURL
+        self.accessToken = accessToken
+    }
 }
 
 struct SubmitBugReportResponse: Decodable {

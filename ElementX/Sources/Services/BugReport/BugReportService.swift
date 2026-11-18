@@ -55,41 +55,24 @@ class BugReportService: NSObject, BugReportServiceProtocol {
         SentrySDK.crashedLastRun
     }
     
-    // sTalk: STMOB-88 — submit goes to TrackIT (Plane) instead of upstream
-    // rageshake. Bug Report → создаёт issue в STMOB project с user text +
-    // device/version + tail log как HTML preformatted block.
-    private static let trackitBaseURL = "https://trackit.implica.ru"
-    private static let trackitProject = "a0b9904b-b856-422f-9540-3b975e54f42e"
-    private static let trackitWorkspace = "implica"
-    private static let trackitIssuesURL = URL(string: "\(trackitBaseURL)/api/v1/workspaces/\(trackitWorkspace)/projects/\(trackitProject)/issues/")!
-    private static let trackitAPIKey = "plane_api_c380b83adf714ffa0a4fefa20d7193ae"
-    private static let trackitTodoState = "e864041b-1cec-43f2-aee3-6ea5d1c0b2f6"
-    private static let logTailLimit = 50000 // bytes
+    // sTalk: STALK-1603 — отчёт уходит в «Обратную связь» сервера, к которому подключён
+    // пользователь (meetings-api POST /api/feedback, как в вебе): у каждого заказчика — в его
+    // собственную «Поддержку». Раньше (STMOB-88) задача создавалась прямо в нашем Plane STMOB
+    // ключом, зашитым в сборку (STMOB-312), и обращения чужих серверов попадали к нам.
+    private static let logTailLimit = 6 * 1024 * 1024 // байт журнала до сжатия
+    private static let maxScreenshotDimension: CGFloat = 1600
 
     func submitBugReport(_ bugReport: BugReport,
                          progressListener: CurrentValueSubject<Double, Never>) async -> Result<SubmitBugReportResponse, BugReportServiceError> {
         let bugReport = appHooks.bugReportHook.update(bugReport)
-        let descriptionHTML = buildDescriptionHTML(for: bugReport)
 
-        let firstLine = bugReport.text.components(separatedBy: .newlines).first?.prefix(80).description ?? "(no title)"
-        let issueTitle = "[iOS Bug] " + firstLine
-
-        let payload: [String: Any] = [
-            "name": issueTitle,
-            "description_html": descriptionHTML,
-            "state": Self.trackitTodoState,
-            "priority": "medium"
-        ]
-
-        guard let body = try? JSONSerialization.data(withJSONObject: payload) else {
-            return .failure(.uploadFailure(NSError(domain: "BugReport", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to serialize payload"])))
+        guard let server = bugReport.server else {
+            return .failure(.uploadFailure(NSError(domain: "BugReport", code: -3,
+                                                   userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("stalk_feedback_requires_session",
+                                                                                                           tableName: "Localizable",
+                                                                                                           value: "Чтобы отправить обращение, войдите в аккаунт",
+                                                                                                           comment: "Feedback cannot be sent without a signed-in account")])))
         }
-
-        var request = URLRequest(url: Self.trackitIssuesURL)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(Self.trackitAPIKey, forHTTPHeaderField: "X-Api-Key")
-        request.httpBody = body
 
         progressSubject
             .receive(on: DispatchQueue.main)
@@ -97,221 +80,110 @@ class BugReportService: NSObject, BugReportServiceProtocol {
             .store(in: &cancellables)
         progressSubject.send(0.1)
 
+        let firstLine = bugReport.text.components(separatedBy: .newlines).first?.prefix(80).description ?? ""
+        var payload: [String: Any] = [
+            "type": bugReport.kind.rawValue,
+            "title": firstLine,
+            "description": buildDescription(for: bugReport),
+            "userAgent": Self.userAgent,
+            "url": "sTalk://settings"
+        ]
+
+        let screenshots = bugReport.files.compactMap(Self.screenshotDataURL)
+        if !screenshots.isEmpty {
+            payload["screenshots"] = screenshots
+        }
+
+        if let logFiles = bugReport.logFiles, !logFiles.isEmpty {
+            let tail = tailLogs(logFiles, maxBytes: Self.logTailLimit)
+            // Последние ошибки сервер вставляет в текст обращения, а журнал целиком —
+            // вложением для команды (заявитель его в «Моих заявках» не видит).
+            payload["logs"] = Array(tail.components(separatedBy: .newlines).filter { $0.contains("ERROR") }.suffix(20))
+            if let gzipped = (Data(tail.utf8) as NSData).gzipped() {
+                payload["attachments"] = [["name": "ios-logs.txt.gz",
+                                           "mime": "application/gzip",
+                                           "data": gzipped.base64EncodedString()]]
+            }
+        }
+
+        guard let body = try? JSONSerialization.data(withJSONObject: payload) else {
+            return .failure(.uploadFailure(NSError(domain: "BugReport", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to serialize payload"])))
+        }
+
+        var request = URLRequest(url: server.baseURL.appending(path: "api/feedback"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(server.accessToken)", forHTTPHeaderField: "Authorization")
+        request.httpBody = body
+        progressSubject.send(0.2)
+
         do {
             let (data, response) = try await session.data(for: request, delegate: self)
-            progressSubject.send(0.4)
 
             guard let httpResponse = response as? HTTPURLResponse else {
                 let errorDescription = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "Unknown error"
-                MXLog.error("Bug report TrackIT: no HTTP response — \(errorDescription)")
+                MXLog.error("Feedback: no HTTP response — \(errorDescription)")
                 return .failure(.serverError(response, errorDescription))
             }
 
             guard (200..<300).contains(httpResponse.statusCode) else {
-                let errorDescription = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "Unknown error"
-                MXLog.error("Bug report TrackIT failed: HTTP \(httpResponse.statusCode) — \(errorDescription)")
+                let errorDescription = httpResponse.statusCode == 503
+                    ? NSLocalizedString("stalk_feedback_not_configured", tableName: "Localizable",
+                                        value: "Обратная связь на этом сервере пока не настроена",
+                                        comment: "Feedback service is not configured on the server (HTTP 503)")
+                    : String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "Unknown error"
+                MXLog.error("Feedback failed: HTTP \(httpResponse.statusCode) — \(errorDescription)")
                 return .failure(.httpError(httpResponse, errorDescription))
             }
 
-            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let issueID = json["id"] as? String else {
-                MXLog.error("Bug report TrackIT: cannot parse issue id from response")
-                return .failure(.uploadFailure(NSError(domain: "BugReport", code: -2, userInfo: [NSLocalizedDescriptionKey: "Cannot parse issue id"])))
-            }
-            let sequence = json["sequence_id"] as? Int
-
-            // Upload attachments (logs + screenshots/files) to Plane and append
-            // links/images to issue description.
-            var attachmentLinks: [String] = []
-            var attachmentImages: [String] = []
-            let allFiles: [(URL, String)] =
-                (bugReport.logFiles ?? []).map { ($0, "text/plain") } +
-                bugReport.files.map { ($0, Self.mimeType(for: $0)) }
-            for (idx, (fileURL, mime)) in allFiles.enumerated() {
-                if let assetURL = await uploadAttachment(fileURL: fileURL, mime: mime, issueID: issueID) {
-                    let absoluteAssetURL = "\(Self.trackitBaseURL)\(assetURL)"
-                    let name = fileURL.lastPathComponent
-                    let escapedName = escape(name)
-                    if mime.hasPrefix("image/") {
-                        attachmentImages.append("<p><img src=\"\(absoluteAssetURL)\" alt=\"\(escapedName)\" style=\"max-width:600px\"/></p>")
-                    } else {
-                        attachmentLinks.append("<li><a href=\"\(absoluteAssetURL)\">\(escapedName)</a></li>")
-                    }
-                } else {
-                    MXLog.warning("Bug report: failed to upload attachment \(fileURL.lastPathComponent)")
-                }
-                progressSubject.send(0.4 + 0.5 * (Double(idx + 1) / Double(max(allFiles.count, 1))))
-            }
-
-            // Patch issue description with attachment HTML if anything uploaded.
-            if !attachmentLinks.isEmpty || !attachmentImages.isEmpty {
-                var attachmentHTML = ""
-                if !attachmentImages.isEmpty {
-                    attachmentHTML += "<h3>Screenshots</h3>" + attachmentImages.joined()
-                }
-                if !attachmentLinks.isEmpty {
-                    attachmentHTML += "<h3>Attached files</h3><ul>" + attachmentLinks.joined() + "</ul>"
-                }
-                let updatedHTML = descriptionHTML + attachmentHTML
-                _ = await patchIssueDescription(issueID: issueID, descriptionHTML: updatedHTML)
-            }
-
-            let reportURL = "\(Self.trackitBaseURL)/\(Self.trackitWorkspace)/projects/\(Self.trackitProject)/issues/\(issueID)"
-            if let sequence {
-                MXLog.info("Bug report submitted — STMOB-\(sequence) \(reportURL)")
-            }
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let key = json?["key"] as? String
+            MXLog.info("Feedback submitted — \(key ?? "без номера")")
             lastCrashEventID = nil
             progressSubject.send(1.0)
-            return .success(SubmitBugReportResponse(reportURL: reportURL))
+            return .success(SubmitBugReportResponse(reportURL: key))
         } catch {
             return .failure(.uploadFailure(error))
         }
     }
 
-    /// Upload one file as Plane issue-attachment in 3 stages:
-    ///   1) POST issue-attachments → presigned upload data
-    ///   2) POST upload_data.url multipart → S3-compatible bucket
-    ///   3) PATCH attachment to mark uploaded
-    /// Returns asset URL path (relative, prepend trackitBaseURL for full URL) on success.
-    private func uploadAttachment(fileURL: URL, mime: String, issueID: String) async -> String? {
-        guard let fileData = try? Data(contentsOf: fileURL) else {
-            MXLog.warning("Bug report: cannot read file \(fileURL.lastPathComponent)")
-            return nil
+    /// «sTalk iOS 26.21.14 (391); iPhone17,2; iOS 26.1» — как userAgent веба и Android.
+    private static var userAgent: String {
+        var systemInfo = utsname()
+        uname(&systemInfo)
+        let model = withUnsafeBytes(of: &systemInfo.machine) { buffer in
+            String(decoding: buffer.prefix { $0 != 0 }, as: UTF8.self)
         }
-        // Stage 1: register attachment, get presigned upload URL.
-        let attachmentsEndpoint = URL(string: "\(Self.trackitBaseURL)/api/v1/workspaces/\(Self.trackitWorkspace)/projects/\(Self.trackitProject)/issues/\(issueID)/issue-attachments/")!
-        let registerPayload: [String: Any] = [
-            "name": fileURL.lastPathComponent,
-            "type": mime,
-            "size": fileData.count
-        ]
-        guard let registerBody = try? JSONSerialization.data(withJSONObject: registerPayload) else { return nil }
-        var registerRequest = URLRequest(url: attachmentsEndpoint)
-        registerRequest.httpMethod = "POST"
-        registerRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        registerRequest.setValue(Self.trackitAPIKey, forHTTPHeaderField: "X-Api-Key")
-        registerRequest.httpBody = registerBody
-        guard let (registerData, registerResponse) = try? await session.data(for: registerRequest),
-              let registerHTTP = registerResponse as? HTTPURLResponse,
-              (200..<300).contains(registerHTTP.statusCode),
-              let registerJSON = try? JSONSerialization.jsonObject(with: registerData) as? [String: Any],
-              let uploadData = registerJSON["upload_data"] as? [String: Any],
-              let uploadURLString = uploadData["url"] as? String,
-              let uploadURL = URL(string: uploadURLString),
-              let fields = uploadData["fields"] as? [String: String],
-              let assetID = registerJSON["asset_id"] as? String,
-              let assetURL = registerJSON["asset_url"] as? String else {
-            return nil
-        }
-
-        // Stage 2: multipart POST to presigned upload URL.
-        let boundary = "BugReportBoundary-\(UUID().uuidString)"
-        var multipartBody = Data()
-        let preferredFieldOrder = ["Content-Type", "key", "x-amz-algorithm", "x-amz-credential", "x-amz-date", "policy", "x-amz-signature"]
-        let orderedKeys = preferredFieldOrder.filter { fields[$0] != nil } + fields.keys.filter { !preferredFieldOrder.contains($0) }
-        for key in orderedKeys {
-            guard let value = fields[key] else { continue }
-            multipartBody.append("--\(boundary)\r\n".data(using: .utf8) ?? Data())
-            multipartBody.append("Content-Disposition: form-data; name=\"\(key)\"\r\n\r\n".data(using: .utf8) ?? Data())
-            multipartBody.append("\(value)\r\n".data(using: .utf8) ?? Data())
-        }
-        multipartBody.append("--\(boundary)\r\n".data(using: .utf8) ?? Data())
-        multipartBody.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileURL.lastPathComponent)\"\r\n".data(using: .utf8) ?? Data())
-        multipartBody.append("Content-Type: \(mime)\r\n\r\n".data(using: .utf8) ?? Data())
-        multipartBody.append(fileData)
-        multipartBody.append("\r\n--\(boundary)--\r\n".data(using: .utf8) ?? Data())
-
-        var uploadRequest = URLRequest(url: uploadURL)
-        uploadRequest.httpMethod = "POST"
-        uploadRequest.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        uploadRequest.httpBody = multipartBody
-        guard let (_, uploadResponse) = try? await session.data(for: uploadRequest),
-              let uploadHTTP = uploadResponse as? HTTPURLResponse,
-              (200..<300).contains(uploadHTTP.statusCode) else {
-            return nil
-        }
-
-        // Stage 3: PATCH to mark uploaded (Plane requires this to make it visible).
-        let finalizeURL = URL(string: "\(Self.trackitBaseURL)/api/v1/workspaces/\(Self.trackitWorkspace)/projects/\(Self.trackitProject)/issues/\(issueID)/issue-attachments/\(assetID)/")!
-        var finalizeRequest = URLRequest(url: finalizeURL)
-        finalizeRequest.httpMethod = "PATCH"
-        finalizeRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        finalizeRequest.setValue(Self.trackitAPIKey, forHTTPHeaderField: "X-Api-Key")
-        finalizeRequest.httpBody = "{}".data(using: .utf8)
-        _ = try? await session.data(for: finalizeRequest)
-
-        return assetURL
+        return "sTalk iOS \(InfoPlistReader.main.bundleShortVersionString) (\(InfoPlistReader.main.bundleVersion)); \(model); \(UIDevice.current.systemName) \(UIDevice.current.systemVersion)"
     }
 
-    /// PATCH issue with updated description_html (used to append attachment links/images).
-    private func patchIssueDescription(issueID: String, descriptionHTML: String) async -> Bool {
-        let url = URL(string: "\(Self.trackitBaseURL)/api/v1/workspaces/\(Self.trackitWorkspace)/projects/\(Self.trackitProject)/issues/\(issueID)/")!
-        guard let body = try? JSONSerialization.data(withJSONObject: ["description_html": descriptionHTML]) else { return false }
-        var request = URLRequest(url: url)
-        request.httpMethod = "PATCH"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(Self.trackitAPIKey, forHTTPHeaderField: "X-Api-Key")
-        request.httpBody = body
-        guard let (_, response) = try? await session.data(for: request),
-              let httpResponse = response as? HTTPURLResponse,
-              (200..<300).contains(httpResponse.statusCode) else {
-            return false
-        }
-        return true
+    /// Скриншот как data:image/jpeg;base64 — уменьшенный, чтобы обращение уложилось в 10 МБ.
+    private static func screenshotDataURL(for url: URL) -> String? {
+        guard let image = UIImage(contentsOfFile: url.path(percentEncoded: false)) else { return nil }
+        let scale = min(1, maxScreenshotDimension / max(image.size.width, image.size.height))
+        let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let resized = UIGraphicsImageRenderer(size: size).image { _ in image.draw(in: CGRect(origin: .zero, size: size)) }
+        guard let jpeg = resized.jpegData(compressionQuality: 0.7) else { return nil }
+        return "data:image/jpeg;base64,\(jpeg.base64EncodedString())"
     }
 
-    private static func mimeType(for url: URL) -> String {
-        switch url.pathExtension.lowercased() {
-        case "png": return "image/png"
-        case "jpg", "jpeg": return "image/jpeg"
-        case "gif": return "image/gif"
-        case "log", "txt": return "text/plain"
-        case "json": return "application/json"
-        default: return "application/octet-stream"
-        }
-    }
-
-    /// Build HTML description for TrackIT issue: user text + device/version + log tail.
-    private func buildDescriptionHTML(for bugReport: BugReport) -> String {
-        let escapedText = bugReport.text
-            .replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
-
-        let descriptionLabel = NSLocalizedString("stalk_bugreport_description", tableName: "Localizable", value: "Описание", comment: "Bug report description label")
-        var html = "<p><b>\(descriptionLabel)</b></p><p>\(escapedText.replacingOccurrences(of: "\n", with: "<br>"))</p>"
-        html += "<h3>Diagnostic</h3><ul>"
-        html += "<li>App: sTalk \(InfoPlistReader.main.bundleShortVersionString) (build \(InfoPlistReader.main.bundleVersion))</li>"
-        html += "<li>OS: \(os)</li>"
-        html += "<li>Bundle: \(InfoPlistReader.main.baseBundleIdentifier)</li>"
-        html += "<li>Languages: \(Locale.preferredLanguages.joined(separator: ", "))</li>"
-        if let userID = bugReport.userID { html += "<li>User: \(escape(userID))</li>" }
-        if let deviceID = bugReport.deviceID { html += "<li>Device: \(escape(deviceID))</li>" }
+    /// Текст обращения: что написал человек + сведения об устройстве для команды.
+    private func buildDescription(for bugReport: BugReport) -> String {
+        var lines = [bugReport.text, "", "—"]
+        lines.append("App: sTalk \(InfoPlistReader.main.bundleShortVersionString) (build \(InfoPlistReader.main.bundleVersion))")
+        lines.append("OS: \(os)")
+        lines.append("Languages: \(Locale.preferredLanguages.joined(separator: ", "))")
+        if let userID = bugReport.userID { lines.append("User: \(userID)") }
+        if let deviceID = bugReport.deviceID { lines.append("Device: \(deviceID)") }
         if let ed25519 = bugReport.ed25519, let curve25519 = bugReport.curve25519 {
-            html += "<li>ed25519: \(escape(ed25519))</li><li>curve25519: \(escape(curve25519))</li>"
+            lines.append("ed25519: \(ed25519)")
+            lines.append("curve25519: \(curve25519)")
         }
         if let crashEventID = lastCrashEventID {
-            html += "<li>Crash: \(escape(crashEventID))</li>"
+            lines.append("Crash: \(crashEventID)")
         }
-        if !bugReport.githubLabels.isEmpty {
-            html += "<li>Labels: \(bugReport.githubLabels.joined(separator: ", "))</li>"
-        }
-        html += "<li>can_contact: \(bugReport.canContact)</li>"
-        html += "</ul>"
-
-        // Tail of log files
-        if let logFiles = bugReport.logFiles, !logFiles.isEmpty {
-            html += "<h3>Log tail (last \(Self.logTailLimit) bytes)</h3><pre>"
-            html += escape(tailLogs(logFiles, maxBytes: Self.logTailLimit))
-            html += "</pre>"
-        }
-        return html
-    }
-
-    private func escape(_ s: String) -> String {
-        s.replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
+        lines.append("can_contact: \(bugReport.canContact)")
+        return lines.joined(separator: "\n")
     }
 
     private func tailLogs(_ urls: [URL], maxBytes: Int) -> String {
@@ -474,5 +346,128 @@ extension BugReportService: URLSessionTaskDelegate {
                 self?.progressSubject.send(value)
             }
             .store(in: &cancellables)
+    }
+}
+
+// MARK: - STALK-1603: «Мои заявки»
+
+/// Обращения пользователя на его сервере: GET /api/feedback/mine и /mine/:id (meetings-api).
+/// Сервер отдаёт только свои обращения и только ответы, видимые заявителю.
+struct FeedbackRequestsService {
+    let server: FeedbackServer
+    var session: URLSession = .shared
+
+    struct State: Decodable, Equatable {
+        let group: String?
+        let name: String?
+    }
+
+    struct Reply: Decodable, Equatable {
+        let author: String?
+        let createdAt: String?
+        let text: String?
+
+        enum CodingKeys: String, CodingKey {
+            case author, text
+            case createdAt = "created_at"
+        }
+    }
+
+    struct Item: Decodable, Equatable, Identifiable {
+        let id: String
+        let key: String?
+        let title: String?
+        let kind: String?
+        let state: State?
+        let createdAt: String?
+        let updatedAt: String?
+        let replies: Int?
+        let lastReply: Reply?
+        let unavailable: Bool?
+
+        enum CodingKeys: String, CodingKey {
+            case id, key, title, kind, state, replies, unavailable
+            case createdAt = "created_at"
+            case updatedAt = "updated_at"
+            case lastReply = "last_reply"
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decodeFlexibleID(forKey: .id)
+            key = try container.decodeIfPresent(String.self, forKey: .key)
+            title = try container.decodeIfPresent(String.self, forKey: .title)
+            kind = try container.decodeIfPresent(String.self, forKey: .kind)
+            state = try container.decodeIfPresent(State.self, forKey: .state)
+            createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt)
+            updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt)
+            replies = try container.decodeIfPresent(Int.self, forKey: .replies)
+            lastReply = try container.decodeIfPresent(Reply.self, forKey: .lastReply)
+            unavailable = try container.decodeIfPresent(Bool.self, forKey: .unavailable)
+        }
+    }
+
+    struct Comment: Decodable, Equatable, Identifiable {
+        let id: String
+        let author: String?
+        let mine: Bool?
+        let createdAt: String?
+        let text: String?
+
+        enum CodingKeys: String, CodingKey {
+            case id, author, mine, text
+            case createdAt = "created_at"
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decodeFlexibleID(forKey: .id)
+            author = try container.decodeIfPresent(String.self, forKey: .author)
+            mine = try container.decodeIfPresent(Bool.self, forKey: .mine)
+            createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt)
+            text = try container.decodeIfPresent(String.self, forKey: .text)
+        }
+    }
+
+    struct Detail: Decodable, Equatable {
+        let title: String?
+        let kind: String?
+        let state: State?
+        let text: String?
+        let comments: [Comment]?
+    }
+
+    private struct ListResponse: Decodable {
+        let items: [Item]
+    }
+
+    func myRequests() async throws -> [Item] {
+        try await get(ListResponse.self, path: "api/feedback/mine").items
+    }
+
+    func request(id: String) async throws -> Detail {
+        try await get(Detail.self, path: "api/feedback/mine/\(id)")
+    }
+
+    private func get<T: Decodable>(_ type: T.Type, path: String) async throws -> T {
+        var request = URLRequest(url: server.baseURL.appending(path: path))
+        request.setValue("Bearer \(server.accessToken)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            MXLog.error("Feedback \(path) failed: HTTP \(status)")
+            throw URLError(.badServerResponse)
+        }
+        return try JSONDecoder().decode(T.self, from: data)
+    }
+}
+
+private extension KeyedDecodingContainer {
+    /// id обращения сервер может отдать и строкой, и числом.
+    func decodeFlexibleID(forKey key: Key) throws -> String {
+        if let string = try? decode(String.self, forKey: key) {
+            return string
+        }
+        return try String(decode(Int.self, forKey: key))
     }
 }

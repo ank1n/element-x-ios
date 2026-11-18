@@ -15,10 +15,10 @@ class BugReportServiceTests: XCTestCase {
     var appSettings: AppSettings!
     var bugReportService: BugReportServiceProtocol!
 
-    // STMOB-310: в форке отчёт уходит задачей в TrackIT (Plane), а не на rageshake —
-    // STMOB-88 (0fe11d990). Сервис возвращает страницу созданной задачи, а URL rageshake
-    // из настроек только включает или выключает отправку (isEnabled).
-    private let trackitIssueReportURL = "https://trackit.implica.ru/implica/projects/a0b9904b-b856-422f-9540-3b975e54f42e/issues/\(MockURLProtocol.createdIssueID)"
+    // STALK-1603: в форке отчёт уходит в «Обратную связь» сервера пользователя
+    // (POST /api/feedback), а не на rageshake. Сервис возвращает номер обращения, а URL
+    // rageshake из настроек только включает или выключает отправку (isEnabled).
+    private let feedbackServer = FeedbackServer(homeserver: "stalk.example.com", accessToken: "mock_token")
 
     override func setUpWithError() throws {
         AppSettings.resetAllSettings()
@@ -96,11 +96,12 @@ class BugReportServiceTests: XCTestCase {
                                   logFiles: Tracing.logFiles,
                                   canContact: false,
                                   githubLabels: [],
-                                  files: [])
+                                  files: [],
+                                  server: feedbackServer)
         let progressSubject = CurrentValueSubject<Double, Never>(0.0)
         let response = try await service.submitBugReport(bugReport, progressListener: progressSubject).get()
         
-        XCTAssertEqual(response.reportURL, trackitIssueReportURL)
+        XCTAssertEqual(response.reportURL, MockURLProtocol.createdRequestKey)
     }
     
     @MainActor func testConfigurations() async throws {
@@ -131,19 +132,43 @@ class BugReportServiceTests: XCTestCase {
                                   logFiles: Tracing.logFiles,
                                   canContact: false,
                                   githubLabels: [],
-                                  files: [])
+                                  files: [],
+                                  server: feedbackServer)
         let progressSubject = CurrentValueSubject<Double, Never>(0.0)
         let customConfigurationResponse = try await service.submitBugReport(bugReport, progressListener: progressSubject).get()
         
-        // STMOB-310: свой URL rageshake не меняет получателя — это всё равно задача в TrackIT.
-        XCTAssertEqual(customConfigurationResponse.reportURL, trackitIssueReportURL)
+        // Свой URL rageshake не меняет получателя — обращение всё равно уходит на сервер пользователя.
+        XCTAssertEqual(customConfigurationResponse.reportURL, MockURLProtocol.createdRequestKey)
         
         appSettings.bugReportRageshakeURL.reset()
         XCTAssertTrue(service.isEnabled)
         
         let defaultConfigurationResponse = try await service.submitBugReport(bugReport, progressListener: progressSubject).get()
         
-        XCTAssertEqual(defaultConfigurationResponse.reportURL, trackitIssueReportURL)
+        XCTAssertEqual(defaultConfigurationResponse.reportURL, MockURLProtocol.createdRequestKey)
+    }
+
+    @MainActor func testSubmitWithoutServerFails() async {
+        let urlPublisher: CurrentValueSubject<RageshakeConfiguration, Never> = .init(.url("https://example.com/submit"))
+        let service = BugReportService(rageshakeURLPublisher: urlPublisher.asCurrentValuePublisher(),
+                                       applicationID: "mock_app_id",
+                                       sdkGitSHA: "1234",
+                                       maxUploadSize: ServiceLocator.shared.settings.bugReportMaxUploadSize,
+                                       session: .mock,
+                                       appHooks: AppHooks())
+        let bugReport = BugReport(userID: nil, deviceID: nil, ed25519: nil, curve25519: nil,
+                                  text: "no session", logFiles: nil, canContact: false, githubLabels: [], files: [])
+        let result = await service.submitBugReport(bugReport, progressListener: CurrentValueSubject<Double, Never>(0.0))
+        guard case .failure = result else {
+            XCTFail("Без сервера обращение отправлять некуда")
+            return
+        }
+    }
+
+    func testFeedbackServerUsesHomeserverDomain() throws {
+        let server = try XCTUnwrap(FeedbackServer(homeserver: "https://stalk.example.com/_matrix", accessToken: "t"))
+        XCTAssertEqual(server.baseURL.absoluteString, "https://stalk.example.com")
+        XCTAssertNil(FeedbackServer(homeserver: "stalk.example.com", accessToken: nil))
     }
     
     func testLogsMaxSize() {
@@ -173,19 +198,19 @@ class BugReportServiceTests: XCTestCase {
 }
 
 private class MockURLProtocol: URLProtocol {
-    // STMOB-310: форк создаёт задачу через API Plane (STMOB-88). Созданной задачей
-    // отвечаем только на POST в список задач проекта — так тест проверяет и получателя
-    // отчёта. Остальные запросы (вложения) получают 404, и сервис их пропускает.
-    static let trackitIssuesEndpoint = "https://trackit.implica.ru/api/v1/workspaces/implica/projects/a0b9904b-b856-422f-9540-3b975e54f42e/issues/"
-    static let createdIssueID = "123"
+    // STALK-1603: обращением отвечаем только на POST /api/feedback сервера пользователя
+    // с токеном — так тест проверяет и получателя отчёта. Остальное получает 404.
+    static let feedbackEndpoint = "https://stalk.example.com/api/feedback"
+    static let createdRequestKey = "SUP-123"
     
     override func startLoading() {
         guard let url = request.url else { return }
-        let isIssueCreation = request.httpMethod == "POST" && url.absoluteString == Self.trackitIssuesEndpoint
-        let response = isIssueCreation ? "{\"id\":\"\(Self.createdIssueID)\",\"sequence_id\":123}" : "{}"
+        let isCreation = request.httpMethod == "POST" && url.absoluteString == Self.feedbackEndpoint
+            && request.value(forHTTPHeaderField: "Authorization") == "Bearer mock_token"
+        let response = isCreation ? "{\"id\":123,\"key\":\"\(Self.createdRequestKey)\"}" : "{}"
         
         if let data = response.data(using: .utf8),
-           let urlResponse = HTTPURLResponse(url: url, statusCode: isIssueCreation ? 201 : 404, httpVersion: nil, headerFields: nil) {
+           let urlResponse = HTTPURLResponse(url: url, statusCode: isCreation ? 201 : 404, httpVersion: nil, headerFields: nil) {
             client?.urlProtocol(self, didReceive: urlResponse, cacheStoragePolicy: .allowedInMemoryOnly)
             client?.urlProtocol(self, didLoad: data)
             client?.urlProtocolDidFinishLoading(self)
