@@ -333,8 +333,7 @@ class ServerConfirmationScreenViewModelTests: XCTestCase {
                                  elementWebHosts: appSettings.elementWebHosts,
                                  accountProvisioningHost: appSettings.accountProvisioningHost,
                                  bugReportApplicationID: appSettings.bugReportApplicationID,
-                                 analyticsTermsURL: appSettings.analyticsTermsURL,
-                                 mapTilerConfiguration: appSettings.mapTilerConfiguration)
+                                 analyticsTermsURL: appSettings.analyticsTermsURL)
             mode = .picker(appSettings.accountProviders)
         }
         

@@ -25,9 +25,8 @@ enum StaticLocationInteractionMode: Hashable {
 }
 
 struct StaticLocationScreenViewState: BindableState {
-    init(interactionMode: StaticLocationInteractionMode, mapURLBuilder: MapTilerURLBuilderProtocol) {
+    init(interactionMode: StaticLocationInteractionMode) {
         self.interactionMode = interactionMode
-        self.mapURLBuilder = mapURLBuilder
         
         bindings.showsUserLocationMode = switch interactionMode {
         case .picker: .showAndFollow
@@ -36,7 +35,6 @@ struct StaticLocationScreenViewState: BindableState {
     }
 
     let interactionMode: StaticLocationInteractionMode
-    let mapURLBuilder: MapTilerURLBuilderProtocol
     
     var bindings = StaticLocationScreenBindings(showsUserLocationMode: .hide)
  

@@ -24,19 +24,3 @@ enum MapLibreError: Error {
     case failedLoadingMap
     case failedLocatingUser
 }
-
-/// The style to show a map in.
-///
-/// There can be any number of styles, we have defined one for light and another for dark.
-enum MapTilerStyle {
-    case light
-    case dark
-}
-
-enum MapTilerAttributionPlacement: String {
-    case bottomRight = "bottomright"
-    case bottomLeft = "bottomleft"
-    case topLeft = "topleft"
-    case topRight = "topright"
-    case hidden = "false"
-}
